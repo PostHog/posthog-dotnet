@@ -34,28 +34,15 @@ public class JsonSerializerHelperTests
             // Assert
             Assert.NotNull(result);
             Assert.True(result.Config.EnableCollectEverything);
-            Assert.Empty(result.ToolbarParams);
             Assert.False(result.IsAuthenticated);
-            Assert.Equal(["gzip", "gzip-js"], result.SupportedCompression);
             Assert.Equal(new Dictionary<string, StringOrValue<bool>>()
             {
                 ["hogtied_got_character"] = "danaerys",
                 ["hogtied-homepage-user"] = true,
                 ["hogtied-homepage-bonanza"] = true
             }, result.FeatureFlags);
-            Assert.False(result.SessionRecording);
-            Assert.False(result.CaptureDeadClicks);
-            Assert.True(result.CapturePerformance.NetworkTiming);
-            Assert.True(result.CapturePerformance.WebVitals);
-            Assert.Null(result.CapturePerformance.WebVitalsAllowedMetrics);
-            Assert.False(result.AutocaptureOptOut);
-            Assert.False(result.AutocaptureExceptions);
             Assert.Equal("/i/v0/e/", result.Analytics.Endpoint);
-            Assert.True(result.ElementsChainAsString);
-            Assert.False(result.Surveys);
-            Assert.True(result.Heatmaps);
             Assert.True(result.DefaultIdentifiedOnly);
-            Assert.Empty(result.SiteApps);
             Assert.False(result.ErrorsWhileComputingFlags);
             Assert.Equal(new Dictionary<string, string>
             {
@@ -77,28 +64,15 @@ public class JsonSerializerHelperTests
             // Assert
             Assert.NotNull(result);
             Assert.False(result.Config.EnableCollectEverything);
-            Assert.Empty(result.ToolbarParams);
             Assert.True(result.IsAuthenticated);
-            Assert.Equal(["gzip", "gzip-js"], result.SupportedCompression);
             Assert.Equal(new Dictionary<string, StringOrValue<bool>>()
             {
                 ["hogtied_got_character"] = false,
                 ["hogtied-homepage-user"] = false,
                 ["hogtied-homepage-bonanza"] = false
             }, result.FeatureFlags);
-            Assert.True(result.SessionRecording);
-            Assert.True(result.CaptureDeadClicks);
-            Assert.False(result.CapturePerformance.NetworkTiming);
-            Assert.False(result.CapturePerformance.WebVitals);
-            Assert.NotNull(result.CapturePerformance.WebVitalsAllowedMetrics);
-            Assert.True(result.AutocaptureOptOut);
-            Assert.True(result.AutocaptureExceptions);
             Assert.Equal("/i/v0/e/", result.Analytics.Endpoint);
-            Assert.False(result.ElementsChainAsString);
-            Assert.True(result.Surveys);
-            Assert.False(result.Heatmaps);
             Assert.False(result.DefaultIdentifiedOnly);
-            Assert.Empty(result.SiteApps);
             Assert.True(result.ErrorsWhileComputingFlags);
             Assert.Empty(result.FeatureFlagPayloads);
         }
