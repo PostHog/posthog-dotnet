@@ -40,6 +40,13 @@ $ bin/start
 
 You can also run it from your favorite IDE or editor.
 
+You will need to set in appsettings.Development.json
+
+```
+    "ProjectApiKey": "your project api token",
+    "HostURL": "your host URL. us.i.posthog.com if not set",
+```
+
 ## Testing
 
 To run the tests, run the following command in the root of the repository:
