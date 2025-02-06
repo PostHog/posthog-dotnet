@@ -10,7 +10,7 @@
         <CIBuild Condition=" '$(NBGV_CloudBuildNumber)' != '' or '$(GITHUB_SHA)' != '' ">true</CIBuild>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-        <DefaultTargetFramework>net9.0</DefaultTargetFramework>
+        <DefaultTargetFramework>net8.0</DefaultTargetFramework>
         <RollForward>Major</RollForward>
         <RepoBuildPath>$(RootDir)build\</RepoBuildPath>
         <RepoBinPath>$(RepoBuildPath)bin\</RepoBinPath>
