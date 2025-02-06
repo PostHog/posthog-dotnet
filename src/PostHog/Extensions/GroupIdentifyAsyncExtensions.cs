@@ -4,7 +4,7 @@ using static PostHog.Library.Ensure;
 
 namespace PostHog; // Intentionally put in the root namespace.
 
-public static class IdentifyGroupAsyncExtensions
+public static class GroupIdentifyAsyncExtensions
 {
     /// <summary>
     /// Sets a groups properties, which allows asking questions like "Who are the most active companies"
@@ -16,7 +16,7 @@ public static class IdentifyGroupAsyncExtensions
     /// <param name="name">The friendly name of the group.</param>
     /// <param name="properties">Additional information about the group.</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
-    public static async Task<ApiResult> IdentifyGroupAsync(
+    public static async Task<ApiResult> GroupIdentifyAsync(
         this IPostHogClient client,
         string type,
         StringOrValue<int> key,
@@ -25,7 +25,7 @@ public static class IdentifyGroupAsyncExtensions
     {
         properties ??= new Dictionary<string, object>();
         properties["name"] = name;
-        return await NotNull(client).IdentifyGroupAsync(type, key, properties, CancellationToken.None);
+        return await NotNull(client).GroupIdentifyAsync(type, key, properties, CancellationToken.None);
     }
 
     /// <summary>
@@ -39,7 +39,7 @@ public static class IdentifyGroupAsyncExtensions
     /// <param name="properties">Additional information about the group.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
-    public static async Task<ApiResult> IdentifyGroupAsync(
+    public static async Task<ApiResult> GroupIdentifyAsync(
         this IPostHogClient client,
         string type,
         StringOrValue<int> key,
@@ -49,7 +49,7 @@ public static class IdentifyGroupAsyncExtensions
     {
         properties ??= new Dictionary<string, object>();
         properties["name"] = name;
-        return await NotNull(client).IdentifyGroupAsync(type, key, properties, cancellationToken);
+        return await NotNull(client).GroupIdentifyAsync(type, key, properties, cancellationToken);
     }
 
     /// <summary>
@@ -61,13 +61,12 @@ public static class IdentifyGroupAsyncExtensions
     /// <param name="key">Unique identifier for that type of group (ex: 'id:5')</param>
     /// <param name="name">The friendly name of the group.</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
-    public static async Task<ApiResult> IdentifyGroupAsync(
+    public static async Task<ApiResult> GroupIdentifyAsync(
         this IPostHogClient client,
         string type,
         StringOrValue<int> key,
         string name)
-        => await IdentifyGroupAsync(
-            client,
+        => await client.GroupIdentifyAsync(
             type,
             key,
             name,

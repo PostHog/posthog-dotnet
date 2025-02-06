@@ -111,27 +111,27 @@ public sealed class PostHogClient : IPostHogClient
         => await _apiClient.AliasAsync(previousId, newId, cancellationToken);
 
     /// <inheritdoc/>
-    public async Task<ApiResult> IdentifyPersonAsync(
+    public async Task<ApiResult> IdentifyAsync(
         string distinctId,
         Dictionary<string, object>? personPropertiesToSet,
         Dictionary<string, object>? personPropertiesToSetOnce,
         CancellationToken cancellationToken)
-        => await _apiClient.IdentifyPersonAsync(
+        => await _apiClient.IdentifyAsync(
             distinctId,
             personPropertiesToSet,
             personPropertiesToSetOnce,
             cancellationToken);
 
     /// <inheritdoc/>
-    public Task<ApiResult> IdentifyGroupAsync(
+    public Task<ApiResult> GroupIdentifyAsync(
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-    => _apiClient.IdentifyGroupAsync(type, key, properties, cancellationToken);
+    => _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken);
 
     /// <inheritdoc/>
-    public bool CaptureEvent(
+    public bool Capture(
         string distinctId,
         string eventName,
         Dictionary<string, object>? properties,
@@ -319,7 +319,7 @@ public sealed class PostHogClient : IPostHogClient
         cacheEntry.SetPriority(CacheItemPriority.Low);
         cacheEntry.SetSlidingExpiration(_options.Value.FeatureFlagSentCacheSlidingExpiration);
 
-        CaptureEvent(
+        Capture(
             distinctId,
             eventName: "$feature_flag_called",
             properties: new Dictionary<string, object>

@@ -58,7 +58,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
             // Identify the current user if they're authenticated.
             if (User.Identity?.IsAuthenticated == true)
             {
-                await posthog.IdentifyPersonAsync(
+                await posthog.IdentifyAsync(
                     UserId,
                     email: User.FindFirst(ClaimTypes.Email)?.Value,
                     name: User.FindFirst(ClaimTypes.Name)?.Value,
@@ -116,7 +116,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
         }
 
         // Send a custom event
-        posthog.CaptureEvent(
+        posthog.Capture(
             UserId,
             eventName: EventName ?? "plan_purchased",
             properties: new()
@@ -139,7 +139,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
         }
 
         // Identify a group
-        var result = await posthog.IdentifyGroupAsync(
+        var result = await posthog.GroupIdentifyAsync(
             Group.Type,
             Group.Key,
             Group.Name,

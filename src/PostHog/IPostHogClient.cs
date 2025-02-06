@@ -46,7 +46,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// </param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
-    Task<ApiResult> IdentifyPersonAsync(
+    Task<ApiResult> IdentifyAsync(
         string distinctId,
         Dictionary<string, object>? personPropertiesToSet,
         Dictionary<string, object>? personPropertiesToSetOnce,
@@ -61,7 +61,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="properties">Additional information about the group.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
-    Task<ApiResult> IdentifyGroupAsync(
+    Task<ApiResult> GroupIdentifyAsync(
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
@@ -76,7 +76,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    bool CaptureEvent(
+    bool Capture(
         string distinctId,
         string eventName,
         Dictionary<string, object>? properties,

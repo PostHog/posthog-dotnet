@@ -75,7 +75,7 @@ public class HomeController(IPostHogClient posthogClient) : Controller
     public IActionResult SignUpComplete()
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        posthogClient.CaptureEvent(userId, "user signed up", new() { ["plan"] = "pro" });
+        posthogClient.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
         return View();
     }
 }
@@ -130,7 +130,7 @@ await posthogClient.AliasAsync(sessionId, userId);
 Note that capturing events is designed to be fast and done in the background. You can configure how often batches are sent to the PostHog API using the `FlushAt` and `FlushInterval` settings.
 
 ```csharp
-posthogClient.CaptureEvent(userId, "user signed up", new() { ["plan"] = "pro" });
+posthogClient.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
 ```
 
 #### Capture a Page View

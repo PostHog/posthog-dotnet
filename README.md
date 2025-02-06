@@ -90,7 +90,7 @@ When you create the Release, the [`main.yml`](../.github/.workflow.release.yml) 
 Inject the `IPostHogClient` interface into your controller or page:
 
 ```csharp
-posthogClient.CaptureEvent(userId, "user signed up", new() { ["plan"] = "pro" });
+posthogClient.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
 }
 ```
 
@@ -134,7 +134,7 @@ await posthogClient.AliasAsync(sessionId, userId);
 Note that capturing events is designed to be fast and done in the background. You can configure how often batches are sent to the PostHog API using the `FlushAt` and `FlushInterval` settings.
 
 ```csharp
-posthogClient.CaptureEvent(userId, "user signed up", new() { ["plan"] = "pro" });
+posthogClient.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
 ```
 
 #### Capture a Page View

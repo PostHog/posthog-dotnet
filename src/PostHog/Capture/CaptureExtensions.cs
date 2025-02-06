@@ -15,11 +15,11 @@ public static class CaptureExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool CaptureEvent(
+    public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName)
-        => NotNull(client).CaptureEvent(
+        => NotNull(client).Capture(
             distinctId,
             eventName,
             properties: null,
@@ -34,12 +34,12 @@ public static class CaptureExtensions
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool CaptureEvent(
+    public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName,
         bool sendFeatureFlags)
-        => NotNull(client).CaptureEvent(
+        => NotNull(client).Capture(
             distinctId,
             eventName,
             properties: null,
@@ -54,12 +54,12 @@ public static class CaptureExtensions
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool CaptureEvent(
+    public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName,
         Dictionary<string, object>? properties)
-        => NotNull(client).CaptureEvent(
+        => NotNull(client).Capture(
             distinctId,
             eventName,
             properties,
@@ -80,13 +80,13 @@ public static class CaptureExtensions
     /// value in this dictionary is ignored.
     /// </param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool CaptureEvent(
+    public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName,
         Dictionary<string, object> personPropertiesToSet,
         Dictionary<string, object> personPropertiesToSetOnce)
-        => client.CaptureEvent(distinctId, eventName, properties: null, personPropertiesToSet, personPropertiesToSetOnce);
+        => client.Capture(distinctId, eventName, properties: null, personPropertiesToSet, personPropertiesToSetOnce);
 
     /// <summary>
     /// Captures an event with properties to set on the user.
@@ -103,7 +103,7 @@ public static class CaptureExtensions
     /// value in this dictionary is ignored.
     /// </param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool CaptureEvent(
+    public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName,
@@ -115,7 +115,7 @@ public static class CaptureExtensions
         properties["$set"] = personPropertiesToSet;
         properties["$set_once"] = personPropertiesToSetOnce;
 
-        return NotNull(client).CaptureEvent(
+        return NotNull(client).Capture(
             distinctId,
             eventName,
             properties,
@@ -131,12 +131,12 @@ public static class CaptureExtensions
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
     /// <param name="groups">A set of groups to send with the event. The groups are identified by their group_type and group_key.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool CaptureEvent(
+    public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName,
         GroupCollection groups)
-        => NotNull(client).CaptureEvent(
+        => NotNull(client).Capture(
             distinctId,
             eventName,
             properties: null,
@@ -256,7 +256,7 @@ public static class CaptureExtensions
             properties[$"survey_response_{i}"] = surveyResponses[i];
         }
 
-        return NotNull(client).CaptureEvent(distinctId, "survey sent", properties, groups: null, sendFeatureFlags: false);
+        return NotNull(client).Capture(distinctId, "survey sent", properties, groups: null, sendFeatureFlags: false);
     }
 
     /// <summary>
@@ -309,6 +309,6 @@ public static class CaptureExtensions
     {
         properties ??= new Dictionary<string, object>();
         properties[eventPropertyName] = eventPropertyValue;
-        return client.CaptureEvent(distinctId, eventName, properties);
+        return client.Capture(distinctId, eventName, properties);
     }
 }

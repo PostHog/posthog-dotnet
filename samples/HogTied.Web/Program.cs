@@ -37,7 +37,7 @@ builder.AddPostHog()
                     if (user is not null)
                     {
                         // This stores information about the user in PostHog.
-                        await postHogClient.IdentifyPersonAsync(
+                        await postHogClient.IdentifyAsync(
                             userId,
                             user.Email,
                             user.UserName,
