@@ -20,7 +20,7 @@ public class TheCaptureEventMethod
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = client.CaptureEvent("some-distinct-id", "some_event");
+        var result = client.Capture("some-distinct-id", "some_event");
 
         Assert.True(result);
         await client.FlushAsync();
@@ -53,7 +53,7 @@ public class TheCaptureEventMethod
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = client.CaptureEvent(
+        var result = client.Capture(
             distinctId: "some-distinct-id",
             eventName: "some_event",
             groups: [
@@ -103,7 +103,7 @@ public class TheCaptureEventMethod
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = client.CaptureEvent("some-distinct-id", "some_event");
+        var result = client.Capture("some-distinct-id", "some_event");
 
         Assert.True(result);
         await client.FlushAsync();
@@ -142,7 +142,7 @@ public class TheCaptureEventMethod
         );
         var client = container.Activate<PostHogClient>();
 
-        var result = client.CaptureEvent("some-distinct-id", "dotnet test event", sendFeatureFlags: true);
+        var result = client.Capture("some-distinct-id", "dotnet test event", sendFeatureFlags: true);
 
         Assert.True(result);
         await client.FlushAsync();
@@ -255,7 +255,7 @@ public class TheCaptureEventMethod
         var client = container.Activate<PostHogClient>();
 
         // Call it without pre-loading flags.
-        var firstCaptureResult = client.CaptureEvent("distinct_id", "dotnet test event");
+        var firstCaptureResult = client.Capture("distinct_id", "dotnet test event");
 
         Assert.True(firstCaptureResult);
         await client.FlushAsync();
@@ -281,7 +281,7 @@ public class TheCaptureEventMethod
 
         // Load the feature flags
         await client.GetAllFeatureFlagsAsync("distinct_id", options: new AllFeatureFlagsOptions { OnlyEvaluateLocally = true });
-        var secondCaptureResult = client.CaptureEvent("distinct_id", "dotnet test event");
+        var secondCaptureResult = client.Capture("distinct_id", "dotnet test event");
 
         await client.FlushAsync();
         var secondRequestBody = secondRequestHandler.GetReceivedRequestBody(indented: true);
@@ -360,7 +360,7 @@ public class TheIdentifyPersonAsyncMethod
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.IdentifyPersonAsync("some-distinct-id");
+        var result = await client.IdentifyAsync("some-distinct-id");
 
         Assert.Equal(1, result.Status);
         var received = requestHandler.GetReceivedRequestBody(indented: true);
@@ -387,7 +387,7 @@ public class TheIdentifyPersonAsyncMethod
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.IdentifyPersonAsync(
+        var result = await client.IdentifyAsync(
             distinctId: "some-distinct-id",
             email: "wildling-lover@example.com",
             name: "Jon Snow",
@@ -435,7 +435,7 @@ public class TheIdentifyPersonAsyncMethod
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.IdentifyPersonAsync("some-distinct-id");
+        var result = await client.IdentifyAsync("some-distinct-id");
 
         Assert.Equal(1, result.Status);
         var received = requestHandler.GetReceivedRequestBody(indented: true);
@@ -466,7 +466,7 @@ public class TheIdentifyGroupAsyncMethod
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.IdentifyGroupAsync(type: "organization", key: "id:5", "PostHog");
+        var result = await client.GroupIdentifyAsync(type: "organization", key: "id:5", "PostHog");
 
         Assert.Equal(1, result.Status);
         var received = requestHandler.GetReceivedRequestBody(indented: true);

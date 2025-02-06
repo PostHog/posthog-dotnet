@@ -18,7 +18,7 @@ internal static class PostHogApiClientExtensions
     /// </param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
-    public static async Task<ApiResult> IdentifyPersonAsync(
+    public static async Task<ApiResult> IdentifyAsync(
         this PostHogApiClient client,
         string distinctId,
         Dictionary<string, object>? personPropertiesToSet,
@@ -47,7 +47,7 @@ internal static class PostHogApiClientExtensions
     /// <summary>
     /// Identify a group with additional properties
     /// </summary>
-    public static async Task<ApiResult> IdentifyGroupAsync(
+    public static async Task<ApiResult> GroupIdentifyAsync(
         this PostHogApiClient client,
         string type,
         StringOrValue<int> key,
