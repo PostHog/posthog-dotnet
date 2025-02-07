@@ -3,6 +3,9 @@ using Microsoft.Extensions.Options;
 using PostHog.Api;
 using PostHog.Config;
 using PostHog.Library;
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+using PostHog.Library.Polyfills;
+#endif
 
 namespace PostHog.Features;
 

@@ -86,7 +86,6 @@ public sealed class TestContainer : IServiceProvider
         });
     }
 
-
     /// <summary>
     /// Activates a new instance of <typeparamref name="T" /> using the services registered in the container.
     /// Use this for unit test subjects.

@@ -85,7 +85,7 @@ public readonly struct StringOrValue<T> : IStringOrObject, IEquatable<T>, IEquat
 
     public override string ToString() => (IsString ? StringValue : Value?.ToString()) ?? string.Empty;
 
-    public bool Equals(T? obj) => IsValue && EqualityComparer<T>.Default.Equals(Value, obj);
+    public bool Equals(T? obj) => IsValue && obj is not null && EqualityComparer<T>.Default.Equals(Value, obj);
 
     public bool Equals(StringOrValue<T> other)
         => (IsDefault && other.IsDefault)
