@@ -91,7 +91,6 @@ Inject the `IPostHogClient` interface into your controller or page:
 
 ```csharp
 posthogClient.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
-}
 ```
 
 ```csharp
