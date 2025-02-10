@@ -41,14 +41,13 @@ public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExter
     /// </param>
     /// <param name="minimumLevel">The minimum <see cref="LogLevel"/> of events to retrieve.</param>
     /// <param name="eventName">If specified, only events matching this name will be retrieved.</param>
-    /// <typeparam name="T">The .NET type that represents the category to fetch.</typeparam>
     public IReadOnlyList<LogEvent> GetAllEvents(string? categoryPrefix = "Serious.", LogLevel? minimumLevel = null, string? eventName = null)
     {
         List<LogEvent> destination;
         lock (_allEvents)
         {
             destination = _allEvents
-                .Where(e => categoryPrefix is null || e.CategoryName.StartsWith(categoryPrefix, StringComparison.Ordinal))
+                .Where(e => categoryPrefix is null || (e.CategoryName ?? string.Empty).StartsWith(categoryPrefix, StringComparison.Ordinal))
                 .Where(e => eventName is null || e.EventId.Name == eventName)
                 .Where(e => minimumLevel is null || e.LogLevel >= minimumLevel.Value)
                 .ToList();
@@ -147,11 +146,11 @@ public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExter
 
 public class LogEvent
 {
-    public required string CategoryName { get; init; }
-    public required LogLevel LogLevel { get; init; }
-    public required EventId EventId { get; init; }
-    public required Exception? Exception { get; init; }
-    public required string? Message { get; init; }
-    public required object? State { get; init; }
-    public required IReadOnlyList<object?> Scopes { get; init; }
+    public string? CategoryName { get; init; }
+    public LogLevel LogLevel { get; init; }
+    public EventId EventId { get; init; }
+    public Exception? Exception { get; init; }
+    public string? Message { get; init; }
+    public object? State { get; init; }
+    public IReadOnlyList<object?>? Scopes { get; init; }
 }

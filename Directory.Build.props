@@ -10,14 +10,12 @@
         <CIBuild Condition=" '$(NBGV_CloudBuildNumber)' != '' or '$(GITHUB_SHA)' != '' ">true</CIBuild>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-        <DefaultTargetFramework>net8.0</DefaultTargetFramework>
         <RollForward>Major</RollForward>
         <RepoBuildPath>$(RootDir)build\</RepoBuildPath>
         <RepoBinPath>$(RepoBuildPath)bin\</RepoBinPath>
         <RepoObjPath>$(RepoBuildPath)obj\</RepoObjPath>
         <BaseIntermediateOutputPath>$(RepoObjPath)$(MSBuildProjectName)\</BaseIntermediateOutputPath>
         <BaseOutputPath Condition=" '$(BaseOutputPath)' == '' ">$(RepoBinPath)$(MSBuildProjectName)\</BaseOutputPath>
-        <TargetFramework Condition=" '$(TargetFramework)' == '' ">$(DefaultTargetFramework)</TargetFramework>
         <EnablePackageValidation>true</EnablePackageValidation>
         <PackageOutputPath>$(RepoBuildPath)packages\$(Configuration)\</PackageOutputPath>
         <Company>PostHog, Inc.</Company>

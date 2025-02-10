@@ -1,9 +1,4 @@
-﻿using System.Collections.ObjectModel;
-using NSubstitute;
-using PostHog;
-using PostHog.Api;
-using PostHog.Features;
-using PostHog.Json;
+﻿using PostHog;
 using UnitTests.Fakes;
 
 #pragma warning disable CA2000
@@ -19,13 +14,10 @@ public class TheIsFeatureEnabledAsyncMethod
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddDecideResponse(
-            responseBody: new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = enabled
-                }.AsReadOnly()
-            });
+            $$"""
+            {"featureFlags": {"flag-key": {{enabled.ToString().ToLowerInvariant()}} } }
+            """
+        );
         var client = container.Activate<PostHogClient>();
 
         var result = await client.IsFeatureEnabledAsync("flag-key",
@@ -41,33 +33,41 @@ public class TheIsFeatureEnabledAsyncMethod
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddDecideResponse(
-            responseBody: new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = "premium-experience"
-                }.AsReadOnly()
-            });
+            """
+            {"featureFlags":{"flag-key": "premium-experience"}}
+            """
+        );
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.IsFeatureEnabledAsync("flag-key",
-            "distinctId", CancellationToken.None);
+        var result = await client.IsFeatureEnabledAsync("flag-key", "distinctId");
 
         Assert.True(result);
     }
 
     [Fact]
-    public async Task ReturnsNullWhenFlagDoesNotExist()
+    public async Task ReturnsFalseWhenFlagDoesNotExist() // TODO: Is this the correct behavior?
     {
-        var client = Substitute.For<IPostHogClient>();
-        client.GetAllFeatureFlagsAsync(
-                distinctId: "distinctId",
-                options: null,
-                cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(new ReadOnlyDictionary<string, FeatureFlag>(new Dictionary<string, FeatureFlag>()));
+        var container = new TestContainer();
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddDecideResponse(
+            """
+            {"featureFlags":{"flag-key": "premium-experience"}}
+            """
+        );
+        var client = container.Activate<PostHogClient>();
 
-        var result = await client.IsFeatureEnabledAsync("missing-flag-key",
-            "distinctId", CancellationToken.None);
+        var result = await client.IsFeatureEnabledAsync("not-flag-key", "distinctId");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task ReturnsNullWhenNoApiResponse()
+    {
+        var container = new TestContainer();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.IsFeatureEnabledAsync("not-flag-key", "distinctId");
 
         Assert.Null(result);
     }

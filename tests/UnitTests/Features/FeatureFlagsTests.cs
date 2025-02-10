@@ -1,13 +1,8 @@
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using PostHog;
-using PostHog.Api;
-using PostHog.Cache;
 using PostHog.Config;
 using PostHog.Features;
-using PostHog.Json;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 
@@ -306,13 +301,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddRepeatedDecideResponse(
             count: 4,
-            count => new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = $"feature-value-{count}"
-                }.AsReadOnly()
-            });
+            count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
@@ -2058,14 +2047,7 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse(
-            responseBody: new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = true
-                }.AsReadOnly()
-            });
+        messageHandler.AddDecideResponse("""{"featureFlags": {}}""");
         var client = container.Activate<PostHogClient>();
 
         var result = await client.GetFeatureFlagAsync("unknown-flag-key", "distinctId");
@@ -2077,15 +2059,11 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task ReturnsStringFlag()
     {
         var container = new TestContainer();
-        var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse(
-            responseBody: new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = "premium-experience"
-                }.AsReadOnly()
-            });
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {"featureFlags": {"flag-key": "premium-experience"}}
+            """
+        );
         var client = container.Activate<PostHogClient>();
 
         var result = await client.GetFeatureFlagAsync("flag-key", "distinct-id");
@@ -2101,13 +2079,7 @@ public class TheGetFeatureFlagAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddRepeatedDecideResponse(
             count: 2,
-            responseBody: new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = true
-                }.AsReadOnly()
-            });
+            responseBody: """{"featureFlags": {"flag-key": true}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
@@ -2150,13 +2122,7 @@ public class TheGetFeatureFlagAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddRepeatedDecideResponse(
             count: 2,
-            responseBody: new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = true
-                }.AsReadOnly()
-            });
+            responseBody: """{"featureFlags": {"flag-key": true}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
@@ -2214,14 +2180,7 @@ public class TheGetFeatureFlagAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddRepeatedDecideResponse(
             count: 6,
-            new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = $"flag-variant-1",
-                    ["another-flag-key"] = $"flag-variant-2"
-                }.AsReadOnly()
-            });
+            responseBody: """{"featureFlags": {"flag-key": "flag-variant-1", "another-flag-key": "flag-variant-2"}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
@@ -2318,14 +2277,7 @@ public class TheGetFeatureFlagAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddRepeatedDecideResponse(
             count: 6,
-            new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = $"flag-variant-1",
-                    ["another-flag-key"] = $"flag-variant-2"
-                }.AsReadOnly()
-            });
+            """{"featureFlags": {"flag-key": "flag-variant-1", "another-flag-key": "flag-variant-2" } }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
@@ -2414,13 +2366,7 @@ public class TheGetFeatureFlagAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddRepeatedDecideResponse(
             count: 4,
-            count => new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = $"feature-value-{count}"
-                }.AsReadOnly()
-            });
+            responseBodyFunc: count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
@@ -3095,38 +3041,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
     }
 
     [Fact]
-    public async Task RetrievesFlagFromHttpContextCacheOnSecondCall()
-    {
-        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        var httpContext = new DefaultHttpContext();
-        httpContextAccessor.HttpContext.Returns(httpContext);
-        var container = new TestContainer(services =>
-        {
-            services.AddSingleton<IFeatureFlagCache>(new HttpContextFeatureFlagCache(httpContextAccessor));
-        });
-        container.FakeHttpMessageHandler.AddDecideResponse(
-            new DecideApiResult
-            {
-                FeatureFlags = new Dictionary<string, StringOrValue<bool>>
-                {
-                    ["flag-key"] = true,
-                    ["another-flag-key"] = "some-value",
-                }.AsReadOnly()
-            }
-        );
-        var client = container.Activate<PostHogClient>();
-
-        var flags = await client.GetAllFeatureFlagsAsync(distinctId: "1234");
-        var flagsAgain = await client.GetAllFeatureFlagsAsync(distinctId: "1234");
-        var firstFlag = await client.GetFeatureFlagAsync("flag-key", "1234");
-
-        Assert.NotEmpty(flags);
-        Assert.Same(flags, flagsAgain);
-        Assert.NotNull(firstFlag);
-        Assert.Equal("flag-key", firstFlag.Key);
-    }
-
-    [Fact]
     public async Task UpdatesFeatureFlagsOnTimer()
     {
         var container = new TestContainer(services =>
@@ -3139,17 +3053,20 @@ public class TheGetAllFeatureFlagsAsyncMethod
             });
         });
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
-            responseBody: new LocalEvaluationApiResult(
-                Flags:
-                [
-                    new LocalFeatureFlag(
-                            Id: 123,
-                            TeamId: 456,
-                            Name: "Flag Name",
-                            Key: "flag-key",
-                            Filters: null)
-                ],
-                GroupTypeMapping: new Dictionary<string, string>()));
+            """
+            {
+                "flags": [
+                    {
+                        "id": 123,
+                        "team_id": 456,
+                        "name": "Flag Name",
+                        "key": "flag-key",
+                        "filters": null
+                    }
+                ]
+            }
+            """
+        );
         var client = container.Activate<PostHogClient>();
 
         var result = await client.GetAllFeatureFlagsAsync("distinct_id");
@@ -3159,25 +3076,27 @@ public class TheGetAllFeatureFlagsAsyncMethod
         Assert.Equal("flag-key", flag.Key);
 
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
-            responseBody: new LocalEvaluationApiResult(
-                Flags:
-                [
-                    new LocalFeatureFlag(
-                            Id: 123,
-                            TeamId: 456,
-                            Name: "Flag Name",
-                            Key: "flag-key-2",
-                            Filters: null)
-                ],
-                GroupTypeMapping: new Dictionary<string, string>()));
+            """
+            {
+                "flags": [
+                    {
+                        "id": 123,
+                        "team_id": 456,
+                        "name": "Flag Name",
+                        "key": "flag-key-2",
+                        "filters": null
+                    }
+                ]
+            }
+            """
+        );
         container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(31));
-        await Task.Delay(1); // Cede execution to thread that's loading the new flags.
+        await Task.Delay(100); // Cede execution to thread that's loading the new flags.
 
         var newResult = await client.GetAllFeatureFlagsAsync("distinct_id");
 
         Assert.NotNull(newResult);
         var newFlag = Assert.Single(newResult.Values);
         Assert.Equal("flag-key-2", newFlag.Key);
-
     }
 }

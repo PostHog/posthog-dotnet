@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using PostHog;
 using PostHog.Cache;
 using PostHog.Features;
+using UnitTests.Fakes;
 
 namespace HttpContextFeatureFlagCacheTests;
 
@@ -72,5 +75,32 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
         var result = await cache.GetAndCacheFeatureFlagsAsync(distinctId, fetcher, CancellationToken.None);
 
         Assert.Equal(featureFlags, result);
+    }
+
+    [Fact]
+    public async Task RetrievesFlagFromHttpContextCacheOnSecondCall()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Returns(httpContext);
+        var container = new TestContainer(services =>
+        {
+            services.AddSingleton<IFeatureFlagCache>(new HttpContextFeatureFlagCache(httpContextAccessor));
+        });
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {"featureFlags":{"flag-key": true, "another-flag-key": "some-value"}}
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var flags = await client.GetAllFeatureFlagsAsync(distinctId: "1234");
+        var flagsAgain = await client.GetAllFeatureFlagsAsync(distinctId: "1234");
+        var firstFlag = await client.GetFeatureFlagAsync("flag-key", "1234");
+
+        Assert.NotEmpty(flags);
+        Assert.Same(flags, flagsAgain);
+        Assert.NotNull(firstFlag);
+        Assert.Equal("flag-key", firstFlag.Key);
     }
 }

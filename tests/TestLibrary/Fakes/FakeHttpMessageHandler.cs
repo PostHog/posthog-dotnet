@@ -37,7 +37,18 @@ public class FakeHttpMessageHandler : HttpMessageHandler
         return handler;
     }
 
-    public RequestHandler AddResponse(Uri url, HttpMethod httpMethod, string responseBody, string contentType)
+    public RequestHandler AddResponse(
+        Uri url,
+        HttpMethod httpMethod,
+        object responseBody,
+        string contentType = "application/json")
+        => AddResponse(url, httpMethod, SerializeObject(responseBody), contentType);
+
+    public RequestHandler AddResponse(
+        Uri url,
+        HttpMethod httpMethod,
+        string responseBody,
+        string contentType = "application/json")
     {
 #pragma warning disable CA2000
         var responseMessage = CreateResponse(responseBody, contentType);
@@ -47,21 +58,11 @@ public class FakeHttpMessageHandler : HttpMessageHandler
         return handler;
     }
 
-    public RequestHandler AddResponse<TResponseBody>(
-        Uri url,
-        HttpMethod httpMethod,
-        TResponseBody responseBody,
-        string contentType = "application/json")
-    {
-        var json = SerializeObject(responseBody);
-        return AddResponse(url, httpMethod, json, contentType);
-    }
-
-    public void AddRepeatedResponses<TResponseBody>(
+    public void AddRepeatedResponses(
         int count,
         Uri url,
         HttpMethod httpMethod,
-        Func<int, TResponseBody> responseBodyFunc,
+        Func<int, string> responseBodyFunc,
         string contentType = "application/json")
     {
         for (var i = 0; i < count; i++)

@@ -1,4 +1,7 @@
 using Microsoft.Extensions.Internal;
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+using PostHog.Library.Polyfills;
+#endif
 
 namespace PostHog.Library;
 

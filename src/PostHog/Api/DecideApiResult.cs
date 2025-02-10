@@ -19,5 +19,5 @@ internal record DecideApiResult(
     bool ErrorsWhileComputingFlags = false,
     IReadOnlyDictionary<string, string>? FeatureFlagPayloads = null);
 
-public record FeatureFlagsConfig([property: JsonPropertyName("enable_collect_everything")] bool EnableCollectEverything);
-public record Analytics(string Endpoint);
+internal record FeatureFlagsConfig([property: JsonPropertyName("enable_collect_everything")] bool EnableCollectEverything);
+internal record Analytics(string Endpoint);

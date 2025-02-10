@@ -137,8 +137,8 @@ public class TheCaptureEventMethod
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         container.FakeHttpMessageHandler.AddDecideResponse(
             """
-          {"featureFlags": {"beta-feature": "random-variant", "another-feature": "another-variant", "false-flag": false}}
-          """
+            {"featureFlags": {"beta-feature": "random-variant", "another-feature": "another-variant", "false-flag": false}}
+            """
         );
         var client = container.Activate<PostHogClient>();
 

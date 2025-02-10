@@ -6,6 +6,9 @@ using PostHog.Config;
 using PostHog.Json;
 using PostHog.Library;
 using PostHog.Versioning;
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+using PostHog.Library.Polyfills;
+#endif
 
 namespace PostHog.Api;
 

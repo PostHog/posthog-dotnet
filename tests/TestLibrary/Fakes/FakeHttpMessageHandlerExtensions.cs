@@ -35,7 +35,7 @@ internal static class FakeHttpMessageHandlerExtensions
             HttpMethod.Post,
             responseBody: responseBody);
 
-    public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, Func<int, DecideApiResult> responseBodyFunc)
+    public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, Func<int, string> responseBodyFunc)
         => handler.AddRepeatedResponses(
             count,
             DecideUrl,
@@ -43,12 +43,11 @@ internal static class FakeHttpMessageHandlerExtensions
             responseBodyFunc: responseBodyFunc);
 
     public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
-        => handler.AddRepeatedDecideResponse(count, _ => Deserialize<DecideApiResult>(responseBody));
-
-    public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, DecideApiResult responseBody)
         => handler.AddRepeatedDecideResponse(count, _ => responseBody);
 
-    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(this FakeHttpMessageHandler handler, string responseBody)
+    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
+        this FakeHttpMessageHandler handler,
+        string responseBody)
         => handler.AddLocalEvaluationResponse(Deserialize<LocalEvaluationApiResult>(responseBody));
 
     public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
