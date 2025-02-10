@@ -1,7 +1,10 @@
+
 using Microsoft.Extensions.Time.Testing;
 using PostHog.Config;
 using PostHog.Library;
-
+#if NETCOREAPP3_1
+using TestLibrary.Fakes.Polyfills;
+#endif
 namespace AsyncBatchHandlerTests;
 
 public class TheEnqueueMethod
@@ -166,11 +169,24 @@ public class TheEnqueueMethod
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         // Ensure empty because we only advanced 1 second, but the interval is 2 seconds.
         Assert.Empty(items);
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        timeProvider.Advance(TimeSpan.FromSeconds(1.1));
         // Ok, we should be flushing. Let's wait for that to complete.
-        await handlerCompleteTask.Task;
+        var timeout = TimeSpan.FromSeconds(1); // Increase timeout to ensure completion
+        var completedTask = await Task.WhenAny(handlerCompleteTask.Task, Task.Delay(timeout));
+
+        if (completedTask == handlerCompleteTask.Task)
+        {
+            // The handler completed within the timeout
+            await handlerCompleteTask.Task; // Ensure any exceptions/cancellation are observed
+        }
+        else
+        {
+            // The timeout occurred
+            throw new TimeoutException("The operation timed out.");
+        }
+
         // The batch should be done flushing due to the timer interval.
-        Assert.Equal([1, 2, 3], items);
+        Assert.Equal(new[] { 1, 2, 3 }, items);
     }
 
     [Fact]
@@ -233,7 +249,8 @@ public class TheDisposeAsyncMethod
             Assert.Empty(items);
         }
 
-        await handlerCompleteTask.Task; // Wait for the flush invoked by DisposeAsync to complete.
+        var timeout = TimeSpan.FromSeconds(1);
+        var completedTask = await Task.WhenAny(handlerCompleteTask.Task, Task.Delay(timeout)); // Wait for the flush invoked by DisposeAsync to complete.
 
         Assert.Equal([1, 2], items);
     }

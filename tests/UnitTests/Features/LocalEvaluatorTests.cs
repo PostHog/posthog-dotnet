@@ -344,6 +344,7 @@ public class TheEvaluateFeatureFlagMethod
         Assert.Equal(expected, result);
     }
 
+#if !NETCOREAPP3_1
     [Theory]
     [InlineData("2024-01-21", ComparisonOperator.IsDateBefore, "-30h", false)]
     [InlineData("2023-12-29", ComparisonOperator.IsDateBefore, "-24d", false)]
@@ -387,6 +388,7 @@ public class TheEvaluateFeatureFlagMethod
 
         Assert.Equal(expected, result);
     }
+#endif
 
     [Theory]
     [InlineData("2024-01-21T16:15:49Z", ComparisonOperator.IsDateBefore, "-30h", true)]

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#/ Usage: bin/test [<configuration>]
+#/ Description: Runs all the tests for the target frameworks: netstandard2.1 and net8.0
+source bin/helpers/_utils.sh
+set_source_and_root_dir
+
+project_dir="$root_dir/samples/HogTied.Web/HogTied.Web.csproj"
+
+if [ -z $configuration ]; then
+  configuration=Debug
+fi
+
+dotnet test

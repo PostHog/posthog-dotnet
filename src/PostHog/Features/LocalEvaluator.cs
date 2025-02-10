@@ -1,6 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+using PostHog.Library.Polyfills;
+using Convert = PostHog.Library.Polyfills.Convert;
+#else
+using Convert = System.Convert;
 using System.Security.Cryptography;
+#endif
+
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -517,6 +524,19 @@ internal sealed class LocalEvaluator
         return null;
     }
 
+    static byte[] HashData(string key)
+    {
+        var keyBytes = Encoding.UTF8.GetBytes(key);
+#pragma warning disable CA5350 // This SHA is not used for security purposes
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+        using var sha1 = new System.Security.Cryptography.SHA1Managed();
+        return sha1.ComputeHash(keyBytes);
+#else
+        return SHA1.HashData(keyBytes);
+#endif
+#pragma warning restore
+    }
+
     // This function takes a distinct_id and a feature flag key and returns a float between 0 and 1.
     // Given the same distinct_id and key, it'll always return the same float. These floats are
     // uniformly distributed between 0 and 1, so if we want to show this feature to 20% of traffic
@@ -524,9 +544,8 @@ internal sealed class LocalEvaluator
     // Ported from https://github.com/PostHog/posthog-python/blob/master/posthog/feature_flags.py#L23C1-L30
     static double Hash(string key, string distinctId, string salt = "")
     {
-        var hashKey = $"{key}.{distinctId}{salt}";
-#pragma warning disable CA5350 // This SHA is not used for security purposes
-        var hashBytes = SHA1.HashData(Encoding.UTF8.GetBytes(hashKey));
+        var hashBytes = HashData($"{key}.{distinctId}{salt}");
+
 #pragma warning restore CA5350
 
         // Convert the first 15 characters of the hex representation to an integer

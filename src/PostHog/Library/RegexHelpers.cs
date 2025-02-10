@@ -28,7 +28,11 @@ internal static class RegexHelpers
             regex = new Regex(pattern, options);
             return true;
         }
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+        catch (ArgumentException)
+#else
         catch (RegexParseException)
+#endif
         {
             return false;
         }

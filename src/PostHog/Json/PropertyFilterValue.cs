@@ -196,7 +196,11 @@ public class PropertyFilterValue
 
         object? ParseDate(object? value)
         {
-            if (value is DateTime or DateTimeOffset or DateOnly)
+            if (value is DateTime or DateTimeOffset
+#if NET5_0_OR_GREATER
+                or DateOnly
+#endif
+)
             {
                 return value;
             }
