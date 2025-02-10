@@ -9,6 +9,9 @@ using PostHog.Library.Polyfills;
 
 namespace PostHog.Library.Polyfills;
 
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
 internal sealed class TimerQueue
 {
     public static readonly TimerQueue[] Instances = CreateTimerQueues();
@@ -105,5 +108,4 @@ internal sealed class TimerQueue
         }
     }
 }
-
 #endif

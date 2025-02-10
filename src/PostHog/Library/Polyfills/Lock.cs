@@ -3,6 +3,10 @@ using System.Runtime.CompilerServices;
 
 namespace PostHog.Library.Polyfills;
 
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+
 /// <summary>
 /// A high-performance mutual exclusion lock similar to .NET's internal Lock class.
 /// </summary>
