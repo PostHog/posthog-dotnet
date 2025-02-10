@@ -532,6 +532,104 @@ public class TheGetFeatureFlagAsyncMethod
         );
     }
 
+    [Fact] // Ported from PostHog/posthog-python test_flag_person_properties
+    public async Task MatchesOnPersonPropertiesCaseSensitively()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {
+               "flags":[
+                  {
+                     "id":1,
+                     "name":"Beta Feature",
+                     "key":"person-flag",
+                     "active":true,
+                     "filters":{
+                        "groups":[
+                           {
+                              "properties":[
+                                 {
+                                    "key":"region",
+                                    "operator":"exact",
+                                    "value":[
+                                       "USA"
+                                    ],
+                                    "type":"person"
+                                 }
+                              ],
+                              "rollout_percentage":100
+                           }
+                        ]
+                     }
+                  },
+                  {
+                    "id":2,
+                    "name":"Beta Feature",
+                    "key":"PERSON-FLAG",
+                    "active":true,
+                    "filters":{
+                       "groups":[
+                          {
+                             "properties":[
+                                {
+                                   "key":"region",
+                                   "operator":"exact",
+                                   "value":[
+                                      "Canada"
+                                   ],
+                                   "type":"person"
+                                }
+                             ],
+                             "rollout_percentage":100
+                          }
+                       ]
+                    }
+                 }
+               ]
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(
+            await client.GetFeatureFlagAsync(
+                "person-flag",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "USA" }
+                })
+        );
+        Assert.False(
+            await client.GetFeatureFlagAsync(
+                "PERSON-FLAG",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "USA" }
+                })
+        );
+        Assert.False(
+            await client.GetFeatureFlagAsync(
+                "person-flag",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "Canada" }
+                })
+        );
+        Assert.True(
+            await client.GetFeatureFlagAsync(
+                "PERSON-FLAG",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "Canada" }
+                })
+        );
+    }
+
     [Fact] // Ported from PostHog/posthog-python test_flag_group_properties
     public async Task MatchesOnGroupProperties()
     {
