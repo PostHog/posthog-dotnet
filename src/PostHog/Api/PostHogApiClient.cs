@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog.Config;
@@ -7,7 +8,6 @@ using PostHog.Json;
 using PostHog.Library;
 using PostHog.Versioning;
 #if NETSTANDARD2_0 || NETSTANDARD2_1
-using PostHog.Library.Polyfills;
 #endif
 
 namespace PostHog.Api;
@@ -41,6 +41,10 @@ internal sealed class PostHogApiClient : IDisposable
         _timeProvider = timeProvider;
 
         _httpClient = httpClient;
+        var framework = RuntimeInformation.FrameworkDescription;
+        var os = RuntimeInformation.OSDescription;
+        var arch = RuntimeInformation.ProcessArchitecture;
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"{LibraryName}/{VersionConstants.Version} ({framework}; {os}; {arch})");
 
         logger.LogTraceApiClientCreated(HostUrl);
     }
@@ -157,6 +161,9 @@ internal sealed class PostHogApiClient : IDisposable
 
         properties["$lib"] = LibraryName;
         properties["$lib_version"] = VersionConstants.Version;
+        properties["$os"] = RuntimeInformation.OSDescription;
+        properties["$framework"] = RuntimeInformation.FrameworkDescription;
+        properties["$arch"] = RuntimeInformation.ProcessArchitecture.ToString();
         properties["$geoip_disable"] = true;
 
         properties.Merge(_options.Value.SuperProperties);
