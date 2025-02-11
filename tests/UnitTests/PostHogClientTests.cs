@@ -324,7 +324,6 @@ public class TheCaptureEventMethod
                     "id":1,
                     "name":"Beta Feature",
                     "key":"beta-feature",
-                    "is_simple_flag":false,
                     "active":true,
                     "rollout_percentage":100,
                     "filters":{

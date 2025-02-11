@@ -29,7 +29,6 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                        "id":1,
                        "name":"Beta Feature",
                        "key":"beta-feature",
-                       "is_simple_flag":true,
                        "active":{{active.ToString().ToLowerInvariant()}},
                        "rollout_percentage":100,
                        "filters":{
@@ -486,7 +485,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"person-flag",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -642,7 +640,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id":1,
                     "name":"Beta Feature",
                     "key":"group-flag",
-                    "is_simple_flag":true,
                     "active":true,
                     "filters":{
                        "aggregation_group_type_index":0,
@@ -769,7 +766,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id":1,
                     "name":"Beta Feature",
                     "key":"group-flag",
-                    "is_simple_flag":true,
                     "active":true,
                     "filters":{
                        "aggregation_group_type_index":0,
@@ -833,7 +829,6 @@ public class TheGetFeatureFlagAsyncMethod
                        "id": 1,
                        "name": "Beta Feature",
                        "key": "complex-flag",
-                       "is_simple_flag": false,
                        "active": true,
                        "filters": {
                            "groups": [
@@ -990,7 +985,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1012,7 +1006,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature2",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1069,7 +1062,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1091,7 +1083,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature2",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1160,7 +1151,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id": 1,
                     "name": "Beta Feature",
                     "key": "beta-feature",
-                    "is_simple_flag": false,
                     "active": true,
                     "rollout_percentage": 100,
                     "filters": {
@@ -1211,7 +1201,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id": 1,
                     "name": "Beta Feature",
                     "key": "beta-feature",
-                    "is_simple_flag": true,
                     "active": true,
                     "filters": {
                         "groups": [
@@ -1274,7 +1263,6 @@ public class TheGetFeatureFlagAsyncMethod
                         "id": 1,
                         "name": "Beta Feature",
                         "key": "beta-feature",
-                        "is_simple_flag": false,
                         "active": true,
                         "rollout_percentage": 100,
                         "filters": {
@@ -1310,7 +1298,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1397,7 +1384,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1509,7 +1495,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1644,7 +1629,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1689,7 +1673,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1763,7 +1746,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1856,7 +1838,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1930,7 +1911,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -2011,7 +1991,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"person-flag",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -2077,7 +2056,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -2501,7 +2479,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2517,7 +2494,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2532,7 +2508,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":3,
                         "name":"Beta Feature",
                         "key":"beta-feature2",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2591,7 +2566,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "rollout_percentage":100,
                          "filters":{
@@ -2612,7 +2586,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -2632,7 +2605,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":3,
                          "name":"Beta Feature",
                          "key":"beta-feature2",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -2738,7 +2710,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2754,7 +2725,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2792,7 +2762,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "rollout_percentage":100,
                          "filters":{
@@ -2813,7 +2782,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -2866,7 +2834,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2882,7 +2849,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2897,7 +2863,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":3,
                         "name":"Beta Feature",
                         "key":"beta-feature2",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2953,7 +2918,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2972,7 +2936,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2990,7 +2953,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":3,
                         "name":"Beta Feature",
                         "key":"beta-feature2",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -3041,7 +3003,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "rollout_percentage":100,
                          "filters":{
@@ -3059,7 +3020,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -3093,8 +3053,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
-                         "active":false,
+                              "active":false,
                          "rollout_percentage":100,
                          "filters":{
                             "groups":[
@@ -3111,8 +3070,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
-                         "active":true,
+                              "active":true,
                          "filters":{
                             "groups":[
                                {
