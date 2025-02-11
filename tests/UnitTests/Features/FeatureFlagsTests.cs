@@ -149,10 +149,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true,
-                      "$active_feature_flags": [
-                        "flag-key"
-                      ]
+                      "$geoip_disable": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -166,10 +163,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true,
-                      "$active_feature_flags": [
-                        "flag-key"
-                      ]
+                      "$geoip_disable": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -183,8 +177,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true,
-                      "$active_feature_flags": []
+                      "$geoip_disable": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
