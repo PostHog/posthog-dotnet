@@ -46,6 +46,7 @@ public static class Registration
         IConfigurationSection configurationSection)
     {
         NotNull(builder).Services.Configure<PostHogOptions>(configurationSection);
+        builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton<IFeatureFlagCache, HttpContextFeatureFlagCache>();
         builder.Services.AddSingleton<ITaskScheduler, TaskRunTaskScheduler>();
         builder.Services.AddSingleton<IPostHogClient, PostHogClient>();
