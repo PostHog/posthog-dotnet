@@ -21,7 +21,7 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
         var distinctId = "user123";
         var featureFlags = new Dictionary<string, FeatureFlag>
         {
-            { "feature1", new FeatureFlag(Key: "feature1", IsEnabled: true) }
+            { "feature1", new FeatureFlag { Key = "feature1", IsEnabled = true } }
         };
 
         Func<CancellationToken, Task<IReadOnlyDictionary<string, FeatureFlag>>> fetcher = _ =>
@@ -41,7 +41,7 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
         var distinctId = "user123";
         var cachedFeatureFlags = new Dictionary<string, FeatureFlag>
         {
-            { "feature1", new FeatureFlag(Key: "feature1", IsEnabled: true) }
+            { "feature1", new FeatureFlag { Key = "feature1", IsEnabled = true } }
         };
         httpContext.Items[$"$PostHog(feature_flags):{distinctId}"] = cachedFeatureFlags;
         httpContextAccessor.HttpContext.Returns(httpContext);
@@ -66,7 +66,7 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
         var distinctId = "user123";
         var featureFlags = new Dictionary<string, FeatureFlag>
         {
-            { "feature1", new FeatureFlag(Key: "feature1", IsEnabled: true) }
+            { "feature1", new FeatureFlag { Key = "feature1", IsEnabled = true } }
         };
 
         Func<CancellationToken, Task<IReadOnlyDictionary<string, FeatureFlag>>> fetcher = _ =>

@@ -7,16 +7,19 @@ namespace PostHog.Features;
 /// <summary>
 /// Represents a feature flag.
 /// </summary>
-/// <param name="Key">The feature flag key.</param>
-/// <param name="IsEnabled"><c>true</c> if the feature is enabled for the current user, otherwise <c>false</c>.</param>
-/// <param name="VariantKey">For multivariate feature flags, this is the key enabled for the user.</param>
-/// <param name="Payload">The payload for the flag or the variant.</param>
-public record FeatureFlag(
-    string Key,
-    bool IsEnabled,
-    string? VariantKey = null,
-    string? Payload = null)
+public record FeatureFlag
 {
+    /// <summary>
+    /// The key of the feature flag.
+    /// </summary>
+    public required string Key { get; init; }
+
+    public string? Payload { get; init; }
+
+    public string? VariantKey { get; init; }
+
+    public bool IsEnabled { get; init; } = true;
+
     /// <summary>
     /// Creates a <see cref="FeatureFlag"/> instance as a result of the /decide endpoint response. Since payloads are
     /// already calculated, we can look them up by the feature key.
@@ -30,7 +33,13 @@ public record FeatureFlag(
         DecideApiResult apiResult)
     {
         var payload = NotNull(apiResult).FeatureFlagPayloads?.GetValueOrDefault(key);
-        return new FeatureFlag(key, value, payload);
+        return new FeatureFlag
+        {
+            Key = key,
+            IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
+            VariantKey = value.StringValue,
+            Payload = payload
+        };
     }
 
     /// <summary>
@@ -48,27 +57,13 @@ public record FeatureFlag(
 #pragma warning disable CA1308
         var payloadKey = value.StringValue ?? value.Value.ToString().ToLowerInvariant();
 #pragma warning restore CA1308
-        return new FeatureFlag(key, value, NotNull(localFeatureFlag).Filters?.Payloads?.GetValueOrDefault(payloadKey));
-    }
-
-    FeatureFlag(string key, StringOrValue<bool> value, string? payload)
-        : this(
-            key,
-            value.IsString ? value.StringValue is not null : value.Value,
-            VariantKey: value.StringValue,
-            Payload: payload)
-    {
-    }
-
-    internal FeatureFlag(string key, StringOrValue<bool> value, IReadOnlyDictionary<string, string>? payloads = null)
-        : this(
-            key,
-            value.IsString ? value.StringValue is not null : value.Value,
-            VariantKey: value.StringValue,
-#pragma warning disable CA1308 // We gotta match what PostHog sends us
-            Payload: payloads?.GetValueOrDefault(value.StringValue ?? value.Value.ToString().ToLowerInvariant()))
-#pragma warning restore CA1308
-    {
+        return new FeatureFlag
+        {
+            Key = key,
+            IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
+            VariantKey = value.StringValue,
+            Payload = NotNull(localFeatureFlag).Filters?.Payloads?.GetValueOrDefault(payloadKey)
+        };
     }
 
     /// <summary>

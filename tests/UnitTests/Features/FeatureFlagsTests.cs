@@ -29,7 +29,6 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                        "id":1,
                        "name":"Beta Feature",
                        "key":"beta-feature",
-                       "is_simple_flag":true,
                        "active":{{active.ToString().ToLowerInvariant()}},
                        "rollout_percentage":100,
                        "filters":{
@@ -150,10 +149,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true,
-                      "$active_feature_flags": [
-                        "flag-key"
-                      ]
+                      "$geoip_disable": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -167,10 +163,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true,
-                      "$active_feature_flags": [
-                        "flag-key"
-                      ]
+                      "$geoip_disable": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -184,8 +177,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true,
-                      "$active_feature_flags": []
+                      "$geoip_disable": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -313,7 +305,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     }
 
     [Fact]
-    public async Task CapturesFeatureFlagRealExample()
+    public async Task CapturesFeatureFlagButNotAllFlags() // Ported from PostHog/posthog-python test_capture_is_called_but_does_not_add_all_flags
     {
         var container = new TestContainer("fake-personal-api-key");
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
@@ -321,85 +313,39 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             {
                 "flags": [
                     {
-                        "id": 91866,
-                        "team_id": 110510,
-                        "name": "A multivariate feature flag that tells you what character you are",
-                        "key": "hogtied_got_character",
+                        "id": 1,
+                        "name": "Beta feature",
+                        "key": "complex-flag",
                         "filters": {
                             "groups": [
                                 {
-                                    "variant": "cersei",
                                     "properties": [
                                         {
-                                            "key": "join_date",
+                                            "key": "region",
                                             "type": "person",
-                                            "value": "-14d",
-                                            "operator": "is_date_before"
-                                        },
-                                        {
-                                            "key": "leave_date",
-                                            "type": "person",
-                                            "value": "2025-01-24 14:20:00",
-                                            "operator": "is_date_after"
-                                        }
-                                    ],
-                                    "rollout_percentage": 100
-                                },
-                                {
-                                    "variant": "Cersei",
-                                    "properties": [
-                                        {
-                                            "key": "email",
-                                            "type": "person",
-                                            "value": [
-                                                "haacked@gmail.com"
-                                            ],
+                                            "value": "USA",
                                             "operator": "exact"
                                         }
                                     ],
                                     "rollout_percentage": 100
                                 }
-                            ],
-                            "payloads": {
-                                "Cersei": "25",
-                                "cersei": "{\"role\": \"burn it all down\"}",
-                                "tyrion": "100",
-                                "danaerys": "{\"role\": \"khaleesi\"}",
-                                "jon-snow": "{\"role\": \"king of the north\"}"
-                            },
-                            "multivariate": {
-                                "variants": [
-                                    {
-                                        "key": "tyrion",
-                                        "name": "The one who talks",
-                                        "rollout_percentage": 25
-                                    },
-                                    {
-                                        "key": "danaerys",
-                                        "name": "The mother of dragons",
-                                        "rollout_percentage": 25
-                                    },
-                                    {
-                                        "key": "jon-snow",
-                                        "name": "Knows nothing",
-                                        "rollout_percentage": 25
-                                    },
-                                    {
-                                        "key": "cersei",
-                                        "name": "Not nice",
-                                        "rollout_percentage": 15
-                                    },
-                                    {
-                                        "key": "Cersei",
-                                        "name": "Capital",
-                                        "rollout_percentage": 10
-                                    }
-                                ]
-                            }
+                            ]
                         },
-                        "deleted": false,
-                        "active": true,
-                        "ensure_experience_continuity": false
+                        "active": true
+                    },
+                    {
+                        "id": 2,
+                        "name": "Gamma feature",
+                        "key": "simple-flag",
+                        "filters": {
+                            "groups": [
+                                {
+                                    "properties": [],
+                                    "rollout_percentage": 100
+                                }
+                            ]
+                        },
+                        "active": true
                     }
                 ],
                 "group_type_mapping": {
@@ -413,34 +359,22 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.IsFeatureEnabledAsync(
-            "hogtied_got_character",
-            distinctId: "659df793-429a-4517-84ff-747dfc103e6c",
-            options: new FeatureFlagOptions
-            {
-                PersonProperties = new Dictionary<string, object?>
+        Assert.True(
+            await client.IsFeatureEnabledAsync(
+                "complex-flag",
+                distinctId: "659df793-429a-4517-84ff-747dfc103e6c",
+                options: new FeatureFlagOptions
                 {
-                    ["join_date"] = "2023-02-02",
-                    ["leave_date"] = "2025-02-02"
-                },
-                Groups =
-                [
-                    new Group("organization", "01943db3-83be-0000-e7ea-ecae4d9b5afb"),
-                    new Group("project", "aaaa-bbbb-cccc", new Dictionary<string, object?>
+                    PersonProperties = new Dictionary<string, object?>
                     {
-                        ["size"] = "large"
-                    })
-                ],
-                OnlyEvaluateLocally = true
-            });
-
-        Assert.True(result);
+                        ["region"] = "USA"
+                    },
+                    OnlyEvaluateLocally = true
+                })
+        );
 
         await client.FlushAsync();
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        // NOTE: $active_feature_flags is empty because the person properties is not passed
-        // through to the capture call when evaluating a feature flag. Should we pass it through?
-        // TODO: I need to confer with the authors of the other libraries.
         Assert.Equal(
             $$"""
               {
@@ -450,19 +384,14 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                   {
                     "event": "$feature_flag_called",
                     "properties": {
-                      "$feature_flag": "hogtied_got_character",
-                      "$feature_flag_response": "cersei",
+                      "$feature_flag": "complex-flag",
+                      "$feature_flag_response": true,
                       "locally_evaluated": false,
-                      "$feature/hogtied_got_character": "cersei",
+                      "$feature/complex-flag": true,
                       "distinct_id": "659df793-429a-4517-84ff-747dfc103e6c",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{VersionConstants.Version}}",
-                      "$geoip_disable": true,
-                      "$groups": {
-                        "organization": "01943db3-83be-0000-e7ea-ecae4d9b5afb",
-                        "project": "aaaa-bbbb-cccc"
-                      },
-                      "$active_feature_flags": []
+                      "$geoip_disable": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -486,7 +415,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"person-flag",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -532,6 +460,104 @@ public class TheGetFeatureFlagAsyncMethod
         );
     }
 
+    [Fact] // Ported from PostHog/posthog-python test_flag_person_properties
+    public async Task MatchesOnPersonPropertiesCaseSensitively()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {
+               "flags":[
+                  {
+                     "id":1,
+                     "name":"Beta Feature",
+                     "key":"person-flag",
+                     "active":true,
+                     "filters":{
+                        "groups":[
+                           {
+                              "properties":[
+                                 {
+                                    "key":"region",
+                                    "operator":"exact",
+                                    "value":[
+                                       "USA"
+                                    ],
+                                    "type":"person"
+                                 }
+                              ],
+                              "rollout_percentage":100
+                           }
+                        ]
+                     }
+                  },
+                  {
+                    "id":2,
+                    "name":"Beta Feature",
+                    "key":"PERSON-FLAG",
+                    "active":true,
+                    "filters":{
+                       "groups":[
+                          {
+                             "properties":[
+                                {
+                                   "key":"region",
+                                   "operator":"exact",
+                                   "value":[
+                                      "Canada"
+                                   ],
+                                   "type":"person"
+                                }
+                             ],
+                             "rollout_percentage":100
+                          }
+                       ]
+                    }
+                 }
+               ]
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(
+            await client.GetFeatureFlagAsync(
+                "person-flag",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "USA" }
+                })
+        );
+        Assert.False(
+            await client.GetFeatureFlagAsync(
+                "PERSON-FLAG",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "USA" }
+                })
+        );
+        Assert.False(
+            await client.GetFeatureFlagAsync(
+                "person-flag",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "Canada" }
+                })
+        );
+        Assert.True(
+            await client.GetFeatureFlagAsync(
+                "PERSON-FLAG",
+                distinctId: "some-distinct-id",
+                options: new FeatureFlagOptions
+                {
+                    PersonProperties = new() { ["region"] = "Canada" }
+                })
+        );
+    }
+
     [Fact] // Ported from PostHog/posthog-python test_flag_group_properties
     public async Task MatchesOnGroupProperties()
     {
@@ -544,7 +570,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id":1,
                     "name":"Beta Feature",
                     "key":"group-flag",
-                    "is_simple_flag":true,
                     "active":true,
                     "filters":{
                        "aggregation_group_type_index":0,
@@ -671,7 +696,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id":1,
                     "name":"Beta Feature",
                     "key":"group-flag",
-                    "is_simple_flag":true,
                     "active":true,
                     "filters":{
                        "aggregation_group_type_index":0,
@@ -735,7 +759,6 @@ public class TheGetFeatureFlagAsyncMethod
                        "id": 1,
                        "name": "Beta Feature",
                        "key": "complex-flag",
-                       "is_simple_flag": false,
                        "active": true,
                        "filters": {
                            "groups": [
@@ -892,7 +915,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -914,7 +936,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature2",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -971,7 +992,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -993,7 +1013,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature2",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1062,7 +1081,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id": 1,
                     "name": "Beta Feature",
                     "key": "beta-feature",
-                    "is_simple_flag": false,
                     "active": true,
                     "rollout_percentage": 100,
                     "filters": {
@@ -1088,7 +1106,7 @@ public class TheGetFeatureFlagAsyncMethod
 
         var result = await client.GetFeatureFlagAsync("beta-feature", distinctId: "some-distinct-Id");
 
-        Assert.Equal(new FeatureFlag(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1"), result);
+        Assert.Equal(new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" }, result);
     }
 
     [Fact] // Ported from PostHog/posthog-python test_feature_flag_never_returns_undefined_during_regular_evaluation
@@ -1113,7 +1131,6 @@ public class TheGetFeatureFlagAsyncMethod
                     "id": 1,
                     "name": "Beta Feature",
                     "key": "beta-feature",
-                    "is_simple_flag": true,
                     "active": true,
                     "filters": {
                         "groups": [
@@ -1176,7 +1193,6 @@ public class TheGetFeatureFlagAsyncMethod
                         "id": 1,
                         "name": "Beta Feature",
                         "key": "beta-feature",
-                        "is_simple_flag": false,
                         "active": true,
                         "rollout_percentage": 100,
                         "filters": {
@@ -1212,7 +1228,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1299,7 +1314,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1411,7 +1425,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":2,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1546,7 +1559,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1591,7 +1603,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1665,7 +1676,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1758,7 +1768,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1832,7 +1841,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -1913,7 +1921,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"person-flag",
-                     "is_simple_flag":true,
                      "active":true,
                      "filters":{
                         "groups":[
@@ -1979,7 +1986,6 @@ public class TheGetFeatureFlagAsyncMethod
                      "id":1,
                      "name":"Beta Feature",
                      "key":"beta-feature",
-                     "is_simple_flag":false,
                      "active":true,
                      "rollout_percentage":100,
                      "filters":{
@@ -2403,7 +2409,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2419,7 +2424,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2434,7 +2438,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":3,
                         "name":"Beta Feature",
                         "key":"beta-feature2",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2462,9 +2465,9 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature value overridden by /decide
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2"),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2" },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
 
@@ -2493,7 +2496,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "rollout_percentage":100,
                          "filters":{
@@ -2514,7 +2516,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -2534,7 +2535,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":3,
                          "name":"Beta Feature",
                          "key":"beta-feature2",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -2565,9 +2565,9 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature value overridden by /decide
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1", Payload: "100"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2", Payload: "300"),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
+            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" },
+            ["disabled-feature"] = new FeatureFlag { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Single(decideRequestHandler.ReceivedRequests);
         Assert.Empty(captureRequestHandler.ReceivedRequests);
@@ -2594,8 +2594,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2")
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2" }
         }, result);
     }
 
@@ -2623,8 +2623,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1", Payload: "100"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2", Payload: "300")
+            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
+            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" }
         }, result);
     }
 
@@ -2640,7 +2640,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2656,7 +2655,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2677,8 +2675,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new("beta-feature", true),
-            ["disabled-feature"] = new("disabled-feature", false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
 
@@ -2694,7 +2692,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "rollout_percentage":100,
                          "filters":{
@@ -2715,7 +2712,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -2741,8 +2737,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new("beta-feature", true, Payload: "new"),
-            ["disabled-feature"] = new("disabled-feature", false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "new" },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
 
@@ -2768,7 +2764,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2784,7 +2779,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2799,7 +2793,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":3,
                         "name":"Beta Feature",
                         "key":"beta-feature2",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2829,8 +2822,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature2 has no value
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true },
+            ["disabled-feature"] = new FeatureFlag { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Empty(decideHandler.ReceivedRequests);
     }
@@ -2855,7 +2848,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":1,
                         "name":"Beta Feature",
                         "key":"beta-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "rollout_percentage":100,
                         "filters":{
@@ -2874,7 +2866,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":2,
                         "name":"Beta Feature",
                         "key":"disabled-feature",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2892,7 +2883,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                         "id":3,
                         "name":"Beta Feature",
                         "key":"beta-feature2",
-                        "is_simple_flag":false,
                         "active":true,
                         "filters":{
                            "groups":[
@@ -2925,8 +2915,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature2 has no value
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, Payload: "some-payload"),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "some-payload" },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Empty(decideHandler.ReceivedRequests);
     }
@@ -2943,7 +2933,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "rollout_percentage":100,
                          "filters":{
@@ -2961,7 +2950,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -2982,8 +2970,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, await client.GetAllFeatureFlagsAsync("some-distinct-id"));
 
         // Now, after a poll interval, flag 1 is inactive, and flag 2 rollout is set to 100%.
@@ -2995,7 +2983,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                         "is_simple_flag":false,
                          "active":false,
                          "rollout_percentage":100,
                          "filters":{
@@ -3013,7 +3000,6 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                         "is_simple_flag":false,
                          "active":true,
                          "filters":{
                             "groups":[
@@ -3035,8 +3021,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: false),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: true)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = false },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = true }
         }, await client.GetAllFeatureFlagsAsync("some-distinct-id"));
     }
 

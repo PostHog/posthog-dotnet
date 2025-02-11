@@ -153,7 +153,7 @@ public sealed class PostHogClient : IPostHogClient
 
         var batchTask = sendFeatureFlags
             ? AddFreshFeatureFlagDataAsync(distinctId, groups, capturedEvent)
-            : _featureFlagsLoader.IsLoaded
+            : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
                 ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
                 : Task.FromResult(capturedEvent);
 
@@ -242,14 +242,12 @@ public sealed class PostHogClient : IPostHogClient
         {
             try
             {
-                response = new FeatureFlag(
-                    featureKey,
-                    localEvaluator.ComputeFlagLocally(
-                        localFeatureFlag,
-                        distinctId,
-                        options?.Groups ?? [],
-                        options?.PersonProperties ?? []),
-                    localFeatureFlag.Filters?.Payloads);
+                var value = localEvaluator.ComputeFlagLocally(
+                    localFeatureFlag,
+                    distinctId,
+                    options?.Groups ?? [],
+                    options?.PersonProperties ?? []);
+                response = FeatureFlag.CreateFromLocalEvaluation(featureKey, value, localFeatureFlag);
                 _logger.LogDebugSuccessLocally(featureKey, response);
             }
             catch (InconclusiveMatchException e)
@@ -273,7 +271,11 @@ public sealed class PostHogClient : IPostHogClient
                     options ?? new FeatureFlagOptions(),
                     cancellationToken);
 
-                response = flags.GetValueOrDefault(featureKey) ?? new FeatureFlag(featureKey, IsEnabled: false);
+                response = flags.GetValueOrDefault(featureKey) ?? new FeatureFlag
+                {
+                    Key = featureKey,
+                    IsEnabled = false
+                };
                 _logger.LogDebugSuccessRemotely(featureKey, response);
             }
             catch (HttpRequestException e)

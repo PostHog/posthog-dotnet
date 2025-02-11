@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using PostHog;
@@ -324,7 +325,6 @@ public class TheCaptureEventMethod
                     "id":1,
                     "name":"Beta Feature",
                     "key":"beta-feature",
-                    "is_simple_flag":false,
                     "active":true,
                     "rollout_percentage":100,
                     "filters":{
@@ -371,6 +371,9 @@ public class TheIdentifyPersonAsyncMethod
                          "properties": {
                            "$lib": "posthog-dotnet",
                            "$lib_version": "{{VersionConstants.Version}}",
+                           "$os": "{{RuntimeInformation.OSDescription}}",
+                           "$framework": "{{RuntimeInformation.FrameworkDescription}}",
+                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
                          "api_key": "fake-project-api-key",
@@ -412,6 +415,9 @@ public class TheIdentifyPersonAsyncMethod
                            },
                            "$lib": "posthog-dotnet",
                            "$lib_version": "{{VersionConstants.Version}}",
+                           "$os": "{{RuntimeInformation.OSDescription}}",
+                           "$framework": "{{RuntimeInformation.FrameworkDescription}}",
+                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
                          "api_key": "fake-project-api-key",
@@ -446,6 +452,9 @@ public class TheIdentifyPersonAsyncMethod
                          "properties": {
                            "$lib": "posthog-dotnet",
                            "$lib_version": "{{VersionConstants.Version}}",
+                           "$os": "{{RuntimeInformation.OSDescription}}",
+                           "$framework": "{{RuntimeInformation.FrameworkDescription}}",
+                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true,
                            "source": "repo-name"
                          },
@@ -482,6 +491,9 @@ public class TheIdentifyGroupAsyncMethod
                            },
                            "$lib": "posthog-dotnet",
                            "$lib_version": "{{VersionConstants.Version}}",
+                           "$os": "{{RuntimeInformation.OSDescription}}",
+                           "$framework": "{{RuntimeInformation.FrameworkDescription}}",
+                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
                          "api_key": "fake-project-api-key",

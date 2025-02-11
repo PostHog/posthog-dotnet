@@ -34,7 +34,7 @@ mono_crash.*
 
 # Build results
 dist/
-!src/product/Serious.Razor/wwwroot/dist
+!samples/HogTied.Web/wwwroot/dist
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
