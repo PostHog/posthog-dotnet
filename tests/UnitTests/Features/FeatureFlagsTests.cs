@@ -1106,7 +1106,7 @@ public class TheGetFeatureFlagAsyncMethod
 
         var result = await client.GetFeatureFlagAsync("beta-feature", distinctId: "some-distinct-Id");
 
-        Assert.Equal(new FeatureFlag(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1"), result);
+        Assert.Equal(new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" }, result);
     }
 
     [Fact] // Ported from PostHog/posthog-python test_feature_flag_never_returns_undefined_during_regular_evaluation
@@ -2465,9 +2465,9 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature value overridden by /decide
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2"),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2" },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
 
@@ -2565,9 +2565,9 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature value overridden by /decide
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1", Payload: "100"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2", Payload: "300"),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
+            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" },
+            ["disabled-feature"] = new FeatureFlag { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Single(decideRequestHandler.ReceivedRequests);
         Assert.Empty(captureRequestHandler.ReceivedRequests);
@@ -2594,8 +2594,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2")
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2" }
         }, result);
     }
 
@@ -2623,8 +2623,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, VariantKey: "variant-1", Payload: "100"),
-            ["beta-feature2"] = new(Key: "beta-feature2", IsEnabled: true, VariantKey: "variant-2", Payload: "300")
+            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
+            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" }
         }, result);
     }
 
@@ -2675,8 +2675,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new("beta-feature", true),
-            ["disabled-feature"] = new("disabled-feature", false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
 
@@ -2737,8 +2737,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new("beta-feature", true, Payload: "new"),
-            ["disabled-feature"] = new("disabled-feature", false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "new" },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
 
@@ -2822,8 +2822,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature2 has no value
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true },
+            ["disabled-feature"] = new FeatureFlag { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Empty(decideHandler.ReceivedRequests);
     }
@@ -2915,8 +2915,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature2 has no value
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true, Payload: "some-payload"),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "some-payload" },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Empty(decideHandler.ReceivedRequests);
     }
@@ -2970,8 +2970,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: true),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: false)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, await client.GetAllFeatureFlagsAsync("some-distinct-id"));
 
         // Now, after a poll interval, flag 1 is inactive, and flag 2 rollout is set to 100%.
@@ -2983,7 +2983,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":1,
                          "name":"Beta Feature",
                          "key":"beta-feature",
-                              "active":false,
+                         "active":false,
                          "rollout_percentage":100,
                          "filters":{
                             "groups":[
@@ -3000,7 +3000,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                          "id":2,
                          "name":"Beta Feature",
                          "key":"disabled-feature",
-                              "active":true,
+                         "active":true,
                          "filters":{
                             "groups":[
                                {
@@ -3021,8 +3021,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new(Key: "beta-feature", IsEnabled: false),
-            ["disabled-feature"] = new(Key: "disabled-feature", IsEnabled: true)
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = false },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = true }
         }, await client.GetAllFeatureFlagsAsync("some-distinct-id"));
     }
 
