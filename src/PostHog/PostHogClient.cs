@@ -153,7 +153,7 @@ public sealed class PostHogClient : IPostHogClient
 
         var batchTask = sendFeatureFlags
             ? AddFreshFeatureFlagDataAsync(distinctId, groups, capturedEvent)
-            : _featureFlagsLoader.IsLoaded
+            : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
                 ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
                 : Task.FromResult(capturedEvent);
 
