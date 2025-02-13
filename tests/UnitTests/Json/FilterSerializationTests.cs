@@ -103,7 +103,7 @@ public class TheDeserializeAsyncMethod
                    """;
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
 
-        var propertyFilter = Assert.IsType<FilterSet>(result);
+        var filterSet = Assert.IsType<FilterSet>(result);
 
         var expected = new FilterSet
         {
@@ -146,6 +146,6 @@ public class TheDeserializeAsyncMethod
                 }
             }
         };
-        Assert.Equal(expected, propertyFilter);
+        Assert.Equal(expected, filterSet);
     }
 }
