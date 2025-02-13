@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using PostHog.Api;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
@@ -14,7 +16,7 @@ public record FeatureFlag
     /// </summary>
     public required string Key { get; init; }
 
-    public string? Payload { get; init; }
+    public JsonDocument? Payload { get; init; }
 
     public string? VariantKey { get; init; }
 
@@ -38,7 +40,7 @@ public record FeatureFlag
             Key = key,
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = payload
+            Payload = payload is null ? null : JsonDocument.Parse(payload)
         };
     }
 
@@ -57,14 +59,33 @@ public record FeatureFlag
 #pragma warning disable CA1308
         var payloadKey = value.StringValue ?? value.Value.ToString().ToLowerInvariant();
 #pragma warning restore CA1308
+        var payloadJsonString = NotNull(localFeatureFlag).Filters?.Payloads?.GetValueOrDefault(payloadKey);
         return new FeatureFlag
         {
             Key = key,
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = NotNull(localFeatureFlag).Filters?.Payloads?.GetValueOrDefault(payloadKey)
+            Payload = payloadJsonString is null ? null : JsonDocument.Parse(payloadJsonString)
         };
     }
+
+    public virtual bool Equals(FeatureFlag? other)
+    {
+        return other is not null
+               && Key == other.Key
+               && IsEnabled == other.IsEnabled
+               && VariantKey == other.VariantKey
+               && JsonEqual(Payload,  other.Payload);
+    }
+
+    public override int GetHashCode() => HashCode.Combine(Key, IsEnabled, VariantKey, Payload);
+
+    static bool JsonEqual(JsonDocument? source, JsonDocument? comparand) =>
+        JsonNode.DeepEquals(ToJsonNode(source), ToJsonNode(comparand));
+
+    static JsonNode? ToJsonNode(JsonDocument? jsonDocument) => jsonDocument is null
+        ? null
+        : JsonNode.Parse(jsonDocument.RootElement.GetRawText());
 
     /// <summary>
     /// Implicit cast to nullable boolean.

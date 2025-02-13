@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,7 +10,7 @@ using PostHog.Features;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 
-namespace FeatureFlagTests;
+namespace FeatureFlagsTests;
 
 public class TheIsFeatureFlagEnabledAsyncMethod
 {
@@ -684,7 +685,7 @@ public class TheGetFeatureFlagAsyncMethod
             }
         );
 
-        // Going to fallback to decide
+        // Going to fall back to decide
         container.FakeHttpMessageHandler.AddDecideResponse(
             """
             {"featureFlags": {"group-flag": "decide-fallback-value"}}
@@ -1956,7 +1957,7 @@ public class TheGetFeatureFlagAsyncMethod
         {
             PersonProperties = new() { ["region"] = "USA" }
         });
-        Assert.Equal("300", result?.Payload);
+        JsonAssert.Equal(300, result?.Payload);
     }
 
     [Fact] // Ported from PostHog/posthog-python test_boolean_feature_flag_payload_decide
@@ -1974,7 +1975,7 @@ public class TheGetFeatureFlagAsyncMethod
         {
             PersonProperties = new() { ["region"] = "USA" }
         });
-        Assert.Equal("300", result?.Payload);
+        JsonAssert.Equal(300, result?.Payload);
     }
 
     [Fact] // Ported from PostHog/posthog-python test_multivariate_feature_flag_payloads
@@ -2048,7 +2049,7 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 PersonProperties = new() { ["email"] = "test@posthog.com" }
             });
-        Assert.Equal("""{"a":"json"}""", result?.Payload);
+        JsonAssert.Equal("""{"a":"json"}""", result?.Payload);
     }
 
     [Fact]
@@ -2511,7 +2512,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                                }
                             ],
                             "payloads":{
-                               "true":"some-payload"
+                               "true":"\"some-payload\""
                             }
                          }
                       },
@@ -2568,9 +2569,9 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature value overridden by /decide
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
-            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" },
-            ["disabled-feature"] = new FeatureFlag { Key = "disabled-feature", IsEnabled = false }
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = JsonDocument.Parse("100") },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = JsonDocument.Parse("300") },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Single(decideRequestHandler.ReceivedRequests);
         Assert.Empty(captureRequestHandler.ReceivedRequests);
@@ -2626,8 +2627,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
-            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" }
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = JsonDocument.Parse("100") },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = JsonDocument.Parse("300") }
         }, result);
     }
 
@@ -2707,7 +2708,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                                }
                             ],
                             "payloads":{
-                               "true":"new"
+                               "true":"\"new\""
                             }
                          }
                       },
@@ -2740,7 +2741,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "new" },
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = JsonDocument.Parse("\"new\"") },
             ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
@@ -2861,7 +2862,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                               }
                            ],
                            "payloads": {
-                                "true": "some-payload"
+                                "true": "\"some-payload\""
                            }
                         }
                      },
@@ -2878,7 +2879,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                               }
                            ],
                            "payloads": {
-                                "true": "another-payload"
+                                "true": "\"another-payload\""
                            }
                         }
                      },
@@ -2900,7 +2901,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                               }
                            ],
                            "payloads": {
-                                "true": "payload-3"
+                                "true": "\"payload-3\""
                            }
                         }
                      }
@@ -2918,7 +2919,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature2 has no value
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "some-payload" },
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = JsonDocument.Parse("\"some-payload\"") },
             ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Empty(decideHandler.ReceivedRequests);

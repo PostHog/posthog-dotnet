@@ -76,17 +76,19 @@ public class TheDeserializeFromCamelCaseJsonMethod
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
 
-        var expected = new LocalEvaluationApiResult(
-            Flags:
+        var expected = new LocalEvaluationApiResult
+        {
+            Flags =
             [
-                new LocalFeatureFlag(
-                    Id: 91866,
-                    TeamId: 110510,
-                    Name: "A multivariate feature flag that tells you what character you are",
-                    Key: "hogtied_got_character",
-                    Filters: new FeatureFlagFilters(
-                        Groups:
-                        [
+                new LocalFeatureFlag
+                {
+                    Id = 91866,
+                    TeamId = 110510,
+                    Name = "A multivariate feature flag that tells you what character you are",
+                    Key = "hogtied_got_character",
+                    Filters = new FeatureFlagFilters
+                    {
+                        Groups = [
                             new FeatureFlagGroup(
                                 Properties:
                                 [
@@ -113,14 +115,14 @@ public class TheDeserializeFromCamelCaseJsonMethod
                                 ]
                             )
                         ],
-                        Payloads: new Dictionary<string, string>
+                        Payloads = new Dictionary<string, string>
                         {
                             ["cersei"] = "{\"role\": \"burn it all down\"}",
                             ["tyrion"] = "{\"role\": \"advisor\"}",
                             ["danaerys"] = "{\"role\": \"khaleesi\"}",
                             ["jon-snow"] = "{\"role\": \"king in the north\"}"
                         },
-                        Multivariate: new Multivariate(
+                        Multivariate = new Multivariate(
                             Variants:
                             [
                                 new Variant(
@@ -145,19 +147,20 @@ public class TheDeserializeFromCamelCaseJsonMethod
                                 )
                             ]
                         )
-                    ),
-                    Deleted: false,
-                    Active: true,
-                    EnsureExperienceContinuity: false
-                ),
-                new LocalFeatureFlag(
-                    Id: 91468,
-                    TeamId: 110510,
-                    Name: "Testing a PostHog client",
-                    Key: "hogtied-homepage-user",
-                    Filters: new FeatureFlagFilters(
-                        Groups:
-                        [
+                    },
+                    Deleted = false,
+                    Active = true,
+                    EnsureExperienceContinuity = false
+                },
+                new LocalFeatureFlag
+                {
+                    Id = 91468,
+                    TeamId = 110510,
+                    Name = "Testing a PostHog client",
+                    Key = "hogtied-homepage-user",
+                    Filters = new FeatureFlagFilters
+                    {
+                        Groups = [
                             new FeatureFlagGroup(
                                 Variant: null,
                                 Properties:
@@ -173,22 +176,23 @@ public class TheDeserializeFromCamelCaseJsonMethod
                                 RolloutPercentage: 80
                             )
                         ],
-                        Payloads: new Dictionary<string, string>
+                        Payloads = new Dictionary<string, string>
                         {
                             ["true"] = "{\"is_cool\": true}"
                         }
-                    ),
-                    Deleted: false,
-                    Active: true,
-                    EnsureExperienceContinuity: true
-                ),
-                new LocalFeatureFlag(
-                    Id: 1,
-                    TeamId: 42,
-                    Name: "File previews",
-                    Key: "file-previews",
-                    Filters: new FeatureFlagFilters(
-                        Groups:
+                    },
+                    Deleted = false,
+                    Active = true,
+                    EnsureExperienceContinuity = true
+                },
+                new LocalFeatureFlag
+                {
+                    Id = 1,
+                    TeamId = 42,
+                    Name = "File previews",
+                    Key = "file-previews",
+                    Filters = new FeatureFlagFilters {
+                        Groups =
                         [
                             new FeatureFlagGroup(
                                 Properties:
@@ -207,13 +211,13 @@ public class TheDeserializeFromCamelCaseJsonMethod
                                 ]
                             )
                         ]
-                    ),
-                    Deleted: false,
-                    Active: false,
-                    EnsureExperienceContinuity: false
-                )
+                    },
+                    Deleted = false,
+                    Active = false,
+                    EnsureExperienceContinuity = false
+                }
             ],
-            GroupTypeMapping: new Dictionary<string, string>
+            GroupTypeMapping = new Dictionary<string, string>
             {
                 ["0"] = "account",
                 ["1"] = "instance",
@@ -221,7 +225,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
                 ["3"] = "project",
                 ["4"] = "company"
             },
-            Cohorts: new Dictionary<string, FilterSet>
+            Cohorts = new Dictionary<string, FilterSet>
             {
                 ["1"] = new(
                     FilterType.Or,
@@ -241,7 +245,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
                     ]
                 )
             }
-        );
+        };
 
         Assert.Equal(expected, result);
     }

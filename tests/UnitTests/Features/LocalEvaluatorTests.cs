@@ -12,23 +12,26 @@ public class TheEvaluateFeatureFlagMethod
 {
     static LocalEvaluationApiResult CreateFlags(string key, IReadOnlyList<PropertyFilter> properties)
     {
-        return new LocalEvaluationApiResult(
-            Flags: [
-                new LocalFeatureFlag(
-                    Id: 42,
-                    TeamId: 23,
-                    Name: $"{key}-feature-flag",
-                    Key: key,
-                    Filters: new FeatureFlagFilters(
-                        Groups: [
+        return new LocalEvaluationApiResult
+        {
+            Flags = [
+                new LocalFeatureFlag
+                {
+                    Id= 42,
+                    TeamId= 23,
+                    Name= $"{key}-feature-flag",
+                    Key= key,
+                    Filters=  new FeatureFlagFilters {
+                        Groups = [
                             new FeatureFlagGroup(
                                 Properties: properties
                             )
                         ]
-                    ))
+                    }
+                }
             ],
-            GroupTypeMapping: new Dictionary<string, string>()
-        );
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
     }
 
     [Theory]

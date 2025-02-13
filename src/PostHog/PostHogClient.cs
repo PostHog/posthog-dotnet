@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -373,14 +372,6 @@ public sealed class PostHogClient : IPostHogClient
             _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
             return new Dictionary<string, FeatureFlag>();
         }
-    }
-
-    /// <inheritdoc/>
-        {
-            return localEvaluationResults;
-        }
-
-        return await DecideAsync(distinctId, options: options, cancellationToken);
     }
 
     // Retrieves all the evaluated feature flags from the /decide endpoint.

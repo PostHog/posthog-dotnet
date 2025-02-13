@@ -8,15 +8,28 @@ namespace PostHog.Api;
 /// The API Payload from the <c>/api/feature_flag/local_evaluation</c> endpoint used to evaluate feature flags
 /// locally.
 /// </summary>
-/// <param name="Flags">The list of feature flags.</param>
-/// <param name="GroupTypeMapping">A mapping of group IDs to group type.</param>
-/// <param name="Cohorts">A mapping of cohort IDs to a set of filters.</param>
-internal record LocalEvaluationApiResult(
-    IReadOnlyList<LocalFeatureFlag> Flags,
-    [property: JsonPropertyName("group_type_mapping")]
-    IReadOnlyDictionary<string, string>? GroupTypeMapping = null,
-    IReadOnlyDictionary<string, FilterSet>? Cohorts = null)
+internal record LocalEvaluationApiResult
 {
+    /// <summary>
+    /// The list of feature flags.
+    /// </summary>
+    public required IReadOnlyList<LocalFeatureFlag> Flags { get; init; }
+
+    /// <summary>
+    /// Mappings of group IDs to group type.
+    /// </summary>
+    [JsonPropertyName("group_type_mapping")]
+    public IReadOnlyDictionary<string, string>? GroupTypeMapping { get; init; }
+
+    /// <summary>
+    /// A mapping of cohort IDs to a set of filters.
+    /// </summary>
+    public IReadOnlyDictionary<string, FilterSet>? Cohorts { get; init; }
+
+    public LocalEvaluationApiResult()
+    {
+    }
+
     public virtual bool Equals(LocalEvaluationApiResult? other)
     {
         if (ReferenceEquals(other, null))
@@ -37,17 +50,29 @@ internal record LocalEvaluationApiResult(
     public override int GetHashCode() => HashCode.Combine(Flags, GroupTypeMapping, Cohorts);
 }
 
-public record LocalFeatureFlag(
-    int Id,
-    [property: JsonPropertyName("team_id")]
-    int TeamId,
-    string Name,
-    string Key,
-    FeatureFlagFilters? Filters = null,
-    bool Deleted = false,
-    bool Active = true,
-    [property: JsonPropertyName("ensure_experience_continuity")]
-    bool EnsureExperienceContinuity = false);
+/// <summary>
+/// The specification of a feature flag.
+/// </summary>
+public record LocalFeatureFlag
+{
+    public int Id { get; init; }
+
+    [JsonPropertyName("team_id")]
+    public int TeamId { get; init; }
+
+    public string? Name { get; init; }
+
+    public required string Key { get; init; }
+
+    public FeatureFlagFilters? Filters { get; init; }
+
+    public bool Deleted { get; init; }
+
+    public bool Active { get; init; } = true;
+
+    [JsonPropertyName("ensure_experience_continuity")]
+    public bool EnsureExperienceContinuity { get; init; } = false;
+}
 
 /// <summary>
 /// Defines the targeting rules for a feature flag - essentially determining who sees what variant of the feature.
@@ -55,19 +80,28 @@ public record LocalFeatureFlag(
 /// <remarks>
 /// In PostHog, this is stored as a JSON blob in the <c>posthog_featureflag</c> table.
 /// </remarks>
-/// <param name="Groups">These are sets of conditions that determine who sees the feature flag. If any group matches,
-/// the flag is active for that user.</param>
-/// <param name="Payloads"></param>
-/// <param name="Multivariate"></param>
-/// <param name="AggregationGroupTypeIndex"></param>
-public record FeatureFlagFilters(
-    IReadOnlyList<FeatureFlagGroup>? Groups,
-    [property: JsonConverter(typeof(ReadonlyDictionaryJsonConverter<string, string>))]
-    IReadOnlyDictionary<string, string>? Payloads = null,
-    Multivariate? Multivariate = null,
-    [property: JsonPropertyName("aggregation_group_type_index")]
-    int? AggregationGroupTypeIndex = null)
+public record FeatureFlagFilters
 {
+    /// <summary>
+    /// These are sets of conditions that determine who sees the feature flag. If any group matches, the flag is active
+    /// for that user.
+    /// </summary>
+    public IReadOnlyList<FeatureFlagGroup>? Groups { get; init; }
+
+    /// <summary>
+    /// The payloads for the feature flag.
+    /// </summary>
+    [JsonConverter(typeof(ReadonlyDictionaryJsonConverter<string, string>))]
+    public IReadOnlyDictionary<string, string>? Payloads { get; init; }
+
+    /// <summary>
+    /// The variants for the feature flag.
+    /// </summary>
+    public Multivariate? Multivariate { get; init; }
+
+    [JsonPropertyName("aggregation_group_type_index")]
+    public int? AggregationGroupTypeIndex { get; init; }
+
     public virtual bool Equals(FeatureFlagFilters? other)
     {
         if (ReferenceEquals(other, null))

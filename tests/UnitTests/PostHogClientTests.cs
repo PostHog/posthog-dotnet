@@ -1,7 +1,5 @@
-using System.Net;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Config;
@@ -162,56 +160,5 @@ public class TheIdentifyGroupAsyncMethod
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
-    }
-}
-
-public class TheGetDecryptedFeatureFlagPayloadAsyncMethod
-{
-    [Fact]
-    public async Task RetrievesDecryptedPayload()
-    {
-        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddDecryptedPayloadResponse(
-            key: "remote-config-key",
-            responseBody: """{"foo" : "bar", "baz" : 42}"""
-        );
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetDecryptedFeatureFlagPayloadAsync("remote-config-key", CancellationToken.None);
-
-        Assert.NotNull(result);
-        JsonAssert.AreEqual("""{"foo":"bar","baz":42}""", result);
-    }
-
-    [Fact]
-    public async Task ReturnsNullWhenNotAuthorizedAndLogsError()
-    {
-        var container = new TestContainer("personal-api-key");
-        container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/api/projects/@current/feature_flags/some-key/remote_config/"),
-            HttpMethod.Get,
-            new HttpResponseMessage(HttpStatusCode.Unauthorized)
-            {
-                Content = new StringContent(
-                    """
-                    {
-                        "type": "authentication_error",
-                        "code": "authentication_failed",
-                        "detail": "Incorrect authentication credentials.",
-                        "attr": null
-                    }
-                    """
-                )
-            }
-        );
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetDecryptedFeatureFlagPayloadAsync("some-key", CancellationToken.None);
-
-        Assert.Null(result);
-        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error));
-        Assert.Equal(LogLevel.Error, logEvent.LogLevel);
-        Assert.Equal("[FEATURE FLAGS] Error while fetching decrypted feature flag payload.", logEvent.Message);
-        Assert.Equal("Incorrect authentication credentials.", logEvent.Exception?.Message);
     }
 }
