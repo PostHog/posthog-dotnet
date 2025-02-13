@@ -29,7 +29,7 @@ public class FakeLogger : ILogger
         // Collect all the scopes that are currently in... scope :)
         ScopeProvider?.ForEachScope(static (scope, list) => list.Add(scope), scopes);
 
-        var evt = new LogEvent()
+        Provider.RecordEvent(new LogEvent
         {
             CategoryName = _categoryName,
             LogLevel = logLevel,
@@ -38,9 +38,7 @@ public class FakeLogger : ILogger
             Message = formatter(state, exception),
             State = state,
             Scopes = scopes,
-        };
-
-        Provider.RecordEvent(evt);
+        });
     }
 
     public bool IsEnabled(LogLevel logLevel)

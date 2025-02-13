@@ -9,6 +9,7 @@ internal static class FakeHttpMessageHandlerExtensions
 {
     static readonly Uri DecideUrl = new("https://us.i.posthog.com/decide?v=3");
 
+
     public static FakeHttpMessageHandler.RequestHandler AddCaptureResponse(this FakeHttpMessageHandler handler) =>
         handler.AddResponse(
             new Uri("https://us.i.posthog.com/capture"),
@@ -61,6 +62,25 @@ internal static class FakeHttpMessageHandlerExtensions
         LocalEvaluationApiResult responseBody) =>
         handler.AddResponse(
             new Uri($"https://us.i.posthog.com/api/feature_flag/local_evaluation/?token={projectApiKey}&send_cohorts"),
+            HttpMethod.Get,
+            responseBody: responseBody);
+
+
+    public static FakeHttpMessageHandler.RequestHandler AddRemoteConfigResponse(
+        this FakeHttpMessageHandler handler,
+        string key,
+        string responseBody) =>
+        handler.AddResponse(
+            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config/"),
+            HttpMethod.Get,
+            responseBody: responseBody);
+
+    public static FakeHttpMessageHandler.RequestHandler AddDecryptedPayloadResponse(
+        this FakeHttpMessageHandler handler,
+        string key,
+        string responseBody) =>
+        handler.AddResponse(
+            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config/"),
             HttpMethod.Get,
             responseBody: responseBody);
 

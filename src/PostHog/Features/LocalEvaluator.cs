@@ -147,7 +147,7 @@ internal sealed class LocalEvaluator
                 // No need to log this, since it's just telling us to fall back to `/decide`
                 fallbackToDecide = true;
             }
-            catch (HttpRequestException e)
+            catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
             {
                 fallbackToDecide = true;
                 _logger.LogErrorUnexpectedException(e);

@@ -4,7 +4,7 @@ using PostHog.Api;
 using static PostHog.Library.Ensure;
 namespace PostHog.Json;
 
-public class FilterJsonConverter : JsonConverter<Filter>
+internal class FilterJsonConverter : JsonConverter<Filter>
 {
     public override Filter? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

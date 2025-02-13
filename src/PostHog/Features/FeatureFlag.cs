@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using PostHog.Api;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
@@ -14,10 +16,19 @@ public record FeatureFlag
     /// </summary>
     public required string Key { get; init; }
 
-    public string? Payload { get; init; }
+    /// <summary>
+    /// The payload, if any, associated with the feature flag.
+    /// </summary>
+    public JsonDocument? Payload { get; init; }
 
+    /// <summary>
+    /// The variant key selected for this feature flag.
+    /// </summary>
     public string? VariantKey { get; init; }
 
+    /// <summary>
+    /// Whether this feature flag evaluated to <c>true</c> or <c>false</c>.
+    /// </summary>
     public bool IsEnabled { get; init; } = true;
 
     /// <summary>
@@ -38,7 +49,7 @@ public record FeatureFlag
             Key = key,
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = payload
+            Payload = payload is null ? null : JsonDocument.Parse(payload)
         };
     }
 
@@ -57,14 +68,40 @@ public record FeatureFlag
 #pragma warning disable CA1308
         var payloadKey = value.StringValue ?? value.Value.ToString().ToLowerInvariant();
 #pragma warning restore CA1308
+        var payloadJsonString = NotNull(localFeatureFlag).Filters?.Payloads?.GetValueOrDefault(payloadKey);
         return new FeatureFlag
         {
             Key = key,
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = NotNull(localFeatureFlag).Filters?.Payloads?.GetValueOrDefault(payloadKey)
+            Payload = payloadJsonString is null ? null : JsonDocument.Parse(payloadJsonString)
         };
     }
+
+    /// <summary>
+    /// Determines whether the specified <see cref="FeatureFlag"/> is equal to the current <see cref="FeatureFlag"/>.
+    /// </summary>
+    /// <param name="other">The <see cref="FeatureFlag"/> to compare with the current <see cref="FeatureFlag"/>.</param>
+    /// <returns><c>true</c> if the specified <see cref="FeatureFlag"/> is equal to the current</returns>
+    public virtual bool Equals(FeatureFlag? other) =>
+        other is not null
+        && Key == other.Key
+        && IsEnabled == other.IsEnabled
+        && VariantKey == other.VariantKey
+        && JsonEqual(Payload, other.Payload);
+
+    /// <summary>
+    /// Determines whether the specified <see cref="object"/> is equal to the current <see cref="FeatureFlag"/>.
+    /// </summary>
+    /// <returns><c>true</c> if the specified <see cref="object"/> is equal to the current <see cref="FeatureFlag"/>; otherwise, <c>false</c>.</returns>
+    public override int GetHashCode() => HashCode.Combine(Key, IsEnabled, VariantKey, Payload);
+
+    static bool JsonEqual(JsonDocument? source, JsonDocument? comparand) =>
+        JsonNode.DeepEquals(ToJsonNode(source), ToJsonNode(comparand));
+
+    static JsonNode? ToJsonNode(JsonDocument? jsonDocument) => jsonDocument is null
+        ? null
+        : JsonNode.Parse(jsonDocument.RootElement.GetRawText());
 
     /// <summary>
     /// Implicit cast to nullable boolean.

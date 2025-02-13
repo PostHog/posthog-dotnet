@@ -1,9 +1,12 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog.Config;
+using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
 using PostHog.Versioning;
@@ -22,6 +25,7 @@ internal sealed class PostHogApiClient : IDisposable
     readonly TimeProvider _timeProvider;
     readonly HttpClient _httpClient;
     readonly IOptions<PostHogOptions> _options;
+    readonly ILogger<PostHogApiClient> _logger;
 
     /// <summary>
     /// Initialize a new PostHog client
@@ -47,6 +51,7 @@ internal sealed class PostHogApiClient : IDisposable
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"{LibraryName}/{VersionConstants.Version} ({framework}; {os}; {arch})");
 
         logger.LogTraceApiClientCreated(HostUrl);
+        _logger = logger;
     }
 
     Uri HostUrl => _options.Value.HostUrl;
@@ -123,9 +128,9 @@ internal sealed class PostHogApiClient : IDisposable
         PrepareAndMutatePayload(payload);
 
         return await _httpClient.PostJsonAsync<DecideApiResult>(
-                   endpointUrl,
-                   payload,
-                   cancellationToken);
+            endpointUrl,
+            payload,
+            cancellationToken);
     }
 
     /// <summary>
@@ -137,18 +142,53 @@ internal sealed class PostHogApiClient : IDisposable
     /// <returns>A <see cref="LocalEvaluationApiResult"/> containing all the feature flags.</returns>
     public async Task<LocalEvaluationApiResult?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
     {
-        var personalApiKey = _options.Value.PersonalApiKey
-            ?? throw new InvalidOperationException("This API requires that a Personal API Key is set.");
         var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
+        try
+        {
+            return await GetAuthenticatedResponseAsync<LocalEvaluationApiResult>(
+                $"/api/feature_flag/local_evaluation/?token={options.ProjectApiKey}&send_cohorts",
+                cancellationToken);
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+        {
+            _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
+            return null;
+        }
+    }
 
-        var endpointUrl = new Uri(HostUrl, $"/api/feature_flag/local_evaluation/?token={options.ProjectApiKey}&send_cohorts");
+    /// <summary>
+    /// Retrieves a remote config payload by making a request to the <c>/remote_config/</c> endpoint.
+    /// </summary>
+    /// <param name="key">The config key.</param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns></returns>
+    public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken) =>
+        await GetAuthenticatedResponseAsync<JsonDocument>(
+            $"/api/projects/@current/feature_flags/{key}/remote_config/",
+            cancellationToken);
+
+    async Task<T?> GetAuthenticatedResponseAsync<T>(string relativeUrl, CancellationToken cancellationToken)
+    {
+        var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
+        var personalApiKey = options.PersonalApiKey
+            ?? throw new InvalidOperationException("This API requires that a Personal API Key is set.");
+
+        var endpointUrl = new Uri(HostUrl, relativeUrl);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, endpointUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue(scheme: "Bearer", personalApiKey);
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (response.StatusCode is HttpStatusCode.Unauthorized)
+        {
+            var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
+                cancellationToken: cancellationToken);
+            throw new UnauthorizedAccessException(error?.Detail);
+        }
 
-        return await response.Content.ReadFromJsonAsync<LocalEvaluationApiResult>(
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<T>(
             JsonSerializerHelper.Options,
             cancellationToken);
     }
@@ -185,4 +225,11 @@ internal static partial class PostHogApiClientLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Api Client Created: {HostUrl}")]
     public static partial void LogTraceApiClientCreated(this ILogger<PostHogApiClient> logger, Uri hostUrl);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Error,
+        Message = "Unable to retrieve remote config payload")]
+    public static partial void LogErrorUnableToGetRemoteConfigPayload(
+        this ILogger<PostHogApiClient> logger, Exception exception);
 }

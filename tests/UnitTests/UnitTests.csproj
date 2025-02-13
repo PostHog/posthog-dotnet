@@ -7,7 +7,7 @@
         <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
-        <NoWarn>CA1034;CA1052;CA1050;CA1062;CA1308;CA1515;CA1861;CA1869;CA2007;</NoWarn>
+        <NoWarn>CA1034;CA1052;CA1050;CA1062;CA1308;CA1515;CA1861;CA1869;CA2000;CA2007;</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>

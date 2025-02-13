@@ -76,144 +76,165 @@ public class TheDeserializeFromCamelCaseJsonMethod
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
 
-        var expected = new LocalEvaluationApiResult(
-            Flags:
-            [
-                new LocalFeatureFlag(
-                    Id: 91866,
-                    TeamId: 110510,
-                    Name: "A multivariate feature flag that tells you what character you are",
-                    Key: "hogtied_got_character",
-                    Filters: new FeatureFlagFilters(
-                        Groups:
-                        [
-                            new FeatureFlagGroup(
-                                Properties:
-                                [
-                                    new PropertyFilter(
-                                        Type: FilterType.Group,
-                                        Key: "size",
-                                        Value: new PropertyFilterValue(["small"]),
-                                        Operator: ComparisonOperator.Exact,
-                                        GroupTypeIndex: 3
-                                    ),
-                                    new PropertyFilter(
-                                        Type: FilterType.Cohort,
-                                        Key: "id",
-                                        Value: new PropertyFilterValue(1),
-                                        Operator: ComparisonOperator.In
-                                    ),
-                                    new PropertyFilter(
-                                        Type: FilterType.Group,
-                                        Key: "$group_key",
-                                        Value: new PropertyFilterValue("12345"),
-                                        Operator: ComparisonOperator.Exact,
-                                        GroupTypeIndex: 3
-                                    )
-                                ]
-                            )
-                        ],
-                        Payloads: new Dictionary<string, string>
+        var expected = new LocalEvaluationApiResult
+        {
+            Flags = new[]
+            {
+                new LocalFeatureFlag
+                {
+                    Id = 91866,
+                    TeamId = 110510,
+                    Name = "A multivariate feature flag that tells you what character you are",
+                    Key = "hogtied_got_character",
+                    Filters = new FeatureFlagFilters
+                    {
+                        Groups = new[]
+                        {
+                            new FeatureFlagGroup
+                            {
+                                Properties = new[]
+                                {
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Group,
+                                        Key = "size",
+                                        Value = new PropertyFilterValue(new[] { "small" }),
+                                        Operator = ComparisonOperator.Exact,
+                                        GroupTypeIndex = 3
+                                    },
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Cohort,
+                                        Key = "id",
+                                        Value = new PropertyFilterValue(1),
+                                        Operator = ComparisonOperator.In
+                                    },
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Group,
+                                        Key = "$group_key",
+                                        Value = new PropertyFilterValue("12345"),
+                                        Operator = ComparisonOperator.Exact,
+                                        GroupTypeIndex = 3
+                                    }
+                                }
+                            }
+                        },
+                        Payloads = new Dictionary<string, string>
                         {
                             ["cersei"] = "{\"role\": \"burn it all down\"}",
                             ["tyrion"] = "{\"role\": \"advisor\"}",
                             ["danaerys"] = "{\"role\": \"khaleesi\"}",
                             ["jon-snow"] = "{\"role\": \"king in the north\"}"
                         },
-                        Multivariate: new Multivariate(
-                            Variants:
-                            [
-                                new Variant(
-                                    Key: "tyrion",
-                                    Name: "The one who talks",
-                                    RolloutPercentage: 25
-                                ),
-                                new Variant(
-                                    Key: "danaerys",
-                                    Name: "The mother of dragons",
-                                    RolloutPercentage: 25
-                                ),
-                                new Variant(
-                                    Key: "jon-snow",
-                                    Name: "Knows nothing",
-                                    RolloutPercentage: 25
-                                ),
-                                new Variant(
-                                    Key: "cersei",
-                                    Name: "Not nice",
-                                    RolloutPercentage: 25
-                                )
-                            ]
-                        )
-                    ),
-                    Deleted: false,
-                    Active: true,
-                    EnsureExperienceContinuity: false
-                ),
-                new LocalFeatureFlag(
-                    Id: 91468,
-                    TeamId: 110510,
-                    Name: "Testing a PostHog client",
-                    Key: "hogtied-homepage-user",
-                    Filters: new FeatureFlagFilters(
-                        Groups:
-                        [
-                            new FeatureFlagGroup(
-                                Variant: null,
-                                Properties:
-                                [
-                                    new PropertyFilter(
-                                        Key: "$group_key",
-                                        Type: FilterType.Group,
-                                        Value: new PropertyFilterValue("01943db3-83be-0000-e7ea-ecae4d9b5afb"),
-                                        Operator: ComparisonOperator.Exact,
-                                        GroupTypeIndex: 2
-                                    )
-                                ],
-                                RolloutPercentage: 80
-                            )
-                        ],
-                        Payloads: new Dictionary<string, string>
+                        Multivariate = new Multivariate
+                        {
+                            Variants = new[]
+                            {
+                                new Variant
+                                {
+                                    Key = "tyrion",
+                                    Name = "The one who talks",
+                                    RolloutPercentage = 25
+                                },
+                                new Variant
+                                {
+                                    Key = "danaerys",
+                                    Name = "The mother of dragons",
+                                    RolloutPercentage = 25
+                                },
+                                new Variant
+                                {
+                                    Key = "jon-snow",
+                                    Name = "Knows nothing",
+                                    RolloutPercentage = 25
+                                },
+                                new Variant
+                                {
+                                    Key = "cersei",
+                                    Name = "Not nice",
+                                    RolloutPercentage = 25
+                                }
+                            }
+                        }
+                    },
+                    Deleted = false,
+                    Active = true,
+                    EnsureExperienceContinuity = false
+                },
+                new LocalFeatureFlag
+                {
+                    Id = 91468,
+                    TeamId = 110510,
+                    Name = "Testing a PostHog client",
+                    Key = "hogtied-homepage-user",
+                    Filters = new FeatureFlagFilters
+                    {
+                        Groups = new[]
+                        {
+                            new FeatureFlagGroup
+                            {
+                                Variant = null,
+                                Properties = new[]
+                                {
+                                    new PropertyFilter
+                                    {
+                                        Key = "$group_key",
+                                        Type = FilterType.Group,
+                                        Value = new PropertyFilterValue("01943db3-83be-0000-e7ea-ecae4d9b5afb"),
+                                        Operator = ComparisonOperator.Exact,
+                                        GroupTypeIndex = 2
+                                    }
+                                },
+                                RolloutPercentage = 80
+                            }
+                        },
+                        Payloads = new Dictionary<string, string>
                         {
                             ["true"] = "{\"is_cool\": true}"
                         }
-                    ),
-                    Deleted: false,
-                    Active: true,
-                    EnsureExperienceContinuity: true
-                ),
-                new LocalFeatureFlag(
-                    Id: 1,
-                    TeamId: 42,
-                    Name: "File previews",
-                    Key: "file-previews",
-                    Filters: new FeatureFlagFilters(
-                        Groups:
-                        [
-                            new FeatureFlagGroup(
-                                Properties:
-                                [
-                                    new PropertyFilter(
-                                        Key: "email",
-                                        Type: FilterType.Person,
-                                        Value: new PropertyFilterValue([
+                    },
+                    Deleted = false,
+                    Active = true,
+                    EnsureExperienceContinuity = true
+                },
+                new LocalFeatureFlag
+                {
+                    Id = 1,
+                    TeamId = 42,
+                    Name = "File previews",
+                    Key = "file-previews",
+                    Filters = new FeatureFlagFilters
+                    {
+                        Groups = new[]
+                        {
+                            new FeatureFlagGroup
+                            {
+                                Properties = new[]
+                                {
+                                    new PropertyFilter
+                                    {
+                                        Key = "email",
+                                        Type = FilterType.Person,
+                                        Value = new PropertyFilterValue(new[]
+                                        {
                                             "tyrion@example.com",
                                             "danaerys@example.com",
                                             "sansa@example.com",
                                             "ned@example.com"
-                                        ]),
-                                        Operator: ComparisonOperator.Exact
-                                    )
-                                ]
-                            )
-                        ]
-                    ),
-                    Deleted: false,
-                    Active: false,
-                    EnsureExperienceContinuity: false
-                )
-            ],
-            GroupTypeMapping: new Dictionary<string, string>
+                                        }),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    Deleted = false,
+                    Active = false,
+                    EnsureExperienceContinuity = false
+                }
+            },
+            GroupTypeMapping = new Dictionary<string, string>
             {
                 ["0"] = "account",
                 ["1"] = "instance",
@@ -221,27 +242,31 @@ public class TheDeserializeFromCamelCaseJsonMethod
                 ["3"] = "project",
                 ["4"] = "company"
             },
-            Cohorts: new Dictionary<string, FilterSet>
+            Cohorts = new Dictionary<string, FilterSet>
             {
-                ["1"] = new(
-                    FilterType.Or,
-                    Values:
-                    [
-                        new FilterSet(
-                            FilterType.And,
-                            [
-                                new PropertyFilter(
-                                    Type: FilterType.Person,
-                                    Key: "work_email",
-                                    Value: new PropertyFilterValue("is_set"),
-                                    Operator: ComparisonOperator.IsSet
-                                )
-                            ]
-                        )
-                    ]
-                )
+                ["1"] = new FilterSet
+                {
+                    Type = FilterType.Or,
+                    Values = new Filter[]
+                    {
+                        new FilterSet
+                        {
+                            Type = FilterType.And,
+                            Values = new Filter[]
+                            {
+                                new PropertyFilter
+                                {
+                                    Type = FilterType.Person,
+                                    Key = "work_email",
+                                    Value = new PropertyFilterValue("is_set"),
+                                    Operator = ComparisonOperator.IsSet
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        );
+        };
 
         Assert.Equal(expected, result);
     }
@@ -272,11 +297,14 @@ public class TheDeserializeFromCamelCaseJsonMethod
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<PropertyFilter>(json);
 
-        Assert.Equal(new PropertyFilter(
-            Type: FilterType.Group,
-            Key: "$group_key",
-            Value: new PropertyFilterValue("01943db3-83be-0000-e7ea-ecae4d9b5afb"),
-            Operator: ComparisonOperator.Exact, GroupTypeIndex: 2), result);
+        Assert.Equal(new PropertyFilter
+        {
+            Type = FilterType.Group,
+            Key = "$group_key",
+            Value = new PropertyFilterValue("01943db3-83be-0000-e7ea-ecae4d9b5afb"),
+            Operator = ComparisonOperator.Exact,
+            GroupTypeIndex = 2
+        }, result);
     }
 
     [Fact]

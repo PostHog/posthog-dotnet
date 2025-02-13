@@ -18,12 +18,13 @@ public class TheDeserializeAsyncMethod
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<PropertyFilterValue>(json);
 
         Assert.NotNull(result);
-        Assert.Equal([
+        Assert.Equal(new[]
+        {
             "tyrion@example.com",
             "danaerys@example.com",
             "sansa@example.com",
             "ned@example.com"
-        ], result.ListOfStrings);
+        }, result.ListOfStrings);
     }
 
     [Fact]
@@ -40,22 +41,25 @@ public class TheDeserializeAsyncMethod
                            "ned@example.com"
                        ],
                        "operator": "exact"
-                   } 
+                   }
                    """;
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
 
         var propertyFilter = Assert.IsType<PropertyFilter>(result);
         Assert.Equal(
-            new PropertyFilter(
-                Type: FilterType.Person,
-                Key: "email",
-                Value: new PropertyFilterValue([
+            new PropertyFilter
+            {
+                Type = FilterType.Person,
+                Key = "email",
+                Value = new PropertyFilterValue(new[]
+                {
                     "tyrion@example.com",
                     "danaerys@example.com",
                     "sansa@example.com",
                     "ned@example.com"
-                ]),
-                Operator: ComparisonOperator.Exact),
+                }),
+                Operator = ComparisonOperator.Exact
+            },
             propertyFilter);
     }
 
@@ -93,44 +97,55 @@ public class TheDeserializeAsyncMethod
                                "ned@example.com"
                            ],
                            "operator": "exact"
-                        } 
+                        }
                        ]
-                   } 
+                   }
                    """;
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
 
         var propertyFilter = Assert.IsType<FilterSet>(result);
 
-        var expected = new FilterSet(
-            Type: FilterType.Or,
-            Values:
-            [
-                new FilterSet(
-                    FilterType.And,
-                    Values:
-                    [
-                        new PropertyFilter(
-                            Type: FilterType.Person,
-                            Key: "work_email",
-                            Value: new PropertyFilterValue("is_set"),
-                            Operator: ComparisonOperator.IsSet),
-                        new PropertyFilter(
-                            Type: FilterType.Person,
-                            Key: "home_email",
-                            Value: new PropertyFilterValue("^.*?@posthog.com$"),
-                            Operator: ComparisonOperator.Regex),
-                    ]),
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "email",
-                    Value: new PropertyFilterValue([
+        var expected = new FilterSet
+        {
+            Type = FilterType.Or,
+            Values = new Filter[]
+            {
+                new FilterSet
+                {
+                    Type = FilterType.And,
+                    Values = new Filter[]
+                    {
+                        new PropertyFilter
+                        {
+                            Type = FilterType.Person,
+                            Key = "work_email",
+                            Value = new PropertyFilterValue("is_set"),
+                            Operator = ComparisonOperator.IsSet
+                        },
+                        new PropertyFilter
+                        {
+                            Type = FilterType.Person,
+                            Key = "home_email",
+                            Value = new PropertyFilterValue("^.*?@posthog.com$"),
+                            Operator = ComparisonOperator.Regex
+                        }
+                    }
+                },
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "email",
+                    Value = new PropertyFilterValue(new[]
+                    {
                         "tyrion@example.com",
                         "danaerys@example.com",
                         "sansa@example.com",
                         "ned@example.com"
-                    ]),
-                    Operator: ComparisonOperator.Exact)
-            ]);
+                    }),
+                    Operator = ComparisonOperator.Exact
+                }
+            }
+        };
         Assert.Equal(expected, propertyFilter);
     }
 }

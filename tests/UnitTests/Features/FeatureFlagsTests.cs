@@ -1,12 +1,16 @@
+using System.Net;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
+using PostHog.Api;
 using PostHog.Config;
 using PostHog.Features;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 
-namespace FeatureFlagTests;
+namespace FeatureFlagsTests;
 
 public class TheIsFeatureFlagEnabledAsyncMethod
 {
@@ -681,7 +685,7 @@ public class TheGetFeatureFlagAsyncMethod
             }
         );
 
-        // Going to fallback to decide
+        // Going to fall back to decide
         container.FakeHttpMessageHandler.AddDecideResponse(
             """
             {"featureFlags": {"group-flag": "decide-fallback-value"}}
@@ -1163,9 +1167,9 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var firstRequestHandler =
-            container.FakeHttpMessageHandler.AddDecideResponseException(new HttpRequestException());
+            container.FakeHttpMessageHandler.AddDecideResponseException(new UnauthorizedAccessException());
         var secondRequestHandler =
-            container.FakeHttpMessageHandler.AddDecideResponseException(new HttpRequestException());
+            container.FakeHttpMessageHandler.AddDecideResponseException(new UnauthorizedAccessException());
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags":[]}""");
         var client = container.Activate<PostHogClient>();
 
@@ -1953,7 +1957,7 @@ public class TheGetFeatureFlagAsyncMethod
         {
             PersonProperties = new() { ["region"] = "USA" }
         });
-        Assert.Equal("300", result?.Payload);
+        JsonAssert.Equal(300, result?.Payload);
     }
 
     [Fact] // Ported from PostHog/posthog-python test_boolean_feature_flag_payload_decide
@@ -1971,7 +1975,7 @@ public class TheGetFeatureFlagAsyncMethod
         {
             PersonProperties = new() { ["region"] = "USA" }
         });
-        Assert.Equal("300", result?.Payload);
+        JsonAssert.Equal(300, result?.Payload);
     }
 
     [Fact] // Ported from PostHog/posthog-python test_multivariate_feature_flag_payloads
@@ -2045,7 +2049,7 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 PersonProperties = new() { ["email"] = "test@posthog.com" }
             });
-        Assert.Equal("""{"a":"json"}""", result?.Payload);
+        JsonAssert.Equal("""{"a":"json"}""", result?.Payload);
     }
 
     [Fact]
@@ -2508,7 +2512,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                                }
                             ],
                             "payloads":{
-                               "true":"some-payload"
+                               "true":"\"some-payload\""
                             }
                          }
                       },
@@ -2565,9 +2569,9 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature value overridden by /decide
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
-            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" },
-            ["disabled-feature"] = new FeatureFlag { Key = "disabled-feature", IsEnabled = false }
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = JsonDocument.Parse("100") },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = JsonDocument.Parse("300") },
+            ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Single(decideRequestHandler.ReceivedRequests);
         Assert.Empty(captureRequestHandler.ReceivedRequests);
@@ -2623,8 +2627,8 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new FeatureFlag { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = "100" },
-            ["beta-feature2"] = new FeatureFlag { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = "300" }
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1", Payload = JsonDocument.Parse("100") },
+            ["beta-feature2"] = new() { Key = "beta-feature2", IsEnabled = true, VariantKey = "variant-2", Payload = JsonDocument.Parse("300") }
         }, result);
     }
 
@@ -2704,7 +2708,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                                }
                             ],
                             "payloads":{
-                               "true":"new"
+                               "true":"\"new\""
                             }
                          }
                       },
@@ -2737,7 +2741,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "new" },
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = JsonDocument.Parse("\"new\"") },
             ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
     }
@@ -2858,7 +2862,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                               }
                            ],
                            "payloads": {
-                                "true": "some-payload"
+                                "true": "\"some-payload\""
                            }
                         }
                      },
@@ -2875,7 +2879,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                               }
                            ],
                            "payloads": {
-                                "true": "another-payload"
+                                "true": "\"another-payload\""
                            }
                         }
                      },
@@ -2897,7 +2901,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                               }
                            ],
                            "payloads": {
-                                "true": "payload-3"
+                                "true": "\"payload-3\""
                            }
                         }
                      }
@@ -2915,7 +2919,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
         // beta-feature2 has no value
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
-            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = "some-payload" },
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, Payload = JsonDocument.Parse("\"some-payload\"") },
             ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = false }
         }, results);
         Assert.Empty(decideHandler.ReceivedRequests);
@@ -3084,5 +3088,66 @@ public class TheGetAllFeatureFlagsAsyncMethod
         Assert.NotNull(newResult);
         var newFlag = Assert.Single(newResult.Values);
         Assert.Equal("flag-key-2", newFlag.Key);
+    }
+
+    [Fact]
+    public async Task ReturnsEmptyDictionaryWhenPersonalApiKeyIncorrect()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddDecideResponse(new DecideApiResult());
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?token=fake-project-api-key&send_cohorts"),
+            HttpMethod.Get,
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "authentication_error",
+                        "code": "authentication_failed",
+                        "detail": "Incorrect authentication credentials.",
+                        "attr": null
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync("distinct_id");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error));
+        Assert.Empty(result);
+        Assert.Equal("[FEATURE FLAGS] Unable to get feature flags and payloads", logEvent.Message);
+        Assert.Equal("Incorrect authentication credentials.", logEvent.Exception?.Message);
+    }
+
+    [Fact]
+    public async Task ReturnsEmptyDictionaryWhenProjectApiKeyIncorrect()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/decide?v=3"),
+            HttpMethod.Post,
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "authentication_error",
+                        "code": "authentication_failed",
+                        "detail": "Project API Key Incorrect.",
+                        "attr": null
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync("distinct_id");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error));
+        Assert.Empty(result);
+        Assert.Equal("[FEATURE FLAGS] Unable to get feature flags and payloads", logEvent.Message);
+        Assert.Equal("Project API Key Incorrect.", logEvent.Exception?.Message);
     }
 }
