@@ -609,13 +609,12 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "company",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group
+                    {
+                        GroupType = "company",
+                        GroupKey = "company",
+                        ["name"] = "Project Name 1"
+                    }
                 ]
             }
         );
@@ -626,13 +625,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "company",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 2"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "company",
+                        ["name"] = "Project Name 2"
+                    }
                 ]
             });
         var match = await client.GetFeatureFlagAsync(
@@ -642,13 +639,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon_without_rollout",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "amazon_without_rollout",
+                        ["name"] = "Project Name 1"
+                    }
                 ]
             });
         var notMatchBecauseRollout = await client.GetFeatureFlagAsync(
@@ -658,13 +653,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "amazon",
+                        ["name"] = "Project Name 1"
+                     }
                 ]
             });
         var propertyMismatch = await client.GetFeatureFlagAsync(
@@ -674,13 +667,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon_without_rollout",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 2"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "amazon_without_rollout",
+                        ["name"] = "Project Name 2"
+                    }
                 ]
             }
         );
@@ -733,13 +724,12 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group
+                    {
+                        GroupType = "company",
+                        GroupKey = "amazon",
+                        ["name"] = "Project Name 1"
+                    }
                 ]
             }
         );
@@ -2138,7 +2128,10 @@ public class TheGetFeatureFlagAsyncMethod
 
         var result = await client.GetFeatureFlagAsync("flag-key", "a-distinct-id", options: new FeatureFlagOptions
         {
-            Groups = [new Group("company", "id:5"), new Group("department", "id:3")]
+            Groups = [
+                new Group { GroupType = "company", GroupKey = "id:5" },
+                new Group { GroupType = "department", GroupKey = "id:3" }
+            ]
         });
 
         Assert.NotNull(result);
@@ -2378,12 +2371,9 @@ public class TheGetFeatureFlagAsyncMethod
             count: 4,
             responseBodyFunc: count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        await client.GetFeatureFlagAsync(featureKey: "flag-key",
-            distinctId: "a-distinct-id", options: new FeatureFlagOptions { SendFeatureFlagEvents = false });
-
-        await client.FlushAsync();
+        var posthog = container.Activate<PostHogClient>();
+        
+        await posthog.FlushAsync();
         Assert.Empty(captureRequestHandler.ReceivedRequests);
     }
 }

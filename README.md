@@ -174,17 +174,15 @@ if (await posthogClient.IsFeatureEnabledAsync(
 If you have group analytics enabled, you can also override group properties.
 
 ```csharp
-if (await posthogClient.IsFeatureEnabledAsync(
-    userId,
-    "large-project-feature",
-    new FeatureFlagOptions 
-    {
-        GroupProperties = new Group("project", "project-group-key", new Dictionary<string, object>
+if (await posthog.IsFeatureEnabledAsync(
+        "large-project-feature",
+        "some-user-id",
+        new FeatureFlagOptions
         {
-            ["size"] = "large"
-        }))) 
+            Groups = [new Group(groupType: "project", groupKey: "project-group-key") { ["size"] = "large" }]
+        }) is true)
 {
-    // Access large project features
+    // Access large project feature
 }
 ```
 
