@@ -380,10 +380,10 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
-            return await _featureFlagsCache.GetAndCacheFeatureFlagsAsync(
-                distinctId,
-                fetcher: _ => FetchDecideAsync(),
-                cancellationToken: cancellationToken);
+        return await _featureFlagsCache.GetAndCacheFeatureFlagsAsync(
+            distinctId,
+            fetcher: _ => FetchDecideAsync(),
+            cancellationToken: cancellationToken);
 
         async Task<IReadOnlyDictionary<string, FeatureFlag>> FetchDecideAsync()
         {

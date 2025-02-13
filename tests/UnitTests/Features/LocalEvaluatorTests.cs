@@ -23,9 +23,10 @@ public class TheEvaluateFeatureFlagMethod
                     Key= key,
                     Filters=  new FeatureFlagFilters {
                         Groups = [
-                            new FeatureFlagGroup(
-                                Properties: properties
-                            )
+                            new FeatureFlagGroup
+                            {
+                                Properties = properties
+                            }
                         ]
                     }
                 }
@@ -50,16 +51,18 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "email",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "email",
-                    Value: new PropertyFilterValue([
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "email",
+                    Value = new PropertyFilterValue([
                         "tyrion@example.com",
                         "danaerys@example.com",
                         "sansa@example.com",
                         "ned@example.com"
                     ]),
-                    Operator: comparison)
+                    Operator = comparison
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -98,11 +101,16 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "age",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "age",
-                    Value: new PropertyFilterValue(["4", "8", "15", "16", "23", "42", "42.5" ]),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "age",
+                    Value = new PropertyFilterValue(new[]
+                    {
+                        "4", "8", "15", "16", "23", "42", "42.5"
+                    }),
+                    Operator = comparison
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -128,11 +136,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "email",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "email",
-                    Value: new PropertyFilterValue("is_set"),
-                    Operator: ComparisonOperator.IsSet)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "email",
+                    Value = new PropertyFilterValue("is_set"),
+                    Operator = ComparisonOperator.IsSet
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -155,11 +165,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "email",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "email",
-                    Value: new PropertyFilterValue("is_set"),
-                    Operator: ComparisonOperator.IsSet)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "email",
+                    Value = new PropertyFilterValue("is_set"),
+                    Operator = ComparisonOperator.IsSet
+                }
             ]
         );
         var localEvaluator = new LocalEvaluator(flags);
@@ -192,11 +204,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "email",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "email",
-                    Value: new PropertyFilterValue(filterValue),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "email",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -225,11 +239,13 @@ public class TheEvaluateFeatureFlagMethod
             key: "bio",
             properties:
             [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "bio",
-                    Value: PropertyFilterValue.Create(JsonDocument.Parse(filterValueJson).RootElement)!,
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "bio",
+                    Value = PropertyFilterValue.Create(JsonDocument.Parse(filterValueJson).RootElement)!,
+                    Operator = comparison
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -272,11 +288,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "age",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "age",
-                    Value: PropertyFilterValue.Create(JsonDocument.Parse(filterValueJson).RootElement)!,
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "age",
+                    Value = PropertyFilterValue.Create(JsonDocument.Parse(filterValueJson).RootElement)!,
+                    Operator = comparison
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -326,11 +344,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "join_date",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "join_date",
-                    Value: new PropertyFilterValue(relativeDateString),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(relativeDateString),
+                    Operator = comparison
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -371,11 +391,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "join_date",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "join_date",
-                    Value: new PropertyFilterValue(relativeDateString),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(relativeDateString),
+                    Operator = comparison
+                }
             ]
         );
         var properties = new Dictionary<string, object?>
@@ -426,11 +448,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "join_date",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "join_date",
-                    Value: new PropertyFilterValue(relativeDateString),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(relativeDateString),
+                    Operator = comparison
+                }
             ]
         );
         var localEvaluator = new LocalEvaluator(flags, timeProvider, NullLogger<LocalEvaluator>.Instance);
@@ -462,11 +486,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "join_date",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "join_date",
-                    Value: new PropertyFilterValue("2022-04-05 12:34:12 +01:00"),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue("2022-04-05 12:34:12 +01:00"),
+                    Operator = comparison
+                }
             ]
         );
         var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);
@@ -500,11 +526,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "join_date",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "join_date",
-                    Value: new PropertyFilterValue("-30h"),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue("-30h"),
+                    Operator = comparison
+                }
             ]
         );
         var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);
@@ -530,11 +558,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "join_date",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "join_date",
-                    Value: new PropertyFilterValue("some fine garbage"),
-                    Operator: comparison)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue("some fine garbage"),
+                    Operator = comparison
+                }
             ]
         );
         var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);
@@ -558,11 +588,13 @@ public class TheEvaluateFeatureFlagMethod
         var flags = CreateFlags(
             key: "join_date",
             properties: [
-                new PropertyFilter(
-                    Type: FilterType.Person,
-                    Key: "join_date",
-                    Value: new PropertyFilterValue("2025-01-01"),
-                    Operator: (ComparisonOperator)999)
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue("2025-01-01"),
+                    Operator = (ComparisonOperator)999
+                }
             ]
         );
         var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);

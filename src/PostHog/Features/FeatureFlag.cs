@@ -16,10 +16,19 @@ public record FeatureFlag
     /// </summary>
     public required string Key { get; init; }
 
+    /// <summary>
+    /// The payload, if any, associated with the feature flag.
+    /// </summary>
     public JsonDocument? Payload { get; init; }
 
+    /// <summary>
+    /// The variant key selected for this feature flag.
+    /// </summary>
     public string? VariantKey { get; init; }
 
+    /// <summary>
+    /// Whether this feature flag evaluated to <c>true</c> or <c>false</c>.
+    /// </summary>
     public bool IsEnabled { get; init; } = true;
 
     /// <summary>
@@ -69,15 +78,22 @@ public record FeatureFlag
         };
     }
 
-    public virtual bool Equals(FeatureFlag? other)
-    {
-        return other is not null
-               && Key == other.Key
-               && IsEnabled == other.IsEnabled
-               && VariantKey == other.VariantKey
-               && JsonEqual(Payload,  other.Payload);
-    }
+    /// <summary>
+    /// Determines whether the specified <see cref="FeatureFlag"/> is equal to the current <see cref="FeatureFlag"/>.
+    /// </summary>
+    /// <param name="other">The <see cref="FeatureFlag"/> to compare with the current <see cref="FeatureFlag"/>.</param>
+    /// <returns><c>true</c> if the specified <see cref="FeatureFlag"/> is equal to the current</returns>
+    public virtual bool Equals(FeatureFlag? other) =>
+        other is not null
+        && Key == other.Key
+        && IsEnabled == other.IsEnabled
+        && VariantKey == other.VariantKey
+        && JsonEqual(Payload, other.Payload);
 
+    /// <summary>
+    /// Determines whether the specified <see cref="object"/> is equal to the current <see cref="FeatureFlag"/>.
+    /// </summary>
+    /// <returns><c>true</c> if the specified <see cref="object"/> is equal to the current <see cref="FeatureFlag"/>; otherwise, <c>false</c>.</returns>
     public override int GetHashCode() => HashCode.Combine(Key, IsEnabled, VariantKey, Payload);
 
     static bool JsonEqual(JsonDocument? source, JsonDocument? comparand) =>
