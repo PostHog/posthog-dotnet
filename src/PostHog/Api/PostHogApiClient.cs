@@ -229,15 +229,21 @@ internal sealed class PostHogApiClient : IDisposable
 internal static partial class PostHogApiClientLoggerExtensions
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 1000,
         Level = LogLevel.Trace,
         Message = "Api Client Created: {HostUrl}")]
     public static partial void LogTraceApiClientCreated(this ILogger<PostHogApiClient> logger, Uri hostUrl);
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 1001,
         Level = LogLevel.Error,
         Message = "Unable to retrieve remote config payload")]
     public static partial void LogErrorUnableToGetRemoteConfigPayload(
         this ILogger<PostHogApiClient> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1002,
+        Level = LogLevel.Error,
+        Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
+    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogApiClient> logger, Exception exception);
 }

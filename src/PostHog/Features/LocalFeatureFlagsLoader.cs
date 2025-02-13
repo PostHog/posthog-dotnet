@@ -4,7 +4,6 @@ using PostHog.Api;
 using PostHog.Config;
 using PostHog.Library;
 #if NETSTANDARD2_0 || NETSTANDARD2_1
-using PostHog.Library.Polyfills;
 #endif
 
 namespace PostHog.Features;
@@ -22,12 +21,13 @@ internal sealed class LocalFeatureFlagsLoader(
     IOptions<PostHogOptions> options,
     ITaskScheduler taskScheduler,
     TimeProvider timeProvider,
-    ILogger logger) : IDisposable
+    ILoggerFactory loggerFactory) : IDisposable
 {
     volatile int _started;
     LocalEvaluator? _localEvaluator;
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
+    readonly ILogger<LocalFeatureFlagsLoader> _logger = loggerFactory.CreateLogger<LocalFeatureFlagsLoader>();
 
     void StartPollingIfNotStarted()
     {
@@ -68,7 +68,7 @@ internal sealed class LocalFeatureFlagsLoader(
             return _localEvaluator;
         }
 
-        var localEvaluator = new LocalEvaluator(newApiResult, timeProvider, logger);
+        var localEvaluator = new LocalEvaluator(newApiResult, timeProvider, loggerFactory.CreateLogger<LocalEvaluator>());
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
         return localEvaluator;
     }
@@ -85,13 +85,13 @@ internal sealed class LocalFeatureFlagsLoader(
                 }
                 catch (HttpRequestException e)
                 {
-                    logger.LogErrorUnexpectedException(e);
+                    _logger.LogErrorUnexpectedException(e);
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            logger.LogTraceOperationCancelled(nameof(PollForFeatureFlagsAsync));
+            _logger.LogTraceOperationCancelled(nameof(PollForFeatureFlagsAsync));
         }
     }
 
@@ -104,4 +104,16 @@ internal sealed class LocalFeatureFlagsLoader(
     }
 
     public void Clear() => Interlocked.Exchange(ref _localEvaluator, null);
+}
+
+internal static partial class LocalFeatureFlagsLoaderLoggerExtensions
+{
+
+    [LoggerMessage(
+        EventId = 110,
+        Level = LogLevel.Trace,
+        Message = "{MethodName} exiting due to OperationCancelled exception")]
+    public static partial void LogTraceOperationCancelled(
+        this ILogger<LocalFeatureFlagsLoader> logger,
+        string methodName);
 }
