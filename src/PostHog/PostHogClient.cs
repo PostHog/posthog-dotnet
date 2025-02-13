@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -310,6 +311,26 @@ public sealed class PostHogClient : IPostHogClient
         return response;
     }
 
+    /// <inheritdoc/>
+    public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken)
+    {
+        if (_options.Value.PersonalApiKey is null)
+        {
+            _logger.LogWarningPersonalApiKeyRequiredForRemoteConfigPayload();
+            return null;
+        }
+
+        try
+        {
+            return await _apiClient.GetRemoteConfigPayloadAsync(key, cancellationToken);
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+        {
+            _logger.LogErrorUnableToGetDecryptedFeatureFlagPayload(e);
+            return null;
+        }
+    }
+
     bool CaptureFeatureFlagSentEvent(
         string distinctId,
         string featureKey,
@@ -491,8 +512,8 @@ internal static partial class PostHogClientLoggerExtensions
     [LoggerMessage(
         EventId = 9,
         Level = LogLevel.Warning,
-        Message = "[FEATURE FLAGS] You have to specify a personal_api_key to fetch decrypted feature flag payloads.")]
-    public static partial void LogWarningPersonalApiKeyRequiredForFeatureFlagPayload(this ILogger<PostHogClient> logger);
+        Message = "[FEATURE FLAGS] You have to specify a personal_api_key to fetch remote config payloads.")]
+    public static partial void LogWarningPersonalApiKeyRequiredForRemoteConfigPayload(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
         EventId = 10,

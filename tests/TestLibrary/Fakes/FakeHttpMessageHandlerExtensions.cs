@@ -65,6 +65,16 @@ internal static class FakeHttpMessageHandlerExtensions
             HttpMethod.Get,
             responseBody: responseBody);
 
+
+    public static FakeHttpMessageHandler.RequestHandler AddRemoteConfigResponse(
+        this FakeHttpMessageHandler handler,
+        string key,
+        string responseBody) =>
+        handler.AddResponse(
+            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config/"),
+            HttpMethod.Get,
+            responseBody: responseBody);
+
     public static FakeHttpMessageHandler.RequestHandler AddDecryptedPayloadResponse(
         this FakeHttpMessageHandler handler,
         string key,

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PostHog.Api;
 using PostHog.Features;
 using PostHog.Json;
@@ -112,6 +113,14 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         string distinctId,
         FeatureFlagOptions? options,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Retrieves a remote config payload.
+    /// </summary>
+    /// <param name="key">The remote config key.</param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>The <see cref="JsonDocument"/> payload for the remote config setting.</returns>
+    Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken);
 
     /// <summary>
     /// Retrieves all the feature flags.

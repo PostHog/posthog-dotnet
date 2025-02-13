@@ -156,6 +156,16 @@ internal sealed class PostHogApiClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Retrieves a remote config payload by making a request to the <c>/remote_config/</c> endpoint.
+    /// </summary>
+    /// <param name="key">The config key.</param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns></returns>
+    public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken) =>
+        await GetAuthenticatedResponseAsync<JsonDocument>(
+            $"/api/projects/@current/feature_flags/{key}/remote_config/",
+            cancellationToken);
 
     async Task<T?> GetAuthenticatedResponseAsync<T>(string relativeUrl, CancellationToken cancellationToken)
     {
@@ -215,4 +225,11 @@ internal static partial class PostHogApiClientLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Api Client Created: {HostUrl}")]
     public static partial void LogTraceApiClientCreated(this ILogger<PostHogApiClient> logger, Uri hostUrl);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Error,
+        Message = "Unable to retrieve remote config payload")]
+    public static partial void LogErrorUnableToGetRemoteConfigPayload(
+        this ILogger<PostHogApiClient> logger, Exception exception);
 }
