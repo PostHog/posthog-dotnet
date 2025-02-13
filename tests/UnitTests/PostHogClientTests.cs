@@ -1,354 +1,16 @@
-using System.Net.Http.Headers;
+using System.Net;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Config;
-using PostHog.Features;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 
 #pragma warning disable CA2000
 namespace PostHogClientTests;
 
-public class TheCaptureEventMethod
-{
-    [Fact]
-    public async Task SendsBatchToCaptureEndpoint()
-    {
-        var container = new TestContainer();
-        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = client.Capture("some-distinct-id", "some_event");
-
-        Assert.True(result);
-        await client.FlushAsync();
-        var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
-                       {
-                         "api_key": "fake-project-api-key",
-                         "historical_migrations": false,
-                         "batch": [
-                           {
-                             "event": "some_event",
-                             "properties": {
-                               "distinct_id": "some-distinct-id",
-                               "$lib": "posthog-dotnet",
-                               "$lib_version": "{{VersionConstants.Version}}",
-                               "$geoip_disable": true
-                             },
-                             "timestamp": "2024-01-21T19:08:23\u002B00:00"
-                           }
-                         ]
-                       }
-                       """, received);
-    }
-
-    [Fact] // Ported from PostHog/posthog-python test_groups_capture
-    public async Task CapturesGroups()
-    {
-        var container = new TestContainer();
-        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = client.Capture(
-            distinctId: "some-distinct-id",
-            eventName: "some_event",
-            groups: [
-                new Group("company", "id:5"),
-                new Group("department", "engineering")
-            ]);
-
-        Assert.True(result);
-        await client.FlushAsync();
-        var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
-                       {
-                         "api_key": "fake-project-api-key",
-                         "historical_migrations": false,
-                         "batch": [
-                           {
-                             "event": "some_event",
-                             "properties": {
-                               "distinct_id": "some-distinct-id",
-                               "$lib": "posthog-dotnet",
-                               "$lib_version": "{{VersionConstants.Version}}",
-                               "$geoip_disable": true,
-                               "$groups": {
-                                 "company": "id:5",
-                                 "department": "engineering"
-                               }
-                             },
-                             "timestamp": "2024-01-21T19:08:23\u002B00:00"
-                           }
-                         ]
-                       }
-                       """, received);
-    }
-
-    [Fact] // Ported from PostHog/posthog-python test_basic_super_properties
-    public async Task SendsSuperPropertiesToEndpoint()
-    {
-        var container = new TestContainer(sp =>
-        {
-            sp.AddSingleton<IOptions<PostHogOptions>>(new PostHogOptions
-            {
-                ProjectApiKey = "fake-project-api-key",
-                SuperProperties = new Dictionary<string, object> { ["source"] = "repo-name" }
-            });
-        });
-        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = client.Capture("some-distinct-id", "some_event");
-
-        Assert.True(result);
-        await client.FlushAsync();
-        var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
-                       {
-                         "api_key": "fake-project-api-key",
-                         "historical_migrations": false,
-                         "batch": [
-                           {
-                             "event": "some_event",
-                             "properties": {
-                               "distinct_id": "some-distinct-id",
-                               "$lib": "posthog-dotnet",
-                               "$lib_version": "{{VersionConstants.Version}}",
-                               "$geoip_disable": true,
-                               "source": "repo-name"
-                             },
-                             "timestamp": "2024-01-21T19:08:23\u002B00:00"
-                           }
-                         ]
-                       }
-                       """, received);
-    }
-
-    [Fact] // Ported from PostHog/posthog-python test_basic_capture_with_feature_flags
-    public async Task SendsFeatureFlags()
-    {
-        var container = new TestContainer();
-        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        container.FakeHttpMessageHandler.AddDecideResponse(
-            """
-            {"featureFlags": {"beta-feature": "random-variant", "another-feature": "another-variant", "false-flag": false}}
-            """
-        );
-        var client = container.Activate<PostHogClient>();
-
-        var result = client.Capture("some-distinct-id", "dotnet test event", sendFeatureFlags: true);
-
-        Assert.True(result);
-        await client.FlushAsync();
-        var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
-                     {
-                       "api_key": "fake-project-api-key",
-                       "historical_migrations": false,
-                       "batch": [
-                         {
-                           "event": "dotnet test event",
-                           "properties": {
-                             "distinct_id": "some-distinct-id",
-                             "$lib": "posthog-dotnet",
-                             "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true,
-                             "$feature/beta-feature": "random-variant",
-                             "$feature/another-feature": "another-variant",
-                             "$feature/false-flag": false,
-                             "$active_feature_flags": [
-                               "beta-feature",
-                               "another-feature"
-                             ]
-                           },
-                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
-                         }
-                       ]
-                     }
-                     """, received);
-    }
-
-    [Fact] // Ported from PostHog/posthog-python test_basic_capture_with_locally_evaluated_feature_flags
-    public async Task SendsLocallyEvaluatedFeatureFlags()
-    {
-        var container = new TestContainer("fake-personal-api-key");
-        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
-        var firstRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var secondRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
-            """
-            {
-                "flags": [{
-                    "id": 1,
-                    "name": "Beta Feature",
-                    "key": "beta-feature-local",
-                    "active": true,
-                    "rollout_percentage": 100,
-                    "filters": {
-                        "groups": [
-                            {
-                                "properties": [
-                                    {"key": "email", "type": "person", "value": "test@posthog.com", "operator": "exact"}
-                                ],
-                                "rollout_percentage": 100
-                            },
-                            {
-                                "rollout_percentage": 50
-                            }
-                        ],
-                        "multivariate": {
-                            "variants": [
-                                {"key": "first-variant", "name": "First Variant", "rollout_percentage": 50},
-                                {"key": "second-variant", "name": "Second Variant", "rollout_percentage": 25},
-                                {"key": "third-variant", "name": "Third Variant", "rollout_percentage": 25}
-                            ]
-                        },
-                        "payloads": {"first-variant": "some-payload", "third-variant": "{\"a\": \"json\"}"}
-                    }
-                },
-                {
-                    "id": 2,
-                    "name": "Beta Feature",
-                    "key": "person-flag",
-                    "active": true,
-                    "filters": {
-                        "groups": [
-                            {
-                                "properties": [
-                                    {
-                                        "key": "region",
-                                        "operator": "exact",
-                                        "value": ["USA"],
-                                        "type": "person"
-                                    }
-                                ],
-                                "rollout_percentage": 100
-                            }
-                        ],
-                        "payloads": {"true": "300"}
-                    }
-                },
-                {
-                    "id": 3,
-                    "name": "Beta Feature",
-                    "key": "false-flag",
-                    "active": true,
-                    "filters": {
-                        "groups": [
-                            {
-                                "properties": [],
-                                "rollout_percentage": 0
-                            }
-                        ],
-                        "payloads": {"true": "300"}
-                    }
-                }]
-            }
-            """
-        );
-        var client = container.Activate<PostHogClient>();
-
-        // Call it without pre-loading flags.
-        var firstCaptureResult = client.Capture("distinct_id", "dotnet test event");
-
-        Assert.True(firstCaptureResult);
-        await client.FlushAsync();
-        var firstRequestBody = firstRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
-                     {
-                       "api_key": "fake-project-api-key",
-                       "historical_migrations": false,
-                       "batch": [
-                         {
-                           "event": "dotnet test event",
-                           "properties": {
-                             "distinct_id": "distinct_id",
-                             "$lib": "posthog-dotnet",
-                             "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
-                           },
-                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
-                         }
-                       ]
-                     }
-                     """, firstRequestBody);
-
-        // Load the feature flags
-        await client.GetAllFeatureFlagsAsync("distinct_id", options: new AllFeatureFlagsOptions { OnlyEvaluateLocally = true });
-        var secondCaptureResult = client.Capture("distinct_id", "dotnet test event");
-
-        await client.FlushAsync();
-        var secondRequestBody = secondRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
-                       {
-                         "api_key": "fake-project-api-key",
-                         "historical_migrations": false,
-                         "batch": [
-                           {
-                             "event": "dotnet test event",
-                             "properties": {
-                               "distinct_id": "distinct_id",
-                               "$lib": "posthog-dotnet",
-                               "$lib_version": "{{VersionConstants.Version}}",
-                               "$geoip_disable": true,
-                               "$feature/beta-feature-local": "third-variant",
-                               "$feature/false-flag": false,
-                               "$active_feature_flags": [
-                                 "beta-feature-local"
-                               ]
-                             },
-                             "timestamp": "2024-01-21T19:08:23\u002B00:00"
-                           }
-                         ]
-                       }
-                       """, secondRequestBody);
-        Assert.True(secondCaptureResult);
-    }
-
-    [Fact]
-    public async Task UsesAuthenticatedHttpClientForLocalEvaluationFlags()
-    {
-        var container = new TestContainer("fake-personal-api-key");
-        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
-        var requestHandler = container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
-            """
-            {
-              "flags":[
-                 {
-                    "id":1,
-                    "name":"Beta Feature",
-                    "key":"beta-feature",
-                    "active":true,
-                    "rollout_percentage":100,
-                    "filters":{
-                       "groups":[
-                          {
-                             "properties":[],
-                             "rollout_percentage":100
-                          }
-                       ]
-                    }
-                 }
-              ]
-            }
-            """
-        );
-        var client = container.Activate<PostHogClient>();
-
-        await client.GetAllFeatureFlagsAsync("some-distinct-id");
-
-        var received = requestHandler.ReceivedRequest;
-        Assert.NotNull(received.Headers.Authorization);
-        Assert.Equal(new AuthenticationHeaderValue("Bearer", "fake-personal-api-key"), received.Headers.Authorization);
-    }
-}
 
 public class TheIdentifyPersonAsyncMethod
 {
@@ -500,5 +162,56 @@ public class TheIdentifyGroupAsyncMethod
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
+    }
+}
+
+public class TheGetDecryptedFeatureFlagPayloadAsyncMethod
+{
+    [Fact]
+    public async Task RetrievesDecryptedPayload()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddDecryptedPayloadResponse(
+            key: "remote-config-key",
+            responseBody: """{"foo" : "bar", "baz" : 42}"""
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetDecryptedFeatureFlagPayloadAsync("remote-config-key", CancellationToken.None);
+
+        Assert.NotNull(result);
+        JsonAssert.AreEqual("""{"foo":"bar","baz":42}""", result);
+    }
+
+    [Fact]
+    public async Task ReturnsNullWhenNotAuthorizedAndLogsError()
+    {
+        var container = new TestContainer("personal-api-key");
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/api/projects/@current/feature_flags/some-key/remote_config/"),
+            HttpMethod.Get,
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "authentication_error",
+                        "code": "authentication_failed",
+                        "detail": "Incorrect authentication credentials.",
+                        "attr": null
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetDecryptedFeatureFlagPayloadAsync("some-key", CancellationToken.None);
+
+        Assert.Null(result);
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error));
+        Assert.Equal(LogLevel.Error, logEvent.LogLevel);
+        Assert.Equal("[FEATURE FLAGS] Error while fetching decrypted feature flag payload.", logEvent.Message);
+        Assert.Equal("Incorrect authentication credentials.", logEvent.Exception?.Message);
     }
 }

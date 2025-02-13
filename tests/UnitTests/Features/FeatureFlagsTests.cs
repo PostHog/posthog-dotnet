@@ -1,6 +1,9 @@
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
+using PostHog.Api;
 using PostHog.Config;
 using PostHog.Features;
 using PostHog.Versioning;
@@ -1163,9 +1166,9 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var firstRequestHandler =
-            container.FakeHttpMessageHandler.AddDecideResponseException(new HttpRequestException());
+            container.FakeHttpMessageHandler.AddDecideResponseException(new UnauthorizedAccessException());
         var secondRequestHandler =
-            container.FakeHttpMessageHandler.AddDecideResponseException(new HttpRequestException());
+            container.FakeHttpMessageHandler.AddDecideResponseException(new UnauthorizedAccessException());
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags":[]}""");
         var client = container.Activate<PostHogClient>();
 
@@ -3084,5 +3087,66 @@ public class TheGetAllFeatureFlagsAsyncMethod
         Assert.NotNull(newResult);
         var newFlag = Assert.Single(newResult.Values);
         Assert.Equal("flag-key-2", newFlag.Key);
+    }
+
+    [Fact]
+    public async Task ReturnsEmptyDictionaryWhenPersonalApiKeyIncorrect()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddDecideResponse(new DecideApiResult());
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?token=fake-project-api-key&send_cohorts"),
+            HttpMethod.Get,
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "authentication_error",
+                        "code": "authentication_failed",
+                        "detail": "Incorrect authentication credentials.",
+                        "attr": null
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync("distinct_id");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error));
+        Assert.Empty(result);
+        Assert.Equal("[FEATURE FLAGS] Unable to get feature flags and payloads", logEvent.Message);
+        Assert.Equal("Incorrect authentication credentials.", logEvent.Exception?.Message);
+    }
+
+    [Fact]
+    public async Task ReturnsEmptyDictionaryWhenProjectApiKeyIncorrect()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/decide?v=3"),
+            HttpMethod.Post,
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "authentication_error",
+                        "code": "authentication_failed",
+                        "detail": "Project API Key Incorrect.",
+                        "attr": null
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync("distinct_id");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error));
+        Assert.Empty(result);
+        Assert.Equal("[FEATURE FLAGS] Unable to get feature flags and payloads", logEvent.Message);
+        Assert.Equal("Project API Key Incorrect.", logEvent.Exception?.Message);
     }
 }

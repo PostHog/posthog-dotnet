@@ -1,12 +1,10 @@
-
-
 using System.Collections.Concurrent;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Internal;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
-public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExternalScopeProvider
+public sealed class FakeLoggerProvider
+    : ILoggerProvider, ILoggerFactory, IExternalScopeProvider
 {
     // I don't think locking is a problem here. Contention is low.
     // If it becomes a problem, we could use ConcurrentQueue or ImmutableQueue instead.
@@ -14,14 +12,10 @@ public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExter
     readonly List<LogEvent> _allEvents = new();
 
     readonly AsyncLocal<Scope?> _scope = new();
-    readonly ITestOutputHelper? _testOutputHelper;
+
+    public ITestOutputHelper? TestOutputHelper { get; set; }
 
     public ConcurrentDictionary<string, FakeLogger> Loggers { get; } = new();
-
-    public FakeLoggerProvider(IServiceProvider? serviceProvider = null)
-    {
-        _testOutputHelper = serviceProvider?.GetService<ITestOutputHelper>();
-    }
 
     public static string GetCategoryName<T>() =>
         // Copied from: https://github.com/dotnet/runtime/blob/8b1d1eabe32ba781ffcce2867333dfdc53bdd635/src/libraries/Microsoft.Extensions.Logging.Abstractions/src/LoggerT.cs
@@ -36,12 +30,12 @@ public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExter
     /// </summary>
     /// <param name="categoryPrefix">
     /// The category prefix to match.
-    /// The default value if this is not specified is "Serious.".
+    /// The default value if this is not specified is "PostHog.".
     /// Specify 'null' explicitly to match all categories.
     /// </param>
     /// <param name="minimumLevel">The minimum <see cref="LogLevel"/> of events to retrieve.</param>
     /// <param name="eventName">If specified, only events matching this name will be retrieved.</param>
-    public IReadOnlyList<LogEvent> GetAllEvents(string? categoryPrefix = "Serious.", LogLevel? minimumLevel = null, string? eventName = null)
+    public IReadOnlyList<LogEvent> GetAllEvents(string? categoryPrefix = "PostHog.", LogLevel? minimumLevel = null, string? eventName = null)
     {
         List<LogEvent> destination;
         lock (_allEvents)
@@ -55,20 +49,18 @@ public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExter
         return destination;
     }
 
-    public ILogger CreateLogger(string categoryName)
-    {
-        return Loggers.GetOrAdd(categoryName, _ => new FakeLogger(categoryName, this));
-    }
+    ILogger ILoggerProvider.CreateLogger(string categoryName) =>
+        Loggers.GetOrAdd(categoryName, _ => new FakeLogger(categoryName, this));
+
+    ILogger ILoggerFactory.CreateLogger(string categoryName) =>
+        Loggers.GetOrAdd(categoryName, _ => new FakeLogger(categoryName, this));
 
     internal void RecordEvent(LogEvent evt)
     {
         lock (_lock)
         {
             _allEvents.Add(evt);
-            if (_testOutputHelper is not null)
-            {
-                _testOutputHelper.WriteLine($"[{evt.CategoryName}:{evt.EventId.Name}] [{evt.LogLevel}] {evt.Message}");
-            }
+            TestOutputHelper?.WriteLine($"[{evt.CategoryName}:{evt.EventId.Name}] [{evt.LogLevel}] {evt.Message}");
         }
     }
 
@@ -77,35 +69,35 @@ public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExter
 
     public bool DidLog(string categoryName, string eventName, IReadOnlyDictionary<string, object> parameters)
     {
+        var events = GetAllEvents(categoryName);
+        return events.Any(msg => msg.EventId.Name == eventName && StateMatches(msg.State, parameters));
+
         bool StateMatches(object? argState, IReadOnlyDictionary<string, object> expectedParameters)
         {
-            if (argState is IEnumerable<KeyValuePair<string, object>> pairs)
+            if (argState is not IEnumerable<KeyValuePair<string, object>> pairs)
             {
-                var argDict = new Dictionary<string, object>(pairs);
-                foreach (var (expectedKey, expectedValue) in expectedParameters)
+                return false;
+            }
+            var argDict = new Dictionary<string, object>(pairs);
+            foreach (var (expectedKey, expectedValue) in expectedParameters)
+            {
+                if (!argDict.TryGetValue(expectedKey, out var actualValue)
+                    || !Equals(actualValue, expectedValue))
                 {
-                    if (!argDict.TryGetValue(expectedKey, out var actualValue)
-                        || !Equals(actualValue, expectedValue))
-                    {
-                        return false;
-                    }
+                    return false;
                 }
-
-                return true;
             }
 
-            return false;
-        }
+            return true;
 
-        var evts = GetAllEvents(categoryName);
-        return evts.Any(msg => msg.EventId.Name == eventName && StateMatches(msg.State, parameters));
+        }
     }
 
-    public void AddProvider(ILoggerProvider provider)
+    void ILoggerFactory.AddProvider(ILoggerProvider provider)
     {
     }
 
-    public void ForEachScope<TState>(Action<object?, TState> callback, TState state)
+    void IExternalScopeProvider.ForEachScope<TState>(Action<object?, TState> callback, TState state)
     {
         var scopes = new List<Scope>();
 
@@ -122,7 +114,7 @@ public sealed class FakeLoggerProvider : ILoggerProvider, ILoggerFactory, IExter
         }
     }
 
-    public IDisposable Push(object? state)
+    IDisposable IExternalScopeProvider.Push(object? state)
     {
         var current = _scope.Value;
         var next = new Scope(this, state, current);

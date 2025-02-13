@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -254,7 +255,7 @@ public sealed class PostHogClient : IPostHogClient
             {
                 _logger.LogDebugFailedToComputeFlag(e, featureKey);
             }
-            catch (HttpRequestException e)
+            catch (Exception e) when (e is HttpRequestException or UnauthorizedAccessException)
             {
                 _logger.LogErrorFailedToComputeFlag(e, featureKey);
             }
@@ -278,7 +279,7 @@ public sealed class PostHogClient : IPostHogClient
                 };
                 _logger.LogDebugSuccessRemotely(featureKey, response);
             }
-            catch (HttpRequestException e)
+            catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
             {
                 _logger.LogErrorUnableToGetRemotely(e, featureKey);
             }
@@ -343,25 +344,38 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
-        if (_options.Value.PersonalApiKey is null)
+        if (_options.Value.PersonalApiKey is not null)
         {
-            return await DecideAsync(distinctId, options: options, cancellationToken);
+
+            // Attempt to load local feature flags.
+            var localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+            if (localEvaluator is not null)
+            {
+                var (localEvaluationResults, fallbackToDecide) = localEvaluator.EvaluateAllFlags(
+                    distinctId,
+                    options?.Groups,
+                    options?.PersonProperties,
+                    warnOnUnknownGroups: false);
+
+                if (!fallbackToDecide || options is { OnlyEvaluateLocally: true })
+                {
+                    return localEvaluationResults;
+                }
+            }
         }
 
-        // Attempt to load local feature flags.
-        var localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
-        if (localEvaluator is null)
+        try
         {
-            return await DecideAsync(distinctId, options: options, cancellationToken);
+            return await DecideAsync(distinctId, options, cancellationToken);
         }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+        {
+            _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
+            return new Dictionary<string, FeatureFlag>();
+        }
+    }
 
-        var (localEvaluationResults, fallbackToDecide) = localEvaluator.EvaluateAllFlags(
-            distinctId,
-            options?.Groups,
-            options?.PersonProperties,
-            warnOnUnknownGroups: false);
-
-        if (!fallbackToDecide || options is { OnlyEvaluateLocally: true })
+    /// <inheritdoc/>
         {
             return localEvaluationResults;
         }
@@ -375,10 +389,10 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
-        return await _featureFlagsCache.GetAndCacheFeatureFlagsAsync(
-            distinctId,
-            fetcher: _ => FetchDecideAsync(),
-            cancellationToken: cancellationToken);
+            return await _featureFlagsCache.GetAndCacheFeatureFlagsAsync(
+                distinctId,
+                fetcher: _ => FetchDecideAsync(),
+                cancellationToken: cancellationToken);
 
         async Task<IReadOnlyDictionary<string, FeatureFlag>> FetchDecideAsync()
         {
@@ -474,7 +488,7 @@ internal static partial class PostHogClientLoggerExtensions
     public static partial void LogDebugSuccessRemotely(this ILogger<PostHogClient> logger, string key, FeatureFlag? result);
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 8,
         Level = LogLevel.Warning,
         Message = "Capture failed for event {EventName} with {PropertiesCount} properties. {Count} items in the queue")]
     public static partial void LogWarnCaptureFailed(
@@ -482,4 +496,18 @@ internal static partial class PostHogClientLoggerExtensions
         string eventName,
         int propertiesCount,
         int count);
+
+    [LoggerMessage(
+        EventId = 9,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] You have to specify a personal_api_key to fetch decrypted feature flag payloads.")]
+    public static partial void LogWarningPersonalApiKeyRequiredForFeatureFlagPayload(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 10,
+        Level = LogLevel.Error,
+        Message = "[FEATURE FLAGS] Error while fetching decrypted feature flag payload.")]
+    public static partial void LogErrorUnableToGetDecryptedFeatureFlagPayload(
+        this ILogger<PostHogClient> logger,
+        Exception exception);
 }

@@ -62,6 +62,7 @@ internal sealed class LocalFeatureFlagsLoader(
     {
         StartPollingIfNotStarted();
         var newApiResult = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+
         if (newApiResult is null)
         {
             return _localEvaluator;

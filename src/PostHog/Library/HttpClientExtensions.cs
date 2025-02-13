@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Http.Json;
+using PostHog.Api;
 using PostHog.Json;
 
 namespace PostHog.Library;
@@ -29,6 +31,13 @@ internal static class HttpClientExtensions
             content,
             JsonSerializerHelper.Options,
             cancellationToken);
+
+        if (response.StatusCode is HttpStatusCode.Unauthorized)
+        {
+            var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
+                cancellationToken: cancellationToken);
+            throw new UnauthorizedAccessException(error?.Detail);
+        }
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadAsStreamAsync(cancellationToken);

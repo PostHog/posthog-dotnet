@@ -7,6 +7,8 @@ using Microsoft.Extensions.Time.Testing;
 using PostHog;
 using PostHog.Config;
 using PostHog.Library;
+using TestLibrary.Fakes;
+using Xunit.Abstractions;
 
 namespace UnitTests.Fakes;
 
@@ -53,17 +55,20 @@ public sealed class TestContainer : IServiceProvider
 
     public FakeTaskScheduler FakeTaskScheduler { get; } = new();
 
+    public FakeLoggerProvider FakeLoggerProvider { get; } = new() { TestOutputHelper = new ConsoleTestOutputHelper() };
+
+    public ConsoleTestOutputHelper ConsoleTestOutputHelper => FakeLoggerProvider.TestOutputHelper as ConsoleTestOutputHelper ?? new ConsoleTestOutputHelper();
+
     void ConfigureServices(IServiceCollection services)
     {
         services.Configure<PostHogOptions>(options =>
         {
             options.ProjectApiKey = "fake-project-api-key";
         });
+        services.AddSingleton<ITestOutputHelper>(ConsoleTestOutputHelper);
         services.AddSingleton<FakeLoggerProvider>();
-        services.AddLogging();
-        services.AddSingleton<ILogger>(_ => NullLogger.Instance);
-        services.AddSingleton<ILoggerFactory>(s => s.GetRequiredService<FakeLoggerProvider>());
-        services.AddSingleton<ILoggerProvider>(s => s.GetRequiredService<FakeLoggerProvider>());
+        services.AddSingleton<ILoggerFactory>(FakeLoggerProvider);
+        services.AddSingleton<ILoggerProvider>(FakeLoggerProvider);
         services.AddSingleton<HttpMessageHandler>(FakeHttpMessageHandler);
         services.AddSingleton<TimeProvider>(_ =>
         {

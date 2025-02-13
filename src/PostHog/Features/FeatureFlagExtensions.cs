@@ -143,8 +143,10 @@ public static class FeatureFlagExtensions
     public static async Task<IReadOnlyDictionary<string, FeatureFlag>> GetAllFeatureFlagsAsync(
         this IPostHogClient client,
         string distinctId)
-        => await NotNull(client)
+    {
+        return await NotNull(client)
             .GetAllFeatureFlagsAsync(distinctId, options: new AllFeatureFlagsOptions(), CancellationToken.None);
+    }
 
     /// <summary>
     /// When reporting the result of a feature flag evaluation, this method converts the result to a string
