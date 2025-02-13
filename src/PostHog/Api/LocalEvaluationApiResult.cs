@@ -341,9 +341,6 @@ internal record FilterSet : Filter
 /// <summary>
 /// A filter that filters on a property.
 /// </summary>
-/// <summary>
-/// A filter that filters on a property.
-/// </summary>
 internal record PropertyFilter : Filter
 {
     /// <summary>
