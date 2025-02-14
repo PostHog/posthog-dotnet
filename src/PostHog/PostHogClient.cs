@@ -36,7 +36,8 @@ public sealed class PostHogClient : IPostHogClient
             NullFeatureFlagCache.Instance,
             new SimpleHttpClientFactory(),
             new TaskRunTaskScheduler(),
-            TimeProvider.System, NullLoggerFactory.Instance)
+            TimeProvider.System,
+            NullLoggerFactory.Instance)
     {
     }
 
@@ -78,7 +79,7 @@ public sealed class PostHogClient : IPostHogClient
             options,
             taskScheduler,
             timeProvider,
-            NullLoggerFactory.Instance);
+            loggerFactory);
         _featureFlagsCache = featureFlagsCache;
         _featureFlagSentCache = new MemoryCache(new MemoryCacheOptions
         {
