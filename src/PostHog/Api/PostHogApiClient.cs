@@ -185,7 +185,7 @@ internal sealed class PostHogApiClient : IDisposable
             {
                 var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
                     cancellationToken: cancellationToken);
-                throw new UnauthorizedAccessException(error?.Detail);
+                throw new UnauthorizedAccessException(error?.Detail ?? "Unauthorized");
             }
             // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
             catch (JsonException e)
