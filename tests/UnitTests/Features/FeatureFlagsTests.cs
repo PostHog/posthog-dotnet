@@ -2372,7 +2372,7 @@ public class TheGetFeatureFlagAsyncMethod
             responseBodyFunc: count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var posthog = container.Activate<PostHogClient>();
-        
+
         await posthog.FlushAsync();
         Assert.Empty(captureRequestHandler.ReceivedRequests);
     }

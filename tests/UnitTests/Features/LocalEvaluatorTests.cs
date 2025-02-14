@@ -179,7 +179,7 @@ public class TheEvaluateFeatureFlagMethod
         Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
             key: "email",
             distinctId: "1234",
-            personProperties: new Dictionary<string, object?>
+            personProperties: new()
             {
                 ["not-email"] = "anything"
             }));

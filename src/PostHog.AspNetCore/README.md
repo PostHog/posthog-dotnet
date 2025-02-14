@@ -65,29 +65,33 @@ The available options are:
 > When that number is reached, the client will start dropping older events. `MaxBatchSize` ensures that the `/batch` 
 > request doesn't get too large.
 
+## Docs
+
+More detailed docs for using this library can be found at [PostHog Docs for the .NET Client SDK](https://posthog.com/docs/libraries/dotnet).
+
 ## Usage
 
 Inject the `IPostHogClient` interface into your controller or page:
 
 ```csharp
-public class HomeController(IPostHogClient posthogClient) : Controller
+public class HomeController(IPostHogClient posthog) : Controller
 {
     public IActionResult SignUpComplete()
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        posthogClient.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
+        posthog.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
         return View();
     }
 }
 ```
 
 ```csharp
-public class IndexModel(IPostHogClient client) : PageModel
+public class IndexModel(IPostHogClient posthog) : PageModel
 {
     public void OnGet()
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        client.CapturePageView(userId, Request.Path.Value ?? "Unknown");
+        posthog.CapturePageView(userId, Request.Path.Value ?? "Unknown");
     }
 }
 ```
@@ -103,7 +107,7 @@ Identifying a user typically happens on the front-end. For example, when an auth
 When `identify` is called the first-time for a distinct id, PostHog will create a new user profile. If the user already exists, PostHog will update the user profile with the new data. So the typical usage of `IdentifyAsync` here will be to update the person properties that PostHog knows about your user.
 
 ```csharp
-await posthogClient.IdentifyAsync(
+await posthog.IdentifyAsync(
     userId,
     new() 
     {
@@ -120,7 +124,7 @@ Use the `Alias` method to associate one identity with another. This is useful wh
 ```csharp
 var sessionId = Request.Cookies["session_id"]; // Used for anonymous actions.
 var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value; // Now we know who they are.
-await posthogClient.AliasAsync(sessionId, userId);
+await posthog.AliasAsync(sessionId, userId);
 ```
 
 ### Analytics
@@ -130,19 +134,19 @@ await posthogClient.AliasAsync(sessionId, userId);
 Note that capturing events is designed to be fast and done in the background. You can configure how often batches are sent to the PostHog API using the `FlushAt` and `FlushInterval` settings.
 
 ```csharp
-posthogClient.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
+posthog.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
 ```
 
 #### Capture a Page View
 
 ```csharp
-posthogClient.CapturePageView(userId, Request.Path.Value ?? "Unknown");
+posthog.CapturePageView(userId, Request.Path.Value ?? "Unknown");
 ```
 
 #### Capture a Screen View
 
 ```csharp
-posthogClient.CaptureScreen(userId, "Main Screen");
+posthog.CaptureScreen(userId, "Main Screen");
 ```
 
 ### Feature Flags
@@ -152,7 +156,7 @@ posthogClient.CaptureScreen(userId, "Main Screen");
 Check if the `awesome-new-feature` feature flag is enabled for the user with the id `userId`.
 
 ```csharp
-var enabled = await posthogClient.IsFeatureEnabledAsync(userId, "awesome-new-feature");
+var enabled = await posthog.IsFeatureEnabledAsync(userId, "awesome-new-feature");
 ```
 
 ### Get a single Feature Flag
@@ -160,7 +164,7 @@ var enabled = await posthogClient.IsFeatureEnabledAsync(userId, "awesome-new-fea
 Some feature flags may have associated payloads.
 
 ```csharp
-if (await posthogClient.GetFeatureFlagAsync(userId, "awesome-new-feature") is { Payload: {} payload })
+if (await posthog.GetFeatureFlagAsync("awesome-new-feature", "some-user-id") is { Payload: {} payload })
 {
     // Do something with the payload.
     Console.WriteLine($"The payload is: {payload}");
@@ -172,21 +176,23 @@ if (await posthogClient.GetFeatureFlagAsync(userId, "awesome-new-feature") is { 
 Using information on the PostHog server.
 
 ```csharp
-var flags = await posthogClient.GetFeatureFlagsAsync(userId);
+var flags = await posthog.GetAllFeatureFlagsAsync("some-user-id");
 ```
 
-Overriding the groups for the current user.
+Overriding the group properties for the current user.
 
 ```csharp
-var flags = await postHogClient.GetFeatureFlagsAsync(
-    userId,
-    personProperties: null,
-    groupProperties:
+var flags = await posthog.GetAllFeatureFlagsAsync(
+"some-user-id",
+options: new AllFeatureFlagsOptions
+{
+    Groups =
     [
-        new Group("project", "aaaa-bbbb-cccc", new Dictionary<string, object>
+        new Group("project", "aaaa-bbbb-cccc")
         {
-            ["size"] = ProjectSize ?? "large"
-        })
-    ],
-    cancellationToken: HttpContext.RequestAborted);
+            ["$group_key"] = "aaaa-bbbb-cccc",
+            ["size"] = "large"
+        }
+    ]
+});
 ```

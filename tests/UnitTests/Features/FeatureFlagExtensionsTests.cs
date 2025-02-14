@@ -1,4 +1,5 @@
 ﻿using PostHog;
+using PostHog.Features;
 using UnitTests.Fakes;
 
 #pragma warning disable CA2000
@@ -70,5 +71,70 @@ public class TheIsFeatureEnabledAsyncMethod
         var result = await client.IsFeatureEnabledAsync("not-flag-key", "distinctId");
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task ReturnsTrueOnLocallyEvaluatedProperty()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {
+               "flags":[
+                  {
+                     "id":1,
+                     "name":"Beta Feature",
+                     "key":"person-flag",
+                     "active":true,
+                     "filters":{
+                        "groups":[
+                           {
+                              "properties":[
+                                 {
+                                    "key":"region",
+                                    "operator":"exact",
+                                    "value":[
+                                       "USA"
+                                    ],
+                                    "type":"person"
+                                 }
+                              ],
+                              "rollout_percentage":100
+                           }
+                        ]
+                     }
+                  }
+               ]
+            }
+            """
+        );
+        var posthog = container.Activate<PostHogClient>();
+
+        Assert.True(
+            await posthog.IsFeatureEnabledAsync(
+                "person-flag",
+                distinctId: "some-distinct-id",
+                personProperties: new() { ["region"] = "USA" })
+        );
+        Assert.False(
+            await posthog.GetFeatureFlagAsync(
+                "person-flag",
+                distinctId: "some-distinct-2",
+                personProperties: new() { ["region"] = "Canada" })
+        );
+
+        var flags = await posthog.GetAllFeatureFlagsAsync(
+        "some-user-id",
+        options: new AllFeatureFlagsOptions
+        {
+            Groups =
+            [
+                new Group("project", "aaaa-bbbb-cccc")
+        {
+            ["$group_key"] = "aaaa-bbbb-cccc",
+            ["size"] = "large"
+        }
+            ]
+        });
     }
 }
