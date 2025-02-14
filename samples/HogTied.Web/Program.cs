@@ -10,10 +10,19 @@ using PostHog.Library;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-builder.AddPostHog()
-    .AddHttpMessageHandler<LoggingHttpMessageHandler>()
-    .Services
+
+builder.AddPostHog(options =>
+{
+    // Not needed as PostHog is the default, but wanted to show it can be set.
+    options.UseConfigurationSection("PostHog");
+    // Logs requests and responses. Fine for a sample project. Probably not good for production.
+    options.ConfigureHttpClient(httpClientBuilder => httpClientBuilder.AddHttpMessageHandler<LoggingHttpMessageHandler>());
+});
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+                       ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+builder.Services
     .AddTransient<LoggingHttpMessageHandler>()
     .AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connectionString))
     .AddDatabaseDeveloperPageExceptionFilter()
