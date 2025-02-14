@@ -20,6 +20,9 @@ public enum ComparisonOperator
     [JsonStringEnumMemberName("is_set")]
     IsSet,
 
+    [JsonStringEnumMemberName("is_not_set")]
+    IsNotSet,
+
     [JsonStringEnumMemberName("gt")]
     GreaterThan,
 

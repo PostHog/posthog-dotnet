@@ -13,7 +13,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PostHog.Api;
 using PostHog.Json;
-using PostHog.Library;
 using static PostHog.Library.Ensure;
 
 namespace PostHog.Features;
@@ -470,11 +469,17 @@ internal sealed class LocalEvaluator
     /// <returns><c>true</c> if the current user/group matches the property. Otherwise <c>false</c>.</returns>
     bool MatchProperty(PropertyFilter propertyFilter, Dictionary<string, object?>? properties)
     {
+        if (propertyFilter.Operator is ComparisonOperator.IsNotSet)
+        {
+            throw new InconclusiveMatchException("Can't match properties with operator is_not_set");
+        }
+
         var key = NotNull(propertyFilter.Key);
         if (propertyFilter.Value is not { } propertyValue)
         {
             throw new InconclusiveMatchException("The filter property value is null");
         }
+
         var value = propertyValue ?? throw new InconclusiveMatchException("The filter property value is null");
 
         // The overrideValue is the value that the user or group has set for the property. It's called "override value"

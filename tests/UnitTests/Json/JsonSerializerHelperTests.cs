@@ -272,6 +272,16 @@ public class TheDeserializeFromCamelCaseJsonMethod
     }
 
     [Fact]
+    public async Task CanDeserializeAnotherLocalEvaluationApiResult()
+    {
+        var json = await File.ReadAllTextAsync("./Json/local-evaluation-api-result-2.json");
+
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
+
+        Assert.NotNull(result);
+    }
+
+    [Fact]
     public async Task ShouldDeserializeApiResult()
     {
         var json = "{\"status\": 1}";
