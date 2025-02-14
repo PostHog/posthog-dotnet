@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace PostHog.Config;
+namespace PostHog;
 
 /// <summary>
 /// Options for configuring the PostHog client.

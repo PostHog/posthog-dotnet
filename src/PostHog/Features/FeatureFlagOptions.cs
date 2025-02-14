@@ -1,5 +1,3 @@
-using PostHog.Config;
-
 namespace PostHog.Features;
 
 /// <summary>

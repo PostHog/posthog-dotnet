@@ -2,7 +2,6 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using PostHog.Config;
 using static PostHog.Library.Ensure;
 
 namespace PostHog.Library;

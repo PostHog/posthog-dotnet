@@ -2,7 +2,6 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using PostHog;
-using PostHog.Config;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 

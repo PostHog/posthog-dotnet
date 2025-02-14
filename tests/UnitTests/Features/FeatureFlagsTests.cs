@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Api;
-using PostHog.Config;
 using PostHog.Features;
 using PostHog.Versioning;
 using UnitTests.Fakes;

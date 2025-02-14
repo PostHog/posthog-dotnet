@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog.Api;
-using PostHog.Config;
 using PostHog.Library;
 #if NETSTANDARD2_0 || NETSTANDARD2_1
 #endif

@@ -1,6 +1,6 @@
 
 using Microsoft.Extensions.Time.Testing;
-using PostHog.Config;
+using PostHog;
 using PostHog.Library;
 #if NETCOREAPP3_1
 using TestLibrary.Fakes.Polyfills;
