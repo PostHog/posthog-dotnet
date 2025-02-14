@@ -28,6 +28,7 @@ internal sealed class LocalFeatureFlagsLoader(
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
     readonly ILogger<LocalFeatureFlagsLoader> _logger = loggerFactory.CreateLogger<LocalFeatureFlagsLoader>();
+    readonly ILogger<LocalEvaluator> _localEvaluatorLogger = loggerFactory.CreateLogger<LocalEvaluator>();
 
     void StartPollingIfNotStarted()
     {
@@ -68,7 +69,7 @@ internal sealed class LocalFeatureFlagsLoader(
             return _localEvaluator;
         }
 
-        var localEvaluator = new LocalEvaluator(newApiResult, timeProvider, loggerFactory.CreateLogger<LocalEvaluator>());
+        var localEvaluator = new LocalEvaluator(newApiResult, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
         return localEvaluator;
     }
