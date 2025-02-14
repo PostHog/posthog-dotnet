@@ -14,7 +14,10 @@ public static class Examples
 
     public static async Task Main()
     {
-        await using var posthog = new PostHogClient(new PostHogOptions());
+        await using var posthog = new PostHogClient(new PostHogOptions
+        {
+            ProjectApiKey = "<ph_project_api_key>"
+        });
         posthog.Capture("distinct_id_of_the_user", "user_signed_up");
         posthog.Capture(
             "distinct_id",
