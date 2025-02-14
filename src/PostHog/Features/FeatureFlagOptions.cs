@@ -1,4 +1,4 @@
-namespace PostHog.Features;
+namespace PostHog;
 
 /// <summary>
 /// Options to control how feature flags are evaluated.
