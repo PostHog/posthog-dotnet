@@ -5,7 +5,8 @@ namespace PostHog;
 /// </summary>
 public static class Examples
 {
-    internal static readonly PostHogClient PostHog = new(new PostHogOptions {
+    internal static readonly PostHogClient PostHog = new(new PostHogOptions
+    {
         ProjectApiKey = "<ph_project_api_key>",
         HostUrl = new Uri("<ph_client_api_host>"),
         PersonalApiKey = Environment.GetEnvironmentVariable("PostHog__PersonalApiKey"),
@@ -110,7 +111,6 @@ public static class Examples
             "distinct_id_of_the_user",
             options: new FeatureFlagOptions
             {
-                PersonProperties = new() { ["property_name"] = "value" },
                 Groups =
                 [
                     new Group("your_group_type", "your_group_id")
