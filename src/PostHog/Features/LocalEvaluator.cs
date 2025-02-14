@@ -23,7 +23,7 @@ namespace PostHog.Features;
 internal sealed class LocalEvaluator
 {
     readonly TimeProvider _timeProvider;
-    readonly ILogger _logger;
+    readonly ILogger<LocalEvaluator> _logger;
     readonly ReadOnlyDictionary<string, LocalFeatureFlag> _localFeatureFlags;
     readonly ReadOnlyDictionary<long, FilterSet> _cohortFilters;
     readonly ReadOnlyDictionary<long, string> _groupTypeMapping;
@@ -37,7 +37,7 @@ internal sealed class LocalEvaluator
     public LocalEvaluator(
         LocalEvaluationApiResult flags,
         TimeProvider timeProvider,
-        ILogger logger)
+        ILogger<LocalEvaluator> logger)
     {
         LocalEvaluationApiResult = NotNull(flags);
         _timeProvider = timeProvider;
@@ -469,11 +469,17 @@ internal sealed class LocalEvaluator
     /// <returns><c>true</c> if the current user/group matches the property. Otherwise <c>false</c>.</returns>
     bool MatchProperty(PropertyFilter propertyFilter, Dictionary<string, object?>? properties)
     {
+        if (propertyFilter.Operator is ComparisonOperator.IsNotSet)
+        {
+            throw new InconclusiveMatchException("Can't match properties with operator is_not_set");
+        }
+
         var key = NotNull(propertyFilter.Key);
         if (propertyFilter.Value is not { } propertyValue)
         {
             throw new InconclusiveMatchException("The filter property value is null");
         }
+
         var value = propertyValue ?? throw new InconclusiveMatchException("The filter property value is null");
 
         // The overrideValue is the value that the user or group has set for the property. It's called "override value"
@@ -567,41 +573,41 @@ internal static partial class LocalEvaluatorLoggerExtensions
         EventId = 1,
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] Unknown group type index {AggregationGroupIndex} for feature flag {FlagKey}")]
-    public static partial void LogWarnUnknownGroupType(this ILogger logger, int aggregationGroupIndex, string flagKey);
+    public static partial void LogWarnUnknownGroupType(this ILogger<LocalEvaluator> logger, int aggregationGroupIndex, string flagKey);
 
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Debug,
         Message = "[FEATURE FLAGS] Can't compute group feature flag: {FlagKey} without group types passed in")]
-    public static partial void LogDebugGroupTypeNotPassedIn(this ILogger logger, string flagKey);
+    public static partial void LogDebugGroupTypeNotPassedIn(this ILogger<LocalEvaluator> logger, string flagKey);
 
     [LoggerMessage(
         EventId = 3,
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] Can't compute group feature flag: {FlagKey} without group types passed in")]
-    public static partial void LogWarnGroupTypeNotPassedIn(this ILogger logger, string flagKey);
+    public static partial void LogWarnGroupTypeNotPassedIn(this ILogger<LocalEvaluator> logger, string flagKey);
 
     [LoggerMessage(
         EventId = 4,
         Level = LogLevel.Debug,
         Message = "Failed to compute property {Property} locally")]
-    public static partial void LogDebugFailedToComputeProperty(this ILogger logger, Exception e, Filter property);
+    public static partial void LogDebugFailedToComputeProperty(this ILogger<LocalEvaluator> logger, Exception e, Filter property);
 
     [LoggerMessage(
         EventId = 5,
         Level = LogLevel.Error,
         Message = "Group Type mapping has an invalid group type id: {GroupTypeId}. Skipping it.")]
-    public static partial void LogErrorInvalidGroupIdSkipped(this ILogger logger, string groupTypeId);
-
-    [LoggerMessage(
-        EventId = 6,
-        Level = LogLevel.Error,
-        Message = "Unexpected exception occurred.")]
-    public static partial void LogErrorUnexpectedException(this ILogger logger, Exception exception);
+    public static partial void LogErrorInvalidGroupIdSkipped(this ILogger<LocalEvaluator> logger, string groupTypeId);
 
     [LoggerMessage(
         EventId = 7,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
-    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger logger, Exception exception);
+    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<LocalEvaluator> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 500,
+        Level = LogLevel.Error,
+        Message = "Unexpected exception occurred during local evaluation.")]
+    public static partial void LogErrorUnexpectedException(this ILogger<LocalEvaluator> logger, Exception exception);
 }

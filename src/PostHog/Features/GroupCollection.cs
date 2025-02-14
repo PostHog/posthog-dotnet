@@ -19,7 +19,8 @@ public class GroupCollection : ICollection<Group>
     /// <param name="groupType">The type of group in PostHog. For example, company, project, etc.</param>
     /// <param name="groupKey">The identifier for the group such as the ID of the group in the database.</param>
     /// <returns><c>true</c> if the group was added. <c>false</c> if the group type already exists.</returns>
-    public bool TryAdd(string groupType, string groupKey) => _groups.TryAdd(groupType, new Group(groupType, groupKey));
+    public bool TryAdd(string groupType, string groupKey) =>
+        _groups.TryAdd(groupType, new Group { GroupType = groupType, GroupKey = groupKey });
 
     /// <summary>
     /// Adds a <see cref="Group"/> with the specified groupType and groupKey to the groups.

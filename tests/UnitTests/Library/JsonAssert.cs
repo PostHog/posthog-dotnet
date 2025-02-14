@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-public static class JsonAssert
+internal static class JsonAssert
 {
     static readonly JsonSerializerOptions IndentedOptions = new()
     {

@@ -159,6 +159,36 @@ public class TheEvaluateFeatureFlagMethod
         Assert.Equal(expected, result);
     }
 
+    [Theory]
+    [InlineData("test@posthog.com")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ThrowsInconclusiveMatchExceptionWhenOperatorIsIsNotSet(string? email)
+    {
+        var flags = CreateFlags(
+            key: "email",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "email",
+                    Value = new PropertyFilterValue("is_not_set"),
+                    Operator = ComparisonOperator.IsNotSet
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["email"] = email
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
+            key: "email",
+            distinctId: "1234",
+            personProperties: properties));
+    }
+
     [Fact]
     public void ThrowsInconclusiveMatchExceptionWhenKeyDoesNotMatch()
     {
@@ -179,7 +209,7 @@ public class TheEvaluateFeatureFlagMethod
         Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
             key: "email",
             distinctId: "1234",
-            personProperties: new Dictionary<string, object?>
+            personProperties: new()
             {
                 ["not-email"] = "anything"
             }));

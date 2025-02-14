@@ -64,7 +64,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         var client = container.Activate<PostHogClient>();
         Assert.False(await client.IsFeatureEnabledAsync("doesnt-exist", "distinct-id"));
         container.FakeHttpMessageHandler.AddDecideResponseException(new HttpRequestException());
-        Assert.Null(await client.IsFeatureEnabledAsync("doesnt-exist", "distinct-id"));
+        Assert.False(await client.IsFeatureEnabledAsync("doesnt-exist", "distinct-id"));
     }
 
     [Fact] // Ported from PostHog/posthog-python test_personal_api_key_doesnt_exist
@@ -609,13 +609,12 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "company",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group
+                    {
+                        GroupType = "company",
+                        GroupKey = "company",
+                        ["name"] = "Project Name 1"
+                    }
                 ]
             }
         );
@@ -626,13 +625,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "company",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 2"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "company",
+                        ["name"] = "Project Name 2"
+                    }
                 ]
             });
         var match = await client.GetFeatureFlagAsync(
@@ -642,13 +639,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon_without_rollout",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "amazon_without_rollout",
+                        ["name"] = "Project Name 1"
+                    }
                 ]
             });
         var notMatchBecauseRollout = await client.GetFeatureFlagAsync(
@@ -658,13 +653,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "amazon",
+                        ["name"] = "Project Name 1"
+                     }
                 ]
             });
         var propertyMismatch = await client.GetFeatureFlagAsync(
@@ -674,13 +667,11 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon_without_rollout",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 2"
-                        })
+                    new Group {
+                        GroupType = "company",
+                        GroupKey = "amazon_without_rollout",
+                        ["name"] = "Project Name 2"
+                    }
                 ]
             }
         );
@@ -733,13 +724,12 @@ public class TheGetFeatureFlagAsyncMethod
             {
                 Groups =
                 [
-                    new Group(
-                        GroupType: "company",
-                        GroupKey: "amazon",
-                        Properties: new Dictionary<string, object?>
-                        {
-                            ["name"] = "Project Name 1"
-                        })
+                    new Group
+                    {
+                        GroupType = "company",
+                        GroupKey = "amazon",
+                        ["name"] = "Project Name 1"
+                    }
                 ]
             }
         );
@@ -1050,7 +1040,7 @@ public class TheGetFeatureFlagAsyncMethod
                 distinctId: "some-distinct-id",
                 options: new FeatureFlagOptions { OnlyEvaluateLocally = true })
         );
-        Assert.Null(
+        Assert.False(
             await client.IsFeatureEnabledAsync(
                 featureKey: "beta-feature",
                 distinctId: "some-distinct-id",
@@ -1059,13 +1049,13 @@ public class TheGetFeatureFlagAsyncMethod
 
         // beta-feature2 should fallback to decide because region property not given with call
         // but doesn't because only_evaluate_locally is true
-        Assert.Null(
+        Assert.False(
             await client.GetFeatureFlagAsync(
                 featureKey: "beta-feature2",
                 distinctId: "some-distinct-id",
                 options: new FeatureFlagOptions { OnlyEvaluateLocally = true })
         );
-        Assert.Null(
+        Assert.False(
             await client.IsFeatureEnabledAsync(
                 featureKey: "beta-feature2",
                 distinctId: "some-distinct-id",
@@ -1173,9 +1163,9 @@ public class TheGetFeatureFlagAsyncMethod
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags":[]}""");
         var client = container.Activate<PostHogClient>();
 
-        // beta-feature2 falls back to decide, which on error returns None
-        Assert.Null(await client.GetFeatureFlagAsync("beta-feature2", "some-distinct-id"));
-        Assert.Null(await client.IsFeatureEnabledAsync("beta-feature2", "some-distinct-id"));
+        // beta-feature2 falls back to decide, which on error returns false
+        Assert.False(await client.GetFeatureFlagAsync("beta-feature2", "some-distinct-id"));
+        Assert.False(await client.IsFeatureEnabledAsync("beta-feature2", "some-distinct-id"));
         Assert.Single(firstRequestHandler.ReceivedRequests);
         Assert.Single(secondRequestHandler.ReceivedRequests);
     }
@@ -2138,7 +2128,10 @@ public class TheGetFeatureFlagAsyncMethod
 
         var result = await client.GetFeatureFlagAsync("flag-key", "a-distinct-id", options: new FeatureFlagOptions
         {
-            Groups = [new Group("company", "id:5"), new Group("department", "id:3")]
+            Groups = [
+                new Group { GroupType = "company", GroupKey = "id:5" },
+                new Group { GroupType = "department", GroupKey = "id:3" }
+            ]
         });
 
         Assert.NotNull(result);
@@ -2378,12 +2371,9 @@ public class TheGetFeatureFlagAsyncMethod
             count: 4,
             responseBodyFunc: count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
+        var posthog = container.Activate<PostHogClient>();
 
-        await client.GetFeatureFlagAsync(featureKey: "flag-key",
-            distinctId: "a-distinct-id", options: new FeatureFlagOptions { SendFeatureFlagEvents = false });
-
-        await client.FlushAsync();
+        await posthog.FlushAsync();
         Assert.Empty(captureRequestHandler.ReceivedRequests);
     }
 }

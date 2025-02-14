@@ -36,7 +36,8 @@ public sealed class PostHogClient : IPostHogClient
             NullFeatureFlagCache.Instance,
             new SimpleHttpClientFactory(),
             new TaskRunTaskScheduler(),
-            TimeProvider.System, NullLoggerFactory.Instance)
+            TimeProvider.System,
+            NullLoggerFactory.Instance)
     {
     }
 
@@ -71,14 +72,14 @@ public sealed class PostHogClient : IPostHogClient
             options,
             taskScheduler,
             timeProvider,
-            loggerFactory.CreateLogger<AsyncBatchHandler<CapturedEvent>>());
+            loggerFactory.CreateLogger<AsyncBatchHandler>());
 
         _featureFlagsLoader = new LocalFeatureFlagsLoader(
             _apiClient,
             options,
             taskScheduler,
             timeProvider,
-            NullLogger.Instance);
+            loggerFactory);
         _featureFlagsCache = featureFlagsCache;
         _featureFlagSentCache = new MemoryCache(new MemoryCacheOptions
         {
@@ -215,7 +216,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public async Task<bool?> IsFeatureEnabledAsync(
+    public async Task<bool> IsFeatureEnabledAsync(
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options,
@@ -227,7 +228,7 @@ public sealed class PostHogClient : IPostHogClient
             options,
             cancellationToken);
 
-        return result?.IsEnabled;
+        return result is { IsEnabled: true };
     }
 
     /// <inheritdoc/>
@@ -326,7 +327,7 @@ public sealed class PostHogClient : IPostHogClient
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
-            _logger.LogErrorUnableToGetDecryptedFeatureFlagPayload(e);
+            _logger.LogErrorUnableToGetRemoteConfigPayload(e);
             return null;
         }
     }
@@ -518,8 +519,14 @@ internal static partial class PostHogClientLoggerExtensions
     [LoggerMessage(
         EventId = 10,
         Level = LogLevel.Error,
-        Message = "[FEATURE FLAGS] Error while fetching decrypted feature flag payload.")]
-    public static partial void LogErrorUnableToGetDecryptedFeatureFlagPayload(
+        Message = "[FEATURE FLAGS] Error while fetching remote config payload.")]
+    public static partial void LogErrorUnableToGetRemoteConfigPayload(
         this ILogger<PostHogClient> logger,
         Exception exception);
+
+    [LoggerMessage(
+        EventId = 11,
+        Level = LogLevel.Error,
+        Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
+    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogClient> logger, Exception exception);
 }

@@ -19,7 +19,7 @@ public static class FeatureFlagExtensions
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature does not
     /// exist.
     /// </returns>
-    public static Task<bool?> IsFeatureEnabledAsync(
+    public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
@@ -37,7 +37,7 @@ public static class FeatureFlagExtensions
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
-    public static Task<bool?> IsFeatureEnabledAsync(
+    public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId)
@@ -55,7 +55,7 @@ public static class FeatureFlagExtensions
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
-    public static Task<bool?> IsFeatureEnabledAsync(
+    public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
@@ -64,6 +64,45 @@ public static class FeatureFlagExtensions
             distinctId,
             options, cancellationToken: CancellationToken.None);
 
+    /// <summary>
+    /// Retrieves a feature flag.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="featureKey">The name of the feature flag.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    public static async Task<bool?> IsFeatureEnabledAsync(
+        this IPostHogClient client,
+        string featureKey,
+        string distinctId,
+        Dictionary<string, object?> personProperties,
+        CancellationToken cancellationToken)
+        => await NotNull(client).IsFeatureEnabledAsync(
+            featureKey,
+            distinctId,
+            new FeatureFlagOptions { PersonProperties = new Dictionary<string, object?>(personProperties) },
+            cancellationToken);
+
+    /// <summary>
+    /// Retrieves a feature flag.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="featureKey">The name of the feature flag.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
+    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    public static async Task<bool?> IsFeatureEnabledAsync(
+        this IPostHogClient client,
+        string featureKey,
+        string distinctId,
+        Dictionary<string, object?> personProperties)
+        => await NotNull(client).IsFeatureEnabledAsync(
+            featureKey,
+            distinctId,
+            personProperties,
+            CancellationToken.None);
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -115,6 +154,46 @@ public static class FeatureFlagExtensions
         => await NotNull(client).GetFeatureFlagAsync(featureKey,
             distinctId,
             options, cancellationToken: CancellationToken.None);
+
+    /// <summary>
+    /// Retrieves a feature flag.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="featureKey">The name of the feature flag.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    public static async Task<FeatureFlag?> GetFeatureFlagAsync(
+        this IPostHogClient client,
+        string featureKey,
+        string distinctId,
+        Dictionary<string, object?> personProperties,
+        CancellationToken cancellationToken)
+        => await NotNull(client).GetFeatureFlagAsync(
+            featureKey,
+            distinctId,
+            new FeatureFlagOptions { PersonProperties = new Dictionary<string, object?>(personProperties) },
+            cancellationToken);
+
+    /// <summary>
+    /// Retrieves a feature flag.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="featureKey">The name of the feature flag.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
+    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    public static async Task<FeatureFlag?> GetFeatureFlagAsync(
+        this IPostHogClient client,
+        string featureKey,
+        string distinctId,
+        Dictionary<string, object?> personProperties)
+        => await NotNull(client).GetFeatureFlagAsync(
+            featureKey,
+            distinctId,
+            personProperties,
+            CancellationToken.None);
 
     /// <summary>
     /// Retrieves all the feature flags.

@@ -181,9 +181,17 @@ internal sealed class PostHogApiClient : IDisposable
         var response = await _httpClient.SendAsync(request, cancellationToken);
         if (response.StatusCode is HttpStatusCode.Unauthorized)
         {
-            var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
-                cancellationToken: cancellationToken);
-            throw new UnauthorizedAccessException(error?.Detail);
+            try
+            {
+                var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
+                    cancellationToken: cancellationToken);
+                throw new UnauthorizedAccessException(error?.Detail ?? "Unauthorized");
+            }
+            // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
+            catch (JsonException e)
+            {
+                throw new UnauthorizedAccessException("Unauthorized. Could not deserialize the response for more info.", e);
+            }
         }
 
         response.EnsureSuccessStatusCode();
@@ -221,15 +229,21 @@ internal sealed class PostHogApiClient : IDisposable
 internal static partial class PostHogApiClientLoggerExtensions
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 1000,
         Level = LogLevel.Trace,
         Message = "Api Client Created: {HostUrl}")]
     public static partial void LogTraceApiClientCreated(this ILogger<PostHogApiClient> logger, Uri hostUrl);
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 1001,
         Level = LogLevel.Error,
         Message = "Unable to retrieve remote config payload")]
     public static partial void LogErrorUnableToGetRemoteConfigPayload(
         this ILogger<PostHogApiClient> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1002,
+        Level = LogLevel.Error,
+        Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
+    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogApiClient> logger, Exception exception);
 }
