@@ -94,7 +94,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
-    Task<bool?> IsFeatureEnabledAsync(
+    Task<bool> IsFeatureEnabledAsync(
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options,

@@ -169,7 +169,7 @@ For example, suppose you offer a temporary pro-plan for the duration of the user
 if (await posthog.IsFeatureEnabledAsync(
     "pro-feature",
     "some-user-id",
-    personProperties: new() { ["plan"] = "pro" }) is true)
+    personProperties: new() { ["plan"] = "pro" }))
 {
     // Access to pro feature
 }
@@ -184,7 +184,7 @@ if (await posthog.IsFeatureEnabledAsync(
         new FeatureFlagOptions
         {
             Groups = [new Group(groupType: "project", groupKey: "project-group-key") { ["size"] = "large" }]
-        }) is true)
+        }))
 {
     // Access large project feature
 }

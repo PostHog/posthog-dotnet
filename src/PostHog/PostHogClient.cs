@@ -215,7 +215,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public async Task<bool?> IsFeatureEnabledAsync(
+    public async Task<bool> IsFeatureEnabledAsync(
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options,
@@ -227,7 +227,7 @@ public sealed class PostHogClient : IPostHogClient
             options,
             cancellationToken);
 
-        return result?.IsEnabled;
+        return result is { IsEnabled: true };
     }
 
     /// <inheritdoc/>

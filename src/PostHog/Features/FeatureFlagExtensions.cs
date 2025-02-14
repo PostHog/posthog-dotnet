@@ -19,7 +19,7 @@ public static class FeatureFlagExtensions
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature does not
     /// exist.
     /// </returns>
-    public static Task<bool?> IsFeatureEnabledAsync(
+    public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
@@ -37,7 +37,7 @@ public static class FeatureFlagExtensions
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
-    public static Task<bool?> IsFeatureEnabledAsync(
+    public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId)
@@ -55,7 +55,7 @@ public static class FeatureFlagExtensions
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
-    public static Task<bool?> IsFeatureEnabledAsync(
+    public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,

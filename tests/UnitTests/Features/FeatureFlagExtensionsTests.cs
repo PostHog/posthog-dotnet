@@ -24,8 +24,7 @@ public class TheIsFeatureEnabledAsyncMethod
         var result = await client.IsFeatureEnabledAsync("flag-key",
             "distinctId", CancellationToken.None);
 
-        Assert.NotNull(result);
-        Assert.Equal(enabled, result.Value);
+        Assert.Equal(enabled, result);
     }
 
     [Fact]
@@ -63,14 +62,14 @@ public class TheIsFeatureEnabledAsyncMethod
     }
 
     [Fact]
-    public async Task ReturnsNullWhenNoApiResponse()
+    public async Task ReturnsFalseWhenNoApiResponse()
     {
         var container = new TestContainer();
         var client = container.Activate<PostHogClient>();
 
         var result = await client.IsFeatureEnabledAsync("not-flag-key", "distinctId");
 
-        Assert.Null(result);
+        Assert.False(result);
     }
 
     [Fact]
@@ -122,19 +121,5 @@ public class TheIsFeatureEnabledAsyncMethod
                 distinctId: "some-distinct-2",
                 personProperties: new() { ["region"] = "Canada" })
         );
-
-        var flags = await posthog.GetAllFeatureFlagsAsync(
-        "some-user-id",
-        options: new AllFeatureFlagsOptions
-        {
-            Groups =
-            [
-                new Group("project", "aaaa-bbbb-cccc")
-        {
-            ["$group_key"] = "aaaa-bbbb-cccc",
-            ["size"] = "large"
-        }
-            ]
-        });
     }
 }
