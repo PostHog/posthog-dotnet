@@ -5,8 +5,6 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using PostHog.Config;
-using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
 using PostHog.Versioning;

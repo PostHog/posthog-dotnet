@@ -2,7 +2,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using PostHog.Cache;
-using PostHog.Config;
 using PostHog.Library;
 using static PostHog.Library.Ensure;
 

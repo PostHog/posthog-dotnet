@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PostHog.Api;
-using PostHog.Config;
 using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
