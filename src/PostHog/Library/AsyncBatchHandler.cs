@@ -286,4 +286,10 @@ internal static partial class AsyncBatchHandlerLoggerExtensions
         this ILogger<AsyncBatchHandler> logger,
         int maxQueueSize,
         int count);
+
+    [LoggerMessage(
+        EventId = 500,
+        Level = LogLevel.Error,
+        Message = "Unexpected exception occurred during async batch handling.")]
+    public static partial void LogErrorUnexpectedException(this ILogger<AsyncBatchHandler> logger, Exception exception);
 }

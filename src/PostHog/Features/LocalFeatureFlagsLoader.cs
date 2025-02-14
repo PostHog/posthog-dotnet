@@ -117,4 +117,10 @@ internal static partial class LocalFeatureFlagsLoaderLoggerExtensions
     public static partial void LogTraceOperationCancelled(
         this ILogger<LocalFeatureFlagsLoader> logger,
         string methodName);
+
+    [LoggerMessage(
+        EventId = 500,
+        Level = LogLevel.Error,
+        Message = "Unexpected exception occurred while loading feature flags.")]
+    public static partial void LogErrorUnexpectedException(this ILogger<LocalFeatureFlagsLoader> logger, Exception exception);
 }

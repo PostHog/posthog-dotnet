@@ -599,4 +599,10 @@ internal static partial class LocalEvaluatorLoggerExtensions
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
     public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<LocalEvaluator> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 500,
+        Level = LogLevel.Error,
+        Message = "Unexpected exception occurred during local evaluation.")]
+    public static partial void LogErrorUnexpectedException(this ILogger<LocalEvaluator> logger, Exception exception);
 }
