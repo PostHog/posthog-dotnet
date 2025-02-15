@@ -330,7 +330,7 @@ public sealed class PostHogClient : IPostHogClient
             // However, we may change that in the future.
             // So this is implemented in a forward-compatible way.
             if (document is { RootElement.ValueKind: JsonValueKind.String } doc
-                && doc.RootElement.GetString() is {} innerJson
+                && doc.RootElement.GetString() is { } innerJson
                 && TryParseJson(innerJson, out var parsedJson))
             {
                 return parsedJson;
