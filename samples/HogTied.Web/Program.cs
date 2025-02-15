@@ -5,16 +5,23 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using PostHog;
+using PostHog.Config;
 using PostHog.Library;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.AddPostHog(options =>
 {
-    // Not needed as PostHog is the default, but wanted to show it can be set.
-    options.UseConfigurationSection("PostHog");
+    // In general this call is not needed. The default settings are in the "PostHoc" configuration section.
+    // This is here so I can easily switch testing against my local install and production.
+    options.UseConfigurationSection(builder.Configuration.GetSection("PostHog"));
+
+    options.PostConfigure(o =>
+    {
+        o.SuperProperties.Add("app_name", "HogTied");
+    });
+
     // Logs requests and responses. Fine for a sample project. Probably not good for production.
     options.ConfigureHttpClient(httpClientBuilder => httpClientBuilder.AddHttpMessageHandler<LoggingHttpMessageHandler>());
 });
