@@ -322,12 +322,40 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            return await _apiClient.GetRemoteConfigPayloadAsync(key, cancellationToken);
+            var document = await _apiClient.GetRemoteConfigPayloadAsync(key, cancellationToken);
+
+            // The remote config endpoint returns JSON encoded in a string.
+            // For example: "{\"foo\": \"bar\",\"baz\": 42}"
+            // Instead of:  {"foo": "bar","baz": 42}
+            // However, we may change that in the future.
+            // So this is implemented in a forward-compatible way.
+            if (document is { RootElement.ValueKind: JsonValueKind.String } doc
+                && doc.RootElement.GetString() is { } innerJson
+                && TryParseJson(innerJson, out var parsedJson))
+            {
+                return parsedJson;
+            }
+
+            return document;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
             _logger.LogErrorUnableToGetRemoteConfigPayload(e);
             return null;
+        }
+
+        static bool TryParseJson(string json, out JsonDocument? document)
+        {
+            try
+            {
+                document = JsonDocument.Parse(json);
+                return true;
+            }
+            catch (JsonException)
+            {
+                document = null;
+                return false;
+            }
         }
     }
 
