@@ -212,6 +212,27 @@
                     </div>
                 </div>
             </div>
+
+            <div class="mt-3">
+                <div class="row justify-content-center">
+                    <div class="col-md-6">
+                        <pre><code>
+await posthog.GetRemoteConfigPayloadAsync(
+    "unencrypted-remote-config-setting");
+
+> @Model.UnencryptedRemoteConfigSetting
+</code></pre>
+                    </div>
+                    <div class="col-md-6">
+                        <pre><code>
+await posthog.GetRemoteConfigPayloadAsync(
+    "encrypted-remote-config-setting");
+
+@Model.EncryptedRemoteConfigSetting
+</code></pre>
+                    </div>
+                </div>
+            </div>
         }
     </div>
 </div>

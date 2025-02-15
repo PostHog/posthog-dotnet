@@ -43,6 +43,10 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     [FromQuery]
     public string? FeatureFlagKey { get; set; }
 
+    public string? UnencryptedRemoteConfigSetting { get; set; }
+
+    public string? EncryptedRemoteConfigSetting { get; set; }
+
     public async Task OnGetAsync()
     {
         ApiKeyIsSet = options.Value.ProjectApiKey is not (null or []);
@@ -103,6 +107,10 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
             }
 
             NonExistentFlag = await posthog.IsFeatureEnabledAsync("non-existent-flag", UserId);
+
+            UnencryptedRemoteConfigSetting = (await posthog.GetRemoteConfigPayloadAsync("unencrypted-remote-config-setting", HttpContext.RequestAborted))?.RootElement.GetRawText();
+
+            EncryptedRemoteConfigSetting = (await posthog.GetRemoteConfigPayloadAsync("encrypted-remote-config-setting", HttpContext.RequestAborted))?.RootElement.GetRawText();
         }
     }
 
