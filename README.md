@@ -60,7 +60,7 @@ To run the tests, run the following command in the root of the repository:
 $ dotnet test
 ```
 
-## PUBLISHING RELEASES
+## Publishing Releases
 
 When it's time to cut a release, increment the version element at the top of [`Directory.Build.props`](Directory.Build.props) according to the [Semantic Versioning](http://semver.org/) guidelines.
 
@@ -89,9 +89,56 @@ When you create the Release, the [`main.yml`](../.github/.workflow.release.yml) 
 > then later publish it, the workflow will not run. If you find yourself in that position, you can [manually trigger the workflow run](https://github.com/PostHog/posthog-dotnet/actions/workflows/main.yaml)
 > and select the tag to publish.
 
+## Installation
+
+For ASP.NET Core projects, install the `PostHog.AspNetCore` package:
+
+```bash
+$ dotnet add package PostHog.AspNetCore
+```
+
+And register the PostHog services in `Program.cs` (or `Startup.cs`) file by calling the `AddPostHog` extension 
+method on `IHostApplicationBuilder` like so:
+
+```csharp
+using PostHog;
+var builder = WebApplication.CreateBuilder(args);
+builder.AddPostHog();
+```
+
+For other .NET projects, install the `PostHog` package:
+
+```bash
+$ dotnet add package PostHog
+```
+
+And if your project supports dependency injection, register the PostHog services in `Program.cs` (or `Startup.cs`) 
+file by calling the `AddPostHog` extension method on `IServiceCollection`. Here's an example for a console app:
+
+```csharp
+using PostHog;
+var services = new ServiceCollection();
+services.AddPostHog();
+var serviceProvider = services.BuildServiceProvider();
+var posthog = serviceProvider.GetRequiredService<IPostHogClient>();
+```
+
+For a console app (or apps not using dependency injection), you can also use the `PostHogClient` directly, just make 
+sure it's a singleton:
+
+```csharp
+using System;
+using PostHog;
+
+var posthog = new PostHogClient(Environment.GetEnvironmentVariable("PostHog__PersonalApiKey"));
+```
+
+The `AddPostHog` methods accept an optional `Action<PostHogOptions>` parameter that you can use to configure the 
+client. For examples, check out the [HogTied.Web sample project](../samples/HogTied.Web/Program.cs) and the unit tests.
+
 ## Usage
 
-Inject the `Iposthog` interface into your controller or page:
+Inject the `IPostHogClient` interface into your controller or page:
 
 ```csharp
 posthog.Capture(userId, "user signed up", new() { ["plan"] = "pro" });
