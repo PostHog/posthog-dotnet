@@ -1,10 +1,18 @@
 ﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using PostHog.Config;
 using static PostHog.Library.Ensure;
 
 namespace PostHog;
 
+/// <summary>
+/// Extension methods on <see cref="IHostApplicationBuilder"/> used to register
+/// a <see cref="PostHogClient"/> configured for ASP.NET Core.
+/// </summary>
 public static class Registration
 {
+    const string DefaultConfigurationSectionName = "PostHog";
+
     /// <summary>
     /// Registers <see cref="PostHogClient"/> as a singleton. Looks for client configuration in the "PostHog"
     /// section of the configuration. See <see cref="PostHogOptions"/> for the configuration options.
@@ -23,12 +31,22 @@ public static class Registration
     /// <exception cref="ArgumentNullException">If <see cref="builder"/> is null.</exception>
     public static IHostApplicationBuilder AddPostHog(
         this IHostApplicationBuilder builder,
-        Action<PostHogOptionsBuilder> options)
+        Action<IPostHogConfigurationBuilder> options)
     {
+        builder = NotNull(builder);
         options = NotNull(options);
-        var postHogOptionsBuilder = new PostHogOptionsBuilder(builder);
-        options(postHogOptionsBuilder);
-        postHogOptionsBuilder.Build();
+
+        builder.Services.AddPostHog(
+            o =>
+            {
+                if (builder.Services.All(service => service.ServiceType != typeof(IConfigureOptions<PostHogOptions>)))
+                {
+                    // Set the default.
+                    o.UseConfigurationSection(builder.Configuration.GetSection(DefaultConfigurationSectionName));
+                }
+                o.UseAspNetCore();
+                options(o);
+            });
         return builder;
     }
 }
