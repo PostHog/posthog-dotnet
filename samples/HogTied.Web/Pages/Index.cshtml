@@ -70,20 +70,14 @@
                         <button type="submit" class="btn btn-primary mb-2">Check Feature Flag</button>
                     </form>
                     @if (Model.FeatureFlagKey is { } key) {
-                        var flag = await PostHog.IsFeatureEnabledAsync(key, Model.UserId);
-                        @if (flag == true) {
+                        if (await PostHog.IsFeatureEnabledAsync(key, Model.UserId)) {
                             <div class="alert alert-success" role="alert">
                                 The feature flag <code>@Model.FeatureFlagKey</code> is enabled.
                             </div>
                         }
-                        else if (flag == false) {
+                        else {
                             <div class="alert alert-danger" role="alert">
                                 The feature flag <code>@Model.FeatureFlagKey</code> is disabled.
-                            </div>
-                        }
-                        else {
-                            <div class="alert alert-warning" role="alert">
-                                The feature flag <code>@Model.FeatureFlagKey</code> does not exist.
                             </div>
                         }
                     }
@@ -138,8 +132,7 @@
                     </tr>
                     </thead>
                         <tbody>
-                        @foreach (var flag in Model.FeatureFlags)
-                        {
+                        @foreach (var flag in Model.FeatureFlags) {
                             var (flagValue, isEnabled) = flag.Value;
                             <tr>
                                 <td>@flag.Key</td>
@@ -154,6 +147,83 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <div class="row justify-content-center">
+                    <pre class="bg-gray-200 p-4"><code>&lt;feature name="simple-flag">
+    &lt;code>simple-flag&lt;/code> is enabled.
+&lt;/feature></code></pre>
+                    <pre><code>&lt;feature name="simple-flag" negate="true">
+    &lt;code>simple-flag&lt;/code> is not enabled.
+&lt;/feature></code></pre>
+                    <div class="bg-info">
+                        <feature name="simple-flag">
+                            <code>simple-flag</code> is enabled.
+                        </feature>
+                        <feature name="simple-flag" negate="true">
+                            <code>simple-flag</code> is not enabled.
+                        </feature>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <div class="row justify-content-center">
+                    <pre class="bg-gray-200 p-4"><code>&lt;feature name="project-feature">
+    &lt;code>project-feature&lt;/code> is enabled (Group property "is_demo" is true).
+&lt;/feature></code></pre>
+                    <pre><code>&lt;feature name="project-feature" negate="true">
+    &lt;code>project-feature&lt;/code> is not enabled (Group property "is_demo" is not true).
+&lt;/feature></code></pre>
+                    <div class="bg-info">
+                        <feature name="project-feature">
+                            <code>project-feature</code> is enabled (Group property "is_demo" is true).
+                        </feature>
+                        <feature name="project-feature" negate="true">
+                            <code>project-feature</code> is not enabled (Group property "is_demo" is not true).
+                        </feature>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <div class="row justify-content-center">
+                    <pre class="bg-gray-200 p-4"><code>
+&lt;feature name="multivariate-feature" variant="first-variant-key">
+    &lt;code>multivariate-feature&lt;/code> is enabled for variant &lt;code>first-variant-key&lt;/code>.
+&lt;/feature>
+&lt;feature name="multivariate-feature" variant="second-variant-key">
+    &lt;code>multivariate-feature&lt;/code> is enabled for variant &lt;code>second-variant-key&lt;/code>.
+&lt;/feature>
+&lt;feature name="multivariate-feature" variant="third-variant-key">
+    &lt;code>multivariate-feature&lt;/code> is enabled for variant &lt;code>third-variant-key&lt;/code>.
+&lt;/feature>
+&lt;feature name="multivariate-feature" variant="fourth-variant-key">
+    &lt;code>multivariate-feature&lt;/code> is enabled for variant &lt;code>fourth-variant-key&lt;/code>.
+&lt;/feature>
+&lt;feature name="multivariate-feature" negate="true">
+    &lt;code>multivariate-feature&lt;/code> is not enabled.
+&lt;/feature>
+</code></pre>
+                    <div class="bg-info">
+                        <feature name="multivariate-feature" variant="first-variant-key" requirement="Any">
+                            <code>multivariate-feature</code> is enabled for variant <code>first-variant-key</code>.
+                        </feature>
+                        <feature name="multivariate-feature" variant="second-variant-key" requirement="Any">
+                            <code>multivariate-feature</code> is enabled for variant <code>second-variant-key</code>.
+                        </feature>
+                        <feature name="multivariate-feature" variant="third-variant-key" requirement="Any">
+                            <code>multivariate-feature</code> is enabled for variant <code>third-variant-key</code>.
+                        </feature>
+                        <feature name="multivariate-feature" variant="fourth-variant-key" requirement="Any">
+                            <code>multivariate-feature</code> is enabled for variant <code>forth-variant-key</code>.
+                        </feature>
+                        <feature name="multivariate-feature" negate="true">
+                            <code>multivariate-feature</code> is not enabled.
+                        </feature>
+                    </div>
                 </div>
             </div>
 
