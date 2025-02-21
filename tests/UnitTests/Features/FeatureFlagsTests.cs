@@ -3166,10 +3166,12 @@ public class TheQuotaLimitBehavior
         var client = container.Activate<PostHogClient>();
 
         var result = await client.GetAllFeatureFlagsAsync("distinct_id");
-        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug));
-        
+
         Assert.Empty(result);
-        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+        var logEvents = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
+        Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error),
+            e => e.Message == "[FEATURE FLAGS] Quota exceeded for feature flags.");
     }
 
     [Fact]
@@ -3195,10 +3197,11 @@ public class TheQuotaLimitBehavior
         var client = container.Activate<PostHogClient>();
 
         var result = await client.GetAllFeatureFlagsAsync("distinct_id");
-        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug));
-        
+
         Assert.Empty(result);
-        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+        Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error),
+            e => e.Message == "[FEATURE FLAGS] Quota exceeded for feature flags.");
     }
 
     [Fact]
@@ -3224,9 +3227,10 @@ public class TheQuotaLimitBehavior
         var client = container.Activate<PostHogClient>();
 
         var result = await client.IsFeatureEnabledAsync("flag-key", "distinct_id");
-        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug));
-        
+
         Assert.False(result);
-        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+        Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error),
+            e => e.Message == "[FEATURE FLAGS] Quota exceeded for feature flags.");
     }
 }

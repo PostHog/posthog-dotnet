@@ -394,7 +394,6 @@ public sealed class PostHogClient : IPostHogClient
     {
         if (_options.Value.PersonalApiKey is not null)
         {
-
             // Attempt to load local feature flags.
             var localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
             if (localEvaluator is not null)
@@ -416,11 +415,6 @@ public sealed class PostHogClient : IPostHogClient
         {
             return await DecideAsync(distinctId, options, cancellationToken);
         }
-        catch (QuotaExceededException)
-        {
-            _logger.LogDebug("Feature flags quota exceeded");
-            return new Dictionary<string, FeatureFlag>();
-        }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
             _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
@@ -441,24 +435,26 @@ public sealed class PostHogClient : IPostHogClient
 
         async Task<IReadOnlyDictionary<string, FeatureFlag>> FetchDecideAsync()
         {
-            var results = await _apiClient.GetAllFeatureFlagsFromDecideAsync(
-                distinctId,
-                options?.PersonProperties,
-                options?.Groups,
-                cancellationToken);
-
-            // Return empty dictionary if feature flags are quota limited
-            if (results?.QuotaLimited?.Contains("feature_flags") == true)
+            try
             {
-                _logger.LogDebug("Feature flags quota exceeded");
+                var results = await _apiClient.GetAllFeatureFlagsFromDecideAsync(
+                    distinctId,
+                    options?.PersonProperties,
+                    options?.Groups,
+                    cancellationToken);
+
+                return results?.FeatureFlags is not null
+                    ? results.FeatureFlags.ToReadOnlyDictionary(
+                        kvp => kvp.Key,
+                        kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, results))
+                    : new Dictionary<string, FeatureFlag>();
+            }
+            catch (ApiException e) when (e.ErrorType is "quota_limited")
+            {
+                // Return empty dictionary if feature flags are quota limited
+                _logger.LogErrorQuotaExceeded();
                 return new Dictionary<string, FeatureFlag>();
             }
-
-            return results?.FeatureFlags is not null
-                ? results.FeatureFlags.ToReadOnlyDictionary(
-                    kvp => kvp.Key,
-                    kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, results))
-                : new Dictionary<string, FeatureFlag>();
         }
     }
 
@@ -568,4 +564,10 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
     public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogClient> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 12,
+        Level = LogLevel.Error,
+        Message = "[FEATURE FLAGS] Quota exceeded for feature flags.")]
+    public static partial void LogErrorQuotaExceeded(this ILogger<PostHogClient> logger);
 }

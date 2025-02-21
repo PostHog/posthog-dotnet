@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.InteropServices;
@@ -147,6 +146,11 @@ internal sealed class PostHogApiClient : IDisposable
                 $"/api/feature_flag/local_evaluation/?token={options.ProjectApiKey}&send_cohorts",
                 cancellationToken);
         }
+        catch (ApiException e) when (e.ErrorType is "quota_limited")
+        {
+            _logger.LogErrorQuotaExceeded(e);
+            return null;
+        }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
             _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
@@ -177,22 +181,8 @@ internal sealed class PostHogApiClient : IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue(scheme: "Bearer", personalApiKey);
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
-        if (response.StatusCode is HttpStatusCode.Unauthorized)
-        {
-            try
-            {
-                var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
-                    cancellationToken: cancellationToken);
-                throw new UnauthorizedAccessException(error?.Detail ?? "Unauthorized");
-            }
-            // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
-            catch (JsonException e)
-            {
-                throw new UnauthorizedAccessException("Unauthorized. Could not deserialize the response for more info.", e);
-            }
-        }
 
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessfulApiCall(cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<T>(
             JsonSerializerHelper.Options,
@@ -243,5 +233,13 @@ internal static partial class PostHogApiClientLoggerExtensions
         EventId = 1002,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
-    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogApiClient> logger, Exception exception);
+    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(
+        this ILogger<PostHogApiClient> logger,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 12,
+        Level = LogLevel.Error,
+        Message = "[FEATURE FLAGS] Quota exceeded for feature flags.")]
+    public static partial void LogErrorQuotaExceeded(this ILogger<PostHogApiClient> logger, Exception e);
 }
