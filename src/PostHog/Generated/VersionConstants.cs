@@ -6,5 +6,5 @@
 namespace PostHog.Versioning;
 public static class VersionConstants
 {
-    public const string Version = "1.0.0-beta.10";
+    public const string Version = "1.0.0-beta.12";
 }

@@ -456,6 +456,9 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public string Version => VersionConstants.Version;
 
+    async Task<LocalEvaluator?> IPostHogClient.GetLocalEvaluatorAsync(CancellationToken cancellationToken)
+        => await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+
     /// <inheritdoc/>
     public void Dispose() => DisposeAsync().AsTask().Wait();
 

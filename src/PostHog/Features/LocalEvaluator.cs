@@ -299,9 +299,9 @@ internal sealed class LocalEvaluator
             ?.Key;
     }
 
-    record VariantRange(string Key, double MinValue, double MaxValue);
+    internal record VariantRange(string Key, double MinValue, double MaxValue);
 
-    static List<VariantRange> CreateVariantLookupTable(LocalFeatureFlag flag)
+    internal static List<VariantRange> CreateVariantLookupTable(LocalFeatureFlag flag)
     {
         List<VariantRange> results = [];
         var multivariateVariants = flag.Filters?.Multivariate?.Variants;

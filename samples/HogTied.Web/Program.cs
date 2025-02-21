@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using HogTied.Web;
 using HogTied.Web.Data;
+using HogTied.Web.FeatureManagement;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,7 @@ builder.AddPostHog(options =>
 {
     // In general this call is not needed. The default settings are in the "PostHoc" configuration section.
     // This is here so I can easily switch testing against my local install and production.
-    options.UseConfigurationSection(builder.Configuration.GetSection("PostHog"));
+    options.UseConfigurationSection(builder.Configuration.GetSection("PostHogLocal"));
 
     options.PostConfigure(o =>
     {
@@ -24,6 +25,9 @@ builder.AddPostHog(options =>
 
     // Logs requests and responses. Fine for a sample project. Probably not good for production.
     options.ConfigureHttpClient(httpClientBuilder => httpClientBuilder.AddHttpMessageHandler<LoggingHttpMessageHandler>());
+
+    // Enables PostHog as a provider for ASP.NET Core's feature management system.
+    options.UseFeatureManagement<HogTiedFeatureFlagContextProvider>();
 });
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
