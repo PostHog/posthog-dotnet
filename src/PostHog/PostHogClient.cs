@@ -416,6 +416,11 @@ public sealed class PostHogClient : IPostHogClient
         {
             return await DecideAsync(distinctId, options, cancellationToken);
         }
+        catch (QuotaExceededException)
+        {
+            _logger.LogDebug("Feature flags quota exceeded");
+            return new Dictionary<string, FeatureFlag>();
+        }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
             _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
@@ -441,6 +446,13 @@ public sealed class PostHogClient : IPostHogClient
                 options?.PersonProperties,
                 options?.Groups,
                 cancellationToken);
+
+            // Return empty dictionary if feature flags are quota limited
+            if (results?.QuotaLimited?.Contains("feature_flags") == true)
+            {
+                _logger.LogDebug("Feature flags quota exceeded");
+                return new Dictionary<string, FeatureFlag>();
+            }
 
             return results?.FeatureFlags is not null
                 ? results.FeatureFlags.ToReadOnlyDictionary(

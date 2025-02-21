@@ -3140,3 +3140,93 @@ public class TheGetAllFeatureFlagsAsyncMethod
         Assert.Equal("Project API Key Incorrect.", logEvent.Exception?.Message);
     }
 }
+
+public class TheQuotaLimitBehavior
+{
+    [Fact]
+    public async Task ReturnsEmptyDictionaryWhenDecideEndpointQuotaExceeded()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/decide?v=3"),
+            HttpMethod.Post,
+            new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "quota_limited",
+                        "detail": "You have exceeded your feature flag request quota",
+                        "code": "payment_required"
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync("distinct_id");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug));
+        
+        Assert.Empty(result);
+        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+    }
+
+    [Fact]
+    public async Task ReturnsEmptyDictionaryWhenLocalEvaluationQuotaExceeded()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?token=fake-project-api-key&send_cohorts"),
+            HttpMethod.Get,
+            new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "quota_limited",
+                        "detail": "You have exceeded your feature flag request quota",
+                        "code": "payment_required"
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync("distinct_id");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug));
+        
+        Assert.Empty(result);
+        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+    }
+
+    [Fact]
+    public async Task ReturnsFalseWhenSingleFlagRequestQuotaExceeded()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/decide?v=3"),
+            HttpMethod.Post,
+            new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                        "type": "quota_limited",
+                        "detail": "You have exceeded your feature flag request quota",
+                        "code": "payment_required"
+                    }
+                    """
+                )
+            }
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.IsFeatureEnabledAsync("flag-key", "distinct_id");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug));
+        
+        Assert.False(result);
+        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+    }
+}
