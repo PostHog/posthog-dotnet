@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using PostHog.Config;
 using static PostHog.Library.Ensure;
@@ -20,7 +20,7 @@ public static class Registration
     /// <param name="builder">The <see cref="IHostApplicationBuilder"/>.</param>
     /// <returns>The passed in <see cref="IHostApplicationBuilder"/>.</returns>
     public static IHostApplicationBuilder AddPostHog(this IHostApplicationBuilder builder)
-        => builder.AddPostHog(_ => { });
+        => builder.AddPostHog(null);
 
     /// <summary>
     /// Registers <see cref="PostHogClient"/> as a singleton.
@@ -31,10 +31,9 @@ public static class Registration
     /// <exception cref="ArgumentNullException">If <see cref="builder"/> is null.</exception>
     public static IHostApplicationBuilder AddPostHog(
         this IHostApplicationBuilder builder,
-        Action<IPostHogConfigurationBuilder> options)
+        Action<IPostHogConfigurationBuilder>? options)
     {
         builder = NotNull(builder);
-        options = NotNull(options);
 
         builder.Services.AddPostHog(
             o =>
@@ -45,7 +44,7 @@ public static class Registration
                     o.UseConfigurationSection(builder.Configuration.GetSection(DefaultConfigurationSectionName));
                 }
                 o.UseAspNetCore();
-                options(o);
+                options?.Invoke(o);
             });
         return builder;
     }

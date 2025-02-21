@@ -196,3 +196,83 @@ options: new AllFeatureFlagsOptions
     ]
 });
 ```
+
+## Feature Management
+
+`PostHog.AspNetCore` supports .NET Feature Management. This allows you to use the &lt;feature /&gt; tag helper and 
+the `FeatureGateAttribute` in your ASP.NET Core applications to gate access to certain features using PostHog 
+feature flags.
+
+### Setup
+
+To use feature flags with the .NET Feature Management library, you'll need to implement the 
+`IPostHogFeatureFlagContextProvider` interface. The quickest way to do that is to inherit from the 
+`PostHogFeatureFlagContextProvider` class and override the `GetDistinctId` and `GetFeatureFlagOptionsAsync` methods.
+
+```csharp
+public class MyFeatureFlagContextProvider(IHttpContextAccessor httpContextAccessor)
+    : PostHogFeatureFlagContextProvider
+{
+    protected override string? GetDistinctId() => httpContextAccessor.HttpContext?.User.Identity?.Name;
+    
+    protected override ValueTask<FeatureFlagOptions> GetFeatureFlagOptionsAsync()
+    {
+        // In a real app, you might get this information from a database or other source for the current user.
+        return ValueTask.FromResult(
+            new FeatureFlagOptions
+            {
+                PersonProperties = new Dictionary<string, object?>
+                {
+                    ["email"] = "some-test@example.com"
+                },
+                OnlyEvaluateLocally = true
+            });
+    }
+}
+```
+
+Then, register your implementation in `Program.cs` (or `Startup.cs`):
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.AddPostHog(options => {
+    options.UseFeatureManagement<MyFeatureFlagContextProvider>();
+});
+```
+
+### Usage
+
+You can now use `feature` tag helpers in your Razor views:
+
+```html
+<feature name="awesome-new-feature">
+    <p>This is the new feature!</p>
+</feature>
+<feature name="awesome-new-feature" negate="true">
+    <p>Sorry, no awesome new feature for you.</p>
+</feature>
+```
+
+Multivariate feature flags are also supported:
+
+```html
+<feature name="awesome-new-feature" value="variant-a">
+    <p>This is the new feature variant A!</p>
+</feature>
+<feature name="awesome-new-feature" value="variant-b">
+    <p>This is the new feature variant B!</p>
+</feature>
+```
+
+You can also use the `FeatureGateAttribute` to gate access to controllers or actions:
+
+```csharp
+[FeatureGate("awesome-new-feature")]
+public class NewFeatureController : Controller
+{
+    public IActionResult Index()
+    {
+        return View();
+    }
+}
+```
