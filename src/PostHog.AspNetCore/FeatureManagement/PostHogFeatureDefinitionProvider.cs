@@ -6,7 +6,7 @@ namespace PostHog.FeatureManagement;
 /// <summary>
 /// Provides feature definitions so that PostHog feature flags works with ASP.NET Core feature management.
 /// </summary>
-/// <param name="posthog">The <see cref="PostHogClient"/> used to evaluate feature flags.</param>
+/// <param name="posthog">The <see cref="IPostHogClient"/> used to evaluate feature flags.</param>
 public class PostHogFeatureDefinitionProvider(IPostHogClient posthog) : IFeatureDefinitionProvider
 {
     public async Task<FeatureDefinition?> GetFeatureDefinitionAsync(string featureName)

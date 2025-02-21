@@ -28,9 +28,20 @@ public static class PostHogConfigurationBuilderExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Adds the FeatureManagement services to the <see cref="IServiceCollection"/>. This allows using PostHog
+    /// feature management as a provider for Microsoft.FeatureManagement.
+    /// </summary>
+    /// <remarks>
+    /// This can be further configured with a custom <see cref="IPostHogFeatureFlagContextProvider"/> used to supply
+    /// person properties and groups when evaluating feature flags. There's a base implementation of
+    /// <see cref="PostHogFeatureFlagContextProvider"/> you can override.
+    /// </remarks>
+    /// <param name="builder">The <see cref="IPostHogConfigurationBuilder"/>.</param>
+    /// <returns>The passed in <see cref="IPostHogConfigurationBuilder"/>.</returns>
     public static IPostHogConfigurationBuilder UseFeatureManagement<TContextProvider>(this IPostHogConfigurationBuilder builder)
         where TContextProvider : class, IPostHogFeatureFlagContextProvider =>
-        builder.UseFeatureManagement<TContextProvider>(_ => { });
+        builder.UseFeatureManagement<TContextProvider>(null);
 
     /// <summary>
     /// Adds the FeatureManagement services to the <see cref="IServiceCollection"/>. This allows using PostHog
@@ -49,7 +60,7 @@ public static class PostHogConfigurationBuilderExtensions
     /// <returns>The passed in <see cref="IPostHogConfigurationBuilder"/>.</returns>
     public static IPostHogConfigurationBuilder UseFeatureManagement<TContextProvider>(
         this IPostHogConfigurationBuilder builder,
-        Action<IPostHogFeatureManagementBuilder> configure)
+        Action<IPostHogFeatureManagementBuilder>? configure)
         where TContextProvider : class, IPostHogFeatureFlagContextProvider =>
         NotNull(builder).Use(services =>
         {
@@ -58,7 +69,7 @@ public static class PostHogConfigurationBuilderExtensions
             var featureManagementBuilder = services.AddFeatureManagement();
             var postHogFeatureManagementBuilder = new PostHogFeatureManagementBuilder(featureManagementBuilder);
             featureManagementBuilder.ConfigureTargeting<TContextProvider>();
-            configure(postHogFeatureManagementBuilder);
+            configure?.Invoke(postHogFeatureManagementBuilder);
             featureManagementBuilder.AddFeatureFilter<PostHogFeatureFilter>();
         });
 

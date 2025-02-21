@@ -8,7 +8,7 @@ namespace PostHogFeatureFilterTests;
 public class TheEvaluateAsyncMethod
 {
     [Fact]
-    public async Task ReturnsNullIContextNull()
+    public async Task ReturnsNullIfContextNull()
     {
         var variantFeatureManager = Substitute.For<IVariantFeatureManager>();
         var filter = new PostHogFeatureFilter(variantFeatureManager, NullLogger<PostHogFeatureFilter>.Instance);
