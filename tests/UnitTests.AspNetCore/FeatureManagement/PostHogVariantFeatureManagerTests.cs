@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using PostHog;
 using PostHog.Config;
 using PostHog.FeatureManagement;
 using UnitTests.Fakes;
@@ -127,6 +129,8 @@ public class TheGetVariantAsyncMethod
             builder.UseFeatureManagement<FakePostHogFeatureFlagContextProvider>();
             builder.PostConfigure(o => o.PersonalApiKey = "fake-personal-api-key");
         });
+        var contextProvider = container.GetRequiredService<IPostHogFeatureFlagContextProvider>() as FakePostHogFeatureFlagContextProvider;
+        Assert.NotNull(contextProvider);
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
             """
             {
@@ -186,34 +190,36 @@ public class TheGetVariantAsyncMethod
         );
         var featureManager = container.Activate<PostHogVariantFeatureManager>();
 
-        var context = new PostHogFeatureFlagContext
+        contextProvider.Context = new PostHogFeatureFlagContext
         {
             DistinctId = "test_id",
             PersonProperties = new() { ["email"] = "test@posthog.com" }
         };
-        var targetingContext = new PostHogTargetingContext(context);
         Assert.Equal(
             "second-variant",
-            (await featureManager.GetVariantAsync("beta-feature", targetingContext)).Name);
-        context = new PostHogFeatureFlagContext
+            (await featureManager.GetVariantAsync("beta-feature")).Name);
+        contextProvider.Context = new PostHogFeatureFlagContext
         {
             DistinctId = "example_id",
         };
-        targetingContext = new PostHogTargetingContext(context);
         Assert.Equal(
             "third-variant",
-            (await featureManager.GetVariantAsync("beta-feature", targetingContext)).Name);
-        context = new PostHogFeatureFlagContext
+            (await featureManager.GetVariantAsync("beta-feature")).Name);
+        contextProvider.Context = new PostHogFeatureFlagContext
         {
             DistinctId = "another_id",
         };
-        targetingContext = new PostHogTargetingContext(context);
         Assert.Equal(
             "second-variant",
-            (await featureManager.GetVariantAsync("beta-feature", targetingContext)).Name);
+            (await featureManager.GetVariantAsync("beta-feature")).Name);
     }
 }
 public class FakePostHogFeatureFlagContextProvider : PostHogFeatureFlagContextProvider
 {
-    protected override string GetDistinctId() => "fake-distinct-id";
+    public PostHogFeatureFlagContext Context { get; set; } = new();
+
+    protected override string? GetDistinctId() => Context.DistinctId;
+
+    protected override ValueTask<FeatureFlagOptions> GetFeatureFlagOptionsAsync() =>
+        ValueTask.FromResult<FeatureFlagOptions>(Context);
 }
