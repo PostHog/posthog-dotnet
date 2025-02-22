@@ -3148,40 +3148,40 @@ public class TheQuotaLimitBehavior
     {
         var container = new TestContainer();
         container.FakeHttpMessageHandler.AddDecideResponse(
-        """
-        {
-          "config": {
-            "enable_collect_everything": true
-          },
-          "toolbarParams": {},
-          "isAuthenticated": false,
-          "supportedCompression": [
-            "gzip",
-            "gzip-js"
-          ],
-          "featureFlags": {},
-          "featureFlagPayloads": {},
-          "errorsComputingFlags": false,
-          "quotaLimited": ["feature_flags"],
-          "sessionRecording": false
-        }
-        """
+            """
+            {
+              "config": {
+                "enable_collect_everything": true
+              },
+              "toolbarParams": {},
+              "isAuthenticated": false,
+              "supportedCompression": [
+                "gzip",
+                "gzip-js"
+              ],
+              "featureFlags": {},
+              "featureFlagPayloads": {},
+              "errorsComputingFlags": false,
+              "quotaLimited": ["feature_flags"],
+              "sessionRecording": false
+            }
+            """
         );
         var client = container.Activate<PostHogClient>();
 
         var result = await client.GetAllFeatureFlagsAsync("distinct_id");
 
         Assert.Empty(result);
-        var logEvents = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
-        Assert.Single(
-            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error),
-            e => e.Message == "[FEATURE FLAGS] Quota exceeded for feature flags.");
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
     }
 
     [Fact]
     public async Task ReturnsEmptyDictionaryWhenLocalEvaluationQuotaExceeded()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        // When local evaluation is quota limited, we do not want to fallback to /decide.
+        var decideHandler = container.FakeHttpMessageHandler.AddDecideResponseException(new InvalidOperationException());
         container.FakeHttpMessageHandler.AddResponse(
             new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?token=fake-project-api-key&send_cohorts"),
             HttpMethod.Get,
@@ -3203,18 +3203,20 @@ public class TheQuotaLimitBehavior
         var result = await client.GetAllFeatureFlagsAsync("distinct_id");
 
         Assert.Empty(result);
-        Assert.Single(
-            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error),
-            e => e.Message == "[FEATURE FLAGS] Quota exceeded for feature flags.");
+        Assert.Empty(decideHandler.ReceivedRequests);
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+
     }
 
     [Fact]
-    public async Task ReturnsFalseWhenSingleFlagRequestQuotaExceeded()
+    public async Task ReturnsFalseWhenSingleFlagLocalEvaluationRequestQuotaExceeded()
     {
-        var container = new TestContainer();
+        var container = new TestContainer("fake-personal-api-key");
+        var decideHandler = container.FakeHttpMessageHandler.AddDecideResponseException(new InvalidOperationException());
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/decide?v=3"),
-            HttpMethod.Post,
+            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?token=fake-project-api-key&send_cohorts"),
+            HttpMethod.Get,
             new HttpResponseMessage(HttpStatusCode.PaymentRequired)
             {
                 Content = new StringContent(
@@ -3233,8 +3235,41 @@ public class TheQuotaLimitBehavior
         var result = await client.IsFeatureEnabledAsync("flag-key", "distinct_id");
 
         Assert.False(result);
-        Assert.Single(
-            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error),
-            e => e.Message == "[FEATURE FLAGS] Quota exceeded for feature flags.");
+        Assert.Empty(decideHandler.ReceivedRequests);
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+    }
+
+    [Fact]
+    public async Task ReturnsFalseWhenSingleFlagDecideRequestQuotaExceeded()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {
+              "config": {
+                "enable_collect_everything": true
+              },
+              "toolbarParams": {},
+              "isAuthenticated": false,
+              "supportedCompression": [
+                "gzip",
+                "gzip-js"
+              ],
+              "featureFlags": {},
+              "featureFlagPayloads": {},
+              "errorsComputingFlags": false,
+              "quotaLimited": ["feature_flags"],
+              "sessionRecording": false
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.IsFeatureEnabledAsync("flag-key", "distinct_id");
+
+        Assert.False(result);
+        var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
     }
 }

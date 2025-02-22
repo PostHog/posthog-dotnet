@@ -137,6 +137,7 @@ internal sealed class PostHogApiClient : IDisposable
     /// </summary>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="LocalEvaluationApiResult"/> containing all the feature flags.</returns>
+    /// <exception cref="ApiException">Thrown when the API returns a <c>quota_limited</c> error.</exception>
     public async Task<LocalEvaluationApiResult?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
@@ -148,8 +149,8 @@ internal sealed class PostHogApiClient : IDisposable
         }
         catch (ApiException e) when (e.ErrorType is "quota_limited")
         {
-            _logger.LogErrorQuotaExceeded(e);
-            return null;
+            // We want the caller to handle it.
+            throw;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
@@ -236,10 +237,4 @@ internal static partial class PostHogApiClientLoggerExtensions
     public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(
         this ILogger<PostHogApiClient> logger,
         Exception exception);
-
-    [LoggerMessage(
-        EventId = 12,
-        Level = LogLevel.Error,
-        Message = "[FEATURE FLAGS] Quota exceeded for feature flags.")]
-    public static partial void LogErrorQuotaExceeded(this ILogger<PostHogApiClient> logger, Exception e);
 }

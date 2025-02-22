@@ -44,6 +44,7 @@ internal sealed class LocalFeatureFlagsLoader(
     /// </summary>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>All the feature flags.</returns>
+    /// <exception cref="ApiException">Thrown when the API returns a <c>quota_limited</c> error.</exception>
     public async ValueTask<LocalEvaluator?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
     {
         if (options.Value.PersonalApiKey is null)
@@ -83,7 +84,12 @@ internal sealed class LocalFeatureFlagsLoader(
                 {
                     await LoadLocalEvaluatorAsync(cancellationToken);
                 }
-                catch (HttpRequestException e)
+                catch (ApiException e) when (e.ErrorType is "quota_limited")
+                {
+                    _logger.LogWarningQuotaExceeded(e);
+                    return;
+                }
+                catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
                 {
                     _logger.LogErrorUnexpectedException(e);
                 }
@@ -122,4 +128,10 @@ internal static partial class LocalFeatureFlagsLoaderLoggerExtensions
         Level = LogLevel.Error,
         Message = "Unexpected exception occurred while loading feature flags.")]
     public static partial void LogErrorUnexpectedException(this ILogger<LocalFeatureFlagsLoader> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 501,
+        Level = LogLevel.Warning,
+        Message = "Feature flags quota exceeded")]
+    public static partial void LogWarningQuotaExceeded(this ILogger<LocalFeatureFlagsLoader> logger, Exception e);
 }

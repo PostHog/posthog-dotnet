@@ -64,6 +64,7 @@ internal static class HttpClientExtensions
             try
             {
                 // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
+#pragma warning disable CA2016
                 var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
                     cancellationToken: cancellationToken);
                 return (result, null);
