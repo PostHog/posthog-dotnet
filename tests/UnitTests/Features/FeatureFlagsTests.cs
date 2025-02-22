@@ -3147,21 +3147,25 @@ public class TheQuotaLimitBehavior
     public async Task ReturnsEmptyDictionaryWhenDecideEndpointQuotaExceeded()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/decide?v=3"),
-            HttpMethod.Post,
-            new HttpResponseMessage(HttpStatusCode.PaymentRequired)
-            {
-                Content = new StringContent(
-                    """
-                    {
-                        "type": "quota_limited",
-                        "detail": "You have exceeded your feature flag request quota",
-                        "code": "payment_required"
-                    }
-                    """
-                )
-            }
+        container.FakeHttpMessageHandler.AddDecideResponse(
+        """
+        {
+          "config": {
+            "enable_collect_everything": true
+          },
+          "toolbarParams": {},
+          "isAuthenticated": false,
+          "supportedCompression": [
+            "gzip",
+            "gzip-js"
+          ],
+          "featureFlags": {},
+          "featureFlagPayloads": {},
+          "errorsComputingFlags": false,
+          "quotaLimited": ["feature_flags"],
+          "sessionRecording": false
+        }
+        """
         );
         var client = container.Activate<PostHogClient>();
 
