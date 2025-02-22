@@ -7,9 +7,6 @@ namespace PostHog.Api;
 /// The API Result for the <c>/decide</c> endpoint. Some properties are ommitted because
 /// they are not necessary for server-side scenarios.
 /// </summary>
-/// <remarks>
-///
-/// </remarks>
 internal record DecideApiResult(
     FeatureFlagsConfig? Config = null,
     bool IsAuthenticated = false,
@@ -17,7 +14,8 @@ internal record DecideApiResult(
     Analytics? Analytics = null,
     bool DefaultIdentifiedOnly = true,
     bool ErrorsWhileComputingFlags = false,
-    IReadOnlyDictionary<string, string>? FeatureFlagPayloads = null);
+    IReadOnlyDictionary<string, string>? FeatureFlagPayloads = null,
+    IReadOnlyList<string>? QuotaLimited = null);
 
 internal record FeatureFlagsConfig([property: JsonPropertyName("enable_collect_everything")] bool EnableCollectEverything);
 internal record Analytics(string Endpoint);

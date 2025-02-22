@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
 
@@ -32,17 +33,46 @@ internal static class HttpClientExtensions
             JsonSerializerHelper.Options,
             cancellationToken);
 
-        if (response.StatusCode is HttpStatusCode.Unauthorized)
-        {
-            var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
-                cancellationToken: cancellationToken);
-            throw new UnauthorizedAccessException(error?.Detail);
-        }
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessfulApiCall(cancellationToken);
 
         var result = await response.Content.ReadAsStreamAsync(cancellationToken);
         return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
             result,
             cancellationToken: cancellationToken);
+    }
+
+    public static async Task EnsureSuccessfulApiCall(
+        this HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        // TODO: Is there any error status codes that we should allow the exception to propagate here?
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+        var (error, exception) = await ReadApiErrorResultAsync();
+
+        throw response.StatusCode switch
+        {
+            HttpStatusCode.Unauthorized => new UnauthorizedAccessException(
+                error?.Detail ?? "Unauthorized. Could not deserialize the response for more info.", exception),
+            _ => new ApiException(error, response.StatusCode, exception)
+        };
+
+        async Task<(ApiErrorResult?, Exception?)> ReadApiErrorResultAsync()
+        {
+            try
+            {
+                // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
+#pragma warning disable CA2016
+                var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
+                    cancellationToken: cancellationToken);
+                return (result, null);
+            }
+            catch (JsonException e)
+            {
+                return (null, e);
+            }
+        }
     }
 }

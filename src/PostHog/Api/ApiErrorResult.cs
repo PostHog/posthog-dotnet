@@ -7,4 +7,4 @@ namespace PostHog.Api;
 /// <property name="Code">The error code.</property>
 /// <property name="Detail">Information about the error.</property>
 /// <property name="Attr">Additional context about the error.</property>
-internal record UnauthorizedApiResult(string Type, string Code, string Detail, string? Attr);
+public record ApiErrorResult(string Type, string Code, string Detail, string? Attr);

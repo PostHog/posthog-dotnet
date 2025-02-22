@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.InteropServices;
@@ -138,6 +137,7 @@ internal sealed class PostHogApiClient : IDisposable
     /// </summary>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="LocalEvaluationApiResult"/> containing all the feature flags.</returns>
+    /// <exception cref="ApiException">Thrown when the API returns a <c>quota_limited</c> error.</exception>
     public async Task<LocalEvaluationApiResult?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
@@ -146,6 +146,11 @@ internal sealed class PostHogApiClient : IDisposable
             return await GetAuthenticatedResponseAsync<LocalEvaluationApiResult>(
                 $"/api/feature_flag/local_evaluation/?token={options.ProjectApiKey}&send_cohorts",
                 cancellationToken);
+        }
+        catch (ApiException e) when (e.ErrorType is "quota_limited")
+        {
+            // We want the caller to handle it.
+            throw;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
@@ -177,22 +182,8 @@ internal sealed class PostHogApiClient : IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue(scheme: "Bearer", personalApiKey);
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
-        if (response.StatusCode is HttpStatusCode.Unauthorized)
-        {
-            try
-            {
-                var error = await response.Content.ReadFromJsonAsync<UnauthorizedApiResult>(
-                    cancellationToken: cancellationToken);
-                throw new UnauthorizedAccessException(error?.Detail ?? "Unauthorized");
-            }
-            // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
-            catch (JsonException e)
-            {
-                throw new UnauthorizedAccessException("Unauthorized. Could not deserialize the response for more info.", e);
-            }
-        }
 
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessfulApiCall(cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<T>(
             JsonSerializerHelper.Options,
@@ -243,5 +234,7 @@ internal static partial class PostHogApiClientLoggerExtensions
         EventId = 1002,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
-    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogApiClient> logger, Exception exception);
+    public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(
+        this ILogger<PostHogApiClient> logger,
+        Exception exception);
 }

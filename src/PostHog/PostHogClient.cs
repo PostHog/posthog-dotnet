@@ -237,7 +237,17 @@ public sealed class PostHogClient : IPostHogClient
         FeatureFlagOptions? options,
         CancellationToken cancellationToken)
     {
-        var localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+        LocalEvaluator? localEvaluator;
+        try
+        {
+            localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+        }
+        catch (ApiException e) when (e.ErrorType is "quota_limited")
+        {
+            _logger.LogWarningQuotaExceeded(e);
+            return null;
+        }
+
         FeatureFlag? response = null;
         if (localEvaluator is not null && localEvaluator.TryGetLocalFeatureFlag(featureKey, out var localFeatureFlag))
         {
@@ -394,21 +404,29 @@ public sealed class PostHogClient : IPostHogClient
     {
         if (_options.Value.PersonalApiKey is not null)
         {
-
             // Attempt to load local feature flags.
-            var localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
-            if (localEvaluator is not null)
+            try
             {
-                var (localEvaluationResults, fallbackToDecide) = localEvaluator.EvaluateAllFlags(
-                    distinctId,
-                    options?.Groups,
-                    options?.PersonProperties,
-                    warnOnUnknownGroups: false);
-
-                if (!fallbackToDecide || options is { OnlyEvaluateLocally: true })
+                var localEvaluator =
+                    await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+                if (localEvaluator is not null)
                 {
-                    return localEvaluationResults;
+                    var (localEvaluationResults, fallbackToDecide) = localEvaluator.EvaluateAllFlags(
+                        distinctId,
+                        options?.Groups,
+                        options?.PersonProperties,
+                        warnOnUnknownGroups: false);
+
+                    if (!fallbackToDecide || options is { OnlyEvaluateLocally: true })
+                    {
+                        return localEvaluationResults;
+                    }
                 }
+            }
+            catch (ApiException e) when (e.ErrorType is "quota_limited")
+            {
+                _logger.LogWarningQuotaExceeded(e);
+                return new Dictionary<string, FeatureFlag>();
             }
         }
 
@@ -442,6 +460,12 @@ public sealed class PostHogClient : IPostHogClient
                 options?.Groups,
                 cancellationToken);
 
+            if (results?.QuotaLimited?.Contains("feature_flags") is true)
+            {
+                _logger.LogWarningQuotaExceeded();
+                return new Dictionary<string, FeatureFlag>();
+            }
+
             return results?.FeatureFlags is not null
                 ? results.FeatureFlags.ToReadOnlyDictionary(
                     kvp => kvp.Key,
@@ -457,7 +481,17 @@ public sealed class PostHogClient : IPostHogClient
     public string Version => VersionConstants.Version;
 
     async Task<LocalEvaluator?> IPostHogClient.GetLocalEvaluatorAsync(CancellationToken cancellationToken)
-        => await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+    {
+        try
+        {
+            return await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+        }
+        catch (ApiException e) when (e.ErrorType is "quota_limited")
+        {
+            _logger.LogWarningQuotaExceeded(e);
+            return null;
+        }
+    }
 
     /// <inheritdoc/>
     public void Dispose() => DisposeAsync().AsTask().Wait();
@@ -559,4 +593,16 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
     public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogClient> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 12,
+        Level = LogLevel.Warning,
+        Message = "Feature flags quota exceeded")]
+    public static partial void LogWarningQuotaExceeded(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 13,
+        Level = LogLevel.Warning,
+        Message = "Feature flags quota exceeded")]
+    public static partial void LogWarningQuotaExceeded(this ILogger<PostHogClient> logger, Exception e);
 }
