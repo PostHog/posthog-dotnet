@@ -72,7 +72,7 @@ public enum ComparisonOperator
     /// Matches if the value does not contain the filter value, ignoring case differences.
     /// </summary>
     [JsonStringEnumMemberName("not_icontains")]
-    DoesNotContainsIgnoreCase,
+    DoesNotContainIgnoreCase,
 
     /// <summary>
     /// Matches if regular expression filter value matches the value.

@@ -259,10 +259,10 @@ public class TheEvaluateFeatureFlagMethod
 
     [Theory]
     [InlineData("Works at PostHog", ComparisonOperator.ContainsIgnoreCase, "\"posthog\"", true)]
-    [InlineData("Works at PostHog", ComparisonOperator.DoesNotContainsIgnoreCase, "\"posthog\"", false)]
-    [InlineData("Works at PostHog", ComparisonOperator.DoesNotContainsIgnoreCase, "\"PostHog\"", false)]
+    [InlineData("Works at PostHog", ComparisonOperator.DoesNotContainIgnoreCase, "\"posthog\"", false)]
+    [InlineData("Works at PostHog", ComparisonOperator.DoesNotContainIgnoreCase, "\"PostHog\"", false)]
     [InlineData("Loves puppies", ComparisonOperator.ContainsIgnoreCase, "\"cats\"", false)]
-    [InlineData("Loves puppies", ComparisonOperator.DoesNotContainsIgnoreCase, "\"cats\"", true)]
+    [InlineData("Loves puppies", ComparisonOperator.DoesNotContainIgnoreCase, "\"cats\"", true)]
     public void HandlesContainsComparisons(object overrideValue, ComparisonOperator comparison, string filterValueJson, bool expected)
     {
         var flags = CreateFlags(
