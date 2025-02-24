@@ -3,6 +3,9 @@ using static PostHog.Library.Ensure;
 
 namespace PostHog; // Intentionally put in the root namespace.
 
+/// <summary>
+/// Extension methods for identifying a user.
+/// </summary>
 public static class IdentifyPersonAsyncExtensions
 {
     /// <summary>
