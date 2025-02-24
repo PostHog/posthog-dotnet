@@ -71,7 +71,7 @@ public sealed class PostHogClient : IPostHogClient
         _featureFlagSentCache = new MemoryCache(new MemoryCacheOptions
         {
             SizeLimit = options.Value.FeatureFlagSentCacheSizeLimit,
-            Clock = new TimeProviderSystemClock(NotNull(timeProvider)),
+            Clock = new TimeProviderSystemClock(_timeProvider),
             CompactionPercentage = options.Value.FeatureFlagSentCacheCompactionPercentage
         });
 
