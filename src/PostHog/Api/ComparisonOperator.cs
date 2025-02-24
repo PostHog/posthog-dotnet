@@ -75,7 +75,7 @@ public enum ComparisonOperator
     DoesNotContainIgnoreCase,
 
     /// <summary>
-    /// Matches if regular expression filter value matches the value.
+    /// Matches if the value matches the regular expression filter pattern.
     /// </summary>
     [JsonStringEnumMemberName("regex")]
     Regex,
