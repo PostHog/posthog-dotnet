@@ -9,10 +9,10 @@ namespace PostHog.Api;
 public enum ComparisonOperator
 {
     /// <summary>
-    /// Matches if the value is in the list of filter values.
+    /// Matches if the value is in the list of filter values. Only used for cohort filters.
     /// </summary>
     [JsonStringEnumMemberName("in")]
-    In, // Only used for cohort filters
+    In,
 
     /// <summary>
     /// Matches if the value is an exact match to the filter value.
