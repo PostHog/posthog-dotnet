@@ -6,7 +6,7 @@ namespace PostHog.Json;
 
 using static Ensure;
 
-public class PropertyFilterValueJsonConverter : JsonConverter<PropertyFilterValue>
+internal sealed class PropertyFilterValueJsonConverter : JsonConverter<PropertyFilterValue>
 {
     public override PropertyFilterValue? Read(
         ref Utf8JsonReader reader,

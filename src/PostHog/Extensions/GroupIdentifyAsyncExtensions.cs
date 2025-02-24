@@ -4,6 +4,9 @@ using static PostHog.Library.Ensure;
 
 namespace PostHog; // Intentionally put in the root namespace.
 
+/// <summary>
+/// Extension methods for identifying a group.
+/// </summary>
 public static class GroupIdentifyAsyncExtensions
 {
     /// <summary>

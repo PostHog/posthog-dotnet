@@ -6,7 +6,13 @@ using Microsoft.AspNetCore.Http.Extensions;
 
 namespace HogTied.Web;
 
-public class PostHogPageViewFilter(IOptions<PostHogOptions> options, IPostHogClient postHogClient) : IAsyncPageFilter
+/// <summary>
+/// Page view filter that captures page views for PostHog. This demonstrates how you might use PostHog to
+/// capture page views in every ASP.NET Core Razor page.
+/// </summary>
+/// <param name="options">PostHog options.</param>
+/// <param name="posthog">The PostHog client.</param>
+public class PostHogPageViewFilter(IOptions<PostHogOptions> options, IPostHogClient posthog) : IAsyncPageFilter
 {
     readonly PostHogOptions _options = options.Value;
 
@@ -19,7 +25,7 @@ public class PostHogPageViewFilter(IOptions<PostHogOptions> options, IPostHogCli
 
             if (distinctId is not null)
             {
-                postHogClient.CapturePageView(
+                posthog.CapturePageView(
                     distinctId,
                     pagePath: context.HttpContext.Request.GetDisplayUrl());
             }

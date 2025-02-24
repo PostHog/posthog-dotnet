@@ -13,7 +13,7 @@ using PostHog.Versioning;
 namespace PostHog.Api;
 
 /// <summary>
-/// PostHog API client for capturing events and managing user tracking
+/// PostHog API client used to make API calls to PostHog for capturing events, feature flags, etc.
 /// </summary>
 internal sealed class PostHogApiClient : IDisposable
 {

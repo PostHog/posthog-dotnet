@@ -3,6 +3,9 @@ using Microsoft.FeatureManagement;
 
 namespace PostHog.FeatureManagement;
 
+/// <summary>
+/// Interface for configuring PostHog feature management services.
+/// </summary>
 public interface IPostHogFeatureManagementBuilder
 {
     /// <summary>The application services.</summary>

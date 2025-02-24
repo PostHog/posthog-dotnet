@@ -6,6 +6,11 @@ using static PostHog.Library.Ensure;
 
 namespace PostHog.Library;
 
+/// <summary>
+/// Allows enqueueing items and flushing them in batches. Flushes happen on a periodic basis or when the queue reaches
+/// a certain size (<see cref="PostHogOptions.FlushAt"/>.
+/// </summary>
+/// <typeparam name="TItem">The type of item to batch.</typeparam>
 internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
 {
     readonly Channel<Task<TItem>> _channel;
