@@ -584,12 +584,12 @@ internal static partial class PostHogClientLoggerExtensions
     [LoggerMessage(
         EventId = 12,
         Level = LogLevel.Warning,
-        Message = "Feature flags quota exceeded")]
+        Message = "[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts")]
     public static partial void LogWarningQuotaExceeded(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
         EventId = 13,
         Level = LogLevel.Warning,
-        Message = "Feature flags quota exceeded")]
+        Message = "[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts")]
     public static partial void LogWarningQuotaExceeded(this ILogger<PostHogClient> logger, Exception e);
 }
