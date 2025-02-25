@@ -3173,7 +3173,7 @@ public class TheQuotaLimitBehavior
 
         Assert.Empty(result);
         var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
-        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+        Assert.Equal("[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts", logEvent.Message);
     }
 
     [Fact]
@@ -3205,7 +3205,7 @@ public class TheQuotaLimitBehavior
         Assert.Empty(result);
         Assert.Empty(decideHandler.ReceivedRequests);
         var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
-        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+        Assert.Equal("[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts", logEvent.Message);
 
     }
 
@@ -3237,7 +3237,7 @@ public class TheQuotaLimitBehavior
         Assert.False(result);
         Assert.Empty(decideHandler.ReceivedRequests);
         var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
-        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+        Assert.Equal("[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts", logEvent.Message);
     }
 
     [Fact]
@@ -3270,6 +3270,6 @@ public class TheQuotaLimitBehavior
 
         Assert.False(result);
         var logEvent = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
-        Assert.Equal("Feature flags quota exceeded", logEvent.Message);
+        Assert.Equal("[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts", logEvent.Message);
     }
 }
