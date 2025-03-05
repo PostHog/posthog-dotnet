@@ -146,11 +146,4 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// The version of this library.
     /// </summary>
     string Version { get; }
-
-    /// <summary>
-    /// Retrieves the local evaluator for evaluating feature flags locally.
-    /// </summary>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    internal Task<LocalEvaluator?> GetLocalEvaluatorAsync(CancellationToken cancellationToken);
 }
