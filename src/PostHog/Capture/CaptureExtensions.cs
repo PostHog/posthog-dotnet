@@ -156,7 +156,7 @@ public static class CaptureExtensions
         string distinctId,
         string pagePath,
         Dictionary<string, object>? properties)
-        => client.CaptureSpecialEvent(
+        => NotNull(client).CaptureSpecialEvent(
             distinctId,
             eventName: "$pageview",
             eventPropertyName: "$current_url",
@@ -169,10 +169,47 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="pagePath">The URL or path of the page to capture.</param>
+    /// <param name="properties">Additional context to save with the event.</param>
+    /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool CapturePageView(
+        this IPostHogClient client,
+        string distinctId,
+        string pagePath,
+        Dictionary<string, object>? properties,
+        bool sendFeatureFlags)
+        => NotNull(client).CaptureSpecialEvent(
+            distinctId,
+            eventName: "$pageview",
+            eventPropertyName: "$current_url",
+            eventPropertyValue: pagePath,
+            properties,
+            sendFeatureFlags);
+
+    /// <summary>
+    /// Captures a Page View ($pageview) event.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="pagePath">The URL or path of the page to capture.</param>
     public static bool CapturePageView(
         this IPostHogClient client,
         string distinctId,
         string pagePath) => client.CapturePageView(distinctId, pagePath, properties: null);
+
+    /// <summary>
+    /// Captures a Page View ($pageview) event.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="pagePath">The URL or path of the page to capture.</param>
+    /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    public static bool CapturePageView(
+        this IPostHogClient client,
+        string distinctId,
+        string pagePath,
+        bool sendFeatureFlags) => client.CapturePageView(distinctId, pagePath, properties: null, sendFeatureFlags);
+
 
     /// <summary>
     /// Captures a Screen View ($screen) event.
@@ -187,12 +224,35 @@ public static class CaptureExtensions
         string distinctId,
         string screenName,
         Dictionary<string, object>? properties)
-        => client.CaptureSpecialEvent(
+        => NotNull(client).CaptureSpecialEvent(
             distinctId,
             eventName: "$screen",
             eventPropertyName: "$screen_name",
             eventPropertyValue: screenName,
             properties);
+
+    /// <summary>
+    /// Captures a Screen View ($screen) event.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="screenName">The URL or path of the page to capture.</param>
+    /// <param name="properties">Additional context to save with the event.</param>
+    /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool CaptureScreenView(
+        this IPostHogClient client,
+        string distinctId,
+        string screenName,
+        Dictionary<string, object>? properties,
+        bool sendFeatureFlags)
+        => NotNull(client).CaptureSpecialEvent(
+            distinctId,
+            eventName: "$screen",
+            eventPropertyName: "$screen_name",
+            eventPropertyValue: screenName,
+            properties,
+            sendFeatureFlags);
 
     /// <summary>
     /// Captures a Screen View ($screen) event.
@@ -272,7 +332,7 @@ public static class CaptureExtensions
         string distinctId,
         string surveyId,
         Dictionary<string, object>? properties)
-        => client.CaptureSpecialEvent(
+        => NotNull(client).CaptureSpecialEvent(
             distinctId,
             eventName: "survey shown",
             eventPropertyName: "$survey_id",
@@ -292,7 +352,7 @@ public static class CaptureExtensions
         string distinctId,
         string surveyId,
         Dictionary<string, object>? properties)
-        => client.CaptureSpecialEvent(
+        => NotNull(client).CaptureSpecialEvent(
             distinctId,
             eventName: "survey dismissed",
             eventPropertyName: "$survey_id",
@@ -305,10 +365,11 @@ public static class CaptureExtensions
         string eventName,
         string eventPropertyName,
         string eventPropertyValue,
-        Dictionary<string, object>? properties)
+        Dictionary<string, object>? properties,
+        bool sendFeatureFlags = false)
     {
         properties ??= new Dictionary<string, object>();
         properties[eventPropertyName] = eventPropertyValue;
-        return client.Capture(distinctId, eventName, properties);
+        return NotNull(client).Capture(distinctId, eventName, properties, null, sendFeatureFlags);
     }
 }
