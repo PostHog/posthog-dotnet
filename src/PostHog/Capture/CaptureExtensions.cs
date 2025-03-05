@@ -208,7 +208,7 @@ public static class CaptureExtensions
         this IPostHogClient client,
         string distinctId,
         string pagePath,
-        bool sendFeatureFlags) => client.CapturePageView(distinctId, pagePath, properties: null, sendFeatureFlags);
+        bool sendFeatureFlags) => NotNull(client).CapturePageView(distinctId, pagePath, properties: null, sendFeatureFlags);
 
 
     /// <summary>
