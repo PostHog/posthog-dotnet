@@ -27,7 +27,8 @@ public class PostHogPageViewFilter(IOptions<PostHogOptions> options, IPostHogCli
             {
                 posthog.CapturePageView(
                     distinctId,
-                    pagePath: context.HttpContext.Request.GetDisplayUrl());
+                    pagePath: context.HttpContext.Request.GetDisplayUrl(),
+                    sendFeatureFlags: true);
             }
         }
 
