@@ -11,7 +11,9 @@ internal static class FeatureManagementExtensions
         // yet because I'll have to support it and I want time to think about it. For example, should it be
         // IAsyncEnumerable or IReadOnlyList? Should it be a method on `IPostHogClient` or a separate interface?
         Func<CancellationToken, Task<LocalEvaluator?>> getAsync = posthog is PostHogClient posthogClient
+#pragma warning disable CS0618 // Type or member is obsolete: It's for our internal use only, so we're good.
             ? posthogClient.GetLocalEvaluatorAsync
+#pragma warning restore CS0618 // Type or member is obsolete
             : cancelToken =>
             {
                 var method = typeof(PostHogClient).GetMethod("GetLocalEvaluatorAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, [typeof(CancellationToken)]);
