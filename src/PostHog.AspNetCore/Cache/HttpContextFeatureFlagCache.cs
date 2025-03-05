@@ -31,7 +31,8 @@ public class HttpContextFeatureFlagCache(
     {
         var httpContext = httpContextAccessor.HttpContext;
 
-        if (httpContext?.Items[GetCacheKey(distinctId)] is not IReadOnlyDictionary<string, FeatureFlag> flags)
+        var flags = SafeGet(distinctId);
+        if (flags is null)
         {
             logger.LogTraceFetchingFeatureFlags(distinctId);
             flags = await NotNull(fetcher)(cancellationToken);
@@ -40,7 +41,7 @@ public class HttpContextFeatureFlagCache(
                 return flags;
             }
             logger.LogTraceStoringFeatureFlagsInCache(distinctId);
-            httpContext.Items[GetCacheKey(distinctId)] = flags;
+            SafeSet(distinctId, flags);
         }
         else
         {
@@ -48,6 +49,40 @@ public class HttpContextFeatureFlagCache(
         }
 
         return flags;
+    }
+
+    IReadOnlyDictionary<string, FeatureFlag>? SafeGet(string distinctId)
+    {
+        var httpContext = httpContextAccessor.HttpContext;
+        try
+        {
+            return httpContext?.Items[GetCacheKey(distinctId)] as IReadOnlyDictionary<string, FeatureFlag>;
+        }
+        catch (ObjectDisposedException ex)
+        {
+#pragma warning disable CA1848
+#pragma warning disable CA1727
+            logger.LogWarning(ex, "Failed to retrieve feature flags from HttpContext.Items for distinct ID '{distinctId}'.", distinctId);
+            return null;
+        }
+    }
+
+    void SafeSet(string distinctId, IReadOnlyDictionary<string, FeatureFlag> flags)
+    {
+        var httpContext = httpContextAccessor.HttpContext;
+        if (httpContext is null)
+        {
+            return;
+        }
+
+        try
+        {
+            httpContext.Items[GetCacheKey(distinctId)] = flags;
+        }
+        catch (ObjectDisposedException ex)
+        {
+            logger.LogWarning(ex, "Failed to store feature flags in HttpContext.Items for '{distinctId}'.", distinctId);
+        }
     }
 
     static string GetCacheKey(string distinctId) => $"$PostHog(feature_flags):{distinctId}";

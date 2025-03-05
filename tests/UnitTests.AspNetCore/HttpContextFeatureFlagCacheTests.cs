@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using PostHog;
 using PostHog.Cache;
 using PostHog.Features;
@@ -75,6 +76,62 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
         var result = await cache.GetAndCacheFeatureFlagsAsync(distinctId, fetcher, CancellationToken.None);
 
         Assert.Equal(featureFlags, result);
+    }
+
+    [Fact]
+    public async Task RetrievesFlagFromFetchEvenIfHttpContextItemsDisposedWhenGetting()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = Substitute.For<HttpContext>();
+        var items = Substitute.For<IDictionary<object, object?>>();
+        httpContext.Items.Returns(items);
+
+        items[Arg.Any<string>()].Throws(new ObjectDisposedException("It disposed"));
+        httpContextAccessor.HttpContext.Returns(httpContext);
+        var container = new TestContainer(services =>
+        {
+            services.AddSingleton<IFeatureFlagCache>(new HttpContextFeatureFlagCache(httpContextAccessor));
+        });
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {"featureFlags":{"flag-key": true, "another-flag-key": "some-value"}}
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var flags = await client.GetAllFeatureFlagsAsync(distinctId: "1234");
+
+        Assert.NotEmpty(flags);
+        Assert.Equal("some-value", flags["another-flag-key"]);
+    }
+
+    [Fact]
+    public async Task RetrievesFlagFromFetchEvenIfHttpContextItemsDisposedWhenSetting()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = Substitute.For<HttpContext>();
+        var items = Substitute.For<IDictionary<object, object?>>();
+        httpContext.Items.Returns(items);
+
+        items[Arg.Any<string>()].Returns(null);
+        items.When(x => x[Arg.Any<object>()] = Arg.Any<object?>())
+            .Do(x => throw new ObjectDisposedException("It disposed"));
+        httpContextAccessor.HttpContext.Returns(httpContext);
+        var container = new TestContainer(services =>
+        {
+            services.AddSingleton<IFeatureFlagCache>(new HttpContextFeatureFlagCache(httpContextAccessor));
+        });
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {"featureFlags":{"flag-key": true, "another-flag-key": "some-value"}}
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var flags = await client.GetAllFeatureFlagsAsync(distinctId: "1234");
+
+        Assert.NotEmpty(flags);
+        Assert.Equal("some-value", flags["another-flag-key"]);
     }
 
     [Fact]
