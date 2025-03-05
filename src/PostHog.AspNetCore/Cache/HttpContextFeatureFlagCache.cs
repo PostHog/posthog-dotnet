@@ -60,9 +60,7 @@ public class HttpContextFeatureFlagCache(
         }
         catch (ObjectDisposedException ex)
         {
-#pragma warning disable CA1848
-#pragma warning disable CA1727
-            logger.LogWarning(ex, "Failed to retrieve feature flags from HttpContext.Items for distinct ID '{distinctId}'.", distinctId);
+            logger.LogWarningRetrievingFeatureFlagsFromCacheFailed(ex, distinctId);
             return null;
         }
     }
@@ -81,7 +79,7 @@ public class HttpContextFeatureFlagCache(
         }
         catch (ObjectDisposedException ex)
         {
-            logger.LogWarning(ex, "Failed to store feature flags in HttpContext.Items for '{distinctId}'.", distinctId);
+            logger.LogWarningStoringFeatureFlagsInCacheFailed(ex, distinctId);
         }
     }
 
@@ -107,4 +105,22 @@ internal static partial class HttpContextFeatureFlagCacheLoggerExtensions
         Level = LogLevel.Trace,
         Message = "Storing feature flags in HttpContext.Items for '{distinctId}'.")]
     public static partial void LogTraceStoringFeatureFlagsInCache(this ILogger logger, string distinctId);
+
+    [LoggerMessage(
+        EventId = 203,
+        Level = LogLevel.Warning,
+        Message = "Fetching feature flags for '{distinctId}'.")]
+    public static partial void LogWarningRetrievingFeatureFlagsFromCacheFailed(
+        this ILogger logger,
+        Exception exception,
+        string distinctId);
+
+    [LoggerMessage(
+        EventId = 204,
+        Level = LogLevel.Warning,
+        Message = "Storing feature flags in HttpContext.Items failed for '{distinctId}'.")]
+    public static partial void LogWarningStoringFeatureFlagsInCacheFailed(
+        this ILogger logger,
+        Exception exception,
+        string distinctId);
 }
