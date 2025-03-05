@@ -14,7 +14,7 @@ internal static class FeatureManagementExtensions
             ? posthogClient.GetLocalEvaluatorAsync
             : cancelToken =>
             {
-                var method = typeof(PostHogClient).GetMethod("GetLocalEvaluatorAsync", [typeof(CancellationToken)]);
+                var method = typeof(PostHogClient).GetMethod("GetLocalEvaluatorAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic, [typeof(CancellationToken)]);
                 return method?.Invoke(posthog, [cancelToken]) as Task<LocalEvaluator?>
                        ?? Task.FromResult<LocalEvaluator?>(null);
             };
