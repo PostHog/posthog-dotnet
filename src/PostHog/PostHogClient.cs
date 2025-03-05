@@ -467,7 +467,9 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public string Version => VersionConstants.Version;
 
-    async Task<LocalEvaluator?> IPostHogClient.GetLocalEvaluatorAsync(CancellationToken cancellationToken)
+    // HACK: Temporary hack until we come up with a better approach. This is to support Feature Management
+    //       in the PostHog.AspNetCore package, which is why I don't want to make it public here.
+    internal async Task<LocalEvaluator?> GetLocalEvaluatorAsync(CancellationToken cancellationToken)
     {
         try
         {
