@@ -29,7 +29,7 @@
         }
     </div>
     <div>
-        @if (!Model.ApiKeyIsSet) {
+        @if (!Model.ProjectApiKeyIsSet) {
             <div class="alert alert-warning mt-3" role="alert">
                 The project API key is not set.
                 You can use the following command to set the key in the root of
@@ -46,6 +46,21 @@
                     <br />We're ready to go!
                 </strong>
             </div>
+
+            if (Model.PersonalApiKeyIsSet) {
+                <div class="alert alert-info mt-3" role="alert">
+                    <strong>
+                        The Personal API Key is set. If it's valid, we'll be using local evaluation.
+                    </strong>
+                </div>
+            }
+            else {
+                <div class="alert alert-info mt-3" role="alert">
+                    <strong>
+                        The Personal API Key is NOT set. We'll be using remote evaluation.
+                    </strong>
+                </div>
+            }
 
             <form method="get">
                 <div class="form-group mb-2">
