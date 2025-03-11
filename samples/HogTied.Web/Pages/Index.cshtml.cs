@@ -22,8 +22,6 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
 
     public bool PersonalApiKeyIsSet { get; private set; }
 
-    public string? ProjectApiKey { get; private set; }
-
     public bool? NonExistentFlag { get; private set; }
 
     public Dictionary<string, (FeatureFlag, bool?)> FeatureFlags { get; private set; } = new();
