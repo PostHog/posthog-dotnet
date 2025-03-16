@@ -19,7 +19,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly PostHogApiClient _apiClient;
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
-    readonly MemoryCache _featureFlagSentCache;
+    readonly MemoryCache _featureFlagCalledEventCache;
     readonly TimeProvider _timeProvider;
     readonly IOptions<PostHogOptions> _options;
     readonly ITaskScheduler _taskScheduler;
@@ -68,7 +68,7 @@ public sealed class PostHogClient : IPostHogClient
             _taskScheduler,
             _timeProvider,
             loggerFactory);
-        _featureFlagSentCache = new MemoryCache(new MemoryCacheOptions
+        _featureFlagCalledEventCache = new MemoryCache(new MemoryCacheOptions
         {
             SizeLimit = options.Value.FeatureFlagSentCacheSizeLimit,
             Clock = new TimeProviderSystemClock(_timeProvider),
@@ -159,7 +159,7 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         CapturedEvent capturedEvent)
     {
-        var flags = await DecideAsync(
+        var flagsResult = await DecideAsync(
             distinctId,
             options: new AllFeatureFlagsOptions
             {
@@ -167,7 +167,7 @@ public sealed class PostHogClient : IPostHogClient
             },
             CancellationToken.None);
 
-        return AddFeatureFlagsToCapturedEvent(capturedEvent, flags);
+        return AddFeatureFlagsToCapturedEvent(capturedEvent, flagsResult.Flags);
     }
 
     async Task<CapturedEvent> AddLocalFeatureFlagDataAsync(
@@ -259,17 +259,18 @@ public sealed class PostHogClient : IPostHogClient
         }
 
         var flagWasLocallyEvaluated = response is not null;
+        string? requestId = null;
         if (!flagWasLocallyEvaluated && options is not { OnlyEvaluateLocally: true })
         {
             try
             {
                 // Fallback to Decide
-                var flags = await DecideAsync(
+                var flagsResult = await DecideAsync(
                     distinctId,
                     options ?? new FeatureFlagOptions(),
                     cancellationToken);
-
-                response = flags.GetValueOrDefault(featureKey) ?? new FeatureFlag
+                requestId = flagsResult.RequestId;
+                response = flagsResult.Flags.GetValueOrDefault(featureKey) ?? new FeatureFlag
                 {
                     Key = featureKey,
                     IsEnabled = false
@@ -286,22 +287,23 @@ public sealed class PostHogClient : IPostHogClient
 
         if (options.SendFeatureFlagEvents)
         {
-            _featureFlagSentCache.GetOrCreate(
+            _featureFlagCalledEventCache.GetOrCreate(
                 key: (distinctId, featureKey, (string)response),
                 // This is only called if the key doesn't exist in the cache.
-                factory: cacheEntry => CaptureFeatureFlagSentEvent(
+                factory: cacheEntry => CaptureFeatureFlagCalledEvent(
                     distinctId,
                     featureKey,
                     cacheEntry,
                     response,
+                    requestId,
                     options.Groups));
         }
 
-        if (_featureFlagSentCache.Count >= _options.Value.FeatureFlagSentCacheSizeLimit)
+        if (_featureFlagCalledEventCache.Count >= _options.Value.FeatureFlagSentCacheSizeLimit)
         {
             // We need to fire and forget the compaction because it can be expensive.
             _taskScheduler.Run(
-                () => _featureFlagSentCache.Compact(_options.Value.FeatureFlagSentCacheCompactionPercentage),
+                () => _featureFlagCalledEventCache.Compact(_options.Value.FeatureFlagSentCacheCompactionPercentage),
                 cancellationToken);
         }
 
@@ -356,27 +358,34 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
-    bool CaptureFeatureFlagSentEvent(
+    bool CaptureFeatureFlagCalledEvent(
         string distinctId,
         string featureKey,
         ICacheEntry cacheEntry,
         FeatureFlag? flag,
+        string? requestId,
         GroupCollection? groupProperties)
     {
         cacheEntry.SetSize(1); // Each entry has a size of 1
         cacheEntry.SetPriority(CacheItemPriority.Low);
         cacheEntry.SetSlidingExpiration(_options.Value.FeatureFlagSentCacheSlidingExpiration);
 
+        var properties = new Dictionary<string, object>
+        {
+            ["$feature_flag"] = featureKey,
+            ["$feature_flag_response"] = flag.ToResponseObject(),
+            ["locally_evaluated"] = false,
+            [$"$feature/{featureKey}"] = flag.ToResponseObject()
+        };
+        if (requestId is not null)
+        {
+            properties["$feature_flag_request_id"] = requestId;
+        }
+
         Capture(
             distinctId,
             eventName: "$feature_flag_called",
-            properties: new Dictionary<string, object>
-            {
-                ["$feature_flag"] = featureKey,
-                ["$feature_flag_response"] = flag.ToResponseObject(),
-                ["locally_evaluated"] = false,
-                [$"$feature/{featureKey}"] = flag.ToResponseObject()
-            },
+            properties: properties,
             groups: groupProperties,
             sendFeatureFlags: false);
 
@@ -419,7 +428,8 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            return await DecideAsync(distinctId, options, cancellationToken);
+            var flagsResult = await DecideAsync(distinctId, options, cancellationToken);
+            return flagsResult.Flags;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
@@ -429,35 +439,31 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     // Retrieves all the evaluated feature flags from the /decide endpoint.
-    async Task<IReadOnlyDictionary<string, FeatureFlag>> DecideAsync(
+    async Task<FlagsResult> DecideAsync(
         string distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
-        return await _featureFlagsCache.GetAndCacheFeatureFlagsAsync(
+        var result = await _featureFlagsCache.GetAndCacheFlagsAsync(
             distinctId,
-            fetcher: _ => FetchDecideAsync(),
+            fetcher: FetchDecideAsync,
             cancellationToken: cancellationToken);
+        if (result.QuotaLimited.Contains("feature_flags"))
+        {
+            _logger.LogWarningQuotaExceeded();
+            return new FlagsResult();
+        }
 
-        async Task<IReadOnlyDictionary<string, FeatureFlag>> FetchDecideAsync()
+        return result;
+
+        async Task<FlagsResult> FetchDecideAsync(string distId, CancellationToken ctx)
         {
             var results = await _apiClient.GetAllFeatureFlagsFromDecideAsync(
-                distinctId,
+                distId,
                 options?.PersonProperties,
                 options?.Groups,
-                cancellationToken);
-
-            if (results?.QuotaLimited?.Contains("feature_flags") is true)
-            {
-                _logger.LogWarningQuotaExceeded();
-                return new Dictionary<string, FeatureFlag>();
-            }
-
-            return results?.FeatureFlags is not null
-                ? results.FeatureFlags.ToReadOnlyDictionary(
-                    kvp => kvp.Key,
-                    kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, results))
-                : new Dictionary<string, FeatureFlag>();
+                ctx);
+            return results.ToFlagsResult();
         }
     }
 
@@ -497,7 +503,7 @@ public sealed class PostHogClient : IPostHogClient
         // Stop the polling and wait for it.
         await _asyncBatchHandler.DisposeAsync();
         _apiClient.Dispose();
-        _featureFlagSentCache.Dispose();
+        _featureFlagCalledEventCache.Dispose();
         _featureFlagsLoader.Dispose();
     }
 }
