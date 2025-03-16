@@ -9,7 +9,6 @@ internal static class FakeHttpMessageHandlerExtensions
 {
     static readonly Uri DecideUrl = new("https://us.i.posthog.com/decide?v=3");
 
-
     public static FakeHttpMessageHandler.RequestHandler AddCaptureResponse(this FakeHttpMessageHandler handler) =>
         handler.AddResponse(
             new Uri("https://us.i.posthog.com/capture"),
@@ -27,14 +26,35 @@ internal static class FakeHttpMessageHandlerExtensions
         Exception exception)
         => handler.AddResponseException(DecideUrl, HttpMethod.Post, exception);
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(this FakeHttpMessageHandler handler, string responseBody)
-        => handler.AddDecideResponse(Deserialize<DecideApiResult>(responseBody));
+    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+        this FakeHttpMessageHandler handler,
+        Func<Dictionary<string, object>, bool> decideRequestPredicate,
+        string responseBody)
+        => handler.AddDecideResponse(
+            decideRequestPredicate,
+            responseBody: Deserialize<DecideApiResult>(responseBody));
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(this FakeHttpMessageHandler handler, DecideApiResult responseBody)
+    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+        this FakeHttpMessageHandler handler,
+        string responseBody)
+        => handler.AddDecideResponse(_ => true, responseBody);
+
+    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+        this FakeHttpMessageHandler handler,
+        DecideApiResult responseBody)
+        => handler.AddDecideResponse(
+            _ => true,
+            responseBody: responseBody);
+
+    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+        this FakeHttpMessageHandler handler,
+        Func<Dictionary<string, object>, bool> decideRequestPredicate,
+        DecideApiResult responseBody)
         => handler.AddResponse(
             DecideUrl,
             HttpMethod.Post,
-            responseBody: responseBody);
+            decideRequestPredicate,
+            responseBody);
 
     public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, Func<int, string> responseBodyFunc)
         => handler.AddRepeatedResponses(

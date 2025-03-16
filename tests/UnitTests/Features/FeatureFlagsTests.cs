@@ -2090,6 +2090,34 @@ public class TheGetFeatureFlagAsyncMethod
     }
 
     [Fact]
+    public async Task CallsDecideWithFlagKeyToEvaluate()
+    {
+        var container = new TestContainer();
+        var handler = container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {"featureFlags": {"beta-feature": "alakazam"}}
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("beta-feature", "some-distinct-id");
+
+        Assert.NotNull(result);
+        Assert.Equal(new FeatureFlag { Key = "beta-feature", VariantKey = "alakazam" }, result);
+        var receivedBody = handler.GetReceivedRequestBody(true);
+        Assert.StartsWith(
+            """
+            {
+              "distinct_id": "some-distinct-id",
+              "flag_keys_to_evaluate": [
+                "beta-feature"
+              ],
+            """,
+            receivedBody,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ReturnsFalseWhenFlagDoesNotExist()
     {
         var container = new TestContainer();
@@ -2620,13 +2648,13 @@ public class TheGetAllFeatureFlagsAsyncMethod
         var container = new TestContainer(personalApiKey: "fake-person");
         container.FakeHttpMessageHandler.AddDecideResponse(
             """
-                {"featureFlags": {"beta-feature": "variant-1", "beta-feature2": "variant-2"}}
-                """
+            {"featureFlags": {"beta-feature": "variant-1", "beta-feature2": "variant-2"}}
+            """
         );
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
             """
-                {"flags": []}
-                """
+            {"flags": []}
+            """
         );
         var client = container.Activate<PostHogClient>();
 
@@ -2646,16 +2674,16 @@ public class TheGetAllFeatureFlagsAsyncMethod
         var container = new TestContainer(personalApiKey: "fake-person");
         container.FakeHttpMessageHandler.AddDecideResponse(
             """
-                {
-                    "featureFlags": {"beta-feature": "variant-1", "beta-feature2": "variant-2"},
-                    "featureFlagPayloads": {"beta-feature": "100", "beta-feature2": "300"}
-                }
-                """
+            {
+                "featureFlags": {"beta-feature": "variant-1", "beta-feature2": "variant-2"},
+                "featureFlagPayloads": {"beta-feature": "100", "beta-feature2": "300"}
+            }
+            """
         );
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
             """
-                {"flags": []}
-                """
+            {"flags": []}
+            """
         );
         var client = container.Activate<PostHogClient>();
 
@@ -3186,6 +3214,64 @@ public class TheGetAllFeatureFlagsAsyncMethod
         Assert.Empty(result);
         Assert.Equal("[FEATURE FLAGS] Unable to get feature flags and payloads", logEvent.Message);
         Assert.Equal("Project API Key Incorrect.", logEvent.Exception?.Message);
+    }
+
+    [Fact] // Ported from PostHog/posthog-python test_get_all_flags_with_fallback
+    public async Task RetrievesOnlyTheFlagsToEvaluate()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        // This is for the flags to evaluate.
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            requestBody =>
+                requestBody.TryGetValue("flag_keys_to_evaluate", out var value)
+                && value is JsonElement jsonElement
+                && jsonElement.Deserialize<string[]>() is ["beta-feature", "beta-feature-2"],
+            """
+                {
+                   "featureFlags":{
+                      "beta-feature":"variant-1",
+                      "beta-feature-2":"variant-2"
+                   }
+                }
+                """
+        );
+        // This is for all results.
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            requestBody => !requestBody.ContainsKey("flag_keys_to_evaluate"),
+            """
+            {
+               "featureFlags":{
+                  "beta-feature":"variant-1",
+                  "beta-feature-2":"variant-2",
+                  "beta-feature-3": true
+               }
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var results = await client.GetAllFeatureFlagsAsync(
+            distinctId: "some-distinct-id",
+            options: new AllFeatureFlagsOptions
+            {
+                FlagKeysToEvaluate = ["beta-feature", "beta-feature-2"]
+            });
+
+        // beta-feature value overridden by /decide
+        Assert.Equal(new Dictionary<string, FeatureFlag>
+        {
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" },
+            ["beta-feature-2"] = new() { Key = "beta-feature-2", IsEnabled = true, VariantKey = "variant-2" }
+        }, results);
+
+        var allResults = await client.GetAllFeatureFlagsAsync(
+            distinctId: "some-distinct-id");
+        Assert.Equal(new Dictionary<string, FeatureFlag>
+        {
+            ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = true, VariantKey = "variant-1" },
+            ["beta-feature-2"] = new() { Key = "beta-feature-2", IsEnabled = true, VariantKey = "variant-2" },
+            ["beta-feature-3"] = new() { Key = "beta-feature-3", IsEnabled = true }
+        }, allResults);
     }
 }
 
