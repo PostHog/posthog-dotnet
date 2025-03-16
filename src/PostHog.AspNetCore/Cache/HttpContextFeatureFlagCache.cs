@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using PostHog.Api;
 using PostHog.Features;
 using static PostHog.Library.Ensure;
 
@@ -29,13 +30,27 @@ public class HttpContextFeatureFlagCache(
         Func<CancellationToken, Task<IReadOnlyDictionary<string, FeatureFlag>>> fetcher,
         CancellationToken cancellationToken)
     {
+        var result = await GetAndCacheFlagsAsync(distinctId, async (_, ctx) =>
+        {
+            var flags = await NotNull(fetcher)(ctx);
+            return new FlagsResult { Flags = flags };
+        }, cancellationToken);
+        return result.Flags;
+    }
+
+    /// <inheritdoc/>
+    public async Task<FlagsResult> GetAndCacheFlagsAsync(
+        string distinctId,
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher,
+        CancellationToken cancellationToken)
+    {
         var httpContext = httpContextAccessor.HttpContext;
 
         var flags = SafeGet(distinctId);
         if (flags is null)
         {
             logger.LogTraceFetchingFeatureFlags(distinctId);
-            flags = await NotNull(fetcher)(cancellationToken);
+            flags = await NotNull(fetcher)(distinctId, cancellationToken);
             if (httpContext is null)
             {
                 return flags;
@@ -51,12 +66,12 @@ public class HttpContextFeatureFlagCache(
         return flags;
     }
 
-    IReadOnlyDictionary<string, FeatureFlag>? SafeGet(string distinctId)
+    FlagsResult? SafeGet(string distinctId)
     {
         var httpContext = httpContextAccessor.HttpContext;
         try
         {
-            return httpContext?.Items[GetCacheKey(distinctId)] as IReadOnlyDictionary<string, FeatureFlag>;
+            return httpContext?.Items[GetCacheKey(distinctId)] as FlagsResult;
         }
         catch (ObjectDisposedException ex)
         {
@@ -65,7 +80,7 @@ public class HttpContextFeatureFlagCache(
         }
     }
 
-    void SafeSet(string distinctId, IReadOnlyDictionary<string, FeatureFlag> flags)
+    void SafeSet(string distinctId, FlagsResult flags)
     {
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is null)

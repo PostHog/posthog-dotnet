@@ -402,6 +402,54 @@ public class TheIsFeatureFlagEnabledAsyncMethod
               }
               """, received);
     }
+
+    [Fact]
+    public async Task CapturesFeatureFlagCalledEventWithRequestIdWhenPresent()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddDecideResponse(
+            """
+            { 
+                "featureFlags": {"flag-key": true},
+                "requestId": "the-request-id",
+                "featureFlagPayloads": {}
+            } 
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal(
+            $$"""
+              {
+                "api_key": "fake-project-api-key",
+                "historical_migrations": false,
+                "batch": [
+                  {
+                    "event": "$feature_flag_called",
+                    "properties": {
+                      "$feature_flag": "flag-key",
+                      "$feature_flag_response": true,
+                      "locally_evaluated": false,
+                      "$feature/flag-key": true,
+                      "$feature_flag_request_id": "the-request-id",
+                      "distinct_id": "a-distinct-id",
+                      "$lib": "posthog-dotnet",
+                      "$lib_version": "{{client.Version}}",
+                      "$geoip_disable": true
+                    },
+                    "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                  }
+                ]
+              }
+              """
+            , received);
+    }
 }
 
 public class TheGetFeatureFlagAsyncMethod

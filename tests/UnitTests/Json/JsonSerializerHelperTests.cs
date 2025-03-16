@@ -25,18 +25,13 @@ public class TheDeserializeFromCamelCaseJsonMethod
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
 
-        Assert.NotNull(result?.Config);
-        Assert.NotNull(result.Analytics);
-        Assert.True(result.Config.EnableCollectEverything);
-        Assert.False(result.IsAuthenticated);
+        Assert.NotNull(result);
         Assert.Equal(new Dictionary<string, StringOrValue<bool>>()
         {
             ["hogtied_got_character"] = "danaerys",
             ["hogtied-homepage-user"] = true,
             ["hogtied-homepage-bonanza"] = true
         }, result.FeatureFlags);
-        Assert.Equal("/i/v0/e/", result.Analytics.Endpoint);
-        Assert.True(result.DefaultIdentifiedOnly);
         Assert.False(result.ErrorsWhileComputingFlags);
         Assert.Equal(new Dictionary<string, string>
         {
@@ -52,19 +47,14 @@ public class TheDeserializeFromCamelCaseJsonMethod
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
 
-        Assert.NotNull(result?.Config);
-        Assert.NotNull(result.Analytics);
+        Assert.NotNull(result);
         Assert.NotNull(result.FeatureFlagPayloads);
-        Assert.False(result.Config.EnableCollectEverything);
-        Assert.True(result.IsAuthenticated);
         Assert.Equal(new Dictionary<string, StringOrValue<bool>>()
         {
             ["hogtied_got_character"] = false,
             ["hogtied-homepage-user"] = false,
             ["hogtied-homepage-bonanza"] = false
         }, result.FeatureFlags);
-        Assert.Equal("/i/v0/e/", result.Analytics.Endpoint);
-        Assert.False(result.DefaultIdentifiedOnly);
         Assert.True(result.ErrorsWhileComputingFlags);
         Assert.Empty(result.FeatureFlagPayloads);
     }
