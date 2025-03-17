@@ -43,4 +43,9 @@ public class AllFeatureFlagsOptions
     /// Specifying properties for each group is required if <see cref="OnlyEvaluateLocally"/> is <c>true</c>.
     /// </summary>
     public GroupCollection? Groups { get; init; }
+
+    /// <summary>
+    /// The set of flag keys to evaluate in this request. If not specified, all flags are evaluated.
+    /// </summary>
+    public IReadOnlyList<string> FlagKeysToEvaluate { get; init; } = [];
 }

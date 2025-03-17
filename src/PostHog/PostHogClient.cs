@@ -267,7 +267,10 @@ public sealed class PostHogClient : IPostHogClient
                 // Fallback to Decide
                 var flagsResult = await DecideAsync(
                     distinctId,
-                    options ?? new FeatureFlagOptions(),
+                    options ?? new FeatureFlagOptions
+                    {
+                        FlagKeysToEvaluate = [featureKey]
+                    },
                     cancellationToken);
                 requestId = flagsResult.RequestId;
                 response = flagsResult.Flags.GetValueOrDefault(featureKey) ?? new FeatureFlag
@@ -458,10 +461,11 @@ public sealed class PostHogClient : IPostHogClient
 
         async Task<FlagsResult> FetchDecideAsync(string distId, CancellationToken ctx)
         {
-            var results = await _apiClient.GetAllFeatureFlagsFromDecideAsync(
+            var results = await _apiClient.GetFeatureFlagsFromDecideAsync(
                 distId,
                 options?.PersonProperties,
                 options?.Groups,
+                options?.FlagKeysToEvaluate,
                 ctx);
             return results.ToFlagsResult();
         }
