@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -103,11 +104,16 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
         {
             _logger.LogTraceOperationCancelled(nameof(HandleFlushSignal));
         }
-        catch (HttpRequestException ex) // TODO: Catch the exceptions we might expect.
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch (Exception ex)
+#pragma warning restore CA1031
         {
+            // When running locally we want this to throw so we can see the exception.
+            Debug.Assert(ex is not ArgumentException and not NullReferenceException,
+                $"Unexpected {ex.GetType().FullName} occurred during async batch handling.");
+
             _logger.LogErrorUnexpectedException(ex);
         }
-
     }
 
     async Task HandleTimer(CancellationToken cancellationToken)
@@ -128,6 +134,16 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
         catch (OperationCanceledException)
         {
             _logger.LogTraceOperationCancelled(nameof(HandleTimer));
+        }
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            // When running locally we want this to throw so we can see the exception.
+            Debug.Assert(ex is not ArgumentException and not NullReferenceException,
+                $"Unexpected {ex.GetType().FullName} occurred during async batch handling.");
+
+            _logger.LogErrorUnexpectedException(ex);
         }
     }
 
@@ -201,8 +217,14 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
             // Flush the last remaining items.
             await FlushBatchesAsync();
         }
-        catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch (Exception e)
+#pragma warning restore CA1031
         {
+            // When running locally we want this to throw so we can see the exception.
+            Debug.Assert(e is not ArgumentException and not NullReferenceException,
+                $"Unexpected {e.GetType().FullName} occurred during async batch handling.");
+
             _logger.LogErrorUnexpectedException(e);
         }
     }
