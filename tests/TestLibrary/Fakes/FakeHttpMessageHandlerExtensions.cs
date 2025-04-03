@@ -7,7 +7,7 @@ using PostHog.Json;
 /// </summary>
 internal static class FakeHttpMessageHandlerExtensions
 {
-    static readonly Uri DecideUrl = new("https://us.i.posthog.com/decide?v=3");
+    static readonly Uri DecideUrl = new("https://us.i.posthog.com/decide?v=4");
 
     public static FakeHttpMessageHandler.RequestHandler AddCaptureResponse(this FakeHttpMessageHandler handler) =>
         handler.AddResponse(

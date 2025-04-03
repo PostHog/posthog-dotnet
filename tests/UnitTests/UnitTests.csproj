@@ -36,19 +36,22 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Update="Json\user.json">
+      <None Update="Fixtures\decide-api-result-v3.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-      <None Update="Json\decide-api-result-v3.json">
+      <None Update="Fixtures\decide-api-result-v3-negated.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-      <None Update="Json\decide-api-result-v3-negated.json">
+      <None Update="Fixtures\local-evaluation-api-result.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-      <None Update="Json\local-evaluation-api-result.json">
+      <None Update="Fixtures\local-evaluation-api-result-2.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-      <None Update="Json\local-evaluation-api-result-2.json">
+      <None Update="Fixtures\user.json">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+      <None Update="Fixtures\decide-api-result-v4.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
     </ItemGroup>

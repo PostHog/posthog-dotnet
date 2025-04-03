@@ -380,6 +380,13 @@ public sealed class PostHogClient : IPostHogClient
             ["locally_evaluated"] = false,
             [$"$feature/{featureKey}"] = flag.ToResponseObject()
         };
+        if (flag is FeatureFlagWithMetadata featureFlag)
+        {
+            properties["$feature_flag_id"] = featureFlag.Id;
+            properties["$feature_flag_version"] = featureFlag.Version;
+            properties["$feature_flag_reason"] = featureFlag.Reason;
+        }
+
         if (requestId is not null)
         {
             properties["$feature_flag_request_id"] = requestId;
@@ -451,6 +458,7 @@ public sealed class PostHogClient : IPostHogClient
             distinctId,
             fetcher: FetchDecideAsync,
             cancellationToken: cancellationToken);
+
         if (result.QuotaLimited.Contains("feature_flags"))
         {
             _logger.LogWarningQuotaExceeded();
