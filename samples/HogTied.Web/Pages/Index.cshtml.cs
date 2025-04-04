@@ -131,7 +131,9 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
             {
                 ["plan"] = "free",
                 ["price"] = "$29.99"
-            });
+            },
+            groups: null,
+            sendFeatureFlags: true);
 
         StatusMessage = "Event captured! Events are sent asynchronously, so it may take a few seconds to appear in PostHog.";
 

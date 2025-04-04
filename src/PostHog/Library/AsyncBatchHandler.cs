@@ -8,15 +8,37 @@ using static PostHog.Library.Ensure;
 namespace PostHog.Library;
 
 /// <summary>
+/// Represents a batch item that can be fetched asynchronously.
+/// </summary>
+/// <param name="itemFetcher">Used to fetch the item to send in the batch.</param>
+/// <typeparam name="TItem">The type of the item.</typeparam>
+/// <typeparam name="TBatchContext">
+/// The type of the context object to pass to batch items. A new instance is passed for each batch.
+/// </typeparam>
+internal class BatchItem<TItem, TBatchContext>(Func<TBatchContext, Task<TItem>> itemFetcher)
+{
+    /// <summary>
+    /// Resolves the item to send in the batch.
+    /// </summary>
+    /// <param name="context">Context to provide to the resolver.</param>
+    /// <returns>The item to send in the batch.</returns>
+    public Task<TItem> ResolveItem(TBatchContext context) => itemFetcher(context);
+}
+
+/// <summary>
 /// Allows enqueueing items and flushing them in batches. Flushes happen on a periodic basis or when the queue reaches
 /// a certain size (<see cref="PostHogOptions.FlushAt"/>).
 /// </summary>
 /// <typeparam name="TItem">The type of item to batch.</typeparam>
-internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
+/// <typeparam name="TBatchContext">
+/// The type of the context object to pass to batch items. A new instance is passed for each batch.
+/// </typeparam>
+internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAsyncDisposable
 {
-    readonly Channel<Task<TItem>> _channel;
+    readonly Channel<BatchItem<TItem, TBatchContext>> _channel;
     readonly IOptions<PostHogOptions> _options;
     readonly Func<IEnumerable<TItem>, Task> _batchHandlerFunc;
+    readonly Func<TBatchContext> _batchContextFunc;
     readonly ILogger<AsyncBatchHandler> _logger;
     readonly PeriodicTimer _timer;
     readonly CancellationTokenSource _cancellationTokenSource = new();
@@ -26,6 +48,7 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
 
     public AsyncBatchHandler(
         Func<IEnumerable<TItem>, Task> batchHandlerFunc,
+        Func<TBatchContext> batchContextFunc,
         IOptions<PostHogOptions> options,
         ITaskScheduler taskScheduler,
         TimeProvider timeProvider,
@@ -33,8 +56,9 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
     {
         _options = NotNull(options);
         _batchHandlerFunc = batchHandlerFunc;
+        _batchContextFunc = batchContextFunc;
         _logger = logger;
-        _channel = Channel.CreateBounded<Task<TItem>>(new BoundedChannelOptions(_options.Value.MaxQueueSize)
+        _channel = Channel.CreateBounded<BatchItem<TItem, TBatchContext>>(new BoundedChannelOptions(_options.Value.MaxQueueSize)
         {
             FullMode = BoundedChannelFullMode.DropOldest
         });
@@ -45,9 +69,16 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
 
     public AsyncBatchHandler(
         Func<IEnumerable<TItem>, Task> batchHandlerFunc,
+        Func<TBatchContext> batchContextFunc,
         TimeProvider timeProvider,
         IOptions<PostHogOptions> options)
-        : this(batchHandlerFunc, options, new TaskRunTaskScheduler(), timeProvider, NullLogger<AsyncBatchHandler>.Instance)
+        : this(
+            batchHandlerFunc,
+            batchContextFunc,
+            options,
+            new TaskRunTaskScheduler(),
+            timeProvider,
+            NullLogger<AsyncBatchHandler>.Instance)
     {
     }
 
@@ -58,7 +89,14 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
     /// </summary>
     /// <param name="item">The item to enqueue</param>
     /// <returns><c>true</c> if the item was enqueued, otherwise <c>false</c>ß</returns>
-    public bool Enqueue(Task<TItem> item)
+    public bool Enqueue(Task<TItem> item) => Enqueue(new BatchItem<TItem, TBatchContext>(_ => item));
+
+    /// <summary>
+    /// Enqueues a batch item and returns true if the item was successfully enqueued.
+    /// </summary>
+    /// <param name="item">The item to enqueue</param>
+    /// <returns><c>true</c> if the item was enqueued, otherwise <c>false</c>ß</returns>
+    public bool Enqueue(BatchItem<TItem, TBatchContext> item)
     {
         if (Count >= _options.Value.MaxQueueSize)
         {
@@ -163,9 +201,11 @@ internal sealed class AsyncBatchHandler<TItem> : IDisposable, IAsyncDisposable
 
         try
         {
+            var batchContext = _batchContextFunc();
             while (_channel.Reader.TryReadBatch(_options.Value.MaxBatchSize, out var batch))
             {
-                var resolved = await Task.WhenAll(batch);
+                var tasks = batch.Select(item => item.ResolveItem(batchContext));
+                var resolved = await Task.WhenAll(tasks);
                 await SendBatch(resolved);
             }
         }

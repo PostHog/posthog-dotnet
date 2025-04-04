@@ -25,7 +25,7 @@ public class TheEnqueueMethod
             handlerCompleteTask.SetResult();
             return Task.CompletedTask;
         };
-        await using var batchHandler = new AsyncBatchHandler<int>(handlerFunc, new FakeTimeProvider(), options);
+        await using var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), new FakeTimeProvider(), options);
 
         batchHandler.Enqueue(Task.FromResult(1));
         Assert.Empty(items);
@@ -34,6 +34,47 @@ public class TheEnqueueMethod
         batchHandler.Enqueue(Task.FromResult(3));
         await handlerCompleteTask.Task;
         Assert.Equal([1, 2, 3], items);
+    }
+
+    [Fact]
+    public async Task CallsBatchHandlerWithBatchContextWhenThresholdMet()
+    {
+        var options = new FakeOptions<PostHogOptions>(new()
+        {
+            FlushAt = 10,
+            FlushInterval = TimeSpan.FromHours(3)
+        });
+        var items = new List<int>();
+
+        Func<IEnumerable<int>, Task> handlerFunc = batch =>
+        {
+            items.AddRange(batch);
+            return Task.CompletedTask;
+        };
+        int i = 3;
+        Func<int> batchContextFactory = () => i++;
+        await using var batchHandler = new AsyncBatchHandler<int, int>(
+            handlerFunc,
+            batchContextFactory,
+            new FakeTimeProvider(), options);
+
+        batchHandler.Enqueue(new BatchItem<int, int>(context => Task.FromResult(1 + context)));
+        Assert.Empty(items);
+        batchHandler.Enqueue(new BatchItem<int, int>(context => Task.FromResult(2 + context)));
+        Assert.Empty(items);
+        batchHandler.Enqueue(new BatchItem<int, int>(context => Task.FromResult(3 + context)));
+        await batchHandler.FlushAsync();
+        Assert.Equal([4, 5, 6], items);
+
+        // Ensure next batch has new context.
+        items.Clear();
+        batchHandler.Enqueue(new BatchItem<int, int>(context => Task.FromResult(1 + context)));
+        Assert.Empty(items);
+        batchHandler.Enqueue(new BatchItem<int, int>(context => Task.FromResult(2 + context)));
+        Assert.Empty(items);
+        batchHandler.Enqueue(new BatchItem<int, int>(context => Task.FromResult(3 + context)));
+        await batchHandler.FlushAsync();
+        Assert.Equal([5, 6, 7], items);
     }
 
     [Fact]
@@ -54,7 +95,7 @@ public class TheEnqueueMethod
             callCount++;
             return Task.CompletedTask;
         };
-        await using var batchHandler = new AsyncBatchHandler<int>(handlerFunc, timeProvider, options);
+        await using var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), timeProvider, options);
 
         batchHandler.Enqueue(Task.FromResult(1));
         batchHandler.Enqueue(Task.FromResult(2));
@@ -90,7 +131,7 @@ public class TheEnqueueMethod
             items.AddRange(batch);
             return Task.CompletedTask;
         };
-        await using var batchHandler = new AsyncBatchHandler<int>(handlerFunc, new FakeTimeProvider(), options);
+        await using var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), new FakeTimeProvider(), options);
 
         batchHandler.Enqueue(Task.FromResult(1));
         batchHandler.Enqueue(Task.FromResult(2));
@@ -122,7 +163,7 @@ public class TheEnqueueMethod
             items.AddRange(batch);
             return Task.CompletedTask;
         };
-        await using var batchHandler = new AsyncBatchHandler<int>(handlerFunc, timeProvider, options);
+        await using var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), timeProvider, options);
 
         // Burst of events before flush can run.
         for (var i = 1; i <= 10; i++)
@@ -157,7 +198,7 @@ public class TheEnqueueMethod
             return Task.CompletedTask;
         };
 
-        await using var batchHandler = new AsyncBatchHandler<int>(handlerFunc, timeProvider, options);
+        await using var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), timeProvider, options);
         batchHandler.Enqueue(Task.FromResult(1));
         Assert.Empty(items);
         batchHandler.Enqueue(Task.FromResult(2));
@@ -207,7 +248,7 @@ public class TheEnqueueMethod
             return Task.CompletedTask;
         };
 
-        var batchHandler = new AsyncBatchHandler<int>(handlerFunc, timeProvider, options);
+        var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), timeProvider, options);
         batchHandler.Enqueue(Task.FromResult(1));
 
         await batchHandler.DisposeAsync();
@@ -241,7 +282,7 @@ public class TheDisposeAsyncMethod
             return Task.CompletedTask;
         };
 
-        await using (var batchHandler = new AsyncBatchHandler<int>(handlerFunc, timeProvider, options))
+        await using (var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), timeProvider, options))
         {
             batchHandler.Enqueue(Task.FromResult(1));
             Assert.Empty(items);
@@ -276,7 +317,7 @@ public class TheDisposeAsyncMethod
             return Task.CompletedTask;
         };
 
-        var batchHandler = new AsyncBatchHandler<int>(handlerFunc, new FakeTimeProvider(), options);
+        var batchHandler = new AsyncBatchHandler<int, object>(handlerFunc, () => new object(), new FakeTimeProvider(), options);
 
         batchHandler.Enqueue(Task.FromResult(1));
         Assert.Empty(items);
@@ -299,7 +340,10 @@ public class TheDisposeAsyncMethod
         });
         Func<IEnumerable<int>, Task> handlerFunc = batch => throw new HttpRequestException("Test exception");
 
-        await using var batchHandler = new AsyncBatchHandler<int>(handlerFunc, new FakeTimeProvider(), options);
+        await using var batchHandler = new AsyncBatchHandler<int, object>(
+            handlerFunc,
+            () => new object(),
+            new FakeTimeProvider(), options);
         batchHandler.Enqueue(Task.FromResult(1));
         batchHandler.Enqueue(Task.FromResult(2));
 

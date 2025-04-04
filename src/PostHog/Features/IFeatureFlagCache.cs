@@ -79,4 +79,3 @@ public sealed class NullFeatureFlagCache : IFeatureFlagCache
         CancellationToken cancellationToken)
         => NotNull(fetcher)(distinctId, cancellationToken);
 }
-
