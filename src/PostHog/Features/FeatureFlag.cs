@@ -44,9 +44,25 @@ public record FeatureFlag
         DecideApiResult apiResult)
     {
         var payload = NotNull(apiResult).FeatureFlagPayloads?.GetValueOrDefault(key);
-        return new FeatureFlag
+
+        var featureFlag = apiResult.Flags is not null && apiResult.Flags.TryGetValue(key, out var flag)
+                                                      && flag.Metadata is { Id: { } id, Version: { } version }
+                                                      && flag.Reason.Description is { } reason
+            ? new FeatureFlagWithMetadata
+            {
+                Key = flag.Key,
+                Id = id,
+                Version = version,
+                Reason = reason,
+            }
+            : new FeatureFlag
+            {
+                Key = key
+            };
+
+
+        return featureFlag with
         {
-            Key = key,
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
             Payload = payload is null ? null : JsonDocument.Parse(payload)

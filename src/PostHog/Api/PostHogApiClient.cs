@@ -110,7 +110,7 @@ internal sealed class PostHogApiClient : IDisposable
         IReadOnlyList<string>? flagKeysToEvaluate,
         CancellationToken cancellationToken)
     {
-        var endpointUrl = new Uri(HostUrl, "decide?v=3");
+        var endpointUrl = new Uri(HostUrl, "decide?v=4");
 
         var payload = new Dictionary<string, object>
         {

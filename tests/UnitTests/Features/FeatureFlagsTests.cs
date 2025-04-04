@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Api;
 using PostHog.Features;
+using PostHog.Json;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 
@@ -211,23 +212,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         client.ClearLocalFlagsCache();
         messageHandler.AddDecideResponse(
             """
-            { 
-              "flags": [
-                {
-                    "key": "flag-key",
-                    "active": true,
-                    "rollout_percentage": 0,
-                    "filters": {
-                        "groups": [
-                            {
-                                "properties": [],
-                                "rollout_percentage": 0
-                            }
-                        ]
-                    }
-                }
-              ]
-            } 
+            {"featureFlags": {"flag-key": false}}
             """
         );
         Assert.False(
@@ -437,6 +422,84 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_response": true,
                       "locally_evaluated": false,
                       "$feature/flag-key": true,
+                      "$feature_flag_request_id": "the-request-id",
+                      "distinct_id": "a-distinct-id",
+                      "$lib": "posthog-dotnet",
+                      "$lib_version": "{{client.Version}}",
+                      "$geoip_disable": true
+                    },
+                    "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                  }
+                ]
+              }
+              """
+            , received);
+    }
+
+    [Theory]
+    [InlineData(true, "true")]
+    [InlineData("variant", "\"variant\"")]
+    public async Task CapturesFeatureFlagCalledEventWithAdditionalMetadataIdWhenPresent(object flagValueObject, string expected)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        var flagValue = flagValueObject switch
+        {
+            string flagValueString => new StringOrValue<bool>(flagValueString),
+            bool flagValueBool => new StringOrValue<bool>(flagValueBool),
+            _ => throw new InvalidOperationException()
+        };
+        var enabled = flagValue.Value ? "true" : "false";
+        var variant = flagValue.IsString ? $"\"{flagValue.StringValue}\"" : "null";
+
+        messageHandler.AddDecideResponse(
+            $$"""
+              { 
+                  "flags": {
+                      "flag-key": {
+                          "key": "flag-key",
+                          "enabled": {{enabled}},
+                          "variant": {{variant}},
+                          "reason": {
+                            "code": "condition_match",
+                            "description": "Matched conditions set 3",
+                            "condition_index": 2
+                          },
+                          "metadata": {
+                            "id": 1,
+                            "version": 23,
+                            "payload": "{\"foo\": 1}",
+                            "description": "This is an enabled flag"  
+                          }
+                      }
+                  },
+                  "requestId": "the-request-id"
+              }
+              """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal(
+            $$"""
+              {
+                "api_key": "fake-project-api-key",
+                "historical_migrations": false,
+                "batch": [
+                  {
+                    "event": "$feature_flag_called",
+                    "properties": {
+                      "$feature_flag": "flag-key",
+                      "$feature_flag_response": {{expected}},
+                      "locally_evaluated": false,
+                      "$feature/flag-key": {{expected}},
+                      "$feature_flag_id": 1,
+                      "$feature_flag_version": 23,
+                      "$feature_flag_reason": "Matched conditions set 3",
                       "$feature_flag_request_id": "the-request-id",
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
@@ -3159,7 +3222,11 @@ public class TheGetAllFeatureFlagsAsyncMethod
     public async Task ReturnsEmptyDictionaryWhenPersonalApiKeyIncorrect()
     {
         var container = new TestContainer("fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddDecideResponse(new DecideApiResult());
+        container.FakeHttpMessageHandler.AddDecideResponse(new DecideApiResult
+        {
+            FeatureFlags = new Dictionary<string, StringOrValue<bool>>(),
+            FeatureFlagPayloads = new Dictionary<string, string>(),
+        });
         container.FakeHttpMessageHandler.AddResponse(
             new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?token=fake-project-api-key&send_cohorts"),
             HttpMethod.Get,
@@ -3191,7 +3258,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     {
         var container = new TestContainer();
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/decide?v=3"),
+            new Uri("https://us.i.posthog.com/decide?v=4"),
             HttpMethod.Post,
             new HttpResponseMessage(HttpStatusCode.Unauthorized)
             {

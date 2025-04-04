@@ -21,7 +21,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
     [Fact]
     public async Task CanDeserializeJsonToDecideApiResult()
     {
-        var json = await File.ReadAllTextAsync("./Json/decide-api-result-v3.json");
+        var json = await File.ReadAllTextAsync("./Fixtures/decide-api-result-v3.json");
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
 
@@ -41,9 +41,40 @@ public class TheDeserializeFromCamelCaseJsonMethod
     }
 
     [Fact]
+    public async Task CanDeserializeJsonToDecideApiV4Result()
+    {
+        var json = await File.ReadAllTextAsync("./Fixtures/decide-api-result-v4.json");
+
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
+
+        Assert.NotNull(result);
+        Assert.Equal(
+            new FeatureFlagResult
+            {
+                Key = "multi-variate-flag",
+                Enabled = true,
+                Variant = "hello",
+                Reason = new EvaluationReason
+                {
+                    Code = "condition_match",
+                    Description = "Matched conditions set 2",
+                    ConditionIndex = 1
+                },
+                Metadata = new FeatureFlagMetadata
+                {
+                    Id = 4,
+                    Version = 42,
+                    Payload = "this is the payload"
+                }
+            },
+            result.Flags?["multi-variate-flag"]
+        );
+    }
+
+    [Fact]
     public async Task CanDeserializeNegatedJsonToDecideApiResult()
     {
-        var json = await File.ReadAllTextAsync("./Json/decide-api-result-v3-negated.json");
+        var json = await File.ReadAllTextAsync("./Fixtures/decide-api-result-v3-negated.json");
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
 
@@ -62,7 +93,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
     [Fact]
     public async Task CanDeserializeLocalEvaluationApiResult()
     {
-        var json = await File.ReadAllTextAsync("./Json/local-evaluation-api-result.json");
+        var json = await File.ReadAllTextAsync("./Fixtures/local-evaluation-api-result.json");
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
 
@@ -264,7 +295,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
     [Fact]
     public async Task CanDeserializeAnotherLocalEvaluationApiResult()
     {
-        var json = await File.ReadAllTextAsync("./Json/local-evaluation-api-result-2.json");
+        var json = await File.ReadAllTextAsync("./Fixtures/local-evaluation-api-result-2.json");
 
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
 
@@ -280,6 +311,100 @@ public class TheDeserializeFromCamelCaseJsonMethod
 
         Assert.NotNull(result);
         Assert.Equal(1, result.Status);
+    }
+
+    [Fact]
+    public async Task CanDeserializeFeatureFlagResult()
+    {
+        var json = """
+                   {
+                     "key": "enabled-flag",
+                     "enabled": true,
+                     "variant": null,
+                     "reason": {
+                       "code": "condition_match",
+                       "description": "Matched conditions set 3",
+                       "condition_index": 2
+                     },
+                     "metadata": {
+                       "id": 1,
+                       "version": 23,
+                       "payload": "{\"foo\": 1}",
+                       "description": "This is an enabled flag"  
+                     }
+                   }
+                   """;
+
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<FeatureFlagResult>(json);
+
+        Assert.NotNull(result);
+        Assert.Equal(new FeatureFlagResult
+        {
+            Key = "enabled-flag",
+            Enabled = true,
+            Variant = null,
+            Reason = new EvaluationReason
+            {
+                Code = "condition_match",
+                Description = "Matched conditions set 3",
+                ConditionIndex = 2
+            },
+            Metadata = new FeatureFlagMetadata
+            {
+                Id = 1,
+                Version = 23,
+                Payload = "{\"foo\": 1}",
+                Description = "This is an enabled flag"
+            }
+        }, result);
+    }
+
+    [Fact]
+    public async Task CanDeserializeDictionaryOfFeatureFlagResult()
+    {
+        var json = """
+                   {
+                       "enabled-flag": {
+                         "key": "enabled-flag",
+                         "enabled": true,
+                         "variant": null,
+                         "reason": {
+                           "code": "condition_match",
+                           "description": "Matched conditions set 3",
+                           "condition_index": 2
+                         },
+                         "metadata": {
+                           "id": 1,
+                           "version": 23,
+                           "payload": "{\"foo\": 1}",
+                           "description": "This is an enabled flag"  
+                         }
+                       }
+                   }
+                   """;
+
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Dictionary<string, FeatureFlagResult>>(json);
+
+        Assert.NotNull(result);
+        Assert.Equal(new FeatureFlagResult
+        {
+            Key = "enabled-flag",
+            Enabled = true,
+            Variant = null,
+            Reason = new EvaluationReason
+            {
+                Code = "condition_match",
+                Description = "Matched conditions set 3",
+                ConditionIndex = 2
+            },
+            Metadata = new FeatureFlagMetadata
+            {
+                Id = 1,
+                Version = 23,
+                Payload = "{\"foo\": 1}",
+                Description = "This is an enabled flag"
+            }
+        }, result["enabled-flag"]);
     }
 
     [Fact]

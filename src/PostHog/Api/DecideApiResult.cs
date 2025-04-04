@@ -5,20 +5,44 @@ using PostHog.Library;
 namespace PostHog.Api;
 
 /// <summary>
-/// The API Result for the <c>/decide</c> endpoint. Some properties are omitted because
-/// they are not necessary for server-side scenarios.
+/// The union of the API Result for the <c>/decide?v=3</c> and <c>/decide?v=4</c>endpoint.
+/// Some properties are omitted because they are not necessary for server-side scenarios.
+/// When making a decide request, we have to check the response to to see which version of the API we received
+/// (For example, it's possible to make a request for v=4 to an outdated self-hosted instance and receive
+/// a v=3 response).
 /// </summary>
-/// <param name="FeatureFlags">The feature flags that are enabled for the user.</param>
-/// <param name="ErrorsWhileComputingFlags">Whether there were errors while computing the feature flags.</param>
-/// <param name="FeatureFlagPayloads">The payloads of the feature flags.</param>
-/// <param name="QuotaLimited">The list of feature flags that are limited by quota.</param>
-/// <param name="RequestId">The request Id of the API request.</param>
-internal record DecideApiResult(
-    IReadOnlyDictionary<string, StringOrValue<bool>>? FeatureFlags = null,
-    bool ErrorsWhileComputingFlags = false,
-    IReadOnlyDictionary<string, string>? FeatureFlagPayloads = null,
-    IReadOnlyList<string>? QuotaLimited = null,
-    string? RequestId = null);
+internal record DecideApiResult
+{
+    /// <summary>
+    /// The feature flags that are enabled for the user.
+    /// </summary>
+    public IReadOnlyDictionary<string, StringOrValue<bool>>? FeatureFlags { get; init; }
+
+    /// <summary>
+    /// The payloads of the feature flags.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? FeatureFlagPayloads { get; init; }
+
+    /// <summary>
+    /// Details about the active feature flags.
+    /// </summary>
+    public IReadOnlyDictionary<string, FeatureFlagResult>? Flags { get; init; }
+
+    /// <summary>
+    /// Whether there were errors while computing the feature flags.
+    /// </summary>
+    public bool ErrorsWhileComputingFlags { get; init; }
+
+    /// <summary>
+    /// The name of the features that are limited by quota.
+    /// </summary>
+    public IReadOnlyList<string>? QuotaLimited { get; init; }
+
+    /// <summary>
+    /// The request Id of the API request.
+    /// </summary>
+    public string? RequestId { get; init; }
+}
 
 // This is a transformation of the DecideApiResult to a more usable form.
 public record FlagsResult
@@ -44,6 +68,27 @@ public record FlagsResult
     public IReadOnlyList<string> QuotaLimited { get; init; } = [];
 }
 
+/// <summary>
+/// A flag result with more metadata about the flag.
+/// </summary>
+internal record FeatureFlagWithMetadata : FeatureFlag
+{
+    /// <summary>
+    /// The database id of the flag.
+    /// </summary>
+    public required int Id { get; init; }
+
+    /// <summary>
+    /// The version of the flag.
+    /// </summary>
+    public required int Version { get; init; }
+
+    /// <summary>
+    /// The reason the flag evaluated as it did.
+    /// </summary>
+    public required string Reason { get; init; }
+}
+
 internal static class DecideResultsExtensions
 {
     public static FlagsResult ToFlagsResult(this DecideApiResult? results)
@@ -53,15 +98,15 @@ internal static class DecideResultsExtensions
             return new FlagsResult();
         }
 
-        var flags = results.FeatureFlags is not null
-            ? results.FeatureFlags.ToReadOnlyDictionary(
-                kvp => kvp.Key,
-                kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, results))
-            : new Dictionary<string, FeatureFlag>();
+        var normalized = results.NormalizeResult();
 
         return new FlagsResult
         {
-            Flags = flags,
+            Flags = normalized.FeatureFlags is { } featureFlags
+                ? featureFlags.ToReadOnlyDictionary(
+                    kvp => kvp.Key,
+                    kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, normalized))
+                : new Dictionary<string, FeatureFlag>(),
             ErrorsWhileComputingFlags = results.ErrorsWhileComputingFlags,
             RequestId = results.RequestId,
             QuotaLimited = results.QuotaLimited ?? []

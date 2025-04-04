@@ -18,13 +18,12 @@ public class TheDeserializeAsyncMethod
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<PropertyFilterValue>(json);
 
         Assert.NotNull(result);
-        Assert.Equal(new[]
-        {
+        Assert.Equal([
             "tyrion@example.com",
             "danaerys@example.com",
             "sansa@example.com",
             "ned@example.com"
-        }, result.ListOfStrings);
+        ], result.ListOfStrings);
     }
 
     [Fact]
@@ -51,13 +50,12 @@ public class TheDeserializeAsyncMethod
             {
                 Type = FilterType.Person,
                 Key = "email",
-                Value = new PropertyFilterValue(new[]
-                {
+                Value = new PropertyFilterValue([
                     "tyrion@example.com",
                     "danaerys@example.com",
                     "sansa@example.com",
                     "ned@example.com"
-                }),
+                ]),
                 Operator = ComparisonOperator.Exact
             },
             propertyFilter);
