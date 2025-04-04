@@ -18,7 +18,7 @@ namespace PostHog.Library;
 internal class BatchItem<TItem, TBatchContext>(Func<TBatchContext, Task<TItem>> itemFetcher)
 {
     /// <summary>
-    /// Resolves the item to send in te batch.
+    /// Resolves the item to send in the batch.
     /// </summary>
     /// <param name="context">Context to provide to the resolver.</param>
     /// <returns>The item to send in the batch.</returns>
