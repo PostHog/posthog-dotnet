@@ -15,7 +15,7 @@ namespace PostHog;
 /// <inheritdoc cref="IPostHogClient" />
 public sealed class PostHogClient : IPostHogClient
 {
-    readonly AsyncBatchHandler<CapturedEvent> _asyncBatchHandler;
+    readonly AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext> _asyncBatchHandler;
     readonly PostHogApiClient _apiClient;
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
@@ -55,8 +55,12 @@ public sealed class PostHogClient : IPostHogClient
             _timeProvider,
             loggerFactory.CreateLogger<PostHogApiClient>()
         );
-        _asyncBatchHandler = new AsyncBatchHandler<CapturedEvent>(
+        _asyncBatchHandler = new AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext>(
             batch => _apiClient.CaptureBatchAsync(batch, CancellationToken.None),
+            batchContextFunc: () => new CapturedEventBatchContext(
+                new FallbackFeatureFlagCache(
+                    new MemoryFeatureFlagCache(_timeProvider, 10000, 0.2),
+                    _featureFlagsCache)),
             options,
             _taskScheduler,
             _timeProvider,
@@ -68,6 +72,7 @@ public sealed class PostHogClient : IPostHogClient
             _taskScheduler,
             _timeProvider,
             loggerFactory);
+
         _featureFlagCalledEventCache = new MemoryCache(new MemoryCacheOptions
         {
             SizeLimit = options.Value.FeatureFlagSentCacheSizeLimit,
@@ -139,35 +144,42 @@ public sealed class PostHogClient : IPostHogClient
 
         capturedEvent.Properties.Merge(_options.Value.SuperProperties);
 
-        var batchTask = sendFeatureFlags
-            ? AddFreshFeatureFlagDataAsync(distinctId, groups, capturedEvent)
-            : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
-                ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
-                : Task.FromResult(capturedEvent);
+        var batchItem = new BatchItem<CapturedEvent, CapturedEventBatchContext>(BatchTask);
 
-        if (_asyncBatchHandler.Enqueue(batchTask))
+        if (_asyncBatchHandler.Enqueue(batchItem))
         {
             _logger.LogTraceCaptureCalled(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
             return true;
         }
         _logger.LogWarnCaptureFailed(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
         return false;
+
+        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context) =>
+            sendFeatureFlags
+                ? AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent)
+                : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
+                    ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
+                    : Task.FromResult(capturedEvent);
     }
 
     async Task<CapturedEvent> AddFreshFeatureFlagDataAsync(
+        IFeatureFlagCache featureFlagCache,
         string distinctId,
         GroupCollection? groups,
         CapturedEvent capturedEvent)
     {
-        var flagsResult = await DecideAsync(
+        var result = await featureFlagCache.GetAndCacheFlagsAsync(
             distinctId,
-            options: new AllFeatureFlagsOptions
-            {
-                Groups = groups
-            },
+            (userId, ctx) => DecideAsync(
+                userId,
+                options: new AllFeatureFlagsOptions
+                {
+                    Groups = groups
+                },
+                ctx),
             CancellationToken.None);
 
-        return AddFeatureFlagsToCapturedEvent(capturedEvent, flagsResult.Flags);
+        return AddFeatureFlagsToCapturedEvent(capturedEvent, result.Flags);
     }
 
     async Task<CapturedEvent> AddLocalFeatureFlagDataAsync(
@@ -452,9 +464,16 @@ public sealed class PostHogClient : IPostHogClient
     async Task<FlagsResult> DecideAsync(
         string distinctId,
         AllFeatureFlagsOptions? options,
+        CancellationToken cancellationToken) =>
+        await DecideAsync(_featureFlagsCache, distinctId, options, cancellationToken);
+
+    async Task<FlagsResult> DecideAsync(
+        IFeatureFlagCache cache,
+        string distinctId,
+        AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
-        var result = await _featureFlagsCache.GetAndCacheFlagsAsync(
+        var result = await cache.GetAndCacheFlagsAsync(
             distinctId,
             fetcher: FetchDecideAsync,
             cancellationToken: cancellationToken);

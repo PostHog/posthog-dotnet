@@ -160,3 +160,159 @@ public class TheIdentifyGroupAsyncMethod
                        """, received);
     }
 }
+
+public class TheCaptureMethod
+{
+    [Fact]
+    public async Task SendsEnrichedCapturedEventsWhenSendFeatureFlagsTrueButDoesNotMakeSameDecideCallTwice()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddCaptureResponse();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        // Only need three responses to cover the three events
+        container.FakeHttpMessageHandler.AddRepeatedDecideResponse(3, i =>
+            $$"""
+            {"featureFlags": {"flag1":true, "flag2":false, "flag3":"variant-{{i}}"} }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        client.Capture("some-distinct-id", "some-event", sendFeatureFlags: true);
+        client.Capture("some-distinct-id", "some-event", sendFeatureFlags: true);
+        client.Capture("another-distinct-id", "some-event", sendFeatureFlags: true);
+        client.Capture("some-distinct-id", "some-event", sendFeatureFlags: true);
+        client.Capture("some-distinct-id", "some-event", sendFeatureFlags: true);
+        client.Capture("another-distinct-id", "some-event", sendFeatureFlags: true);
+        client.Capture("third-distinct-id", "some-event", sendFeatureFlags: true);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "some-event",
+                           "properties": {
+                             "distinct_id": "some-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/flag1": true,
+                             "$feature/flag2": false,
+                             "$feature/flag3": "variant-0",
+                             "$active_feature_flags": [
+                               "flag1",
+                               "flag3"
+                             ]
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         },
+                         {
+                           "event": "some-event",
+                           "properties": {
+                             "distinct_id": "some-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/flag1": true,
+                             "$feature/flag2": false,
+                             "$feature/flag3": "variant-0",
+                             "$active_feature_flags": [
+                               "flag1",
+                               "flag3"
+                             ]
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         },
+                         {
+                           "event": "some-event",
+                           "properties": {
+                             "distinct_id": "another-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/flag1": true,
+                             "$feature/flag2": false,
+                             "$feature/flag3": "variant-1",
+                             "$active_feature_flags": [
+                               "flag1",
+                               "flag3"
+                             ]
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         },
+                         {
+                           "event": "some-event",
+                           "properties": {
+                             "distinct_id": "some-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/flag1": true,
+                             "$feature/flag2": false,
+                             "$feature/flag3": "variant-0",
+                             "$active_feature_flags": [
+                               "flag1",
+                               "flag3"
+                             ]
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         },
+                         {
+                           "event": "some-event",
+                           "properties": {
+                             "distinct_id": "some-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/flag1": true,
+                             "$feature/flag2": false,
+                             "$feature/flag3": "variant-0",
+                             "$active_feature_flags": [
+                               "flag1",
+                               "flag3"
+                             ]
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         },
+                         {
+                           "event": "some-event",
+                           "properties": {
+                             "distinct_id": "another-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/flag1": true,
+                             "$feature/flag2": false,
+                             "$feature/flag3": "variant-1",
+                             "$active_feature_flags": [
+                               "flag1",
+                               "flag3"
+                             ]
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         },
+                         {
+                           "event": "some-event",
+                           "properties": {
+                             "distinct_id": "third-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/flag1": true,
+                             "$feature/flag2": false,
+                             "$feature/flag3": "variant-2",
+                             "$active_feature_flags": [
+                               "flag1",
+                               "flag3"
+                             ]
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+}
