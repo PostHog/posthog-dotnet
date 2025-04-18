@@ -69,6 +69,27 @@ public class TheDeserializeFromCamelCaseJsonMethod
             },
             result.Flags?["multi-variate-flag"]
         );
+        Assert.Equal(
+            new FeatureFlagResult
+            {
+                Key = "false-flag-2",
+                Enabled = false,
+                Variant = null,
+                Reason = new EvaluationReason
+                {
+                    Code = "no_condition_match",
+                    Description = "No matching condition set",
+                    ConditionIndex = null
+                },
+                Metadata = new FeatureFlagMetadata
+                {
+                    Id = 10,
+                    Version = 1,
+                    Payload = null
+                }
+            },
+            result.Flags?["false-flag-2"]
+        );
     }
 
     [Fact]
