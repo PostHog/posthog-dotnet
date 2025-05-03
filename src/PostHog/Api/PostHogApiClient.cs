@@ -151,7 +151,7 @@ internal sealed class PostHogApiClient : IDisposable
         try
         {
             return await GetAuthenticatedResponseAsync<LocalEvaluationApiResult>(
-                $"/api/feature_flag/local_evaluation/?token={options.ProjectApiKey}&send_cohorts",
+                $"/api/feature_flag/local_evaluation/?send_cohorts",
                 cancellationToken);
         }
         catch (ApiException e) when (e.ErrorType is "quota_limited")

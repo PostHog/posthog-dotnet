@@ -65,6 +65,18 @@ The available options are:
 > When that number is reached, the client will start dropping older events. `MaxBatchSize` ensures that the `/batch` 
 > request doesn't get too large.
 
+### Local Evaluation
+
+If you want to evaluate feature flags locally, you'll need to provide a personal API key for the PostHog API. 
+
+For local development, you can set the `PostHog:PersonalApiKey` setting in your user secrets:
+
+```bash
+$ dotnet user-secrets set PostHog:PersonalApiKey YOUR_PERSONAL_API_KEY
+```
+
+For production, we recommend using a secrets manager or environment variables to set the `PostHog:PersonalApiKey` setting.
+
 ## Docs
 
 More detailed docs for using this library can be found at [PostHog Docs for the .NET Client SDK](https://posthog.com/docs/libraries/dotnet).
