@@ -73,15 +73,9 @@ internal static class FakeHttpMessageHandlerExtensions
 
     public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
         this FakeHttpMessageHandler handler,
-        LocalEvaluationApiResult responseBody)
-        => handler.AddLocalEvaluationResponse("fake-project-api-key", responseBody);
-
-    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
-        this FakeHttpMessageHandler handler,
-        string projectApiKey,
         LocalEvaluationApiResult responseBody) =>
         handler.AddResponse(
-            new Uri($"https://us.i.posthog.com/api/feature_flag/local_evaluation/?token={projectApiKey}&send_cohorts"),
+            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?send_cohorts"),
             HttpMethod.Get,
             responseBody: responseBody);
 
