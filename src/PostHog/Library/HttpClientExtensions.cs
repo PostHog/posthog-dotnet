@@ -45,11 +45,17 @@ internal static class HttpClientExtensions
         this HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
-        // TODO: Is there any error status codes that we should allow the exception to propagate here?
         if (response.IsSuccessStatusCode)
         {
             return;
         }
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Allow 404 exception to propagate up.
+            response.EnsureSuccessStatusCode();
+        }
+
         var (error, exception) = await ReadApiErrorResultAsync();
 
         throw response.StatusCode switch
