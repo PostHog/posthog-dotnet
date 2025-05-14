@@ -11,6 +11,8 @@ namespace PostHog;
 /// </summary>
 public interface IPostHogClient : IDisposable, IAsyncDisposable
 {
+    string Capture();
+
     /// <summary>
     /// To marry up whatever a user does before they sign up or log in with what they do after you need to make an
     /// alias call. This will allow you to answer questions like "Which marketing channels leads to users churning

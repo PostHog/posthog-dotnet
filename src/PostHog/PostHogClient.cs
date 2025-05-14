@@ -97,10 +97,10 @@ public sealed class PostHogClient : IPostHogClient
         return wasmClient.Greet(input);
     }
 
-    public static string Capture()
+    public string Capture()
     {
         var wasmClient = new WasmClient();
-        return wasmClient.Capture();
+        return wasmClient.Capture("page_view", "distinct_id_123", _options.Value.ProjectApiKey ?? "");
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using System.Text;
 using Wasmtime;
+using System.Net.Http; // Added for HttpClient, HttpMethod, etc.
 
 namespace PostHog;
 #pragma warning disable
@@ -10,6 +11,7 @@ public class WasmClient
     readonly Func<int, int> _alloc;
     readonly Memory _memory;
     readonly Action<int, int> _dealloc;
+    int _latestHttpRequestResponseLength = 0;
 
     public WasmClient()
     {
@@ -19,40 +21,64 @@ public class WasmClient
         var store = new Store(engine);
 
         Memory memory = null!;
-        Func<int, int> alloc = null!;
-        int responseLength = 0;
+        Func<int, int> allocFunc = null!; // Renamed to avoid conflict if used before assignment
 
-        linker.Define("env", "http_post", Function.FromCallback<int, int, int>(store, (ptr, len) =>
-        {
-            var url = memory.ReadString(ptr, len);
+        // Define http_request and http_request_len imports
+        linker.Define("env", "http_request", Function.FromCallback<int, int, int, int, int, int, int>(store,
+            (urlPtr, urlLen, methodPtr, methodLen, bodyPtr, bodyLen) =>
+            {
+                var url = memory.ReadString(urlPtr, (uint)urlLen); // Use local 'memory'
+                var method = memory.ReadString(methodPtr, (uint)methodLen); // Use local 'memory'
 
-            using var httpClient = new HttpClient();
-            var response = httpClient.PostAsync(url, new StringContent("")).Result; // ✅ blocking
-            var body = response.Content.ReadAsStringAsync().Result;
+                using var httpClient = new HttpClient();
+                var httpMethod = new HttpMethod(method.Trim().ToUpperInvariant());
+                var requestMessage = new HttpRequestMessage(httpMethod, url);
 
-            var bytes = Encoding.UTF8.GetBytes(body);
-            int respPtr = alloc(bytes.Length);
-            memory.WriteBytes(respPtr, bytes);
-            responseLength = bytes.Length;
-            return respPtr;
-        }));
+                if (bodyLen > 0)
+                {
+                    var requestBodyBytes = new byte[bodyLen];
+                    memory.ReadBytes(bodyPtr, requestBodyBytes); // Use local 'memory'
+                    requestMessage.Content = new ByteArrayContent(requestBodyBytes);
+                    requestMessage.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+                }
+                else if (httpMethod == HttpMethod.Post || httpMethod == HttpMethod.Put || httpMethod == HttpMethod.Patch)
+                {
+                    requestMessage.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+                }
 
-        linker.Define("env", "http_post_len", Function.FromCallback(store, () => responseLength));
+                var response = httpClient.SendAsync(requestMessage).Result; // ✅ blocking
+                response.EnsureSuccessStatusCode();
+                var responseBody = response.Content.ReadAsStringAsync().Result;
+                var responseBodyBytes = Encoding.UTF8.GetBytes(responseBody);
+
+                // 'allocFunc' (local variable) will be assigned after instantiation but captured by the lambda.
+                int responseBodyPtrInWasm = allocFunc(responseBodyBytes.Length);
+                memory.WriteBytes(responseBodyPtrInWasm, responseBodyBytes); // Use local 'memory'
+
+                _latestHttpRequestResponseLength = responseBodyBytes.Length; // Access field
+                return responseBodyPtrInWasm;
+            }
+        ));
+
+        linker.Define("env", "http_request_len", Function.FromCallback<int>(store,
+            () => _latestHttpRequestResponseLength // Access field
+        ));
 
         // 👇 Now instantiate
         var instance = linker.Instantiate(store, module);
 
         // 👇 Set fields after instantiation
+        // The local 'memory' and 'allocFunc' variables used in the lambdas get their values here.
         memory = instance.GetMemory("memory")!;
 
         Console.WriteLine($"WASM memory size: {memory.GetSpan().Length} bytes");
 
-        alloc = instance.GetFunction<int, int>("alloc");
+        allocFunc = instance.GetFunction<int, int>("alloc")!;
         _dealloc = instance.GetFunction("dealloc").WrapAction<int, int>();
 
         // Save to instance fields
         _memory = memory;
-        _alloc = alloc;
+        _alloc = allocFunc;
         _instance = instance;
     }
 
@@ -76,31 +102,98 @@ public class WasmClient
         byte[] inputBytes = Encoding.UTF8.GetBytes(input);
 
         int inputPtr = _alloc(inputBytes.Length);
-        _memory.WriteString(inputPtr, input);
+        _memory.WriteString(inputPtr, input); // Assuming WriteString extension
 
         int outputLen = greetLen(inputPtr, inputBytes.Length);
         int outputPtr = greet(inputPtr, inputBytes.Length);
 
-        string result = _memory.ReadString(outputPtr, outputLen);
+        string result = _memory.ReadString(outputPtr, (uint)outputLen);
 
         _dealloc(outputPtr, outputLen);
         return result;
     }
 
-    public string Capture()
+    // Example of how you might call the new 'request' function from C#
+    // This is a new method, not 'Capture'
+    public string MakeHttpRequest(string url, string method, string? body = null)
     {
-        // Prepare URL string to send
-        string url = "https://google.com";
-        var urlBytes = Encoding.UTF8.GetBytes(url);
+        var requestFunc = _instance.GetFunction<int, int, int, int, int, int, int>("request")
+            ?? throw new InvalidOperationException("Wasm 'request' function not found.");
+
+        byte[] urlBytes = Encoding.UTF8.GetBytes(url);
         int urlPtr = _alloc(urlBytes.Length);
         _memory.WriteBytes(urlPtr, urlBytes);
 
-// Call capture()
-        var capture = _instance.GetFunction<int, int, int>("capture");
-        int resultPtr = capture(urlPtr, urlBytes.Length);
+        byte[] methodBytes = Encoding.UTF8.GetBytes(method);
+        int methodPtr = _alloc(methodBytes.Length);
+        _memory.WriteBytes(methodPtr, methodBytes);
 
-// Read response (assume <2048 bytes for demo)
-        return _memory.ReadString(resultPtr, 2048);
+        int bodyPtr = 0;
+        int bodyLen = 0;
+        byte[]? requestBodyBytes = null;
+        if (!string.IsNullOrEmpty(body))
+        {
+            requestBodyBytes = Encoding.UTF8.GetBytes(body);
+            bodyPtr = _alloc(requestBodyBytes.Length);
+            _memory.WriteBytes(bodyPtr, requestBodyBytes);
+            bodyLen = requestBodyBytes.Length;
+        }
+
+        int responseBodyPtrInWasm = requestFunc(urlPtr, urlBytes.Length, methodPtr, methodBytes.Length, bodyPtr, bodyLen);
+
+        // We need the length of the response. The C# host callback for http_request_len stores this.
+        // So, _latestHttpRequestResponseLength should have the correct value after the Wasm 'request' call,
+        // because 'request' internally calls the 'http_request' host import.
+        int responseBodyLen = _latestHttpRequestResponseLength;
+
+        string responseString = _memory.ReadString(responseBodyPtrInWasm, (uint)responseBodyLen);
+
+        // Deallocate all allocated memory in Wasm
+        _dealloc(urlPtr, urlBytes.Length);
+        _dealloc(methodPtr, methodBytes.Length);
+        if (requestBodyBytes != null)
+        {
+            _dealloc(bodyPtr, requestBodyBytes.Length);
+        }
+        _dealloc(responseBodyPtrInWasm, responseBodyLen); // The Wasm 'request' function allocates this
+
+        return responseString;
+    }
+
+    public string Capture(string eventName, string distinctId, string apiKey)
+    {
+        var eventBytes = Encoding.UTF8.GetBytes(eventName);
+        int eventPtr = _alloc(eventBytes.Length);
+        _memory.WriteBytes(eventPtr, eventBytes);
+
+        var distinctIdBytes = Encoding.UTF8.GetBytes(distinctId);
+        int distinctIdPtr = _alloc(distinctIdBytes.Length);
+        _memory.WriteBytes(distinctIdPtr, distinctIdBytes);
+
+        var apiKeyBytes = Encoding.UTF8.GetBytes(apiKey);
+        int apiKeyPtr = _alloc(apiKeyBytes.Length);
+        _memory.WriteBytes(apiKeyPtr, apiKeyBytes);
+
+        var captureFunc = _instance.GetFunction<int, int, int, int, int, int, int>("capture")
+            ?? throw new InvalidOperationException("Wasm 'capture' function not found.");
+
+        int resultPtr = captureFunc(
+            eventPtr,
+            eventBytes.Length,
+            distinctIdPtr,
+            distinctIdBytes.Length,
+            apiKeyPtr,
+            apiKeyBytes.Length);
+
+        int responseLen = _latestHttpRequestResponseLength; // This is a guess, depends on http_post_len behavior
+        if (responseLen == 0) responseLen = 2048; // Fallback to original risky assumption
+
+        string result =  _memory.ReadString(resultPtr, (uint)responseLen);
+        _dealloc(eventPtr, eventBytes.Length);
+        _dealloc(distinctIdPtr, distinctIdBytes.Length);
+        _dealloc(apiKeyPtr, apiKeyBytes.Length);
+        _dealloc(resultPtr, responseLen); // Deallocating the result from capture
+        return result;
     }
 }
 
@@ -117,9 +210,27 @@ public static class WasmMemoryExtensions
         data.CopyTo(destination);
     }
 
-    public static string ReadString(this Memory memory, int offset, int length)
+    // Added WriteString for convenience, used in Greet
+    public static void WriteString(this Memory memory, int offset, string s)
     {
-        var span = memory.GetSpan(offset, length);
+        var bytes = Encoding.UTF8.GetBytes(s);
+        memory.WriteBytes(offset, bytes);
+    }
+
+    public static string ReadString(this Memory memory, int offset, uint length) // Changed length to uint to match ReadString more closely
+    {
+        var span = memory.GetSpan(offset, (int)length);
         return Encoding.UTF8.GetString(span);
+    }
+
+    // Overload for ReadBytes used in http_request callback
+    public static void ReadBytes(this Memory memory, int offset, byte[] buffer)
+    {
+        var memorySpan = memory.GetSpan();
+        if (offset + buffer.Length > memorySpan.Length)
+            throw new ArgumentOutOfRangeException(nameof(offset), $"Not enough space in WASM memory to read {buffer.Length} bytes from {offset}.");
+
+        var source = memorySpan.Slice(offset, buffer.Length);
+        source.CopyTo(buffer);
     }
 }
