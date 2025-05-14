@@ -27,4 +27,10 @@
     <!-- <PackageReference Include="PostHog.AspNetCore" Version="1.0.0-beta.4" /> -->
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Update="posthog_wasm_bg.wasm">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

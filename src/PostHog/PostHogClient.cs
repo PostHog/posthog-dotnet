@@ -8,6 +8,7 @@ using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
 using PostHog.Versioning;
+using Wasmtime;
 using static PostHog.Library.Ensure;
 
 namespace PostHog;
@@ -82,6 +83,24 @@ public sealed class PostHogClient : IPostHogClient
 
         _logger = loggerFactory.CreateLogger<PostHogClient>();
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
+    }
+
+    public static int Add(int a, int b)
+    {
+        var wasmClient = new WasmClient();
+        return wasmClient.Add(a, b);
+    }
+
+    public static string Greet(string input)
+    {
+        var wasmClient = new WasmClient();
+        return wasmClient.Greet(input);
+    }
+
+    public static string Capture()
+    {
+        var wasmClient = new WasmClient();
+        return wasmClient.Capture();
     }
 
     /// <summary>
