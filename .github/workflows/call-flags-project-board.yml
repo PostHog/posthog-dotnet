@@ -1,4 +1,5 @@
-# This workflow is used to call the flags-project-board workflow when a pull request is opened, ready for review, review requested, synchronized, converted to draft, or reopened.
+# This workflow is used to call the flags-project-board workflow when a pull request is 
+# opened, ready for review, review requested, synchronized, converted to draft, or reopened.
 # It is used to update the feature flags project board with the pull request information.
 
 name: Call Feature Flags Project Workflow
@@ -9,7 +10,7 @@ on:
 
 jobs:
     call-flags-project:
-        uses: PostHog/.github/workflows/flags-project-board.yml@main
+        uses: PostHog/.github/.github/workflows/flags-project-board.yml@main
         with:
             pr_number: ${{ github.event.pull_request.number }}
             pr_node_id: ${{ github.event.pull_request.node_id }}
