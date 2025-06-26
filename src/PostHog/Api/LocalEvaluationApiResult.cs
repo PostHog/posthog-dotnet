@@ -418,36 +418,36 @@ public enum FilterType
     /// <summary>
     /// Filters on person properties.
     /// </summary>
-    [JsonStringEnumMemberName("person")]
+    [JsonPropertyName("person")]
     Person,
 
     /// <summary>
     /// Filters on group properties.
     /// </summary>
-    [JsonStringEnumMemberName("group")]
+    [JsonPropertyName("group")]
     Group,
 
     /// <summary>
     /// Filters on cohort membership
     /// </summary>
-    [JsonStringEnumMemberName("cohort")]
+    [JsonPropertyName("cohort")]
     Cohort,
 
     /// <summary>
     /// If any of the filters match, the group is considered a match.
     /// </summary>
-    [JsonStringEnumMemberName("OR")]
+    [JsonPropertyName("OR")]
     Or,
 
     /// <summary>
     /// If all of the filters match, the group is considered a match.
     /// </summary>
-    [JsonStringEnumMemberName("AND")]
+    [JsonPropertyName("AND")]
     And,
 
     /// <summary>
     /// Filters on how another flag was evaluated
     /// </summary>
-    [JsonStringEnumMemberName("flag")]
+    [JsonPropertyName("flag")]
     Flag
 }
