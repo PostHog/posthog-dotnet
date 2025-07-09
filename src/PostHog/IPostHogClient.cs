@@ -137,6 +137,18 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Loads (or reloads) feature flag definitions for local evaluation.
+    /// </summary>
+    /// <remarks>
+    /// This method forces a reload of feature flag definitions from the PostHog API and ensures
+    /// that the polling mechanism is started for automatic updates. A personal API key is required
+    /// for local evaluation. If no personal API key is configured, a warning will be logged.
+    /// </remarks>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+    Task LoadFeatureFlagsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Flushes the event queue and sends all queued events to PostHog.
     /// </summary>
     /// <returns>A <see cref="Task"/>.</returns>
