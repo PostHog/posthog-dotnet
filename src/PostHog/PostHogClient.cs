@@ -513,10 +513,10 @@ public sealed class PostHogClient : IPostHogClient
         {
             // Clear existing cache to force a reload
             _featureFlagsLoader.Clear();
-            
+
             // Load fresh feature flags
             var localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
-            
+
             // Determine polling status for logging
             var pollingStatus = _featureFlagsLoader.IsLoaded ? "active" : "inactive";
             _logger.LogDebugFeatureFlagsLoaded(pollingStatus);

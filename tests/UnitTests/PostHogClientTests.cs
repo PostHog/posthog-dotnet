@@ -332,7 +332,7 @@ public class TheLoadFeatureFlagsAsyncMethod
         // Verify info log was recorded
         var infoLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Information);
         Assert.Contains(infoLogs, log => log.Message?.Contains("Loading feature flags for local evaluation", StringComparison.Ordinal) == true);
-        
+
         // Verify debug log was recorded
         var debugLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug);
         Assert.Contains(debugLogs, log => log.Message?.Contains("Feature flags loaded successfully", StringComparison.Ordinal) == true);
@@ -348,7 +348,7 @@ public class TheLoadFeatureFlagsAsyncMethod
 
         // Verify warning was logged
         var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
-        Assert.Contains(warningLogs, log => 
+        Assert.Contains(warningLogs, log =>
             log.Message?.Contains("You have to specify a personal_api_key to use feature flags", StringComparison.Ordinal) == true);
     }
 
@@ -395,11 +395,11 @@ public class TheLoadFeatureFlagsAsyncMethod
 #pragma warning restore CA1849
 
         // Should throw OperationCanceledException
-        await Assert.ThrowsAsync<OperationCanceledException>(() => 
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
             client.LoadFeatureFlagsAsync(cts.Token));
     }
 
-    [Fact(Skip = "Cancellation token handling needs integration test")] 
+    [Fact(Skip = "Cancellation token handling needs integration test")]
     public async Task DoesNotLogErrorForCancellation()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
@@ -413,12 +413,12 @@ public class TheLoadFeatureFlagsAsyncMethod
         cts.Cancel();
 #pragma warning restore CA1849
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() => 
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
             client.LoadFeatureFlagsAsync(cts.Token));
 
         // Verify no error was logged for cancellation
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
-        Assert.DoesNotContain(errorLogs, log => 
+        Assert.DoesNotContain(errorLogs, log =>
             log.Message?.Contains("Failed to load feature flags", StringComparison.Ordinal) == true);
     }
 }
