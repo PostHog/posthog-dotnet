@@ -228,6 +228,18 @@ public static class FeatureFlagExtensions
     }
 
     /// <summary>
+    /// Loads (or reloads) feature flag definitions for local evaluation.
+    /// </summary>
+    /// <remarks>
+    /// This method forces a reload of feature flag definitions from the PostHog API and ensures
+    /// that the polling mechanism is started for automatic updates. A personal API key is required
+    /// for local evaluation. If no personal API key is configured, a warning will be logged.
+    /// </remarks>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+    public static Task LoadFeatureFlagsAsync(this IPostHogClient client)
+        => NotNull(client).LoadFeatureFlagsAsync(CancellationToken.None);
+
+    /// <summary>
     /// When reporting the result of a feature flag evaluation, this method converts the result to a string
     /// in a format expected by the Capture event api.
     /// </summary>

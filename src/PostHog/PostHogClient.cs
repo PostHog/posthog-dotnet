@@ -499,7 +499,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public async Task LoadFeatureFlagsAsync(CancellationToken cancellationToken = default)
+    public async Task LoadFeatureFlagsAsync(CancellationToken cancellationToken)
     {
         _logger.LogInfoLoadFeatureFlags();
 
@@ -515,7 +515,7 @@ public sealed class PostHogClient : IPostHogClient
             _featureFlagsLoader.Clear();
 
             // Load fresh feature flags
-            var localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+            await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
 
             // Determine polling status for logging
             var pollingStatus = _featureFlagsLoader.IsLoaded ? "active" : "inactive";

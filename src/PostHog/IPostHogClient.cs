@@ -146,7 +146,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// </remarks>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-    Task LoadFeatureFlagsAsync(CancellationToken cancellationToken = default);
+    Task LoadFeatureFlagsAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Flushes the event queue and sends all queued events to PostHog.
