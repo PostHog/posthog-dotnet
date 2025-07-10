@@ -435,5 +435,11 @@ public enum FilterType
     /// If all of the filters match, the group is considered a match.
     /// </summary>
     [JsonStringEnumMemberName("AND")]
-    And
+    And,
+
+    /// <summary>
+    /// Filters on how another flag was evaluated
+    /// </summary>
+    [JsonStringEnumMemberName("flag")]
+    Flag
 }
