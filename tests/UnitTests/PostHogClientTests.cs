@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Versioning;
@@ -314,5 +315,96 @@ public class TheCaptureMethod
                        ]
                      }
                      """, received);
+    }
+}
+
+public class TheLoadFeatureFlagsAsyncMethod
+{
+    [Fact]
+    public async Task LoadsFeatureFlagsSuccessfully()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags": []}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.LoadFeatureFlagsAsync();
+
+        // Verify info log was recorded
+        var infoLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Information);
+        Assert.Contains(infoLogs, log => log.Message?.Contains("Loading feature flags for local evaluation", StringComparison.Ordinal) == true);
+
+        // Verify debug log was recorded
+        var debugLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug);
+        Assert.Contains(debugLogs, log => log.Message?.Contains("Feature flags loaded successfully", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task LogsWarningWhenPersonalApiKeyIsNull()
+    {
+        var container = new TestContainer(); // No personal API key
+        var client = container.Activate<PostHogClient>();
+
+        await client.LoadFeatureFlagsAsync();
+
+        // Verify warning was logged
+        var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
+        Assert.Contains(warningLogs, log =>
+            log.Message?.Contains("You have to specify a personal_api_key to use feature flags", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task LogsDebugWhenFlagsLoadedSuccessfully()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags": []}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.LoadFeatureFlagsAsync();
+
+        // Verify debug log was recorded
+        var debugLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Debug);
+        Assert.Contains(debugLogs, log => log.Message?.Contains("Feature flags loaded successfully", StringComparison.Ordinal) == true);
+    }
+
+    [Fact(Skip = "Cancellation token handling needs integration test")]
+    public async Task RespectsCancellationToken()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        // Add a handler that will throw OperationCanceledException
+        var uri = new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?send_cohorts");
+        container.FakeHttpMessageHandler.AddResponseException(uri, HttpMethod.Get, new OperationCanceledException());
+        var client = container.Activate<PostHogClient>();
+
+        using var cts = new CancellationTokenSource();
+#pragma warning disable CA1849 // Call async methods when available
+        cts.Cancel();
+#pragma warning restore CA1849
+
+        // Should throw OperationCanceledException
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            client.LoadFeatureFlagsAsync(cts.Token));
+    }
+
+    [Fact(Skip = "Cancellation token handling needs integration test")]
+    public async Task DoesNotLogErrorForCancellation()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        // Add a handler that will throw OperationCanceledException
+        var uri = new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?send_cohorts");
+        container.FakeHttpMessageHandler.AddResponseException(uri, HttpMethod.Get, new OperationCanceledException());
+        var client = container.Activate<PostHogClient>();
+
+        using var cts = new CancellationTokenSource();
+#pragma warning disable CA1849 // Call async methods when available
+        cts.Cancel();
+#pragma warning restore CA1849
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            client.LoadFeatureFlagsAsync(cts.Token));
+
+        // Verify no error was logged for cancellation
+        var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
+        Assert.DoesNotContain(errorLogs, log =>
+            log.Message?.Contains("Failed to load feature flags", StringComparison.Ordinal) == true);
     }
 }

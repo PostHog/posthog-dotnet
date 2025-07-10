@@ -499,6 +499,41 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
+    public async Task LoadFeatureFlagsAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInfoLoadFeatureFlags();
+
+        if (_options.Value.PersonalApiKey is null)
+        {
+            _logger.LogWarningPersonalApiKeyRequired();
+            return;
+        }
+
+        try
+        {
+            // Clear existing cache to force a reload
+            _featureFlagsLoader.Clear();
+
+            // Load fresh feature flags
+            await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+
+            // Determine polling status for logging
+            var pollingStatus = _featureFlagsLoader.IsLoaded ? "active" : "inactive";
+            _logger.LogDebugFeatureFlagsLoaded(pollingStatus);
+        }
+        catch (ApiException e) when (e.ErrorType is "quota_limited")
+        {
+            _logger.LogWarningQuotaExceeded(e);
+            throw;
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorFailedToLoadFeatureFlags(e);
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task FlushAsync() => await _asyncBatchHandler.FlushAsync();
 
     /// <inheritdoc/>
@@ -632,4 +667,28 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts")]
     public static partial void LogWarningQuotaExceeded(this ILogger<PostHogClient> logger, Exception e);
+
+    [LoggerMessage(
+        EventId = 14,
+        Level = LogLevel.Information,
+        Message = "[FEATURE FLAGS] Loading feature flags for local evaluation")]
+    public static partial void LogInfoLoadFeatureFlags(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 15,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] You have to specify a personal_api_key to use feature flags.")]
+    public static partial void LogWarningPersonalApiKeyRequired(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 16,
+        Level = LogLevel.Debug,
+        Message = "[FEATURE FLAGS] Feature flags loaded successfully, polling {PollingStatus}")]
+    public static partial void LogDebugFeatureFlagsLoaded(this ILogger<PostHogClient> logger, string pollingStatus);
+
+    [LoggerMessage(
+        EventId = 17,
+        Level = LogLevel.Error,
+        Message = "[FEATURE FLAGS] Failed to load feature flags")]
+    public static partial void LogErrorFailedToLoadFeatureFlags(this ILogger<PostHogClient> logger, Exception exception);
 }
