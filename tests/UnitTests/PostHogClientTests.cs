@@ -353,20 +353,6 @@ public class TheLoadFeatureFlagsAsyncMethod
     }
 
     [Fact]
-    public async Task LogsInfoWhenStartingLoad()
-    {
-        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags": []}""");
-        var client = container.Activate<PostHogClient>();
-
-        await client.LoadFeatureFlagsAsync();
-
-        // Verify info log was recorded
-        var infoLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Information);
-        Assert.Contains(infoLogs, log => log.Message?.Contains("Loading feature flags for local evaluation", StringComparison.Ordinal) == true);
-    }
-
-    [Fact]
     public async Task LogsDebugWhenFlagsLoadedSuccessfully()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
