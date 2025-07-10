@@ -404,36 +404,31 @@ internal record PropertyFilter : Filter
 /// <summary>
 /// The types of comparison operators for a filter.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<FilterType>))]
+[JsonConverter(typeof(FilterTypeJsonConverter))]
 public enum FilterType
 {
     /// <summary>
     /// Filters on person properties.
     /// </summary>
-    [JsonPropertyName("person")]
     Person,
 
     /// <summary>
     /// Filters on group properties.
     /// </summary>
-    [JsonPropertyName("group")]
     Group,
 
     /// <summary>
     /// Filters on cohort membership
     /// </summary>
-    [JsonPropertyName("cohort")]
     Cohort,
 
     /// <summary>
     /// If any of the filters match, the group is considered a match.
     /// </summary>
-    [JsonPropertyName("OR")]
     Or,
 
     /// <summary>
     /// If all of the filters match, the group is considered a match.
     /// </summary>
-    [JsonPropertyName("AND")]
     And
 }

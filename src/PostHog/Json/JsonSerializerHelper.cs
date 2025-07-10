@@ -12,7 +12,9 @@ internal static class JsonSerializerHelper
         Converters =
         {
             new ReadOnlyCollectionJsonConverterFactory(),
-            new ReadOnlyDictionaryJsonConverterFactory()
+            new ReadOnlyDictionaryJsonConverterFactory(),
+            new ComparisonOperatorJsonConverter(),
+            new FilterTypeJsonConverter()
         }
     };
 
