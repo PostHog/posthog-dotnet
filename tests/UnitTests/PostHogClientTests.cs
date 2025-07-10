@@ -413,14 +413,8 @@ public class TheLoadFeatureFlagsAsyncMethod
         cts.Cancel();
 #pragma warning restore CA1849
 
-        try
-        {
-            await client.LoadFeatureFlagsAsync(cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected
-        }
+        await Assert.ThrowsAsync<OperationCanceledException>(() => 
+            client.LoadFeatureFlagsAsync(cts.Token));
 
         // Verify no error was logged for cancellation
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
