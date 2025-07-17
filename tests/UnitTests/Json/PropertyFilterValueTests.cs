@@ -141,4 +141,19 @@ public class TheCreateMethod
         Assert.Equal(expectedBooleanValue, filterPropertyValue.BooleanValue);
         Assert.Null(filterPropertyValue.StringValue);
     }
+
+    [Theory]
+    [InlineData("\"hello\"")]
+    [InlineData("42")]
+    [InlineData("[\"item1\", \"item2\"]")]
+    [InlineData("null")]
+    public void NonBooleanJsonValuesHaveNullBooleanValue(string jsonValue)
+    {
+        var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(jsonValue).RootElement);
+
+        if (filterPropertyValue != null)
+        {
+            Assert.Null(filterPropertyValue.BooleanValue);
+        }
+    }
 }
