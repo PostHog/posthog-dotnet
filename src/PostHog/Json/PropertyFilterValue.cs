@@ -261,7 +261,7 @@ public class PropertyFilterValue
             { StringValue: { } stringValue } => stringValue,
             { CohortId: { } cohortId } => cohortId.ToString(CultureInfo.InvariantCulture),
             { ListOfStrings: { } listOfStrings } => $"[{string.Join(", ", listOfStrings)}]",
-            { BooleanValue: { } booleanValue } => booleanValue.ToString(CultureInfo.InvariantCulture),
+            { BooleanValue: { } booleanValue } => booleanValue.ToString().ToLowerInvariant(),
             _ => string.Empty
         };
     }
