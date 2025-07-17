@@ -261,7 +261,9 @@ public class PropertyFilterValue
             { StringValue: { } stringValue } => stringValue,
             { CohortId: { } cohortId } => cohortId.ToString(CultureInfo.InvariantCulture),
             { ListOfStrings: { } listOfStrings } => $"[{string.Join(", ", listOfStrings)}]",
+#pragma warning disable CA1308
             { BooleanValue: { } booleanValue } => booleanValue.ToString().ToLowerInvariant(),
+#pragma warning restore CA1308
             _ => string.Empty
         };
     }
