@@ -1,0 +1,141 @@
+#!/bin/bash
+
+set -e
+
+# Source helper functions
+source_dir="$( cd -P "$( dirname "$0" )" >/dev/null 2>&1 && pwd )"
+source "$source_dir/helpers/_utils.sh"
+
+set_source_and_root_dir
+
+# Function to display usage
+usage() {
+    echo "Usage: $0 <version-type>"
+    echo "Example: $0 patch"
+    echo ""
+    echo "Version types:"
+    echo "  patch - Increment patch version (1.0.7 -> 1.0.8)"
+    echo "  minor - Increment minor version, reset patch (1.0.7 -> 1.1.0)"
+    echo "  major - Increment major version, reset minor and patch (1.0.7 -> 2.0.0)"
+    echo ""
+    echo "This script will:"
+    echo "  1. Calculate the new version based on the current version"
+    echo "  2. Create a release branch"
+    echo "  3. Update the version in Directory.Build.props"
+    echo "  4. Build and test the solution"
+    echo "  5. Commit the version change"
+    echo "  6. Provide instructions for creating a PR"
+    exit 1
+}
+
+# Check if version type argument is provided
+if [ $# -ne 1 ]; then
+    usage
+fi
+
+VERSION_TYPE="$1"
+
+# Validate version type
+if [[ "$VERSION_TYPE" != "patch" && "$VERSION_TYPE" != "minor" && "$VERSION_TYPE" != "major" ]]; then
+    fatal "Invalid version type. Must be one of: patch, minor, major"
+fi
+
+# Get current version from Directory.Build.props
+CURRENT_VERSION=$(grep -o '<Version>[^<]*</Version>' Directory.Build.props | sed 's/<Version>\(.*\)<\/Version>/\1/')
+
+# Parse current version into major.minor.patch
+if ! echo "$CURRENT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+    fatal "Current version format is invalid: $CURRENT_VERSION"
+fi
+
+MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+PATCH=$(echo "$CURRENT_VERSION" | cut -d. -f3 | cut -d- -f1)  # Handle pre-release versions
+
+# Calculate new version based on type
+case "$VERSION_TYPE" in
+    "patch")
+        NEW_MAJOR=$MAJOR
+        NEW_MINOR=$MINOR
+        NEW_PATCH=$((PATCH + 1))
+        ;;
+    "minor")
+        NEW_MAJOR=$MAJOR
+        NEW_MINOR=$((MINOR + 1))
+        NEW_PATCH=0
+        ;;
+    "major")
+        NEW_MAJOR=$((MAJOR + 1))
+        NEW_MINOR=0
+        NEW_PATCH=0
+        ;;
+esac
+
+NEW_VERSION="$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
+
+echo "Current version: $CURRENT_VERSION"
+echo "Version type: $VERSION_TYPE"
+echo "New version: $NEW_VERSION"
+
+# Get current branch
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Check if working directory is clean
+if ! git diff-index --quiet HEAD --; then
+    fatal "Working directory is not clean. Commit or stash changes before releasing."
+fi
+
+# Check if current branch is up to date with origin/main
+git fetch origin
+CURRENT_HEAD=$(git rev-parse HEAD)
+MAIN_HEAD=$(git rev-parse origin/main)
+
+if [ "$CURRENT_HEAD" != "$MAIN_HEAD" ]; then
+    # Check if current branch contains all commits from main
+    if ! git merge-base --is-ancestor origin/main HEAD; then
+        fatal "Current branch is not up to date with origin/main. Pull latest changes first."
+    fi
+    echo "Current branch ($CURRENT_BRANCH) is ahead of main - this is okay for release preparation"
+fi
+
+# Create release branch if needed
+RELEASE_BRANCH="release-$NEW_VERSION"
+if [ "$CURRENT_BRANCH" = "$RELEASE_BRANCH" ]; then
+    echo "Already on release branch: $RELEASE_BRANCH"
+else
+    echo "Creating release branch: $RELEASE_BRANCH"
+    git checkout -b "$RELEASE_BRANCH"
+fi
+
+echo "Updating version in Directory.Build.props..."
+sed -i.bak "s|<Version>$CURRENT_VERSION</Version>|<Version>$NEW_VERSION</Version>|" Directory.Build.props
+rm Directory.Build.props.bak
+
+echo "Building solution..."
+dotnet restore
+dotnet build
+
+echo "Running tests..."
+dotnet test
+
+echo "Committing version change..."
+git add Directory.Build.props
+git add src/PostHog/Generated/VersionConstants.cs
+git commit -m "Bump version to $NEW_VERSION"
+
+echo "Creating and pushing git tag..."
+git tag "v$NEW_VERSION"
+git push origin "v$NEW_VERSION"
+
+echo ""
+echo "✅ Release preparation complete!"
+echo ""
+echo "Next steps:"
+echo "1. Push the release branch: git push origin $RELEASE_BRANCH"
+echo "2. Create a pull request to merge $RELEASE_BRANCH into main"
+echo "3. Once the PR is merged, go to GitHub and create a new release:"
+echo "   https://github.com/PostHog/posthog-dotnet/releases/new"
+echo "4. Select tag 'v$NEW_VERSION' (already created) and click 'Auto-generate release notes'"
+echo "5. Edit the notes as needed and publish the release"
+echo ""
+echo "⚠️  Important: Create and publish the release in one go - don't save as draft!"
