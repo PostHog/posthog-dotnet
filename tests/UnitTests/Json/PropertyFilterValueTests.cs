@@ -25,6 +25,14 @@ public class TheIsExactMatchMethod
     [InlineData("42.5", """["1", "23", "42.5"]""", true)]
     [InlineData(3.14, """["1", "3.14", "42"]""", true)]
     [InlineData(3.14, """["1", "1.618", "42"]""", false)]
+    [InlineData(true, "true", true)]
+    [InlineData(false, "false", true)]
+    [InlineData(true, "false", false)]
+    [InlineData(false, "true", false)]
+    [InlineData("true", "true", true)]
+    [InlineData("false", "false", true)]
+    [InlineData("true", "false", false)]
+    [InlineData("false", "true", false)]
     public void ReturnsTrueWhenPropertyValueMatchesString(object? overrideValue, string jsonValue, bool expected)
     {
         var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(jsonValue).RootElement);
@@ -117,5 +125,35 @@ public class TheCompareToMethod
 
         Assert.NotNull(filterPropertyValue);
         Assert.Equal(expected, filterPropertyValue.CompareTo(comparand));
+    }
+}
+
+public class TheCreateMethod
+{
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public void HandlesBooleanJsonValues(string jsonValue, bool expectedBooleanValue)
+    {
+        var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(jsonValue).RootElement);
+
+        Assert.NotNull(filterPropertyValue);
+        Assert.Equal(expectedBooleanValue, filterPropertyValue.BooleanValue);
+        Assert.Null(filterPropertyValue.StringValue);
+    }
+
+    [Theory]
+    [InlineData("\"hello\"")]
+    [InlineData("42")]
+    [InlineData("[\"item1\", \"item2\"]")]
+    [InlineData("null")]
+    public void NonBooleanJsonValuesHaveNullBooleanValue(string jsonValue)
+    {
+        var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(jsonValue).RootElement);
+
+        if (filterPropertyValue != null)
+        {
+            Assert.Null(filterPropertyValue.BooleanValue);
+        }
     }
 }

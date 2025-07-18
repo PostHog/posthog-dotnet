@@ -30,6 +30,11 @@ public class PropertyFilterValue
     public IReadOnlyList<string>? ListOfStrings { get; }
 
     /// <summary>
+    /// If this value is a boolean, this property will be set.
+    /// </summary>
+    public bool? BooleanValue { get; }
+
+    /// <summary>
     /// Creates a new instance of <see cref="PropertyFilterValue"/> from the specified <paramref name="jsonElement"/>.
     /// </summary>
     /// <remarks>
@@ -45,6 +50,8 @@ public class PropertyFilterValue
             JsonValueKind.Array when TryParseStringArray(jsonElement, out var stringArrayValue)
                 => new PropertyFilterValue(stringArrayValue),
             JsonValueKind.Number => new PropertyFilterValue(jsonElement.GetInt64()),
+            JsonValueKind.True => new PropertyFilterValue(true),
+            JsonValueKind.False => new PropertyFilterValue(false),
             JsonValueKind.Undefined => null,
             JsonValueKind.Null => null,
             _ => throw new ArgumentException($"JsonValueKind: {jsonElement.ValueKind} is not supported for filter property values.", nameof(jsonElement))
@@ -69,6 +76,11 @@ public class PropertyFilterValue
     public PropertyFilterValue(string stringValue)
     {
         StringValue = stringValue;
+    }
+
+    public PropertyFilterValue(bool booleanValue)
+    {
+        BooleanValue = booleanValue;
     }
 
     /// <summary>
@@ -115,6 +127,12 @@ public class PropertyFilterValue
             { ListOfStrings: { } listOfStrings } => overrideValue?.ToString() is { } stringValue
                 && listOfStrings.Contains(stringValue, StringComparer.OrdinalIgnoreCase),
             { StringValue: { } stringValue } => stringValue.Equals(overrideValue?.ToString(), StringComparison.OrdinalIgnoreCase),
+            { BooleanValue: { } booleanValue } => overrideValue switch
+            {
+                bool boolOverride => booleanValue == boolOverride,
+                string stringOverride => booleanValue.ToString().Equals(stringOverride, StringComparison.OrdinalIgnoreCase),
+                _ => false
+            },
             _ => false
         };
     }
@@ -146,6 +164,7 @@ public class PropertyFilterValue
         return overrideValue switch
         {
             _ when TryCompareNumbers(overrideValue, out var result) => result.Value,
+            _ when BooleanValue.HasValue => CompareBooleanValue(overrideValue),
             _ => string.Compare(StringValue, overrideValue.ToString(), StringComparison.OrdinalIgnoreCase)
         };
     }
@@ -167,6 +186,21 @@ public class PropertyFilterValue
             _ => null
         };
         return result is not null;
+    }
+
+    int CompareBooleanValue(object overrideValue)
+    {
+        if (!BooleanValue.HasValue)
+        {
+            return -1;
+        }
+
+        return overrideValue switch
+        {
+            bool boolOverride => BooleanValue.Value.CompareTo(boolOverride),
+            string stringOverride when bool.TryParse(stringOverride, out var boolValue) => BooleanValue.Value.CompareTo(boolValue),
+            _ => string.Compare(BooleanValue.Value.ToString(), overrideValue.ToString(), StringComparison.OrdinalIgnoreCase)
+        };
     }
 
     /// <summary>
@@ -227,6 +261,9 @@ public class PropertyFilterValue
             { StringValue: { } stringValue } => stringValue,
             { CohortId: { } cohortId } => cohortId.ToString(CultureInfo.InvariantCulture),
             { ListOfStrings: { } listOfStrings } => $"[{string.Join(", ", listOfStrings)}]",
+#pragma warning disable CA1308
+            { BooleanValue: { } booleanValue } => booleanValue.ToString().ToLowerInvariant(),
+#pragma warning restore CA1308
             _ => string.Empty
         };
     }
@@ -235,7 +272,7 @@ public class PropertyFilterValue
         obj is PropertyFilterValue other
         && Equals(other);
 
-    public override int GetHashCode() => HashCode.Combine(StringValue, ListOfStrings);
+    public override int GetHashCode() => HashCode.Combine(StringValue, ListOfStrings, BooleanValue);
 
     /// <summary>
     /// Determines if this instance is equal to the specified <paramref name="other"/> <see cref="PropertyFilterValue"/>
@@ -257,7 +294,8 @@ public class PropertyFilterValue
 
         return ListOfStrings.ListsAreEqual(other.ListOfStrings)
                && StringValue == other.StringValue
-               && CohortId == other.CohortId;
+               && CohortId == other.CohortId
+               && BooleanValue == other.BooleanValue;
     }
 
     static bool TryParseStringArray(
