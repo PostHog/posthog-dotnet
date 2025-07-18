@@ -97,7 +97,7 @@ To create a release, use the `bin/release` script which automates the version bu
 
 3. **Create GitHub Release**: Once the PR is merged, go to GitHub to [Draft a new Release](https://github.com/Posthog/posthog-dotnet/releases/new), select the tag that was already created, and click "Auto-generate release notes". Edit the notes as needed and publish the release.
 
-When you create the Release, the [`main.yml`](../.github/.workflow.release.yml) workflow builds and publishes the package to NuGet.
+When you create the Release, the [`main.yml`](.github/workflows/main.yml) workflow builds and publishes the package to NuGet.
 
 > [!IMPORTANT]
 > When creating a release, it's important to create and publish it in one go. If you save a draft of the release and
