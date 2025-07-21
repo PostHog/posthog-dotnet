@@ -62,29 +62,44 @@ $ dotnet test
 
 ## Publishing Releases
 
-When it's time to cut a release, increment the version element at the top of [`Directory.Build.props`](Directory.Build.props) according to the [Semantic Versioning](http://semver.org/) guidelines.
+To create a release, use the `bin/release` script which automates the version bumping and release preparation process.
 
-```xml
-<Project>
-    <PropertyGroup>
-        <Version>1.0.1</Version>
-        ...
-    </PropertyGroup>
-</Project>
-```
+### Release Process
 
-Submit a pull request with the version change. Once the PR is merged, create a new tag for the release with the updated version number.
+1. **Prepare the release**: Run the release script with the type of version bump you want:
 
-```bash
-git tag v0.5.5
-git push --tags
-```
+   ```bash
+   # For a patch release (1.0.6 -> 1.0.7)
+   ./bin/release patch
+   
+   # For a minor release (1.0.6 -> 1.1.0)
+   ./bin/release minor
+   
+   # For a major release (1.0.6 -> 2.0.0)
+   ./bin/release major
+   ```
 
-Now you can go to GitHub to [Draft a new Release](https://github.com/Posthog/posthog-dotnet/releases/new) and click the button to "Auto-generate release notes". Edit the notes accordingly create the Release.
+   This script will:
+   - Calculate the new version based on the current version in [`Directory.Build.props`](Directory.Build.props)
+   - Create a new release branch (`release-{version}`)
+   - Update the version in `Directory.Build.props`
+   - Build and test the solution
+   - Commit the version change and generated files
+   - Create and push the git tag
 
-When you create the Release, the [`main.yml`](../.github/.workflow.release.yml) workflow builds and publishes the package to NuGet.
+2. **Create a Pull Request**: Push the release branch and create a PR to merge it into `main`:
 
-> ![IMPORTANT]
+   ```bash
+   git push origin release-{version}
+   ```
+
+   Then create a pull request on GitHub to merge the release branch into `main`.
+
+3. **Create GitHub Release**: Once the PR is merged, go to GitHub to [Draft a new Release](https://github.com/Posthog/posthog-dotnet/releases/new), select the tag that was already created, and click "Auto-generate release notes". Edit the notes as needed and publish the release.
+
+When you create the Release, the [`main.yml`](.github/workflows/main.yml) workflow builds and publishes the package to NuGet.
+
+> [!IMPORTANT]
 > When creating a release, it's important to create and publish it in one go. If you save a draft of the release and
 > then later publish it, the workflow will not run. If you find yourself in that position, you can [manually trigger the workflow run](https://github.com/PostHog/posthog-dotnet/actions/workflows/main.yaml)
 > and select the tag to publish.
