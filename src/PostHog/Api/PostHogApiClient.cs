@@ -23,6 +23,7 @@ internal sealed class PostHogApiClient : IDisposable
     readonly HttpClient _httpClient;
     readonly IOptions<PostHogOptions> _options;
     readonly ILogger<PostHogApiClient> _logger;
+    readonly JsonSerializerWrapper _jsonSerializer;
 
     /// <summary>
     /// Initialize a new PostHog client
@@ -31,11 +32,13 @@ internal sealed class PostHogApiClient : IDisposable
     /// <param name="options">The options used to configure this client.</param>
     /// <param name="timeProvider">The time provider <see cref="TimeProvider"/> to use to determine time.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="jsonSerializer">The JSON serializer wrapper to use for serialization.</param>
     public PostHogApiClient(
         HttpClient httpClient,
         IOptions<PostHogOptions> options,
         TimeProvider timeProvider,
-        ILogger<PostHogApiClient> logger)
+        ILogger<PostHogApiClient> logger,
+        JsonSerializerWrapper jsonSerializer)
     {
         _options = options;
 
@@ -49,6 +52,7 @@ internal sealed class PostHogApiClient : IDisposable
 
         logger.LogTraceApiClientCreated(HostUrl);
         _logger = logger;
+        _jsonSerializer = jsonSerializer;
     }
 
     Uri HostUrl => _options.Value.HostUrl;
@@ -74,7 +78,7 @@ internal sealed class PostHogApiClient : IDisposable
             ["batch"] = events.ToReadOnlyList()
         };
 
-        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, cancellationToken)
+        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, _jsonSerializer, cancellationToken)
                ?? new ApiResult(0);
     }
 
@@ -90,7 +94,7 @@ internal sealed class PostHogApiClient : IDisposable
 
         var endpointUrl = new Uri(HostUrl, "capture");
 
-        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, cancellationToken)
+        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, _jsonSerializer, cancellationToken)
                ?? new ApiResult(0);
     }
 
@@ -134,6 +138,7 @@ internal sealed class PostHogApiClient : IDisposable
         return await _httpClient.PostJsonAsync<DecideApiResult>(
             endpointUrl,
             payload,
+            _jsonSerializer,
             cancellationToken);
     }
 
@@ -190,11 +195,10 @@ internal sealed class PostHogApiClient : IDisposable
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
 
-        await response.EnsureSuccessfulApiCall(cancellationToken);
+        await response.EnsureSuccessfulApiCall(_jsonSerializer, cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<T>(
-            JsonSerializerHelper.Options,
-            cancellationToken);
+        var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await _jsonSerializer.DeserializeFromCamelCaseJsonAsync<T>(stream, cancellationToken);
     }
 
     void PrepareAndMutatePayload(Dictionary<string, object> payload)

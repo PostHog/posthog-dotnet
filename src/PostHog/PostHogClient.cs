@@ -24,6 +24,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly IOptions<PostHogOptions> _options;
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
+    readonly JsonSerializerWrapper _jsonSerializer;
 
     /// <summary>
     /// Constructs a <see cref="PostHogClient"/>. This is the main class used to interact with PostHog.
@@ -49,11 +50,13 @@ public sealed class PostHogClient : IPostHogClient
         _timeProvider = timeProvider ?? TimeProvider.System;
         loggerFactory ??= NullLoggerFactory.Instance;
 
+        _jsonSerializer = new JsonSerializerWrapper(options.Value.JsonSerializer);
         _apiClient = new PostHogApiClient(
             httpClientFactory.CreateClient(nameof(PostHogClient)),
             options,
             _timeProvider,
-            loggerFactory.CreateLogger<PostHogApiClient>()
+            loggerFactory.CreateLogger<PostHogApiClient>(),
+            _jsonSerializer
         );
         _asyncBatchHandler = new AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext>(
             batch => _apiClient.CaptureBatchAsync(batch, CancellationToken.None),

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using PostHog.Json;
 
 namespace PostHog;
 
@@ -92,6 +93,12 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// The interval in milliseconds between periodic flushes. (Default: 30s)
     /// </summary>
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The JSON serializer to use for serializing and deserializing data.
+    /// Defaults to <see cref="SystemTextJsonSerializer"/>.
+    /// </summary>
+    public PostHogSerializer JsonSerializer { get; set; } = new SystemTextJsonSerializer();
 
     // Explicit implementation to hide this value from most users.
     // This is here to make it easier to instantiate the client with the options.
