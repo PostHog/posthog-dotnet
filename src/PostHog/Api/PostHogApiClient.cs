@@ -147,11 +147,10 @@ internal sealed class PostHogApiClient : IDisposable
     /// <exception cref="ApiException">Thrown when the API returns a <c>quota_limited</c> error.</exception>
     public async Task<LocalEvaluationApiResult?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
     {
-        var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
         try
         {
             return await GetAuthenticatedResponseAsync<LocalEvaluationApiResult>(
-                $"/api/feature_flag/local_evaluation/?send_cohorts",
+                "/api/feature_flag/local_evaluation/?send_cohorts",
                 cancellationToken);
         }
         catch (ApiException e) when (e.ErrorType is "quota_limited")
@@ -172,10 +171,17 @@ internal sealed class PostHogApiClient : IDisposable
     /// <param name="key">The config key.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns></returns>
-    public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken) =>
-        await GetAuthenticatedResponseAsync<JsonDocument>(
-            $"/api/projects/@current/feature_flags/{key}/remote_config/",
+    public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken)
+    {
+        var uriBuilder = new UriBuilder(new Uri(HostUrl, $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"))
+        {
+            Query = $"token={Uri.EscapeDataString(ProjectApiKey)}"
+        };
+
+        return await GetAuthenticatedResponseAsync<JsonDocument>(
+            uriBuilder.Uri.PathAndQuery,
             cancellationToken);
+    }
 
     async Task<T?> GetAuthenticatedResponseAsync<T>(string relativeUrl, CancellationToken cancellationToken)
     {

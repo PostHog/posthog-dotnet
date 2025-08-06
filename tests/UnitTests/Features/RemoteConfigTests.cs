@@ -91,4 +91,23 @@ public class TheGetRemoteConfigPayloadAsyncMethod
         Assert.NotNull(result);
         Assert.Equal("Valid JSON string", result.RootElement.GetString());
     }
+
+    [Fact]
+    public async Task IncludesProjectApiKeyTokenInRemoteConfigUrl()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+
+        // Use the AddResponse method to verify the URL includes the token parameter
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/api/projects/@current/feature_flags/test-flag/remote_config?token=fake-project-api-key"),
+            HttpMethod.Get,
+            responseBody: """{"test": "payload"}"""
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetRemoteConfigPayloadAsync("test-flag");
+
+        Assert.NotNull(result);
+        Assert.Equal("payload", result.RootElement.GetProperty("test").GetString());
+    }
 }
