@@ -172,10 +172,15 @@ internal sealed class PostHogApiClient : IDisposable
     /// <param name="key">The config key.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns></returns>
-    public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken) =>
-        await GetAuthenticatedResponseAsync<JsonDocument>(
-            $"/api/projects/@current/feature_flags/{key}/remote_config/",
+    public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken)
+    {
+        var uriBuilder = new UriBuilder(new Uri(HostUrl, $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"));
+        uriBuilder.Query = $"token={Uri.EscapeDataString(ProjectApiKey)}";
+
+        return await GetAuthenticatedResponseAsync<JsonDocument>(
+            uriBuilder.Uri.PathAndQuery,
             cancellationToken);
+    }
 
     async Task<T?> GetAuthenticatedResponseAsync<T>(string relativeUrl, CancellationToken cancellationToken)
     {
