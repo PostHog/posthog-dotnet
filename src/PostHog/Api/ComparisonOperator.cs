@@ -96,5 +96,11 @@ public enum ComparisonOperator
     /// Matches if the date represented by the value is after the filter value.
     /// </summary>
     [JsonStringEnumMemberName("is_date_after")]
-    IsDateAfter
+    IsDateAfter,
+
+    /// <summary>
+    /// Matches if the flag condition evaluates to the specified value.
+    /// </summary>
+    [JsonStringEnumMemberName("flag_evaluates_to")]
+    FlagEvaluatesTo
 }
