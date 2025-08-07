@@ -305,7 +305,7 @@
 await posthog.GetRemoteConfigPayloadAsync(
     "unencrypted-remote-config-setting");
 
-> @Model.UnencryptedRemoteConfigSetting
+@(Model.UnencryptedRemoteConfigSetting ?? "null")
 </code></pre>
                     </div>
                     <div class="col-md-6">
@@ -313,7 +313,7 @@ await posthog.GetRemoteConfigPayloadAsync(
 await posthog.GetRemoteConfigPayloadAsync(
     "encrypted-remote-config-setting");
 
-@Model.EncryptedRemoteConfigSetting
+@(Model.EncryptedRemoteConfigSetting ?? "null")
 </code></pre>
                     </div>
                 </div>
