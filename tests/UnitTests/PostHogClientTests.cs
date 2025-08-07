@@ -371,7 +371,7 @@ public class TheLoadFeatureFlagsAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         // Add a handler that will throw OperationCanceledException
-        var uri = new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?send_cohorts");
+        var uri = new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts");
         container.FakeHttpMessageHandler.AddResponseException(uri, HttpMethod.Get, new OperationCanceledException());
         var client = container.Activate<PostHogClient>();
 
@@ -390,7 +390,7 @@ public class TheLoadFeatureFlagsAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         // Add a handler that will throw OperationCanceledException
-        var uri = new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation/?send_cohorts");
+        var uri = new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts");
         container.FakeHttpMessageHandler.AddResponseException(uri, HttpMethod.Get, new OperationCanceledException());
         var client = container.Activate<PostHogClient>();
 

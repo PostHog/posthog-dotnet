@@ -147,10 +147,14 @@ internal sealed class PostHogApiClient : IDisposable
     /// <exception cref="ApiException">Thrown when the API returns a <c>quota_limited</c> error.</exception>
     public async Task<LocalEvaluationApiResult?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
     {
+        var uriBuilder = new UriBuilder(new Uri(HostUrl, "/api/feature_flag/local_evaluation"))
+        {
+            Query = $"token={Uri.EscapeDataString(ProjectApiKey)}&send_cohorts"
+        };
         try
         {
             return await GetAuthenticatedResponseAsync<LocalEvaluationApiResult>(
-                "/api/feature_flag/local_evaluation/?send_cohorts",
+                uriBuilder.Uri.PathAndQuery,
                 cancellationToken);
         }
         catch (ApiException e) when (e.ErrorType is "quota_limited")
