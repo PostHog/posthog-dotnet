@@ -79,20 +79,52 @@
                         <div class="form-group mb-2">
                             <label asp-for="FeatureFlagKey">Feature Flag Key</label>
                             <input asp-for="ProjectSize" type="hidden" class="form-control" />
-                            <input asp-for="FeatureFlagKey" class="form-control" placeholder="Feature Flag Key"/>
+                            <input asp-for="FeatureFlagKey" class="form-control" placeholder="Enter feature flag key"/>
                         </div>
+
+                        <div class="form-group mb-2">
+                            <label asp-for="PersonProperties">Person Properties (JSON)</label>
+                            <textarea asp-for="PersonProperties" class="form-control" rows="6" placeholder='Example:
+{
+  "join_date": "2023-02-02",
+  "leave_date": "2025-02-02",
+  "site": "sample website",
+  "rate": 2.99,
+  "email": "user@example.com",
+  "plan": "premium"
+}'></textarea>
+                            <small class="form-text text-muted">
+                                Enter person properties as JSON. Leave empty to use default properties.
+                            </small>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(Model.PersonPropertiesError)) {
+                            <div class="alert alert-warning" role="alert">
+                                <strong>JSON Error:</strong> @Model.PersonPropertiesError
+                            </div>
+                        }
 
                         <button type="submit" class="btn btn-primary mb-2">Check Feature Flag</button>
                     </form>
+
                     @if (Model.FeatureFlagKey is { } key) {
-                        if (await PostHog.IsFeatureEnabledAsync(key, Model.UserId)) {
+                        @if (Model.FeatureFlagResult == true) {
                             <div class="alert alert-success" role="alert">
-                                The feature flag <code>@Model.FeatureFlagKey</code> is enabled.
+                                The feature flag <code>@Model.FeatureFlagKey</code> is <strong>enabled</strong> with the provided person properties.
                             </div>
-                        }
+                        } 
                         else {
                             <div class="alert alert-danger" role="alert">
-                                The feature flag <code>@Model.FeatureFlagKey</code> is disabled.
+                                The feature flag <code>@Model.FeatureFlagKey</code> is <strong>disabled</strong> with the provided person properties.
+                            </div>
+                        }
+
+                        @if (Model.ParsedPersonProperties.Any()) {
+                            <div class="mt-3">
+                                <h5>Person Properties Used:</h5>
+                                <div class="bg-light p-2 rounded">
+                                    <pre><code>@System.Text.Json.JsonSerializer.Serialize(Model.ParsedPersonProperties, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</code></pre>
+                                </div>
                             </div>
                         }
                     }
