@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 #if NETSTANDARD2_0 || NETSTANDARD2_1
 using PostHog.Library.Polyfills;
@@ -164,6 +165,29 @@ internal sealed class LocalEvaluator
         Dictionary<string, object?> personProperties,
         bool warnOnUnknownGroups = true)
     {
+        return ComputeFlagLocallyWithCache(
+            flag,
+            distinctId,
+            groups,
+            personProperties,
+            new Dictionary<string, StringOrValue<bool>>(),
+            warnOnUnknownGroups);
+    }
+
+    StringOrValue<bool> ComputeFlagLocallyWithCache(
+        LocalFeatureFlag flag,
+        string distinctId,
+        GroupCollection groups,
+        Dictionary<string, object?> personProperties,
+        Dictionary<string, StringOrValue<bool>> evaluationCache,
+        bool warnOnUnknownGroups = true)
+    {
+        // Check if we've already evaluated this flag to avoid infinite recursion
+        if (evaluationCache.TryGetValue(flag.Key, out var cachedResult))
+        {
+            return cachedResult;
+        }
+
         if (flag.EnsureExperienceContinuity)
         {
             throw new InconclusiveMatchException($"Flag \"{flag.Key}\" has experience continuity enabled");
@@ -171,53 +195,69 @@ internal sealed class LocalEvaluator
 
         if (!flag.Active)
         {
-            return false;
+            var result = false;
+            evaluationCache[flag.Key] = result;
+            return result;
         }
+
 
         var filters = flag.Filters;
         var aggregationGroupIndex = filters?.AggregationGroupTypeIndex;
 
+        StringOrValue<bool> flagResult;
         if (!aggregationGroupIndex.HasValue)
         {
-            return MatchFeatureFlagProperties(
+            flagResult = MatchFeatureFlagProperties(
                 flag,
                 distinctId,
-                personProperties);
-        }
-
-        if (!_groupTypeMapping.TryGetValue(aggregationGroupIndex.Value, out var groupType))
-        {
-            // Weird: We have a group type index that doesn't point to an actual group.
-            _logger.LogWarnUnknownGroupType(aggregationGroupIndex.Value, flag.Key);
-            throw new InconclusiveMatchException($"Flag has unknown group type index: {aggregationGroupIndex}");
-        }
-
-        if (groups.TryGetGroup(groupType, out var group))
-        {
-            return MatchFeatureFlagProperties(
-                flag,
-                group.GroupKey,
-                group.Properties);
-        }
-
-        // Don't failover to `/decide/`, since response will be the same
-        if (warnOnUnknownGroups)
-        {
-            _logger.LogWarnGroupTypeNotPassedIn(flag.Key);
+                personProperties,
+                evaluationCache,
+                groups);
         }
         else
         {
-            _logger.LogDebugGroupTypeNotPassedIn(flag.Key);
+            if (!_groupTypeMapping.TryGetValue(aggregationGroupIndex.Value, out var groupType))
+            {
+                // Weird: We have a group type index that doesn't point to an actual group.
+                _logger.LogWarnUnknownGroupType(aggregationGroupIndex.Value, flag.Key);
+                throw new InconclusiveMatchException($"Flag has unknown group type index: {aggregationGroupIndex}");
+            }
+
+            if (groups.TryGetGroup(groupType, out var group))
+            {
+                flagResult = MatchFeatureFlagProperties(
+                    flag,
+                    group.GroupKey,
+                    group.Properties,
+                    evaluationCache,
+                    groups);
+            }
+            else
+            {
+                // Don't failover to `/flags`, since response will be the same
+                if (warnOnUnknownGroups)
+                {
+                    _logger.LogWarnGroupTypeNotPassedIn(flag.Key);
+                }
+                else
+                {
+                    _logger.LogDebugGroupTypeNotPassedIn(flag.Key);
+                }
+
+                flagResult = false;
+            }
         }
 
-        return false;
-
+        evaluationCache[flag.Key] = flagResult;
+        return flagResult;
     }
 
     StringOrValue<bool> MatchFeatureFlagProperties(
         LocalFeatureFlag flag,
         string distinctId,
-        Dictionary<string, object?>? properties /* person or group properties */)
+        Dictionary<string, object?>? properties, /* person or group properties */
+        Dictionary<string, StringOrValue<bool>> evaluationCache,
+        GroupCollection? groups = null)
     {
         var filters = flag.Filters;
         var flagConditions = filters?.Groups ?? [];
@@ -234,7 +274,7 @@ internal sealed class LocalEvaluator
             {
                 // if any one condition resolves to True, we can short circuit and return
                 // the matching variant
-                if (!IsConditionMatch(flag, distinctId, condition, properties))
+                if (!IsConditionMatch(flag, distinctId, condition, properties, evaluationCache, groups))
                 {
                     continue;
                 }
@@ -269,14 +309,19 @@ internal sealed class LocalEvaluator
         LocalFeatureFlag flag,
         string distinctId,
         FeatureFlagGroup condition,
-        Dictionary<string, object?>? properties)
+        Dictionary<string, object?>? properties,
+        Dictionary<string, StringOrValue<bool>> evaluationCache,
+        GroupCollection? groups = null)
     {
         var rolloutPercentage = condition.RolloutPercentage;
         if (condition.Properties is not null)
         {
-            if (condition.Properties.Select(property => property.Type is FilterType.Cohort
-                    ? MatchCohort(property, properties)
-                    : MatchProperty(property, properties)).Any(isMatch => !isMatch))
+            if (condition.Properties.Select(property => property.Type switch
+                {
+                    FilterType.Cohort => MatchCohort(property, properties),
+                    FilterType.Flag => MatchFlagDependencyFilter(property, distinctId, properties, evaluationCache, groups),
+                    _ => MatchProperty(property, properties)
+                }).Any(isMatch => !isMatch))
             {
                 return false;
             }
@@ -299,9 +344,9 @@ internal sealed class LocalEvaluator
             ?.Key;
     }
 
-    internal record VariantRange(string Key, double MinValue, double MaxValue);
+    record VariantRange(string Key, double MinValue, double MaxValue);
 
-    internal static List<VariantRange> CreateVariantLookupTable(LocalFeatureFlag flag)
+    static List<VariantRange> CreateVariantLookupTable(LocalFeatureFlag flag)
     {
         List<VariantRange> results = [];
         var multivariateVariants = flag.Filters?.Multivariate?.Variants;
@@ -469,6 +514,13 @@ internal sealed class LocalEvaluator
     /// <returns><c>true</c> if the current user/group matches the property. Otherwise <c>false</c>.</returns>
     bool MatchProperty(PropertyFilter propertyFilter, Dictionary<string, object?>? properties)
     {
+        // Handle flag dependencies
+        if (propertyFilter.Type is FilterType.Flag)
+        {
+            // Flag dependencies can't be evaluated from this context, throw inconclusive
+            throw new InconclusiveMatchException($"Flag dependency '{propertyFilter.Key}' cannot be evaluated without evaluation context");
+        }
+
         if (propertyFilter.Operator is ComparisonOperator.IsNotSet)
         {
             throw new InconclusiveMatchException("Can't match properties with operator is_not_set");
@@ -516,6 +568,151 @@ internal sealed class LocalEvaluator
             ComparisonOperator.IsDateAfter => !value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
             null => true, // If no operator is specified, just return true.
             _ => throw new InconclusiveMatchException($"Unknown operator: {propertyFilter.Operator}")
+        };
+    }
+
+    /// <summary>
+    /// Evaluates a flag dependency property filter.
+    /// </summary>
+    /// <param name="propertyFilter">The <see cref="PropertyFilter"/> to evaluate.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="properties">The overridden values that describe the user/group.</param>
+    /// <param name="evaluationCache">The cache of already evaluated flags.</param>
+    /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
+    /// <returns><c>true</c> if the current user/group matches the flag dependency. Otherwise <c>false</c>.</returns>
+    bool MatchFlagDependencyFilter(
+        PropertyFilter propertyFilter,
+        string distinctId,
+        Dictionary<string, object?>? properties,
+        Dictionary<string, StringOrValue<bool>> evaluationCache,
+        GroupCollection? groups = null)
+    {
+        Debug.Assert(propertyFilter.Type == FilterType.Flag);
+
+        // Validate inputs and dependencies
+        var (flagKey, propertyValue) = ValidateFlagDependencyFilter(propertyFilter);
+
+        // Evaluate all dependencies in the chain and return the value of the last one
+        EvaluateDependencyChain(propertyFilter.DependencyChain!, distinctId, properties, evaluationCache, groups);
+
+        // Get the evaluated value for this flag
+        var immediateDependencyValue = evaluationCache.TryGetValue(flagKey, out var keyForFlagDependencyFilter)
+            ? keyForFlagDependencyFilter
+            : throw new InconclusiveMatchException($"Flag dependency '{flagKey}' is missing in evaluation cache");
+
+        // Match the value against expectations
+        return MatchesDependencyValue(immediateDependencyValue, propertyValue);
+    }
+
+    static (string flagKey, PropertyFilterValue propertyValue) ValidateFlagDependencyFilter(PropertyFilter propertyFilter)
+    {
+        var flagKey = NotNull(propertyFilter.Key);
+
+        if (propertyFilter.Value is not { } propertyValue)
+        {
+            throw new InconclusiveMatchException("The filter property value is null");
+        }
+
+        // Check if dependency_chain is present - it should always be provided for flag dependencies
+        if (propertyFilter.DependencyChain is null)
+        {
+            throw new InconclusiveMatchException($"Flag dependency property for '{flagKey}' is missing required 'dependency_chain' field");
+        }
+
+        // Handle circular dependency (empty chain means circular)
+        if (propertyFilter.DependencyChain.Count == 0)
+        {
+            // Circular dependencies should evaluate to inconclusive as per PostHog API design
+            throw new InconclusiveMatchException($"Flag dependency property for '{flagKey}' has an empty 'dependency_chain' field indicating a circular dependency");
+        }
+
+        // The last item in the dependency chain should be the value in the current property filter.
+        if (propertyFilter.DependencyChain[^1] != flagKey)
+        {
+            throw new InconclusiveMatchException($"Flag dependency property for '{flagKey}' has an invalid 'dependency_chain' field - last item should be the flag key itself");
+        }
+
+        return (flagKey, propertyValue);
+    }
+
+    // Evaluates every flag in the dependency chain in order and returns the result of the last one.
+    void EvaluateDependencyChain(IReadOnlyList<string> dependencyChain,
+        string distinctId,
+        Dictionary<string, object?>? properties,
+        Dictionary<string, StringOrValue<bool>> evaluationCache,
+        GroupCollection? groups)
+    {
+        // Evaluate all dependencies in the chain order and cache the results.
+        foreach (var depFlagKey in dependencyChain)
+        {
+            if (evaluationCache.ContainsKey(depFlagKey))
+            {
+                continue;
+            }
+
+            evaluationCache[depFlagKey] = EvaluateSingleDependency(depFlagKey, distinctId, properties, evaluationCache, groups);
+        }
+    }
+
+    // Evaluates a single flag dependency and returns the result.
+    StringOrValue<bool> EvaluateSingleDependency(
+        string depFlagKey,
+        string distinctId,
+        Dictionary<string, object?>? properties,
+        Dictionary<string, StringOrValue<bool>> evaluationCache,
+        GroupCollection? groups)
+    {
+        // Need to evaluate this dependency first
+        if (!_localFeatureFlags.TryGetValue(depFlagKey, out var depFlag))
+        {
+            throw new InconclusiveMatchException($"Cannot evaluate flag dependency '{depFlagKey}' - flag not found in local flags");
+        }
+
+        // Check if the dependency flag is active (same check as in ComputeFlagLocallyWithCache)
+        if (!depFlag.Active)
+        {
+            return false;
+        }
+
+        // Recursively evaluate the dependency
+        try
+        {
+            var depResult = ComputeFlagLocallyWithCache(
+                depFlag,
+                distinctId,
+                groups ?? [],
+                properties ?? new Dictionary<string, object?>(),
+                evaluationCache,
+                false);
+            return depResult;
+        }
+        catch (InconclusiveMatchException e)
+        {
+            // If we can't evaluate a dependency, propagate the error
+            throw new InconclusiveMatchException($"Cannot evaluate flag dependency '{depFlagKey}': {e.Message}", e);
+        }
+    }
+
+    static bool MatchesDependencyValue(
+        StringOrValue<bool> immediateDependencyValue,
+        PropertyFilterValue propertyValue)
+    {
+        return immediateDependencyValue switch
+        {
+            // String variant case - check for exact match or boolean true
+            { IsString: true, StringValue: { Length: > 0 } stringValue } =>
+                propertyValue switch
+                {
+                    { BooleanValue: { } booleanValue } => booleanValue, // Any variant matches boolean true
+                    { StringValue: { } expectedString } => string.Equals(stringValue, expectedString, StringComparison.OrdinalIgnoreCase),
+                    _ => false
+                },
+
+            // Boolean case - must match expected boolean value
+            { IsValue: true, Value: { } boolValue } when propertyValue.BooleanValue.HasValue =>
+                propertyValue.BooleanValue.Value == boolValue,
+
+            _ => false
         };
     }
 

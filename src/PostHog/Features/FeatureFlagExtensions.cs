@@ -1,4 +1,5 @@
 using PostHog.Features;
+using PostHog.Json;
 using static PostHog.Library.Ensure;
 
 namespace PostHog; // Intentionally put in the root namespace.
