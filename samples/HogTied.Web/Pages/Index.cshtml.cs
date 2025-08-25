@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Features;
+using PostHog.Json;
 
 namespace HogTied.Web.Pages;
 
@@ -56,7 +57,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
 
     public string? PersonPropertiesError { get; private set; }
 
-    public bool? FeatureFlagResult { get; private set; }
+    public FeatureFlag? FeatureFlagResult { get; private set; }
 
     public async Task OnGetAsync()
     {
@@ -124,7 +125,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
                 {
                     PersonProperties = ParsedPersonProperties
                 };
-                FeatureFlagResult = await posthog.IsFeatureEnabledAsync(FeatureFlagKey, UserId, customFlagOptions);
+                FeatureFlagResult = await posthog.GetFeatureFlagAsync(FeatureFlagKey, UserId, customFlagOptions);
             }
 
             UnencryptedRemoteConfigSetting = (await posthog.GetRemoteConfigPayloadAsync("unencrypted-remote-config-setting", HttpContext.RequestAborted))?.RootElement.GetRawText();

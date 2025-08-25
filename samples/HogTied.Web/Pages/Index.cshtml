@@ -108,9 +108,13 @@
                     </form>
 
                     @if (Model.FeatureFlagKey is { } key) {
-                        @if (Model.FeatureFlagResult == true) {
+                        @if (Model.FeatureFlagResult is { IsEnabled: true }) {
                             <div class="alert alert-success" role="alert">
-                                The feature flag <code>@Model.FeatureFlagKey</code> is <strong>enabled</strong> with the provided person properties.
+                                The feature flag <code>@Model.FeatureFlagKey</code> is <strong>enabled</strong>
+                                @if (Model.FeatureFlagResult is { VariantKey: { } variant }) {
+                                    <span>for variant <code>@variant</code></span>
+                                }
+                                <span> with the provided person properties.</span>
                             </div>
                         } 
                         else {
