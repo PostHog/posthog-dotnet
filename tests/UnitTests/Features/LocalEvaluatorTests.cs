@@ -745,7 +745,7 @@ public class TheFlagDependencyEvaluationMethod
         IReadOnlyList<string> dependencyChain,
         params string[] variantKeys)
     {
-        var variants = variantKeys.Select((variantKey, index) => new Variant
+        var variants = variantKeys.Select((variantKey, _) => new Variant
         {
             Key = variantKey,
             Name = $"Variant {variantKey}",
@@ -790,7 +790,7 @@ public class TheFlagDependencyEvaluationMethod
         bool active = true,
         params string[] variantKeys)
     {
-        var variants = variantKeys.Select((variantKey, index) => new Variant
+        var variants = variantKeys.Select((variantKey, _) => new Variant
         {
             Key = variantKey,
             Name = $"Variant {variantKey}",
@@ -1403,5 +1403,99 @@ public class TheFlagDependencyEvaluationMethod
         Assert.True(filterWithNullDependencyChain.Equals(filterWithEmptyDependencyChain)); // null should equal empty
         Assert.False(filterWithNullDependencyChain.Equals(filterWithDependencyChain)); // null should not equal non-empty
         Assert.False(filterWithEmptyDependencyChain.Equals(filterWithDependencyChain)); // empty should not equal non-empty
+    }
+}
+
+public class TheMatchesDependencyValueMethod
+{
+    [Theory]
+    // String variant matches string exactly (case-sensitive)
+    [InlineData("control", "control", true)]
+    [InlineData("Control", "Control", true)]
+    [InlineData("control", "Control", false)]
+    [InlineData("Control", "CONTROL", false)]
+    [InlineData("control", "test", false)]
+    public void MatchesStringVariantExactly(string expectedString, string actualString, bool shouldMatch)
+    {
+        var expectedValue = new PropertyFilterValue(expectedString);
+        var actualValue = new StringOrValue<bool>(actualString);
+
+        var result = LocalEvaluator.MatchesDependencyValue(expectedValue, actualValue);
+
+        Assert.Equal(shouldMatch, result);
+    }
+
+    [Theory]
+    // String variant matches boolean true (any variant is truthy)
+    [InlineData(true, "control", true)]
+    [InlineData(true, "test", true)]
+    [InlineData(false, "control", false)]
+    public void MatchesStringVariantAgainstBoolean(bool expectedBoolean, string actualString, bool shouldMatch)
+    {
+        var expectedValue = new PropertyFilterValue(expectedBoolean);
+        var actualValue = new StringOrValue<bool>(actualString);
+
+        var result = LocalEvaluator.MatchesDependencyValue(expectedValue, actualValue);
+
+        Assert.Equal(shouldMatch, result);
+    }
+
+    [Theory]
+    // Boolean matches boolean exactly
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    public void MatchesBooleanExactly(bool expectedBoolean, bool actualBoolean, bool shouldMatch)
+    {
+        var expectedValue = new PropertyFilterValue(expectedBoolean);
+        var actualValue = new StringOrValue<bool>(actualBoolean);
+
+        var result = LocalEvaluator.MatchesDependencyValue(expectedValue, actualValue);
+
+        Assert.Equal(shouldMatch, result);
+    }
+
+    [Fact]
+    public void DoesNotMatchEmptyString()
+    {
+        // Empty string doesn't match boolean true
+        var expectedValue1 = new PropertyFilterValue(true);
+        var actualValue1 = new StringOrValue<bool>("");
+        var result1 = LocalEvaluator.MatchesDependencyValue(expectedValue1, actualValue1);
+        Assert.False(result1);
+
+        // Empty string doesn't match string "control"
+        var expectedValue2 = new PropertyFilterValue("control");
+        var actualValue2 = new StringOrValue<bool>("");
+        var result2 = LocalEvaluator.MatchesDependencyValue(expectedValue2, actualValue2);
+        Assert.False(result2);
+    }
+
+    [Theory]
+    // Type mismatches - these test cases where the implementation should return false
+    [InlineData(123, "control", false)] // Long expected value vs string actual
+    [InlineData("control", true, false)] // String expected vs boolean actual  
+    public void DoesNotMatchTypeMismatches(object expected, object actual, bool shouldMatch)
+    {
+        PropertyFilterValue expectedValue = expected switch
+        {
+            int i => new PropertyFilterValue((long)i),
+            long l => new PropertyFilterValue(l),
+            string s => new PropertyFilterValue(s),
+            bool b => new PropertyFilterValue(b),
+            _ => throw new ArgumentException("Unsupported type for test")
+        };
+
+        StringOrValue<bool> actualValue = actual switch
+        {
+            string s => new StringOrValue<bool>(s),
+            bool b => new StringOrValue<bool>(b),
+            _ => throw new ArgumentException("Unsupported type for test")
+        };
+
+        var result = LocalEvaluator.MatchesDependencyValue(expectedValue, actualValue);
+
+        Assert.Equal(shouldMatch, result);
     }
 }

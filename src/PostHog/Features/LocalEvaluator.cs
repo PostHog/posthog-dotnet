@@ -601,7 +601,7 @@ internal sealed class LocalEvaluator
             : throw new InconclusiveMatchException($"Flag dependency '{flagKey}' is missing in evaluation cache");
 
         // Match the value against expectations
-        return MatchesDependencyValue(immediateDependencyValue, propertyValue);
+        return MatchesDependencyValue(propertyValue, immediateDependencyValue);
     }
 
     static (string flagKey, PropertyFilterValue propertyValue) ValidateFlagDependencyFilter(PropertyFilter propertyFilter)
@@ -693,24 +693,22 @@ internal sealed class LocalEvaluator
         }
     }
 
-    static bool MatchesDependencyValue(
-        StringOrValue<bool> immediateDependencyValue,
-        PropertyFilterValue propertyValue)
+    internal static bool MatchesDependencyValue(PropertyFilterValue expectedValue, StringOrValue<bool> actualValue)
     {
-        return immediateDependencyValue switch
+        return actualValue switch
         {
             // String variant case - check for exact match or boolean true
             { IsString: true, StringValue: { Length: > 0 } stringValue } =>
-                propertyValue switch
+                expectedValue switch
                 {
                     { BooleanValue: { } booleanValue } => booleanValue, // Any variant matches boolean true
-                    { StringValue: { } expectedString } => string.Equals(stringValue, expectedString, StringComparison.OrdinalIgnoreCase),
+                    { StringValue: { } expectedString } => string.Equals(stringValue, expectedString, StringComparison.Ordinal),
                     _ => false
                 },
 
             // Boolean case - must match expected boolean value
-            { IsValue: true, Value: { } boolValue } when propertyValue.BooleanValue.HasValue =>
-                propertyValue.BooleanValue.Value == boolValue,
+            { IsValue: true, Value: { } boolValue } when expectedValue.BooleanValue.HasValue =>
+                expectedValue.BooleanValue.Value == boolValue,
 
             _ => false
         };
