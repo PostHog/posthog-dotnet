@@ -1359,6 +1359,130 @@ public class TheFlagDependencyEvaluationMethod
     }
 
     [Fact]
+    public void EvaluatesFlagWithCombinedDependencyAndPersonPropertyConditions()
+    {
+        // Create a simple dependency flag that's always active
+        var dependencyFlag = CreateSimpleFlag("dependency-flag", active: true);
+
+        // Create a flag that requires BOTH:
+        // 1. dependency-flag to evaluate to true (flag dependency)
+        // 2. email property to match specific value (person property filter)
+        var combinedFlag = new LocalFeatureFlag
+        {
+            Id = 42,
+            TeamId = 23,
+            Name = "combined-flag",
+            Key = "combined-flag",
+            Active = true,
+            Filters = new FeatureFlagFilters
+            {
+                Groups = [
+                    new FeatureFlagGroup
+                    {
+                        Properties = [
+                            // Flag dependency condition
+                            new PropertyFilter
+                            {
+                                Type = FilterType.Flag,
+                                Key = "dependency-flag",
+                                Value = new PropertyFilterValue(true),
+                                Operator = ComparisonOperator.FlagEvaluatesTo,
+                                DependencyChain = ["dependency-flag"]
+                            },
+                            // Person property condition
+                            new PropertyFilter
+                            {
+                                Type = FilterType.Person,
+                                Key = "email",
+                                Value = new PropertyFilterValue("test@example.com"),
+                                Operator = ComparisonOperator.Exact
+                            }
+                        ],
+                        RolloutPercentage = 100
+                    }
+                ]
+            }
+        };
+
+        var flags = CreateFlagsWithDependencies(new Dictionary<string, LocalFeatureFlag>
+        {
+            ["dependency-flag"] = dependencyFlag,
+            ["combined-flag"] = combinedFlag
+        });
+
+        var localEvaluator = new LocalEvaluator(flags);
+
+        // Test case 1: Both conditions match - should return true
+        var result1 = localEvaluator.EvaluateFeatureFlag(
+            key: "combined-flag",
+            distinctId: "test-user",
+            personProperties: new Dictionary<string, object?> { ["email"] = "test@example.com" });
+
+        Assert.True(result1.Value);
+
+        // Test case 2: Flag dependency matches but person property doesn't - should return false
+        var result2 = localEvaluator.EvaluateFeatureFlag(
+            key: "combined-flag",
+            distinctId: "test-user",
+            personProperties: new Dictionary<string, object?> { ["email"] = "other@example.com" });
+
+        Assert.False(result2.Value);
+
+        // Test case 3: Person property matches but flag dependency doesn't
+        // Create inactive dependency flag for this test
+        var inactiveDependencyFlag = CreateSimpleFlag("inactive-dependency-flag", active: false);
+        var combinedFlagWithInactiveDep = new LocalFeatureFlag
+        {
+            Id = 43,
+            TeamId = 23,
+            Name = "combined-flag-inactive-dep",
+            Key = "combined-flag-inactive-dep",
+            Active = true,
+            Filters = new FeatureFlagFilters
+            {
+                Groups = [
+                    new FeatureFlagGroup
+                    {
+                        Properties = [
+                            new PropertyFilter
+                            {
+                                Type = FilterType.Flag,
+                                Key = "inactive-dependency-flag",
+                                Value = new PropertyFilterValue(true),
+                                Operator = ComparisonOperator.FlagEvaluatesTo,
+                                DependencyChain = ["inactive-dependency-flag"]
+                            },
+                            new PropertyFilter
+                            {
+                                Type = FilterType.Person,
+                                Key = "email",
+                                Value = new PropertyFilterValue("test@example.com"),
+                                Operator = ComparisonOperator.Exact
+                            }
+                        ],
+                        RolloutPercentage = 100
+                    }
+                ]
+            }
+        };
+
+        var flagsWithInactiveDep = CreateFlagsWithDependencies(new Dictionary<string, LocalFeatureFlag>
+        {
+            ["inactive-dependency-flag"] = inactiveDependencyFlag,
+            ["combined-flag-inactive-dep"] = combinedFlagWithInactiveDep
+        });
+
+        var localEvaluatorWithInactiveDep = new LocalEvaluator(flagsWithInactiveDep);
+
+        var result3 = localEvaluatorWithInactiveDep.EvaluateFeatureFlag(
+            key: "combined-flag-inactive-dep",
+            distinctId: "test-user",
+            personProperties: new Dictionary<string, object?> { ["email"] = "test@example.com" });
+
+        Assert.False(result3.Value);
+    }
+
+    [Fact]
     public void PropertyFilterEqualityIsSymmetricForDependencyChain()
     {
         // Test the asymmetric equality bug identified by greptile
