@@ -132,10 +132,12 @@ public sealed class PostHogClient : IPostHogClient
         bool sendFeatureFlags)
     {
         // Check for custom timestamp in properties
-        var timestamp = properties?.TryGetValue("timestamp", out var timestampValue) == true && 
+        var timestamp = properties?.TryGetValue("timestamp", out var timestampValue) == true &&
             (timestampValue is DateTimeOffset customTimestampOffset || timestampValue is DateTime customTimestamp)
-            ? timestampValue is DateTimeOffset dtOffset ? dtOffset : new DateTimeOffset((DateTime)timestampValue)
-            : _timeProvider.GetUtcNow();
+                ? timestampValue is DateTimeOffset dtOffset
+                    ? dtOffset
+                    : new DateTimeOffset((DateTime)timestampValue)
+                : _timeProvider.GetUtcNow();
 
         var capturedEvent = new CapturedEvent(
             eventName,
@@ -324,7 +326,8 @@ public sealed class PostHogClient : IPostHogClient
         {
             // We need to fire and forget the compaction because it can be expensive.
             _taskScheduler.Run(
-                () => _featureFlagCalledEventCache.Compact(_options.Value.FeatureFlagSentCacheCompactionPercentage),
+                () => _featureFlagCalledEventCache.Compact(
+                    _options.Value.FeatureFlagSentCacheCompactionPercentage),
                 cancellationToken);
         }
 
