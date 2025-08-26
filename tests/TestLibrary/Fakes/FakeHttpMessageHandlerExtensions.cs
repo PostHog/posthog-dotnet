@@ -98,6 +98,6 @@ internal static class FakeHttpMessageHandlerExtensions
             HttpMethod.Get,
             responseBody: responseBody);
 
-    static T Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, JsonSerializerHelper.Options)
+    static T Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, JsonSerializerWrapper.Options)
         ?? throw new ArgumentException("Json is invalid and deserializes to null", nameof(json));
 }

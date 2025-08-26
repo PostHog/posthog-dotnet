@@ -77,6 +77,46 @@ $ dotnet user-secrets set PostHog:PersonalApiKey YOUR_PERSONAL_API_KEY
 
 For production, we recommend using a secrets manager or environment variables to set the `PostHog:PersonalApiKey` setting.
 
+
+### 🔧 Custom JSON Serializer
+
+You can override the default `System.Text.Json` serializer with your own implementation:
+
+```csharp
+services.AddPostHog(options =>
+{
+    options.JsonSerializer = new CustomJsonSerializer();
+});
+```
+
+The SDK provides one built-in implementation:
+- `SystemTextJsonSerializer` (default) - Uses System.Text.Json
+
+You can also inherit from the `PostHogSerializer` abstract class to create your own custom serializer:
+
+```csharp
+public class CustomJsonSerializer : PostHogSerializer
+{
+    public override string Serialize(object obj)
+    {
+        // Your custom serialization logic
+        return JsonConvert.SerializeObject(obj);
+    }
+
+    public override T Deserialize<T>(string json)
+    {
+        // Your custom deserialization logic
+        return JsonConvert.DeserializeObject<T>(json);
+    }
+}
+
+// Usage
+services.AddPostHog(options =>
+{
+    options.JsonSerializer = new CustomJsonSerializer();
+});
+```
+
 ## Docs
 
 More detailed docs for using this library can be found at [PostHog Docs for the .NET Client SDK](https://posthog.com/docs/libraries/dotnet).
@@ -214,6 +254,7 @@ options: new AllFeatureFlagsOptions
 `PostHog.AspNetCore` supports .NET Feature Management. This allows you to use the &lt;feature /&gt; tag helper and 
 the `FeatureGateAttribute` in your ASP.NET Core applications to gate access to certain features using PostHog 
 feature flags.
+
 
 ### Setup
 

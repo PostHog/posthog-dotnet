@@ -15,7 +15,8 @@ public class TheDeserializeAsyncMethod
                    "ned@example.com"
                    ]
                    """;
-        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<PropertyFilterValue>(json);
+        var wrapper = new JsonSerializerWrapper(new SystemTextJsonSerializer());
+        var result = await wrapper.DeserializeFromCamelCaseJsonStringAsync<PropertyFilterValue>(json);
 
         Assert.NotNull(result);
         Assert.Equal([
@@ -42,7 +43,8 @@ public class TheDeserializeAsyncMethod
                        "operator": "exact"
                    }
                    """;
-        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
+        var wrapper = new JsonSerializerWrapper(new SystemTextJsonSerializer());
+        var result = await wrapper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
 
         var propertyFilter = Assert.IsType<PropertyFilter>(result);
         Assert.Equal(
@@ -99,7 +101,8 @@ public class TheDeserializeAsyncMethod
                        ]
                    }
                    """;
-        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
+        var wrapper = new JsonSerializerWrapper(new SystemTextJsonSerializer());
+        var result = await wrapper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
 
         var filterSet = Assert.IsType<FilterSet>(result);
 
