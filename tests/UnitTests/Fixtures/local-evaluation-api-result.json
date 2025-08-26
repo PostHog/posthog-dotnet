@@ -128,6 +128,32 @@
       "deleted": false,
       "active": false,
       "ensure_experience_continuity": false
+    },
+    {
+      "id": 2,
+      "team_id": 42,
+      "name": "Advanced file previews",
+      "key": "advanced-file-previews",
+      "dependency_chain": ["file-previews"],
+      "filters": {
+        "groups": [
+          {
+            "properties": [
+              {
+                "key": "file-previews",
+                "type": "flag",
+                "value": true,
+                "operator": "exact",
+                "dependency_chain": ["file-previews"]
+              }
+            ],
+            "rollout_percentage": 100
+          }
+        ]
+      },
+      "deleted": false,
+      "active": true,
+      "ensure_experience_continuity": false
     }
   ],
   "group_type_mapping": {

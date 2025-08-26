@@ -1,10 +1,12 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Features;
+using PostHog.Json;
 
 namespace HogTied.Web.Pages;
 
@@ -43,9 +45,19 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     [FromQuery]
     public string? FeatureFlagKey { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    [FromQuery]
+    public string? PersonProperties { get; set; }
+
     public string? UnencryptedRemoteConfigSetting { get; set; }
 
     public string? EncryptedRemoteConfigSetting { get; set; }
+
+    public Dictionary<string, object?> ParsedPersonProperties { get; private set; } = new();
+
+    public string? PersonPropertiesError { get; private set; }
+
+    public FeatureFlag? FeatureFlagResult { get; private set; }
 
     public async Task OnGetAsync()
     {
@@ -56,6 +68,9 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
         UserId = User.Identity?.IsAuthenticated == true
             ? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             : FakeUserId;
+
+        // Parse custom person properties if provided
+        ParsePersonProperties();
 
         if (ProjectApiKeyIsSet && UserId is not null)
         {
@@ -80,13 +95,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
 
             var flagOptions = new FeatureFlagOptions
             {
-                PersonProperties = new Dictionary<string, object?>
-                {
-                    ["join_date"] = "2023-02-02",
-                    ["leave_date"] = "2025-02-02",
-                    ["site"] = "sample website",
-                    ["rate"] = 2.99
-                },
+                PersonProperties = ParsedPersonProperties,
                 Groups =
                 [
                     new Group("organization", "01943db3-83be-0000-e7ea-ecae4d9b5afb"),
@@ -108,6 +117,16 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
             }
 
             NonExistentFlag = await posthog.IsFeatureEnabledAsync("non-existent-flag", UserId);
+
+            // Evaluate the specific feature flag if provided
+            if (!string.IsNullOrWhiteSpace(FeatureFlagKey))
+            {
+                var customFlagOptions = new FeatureFlagOptions
+                {
+                    PersonProperties = ParsedPersonProperties
+                };
+                FeatureFlagResult = await posthog.GetFeatureFlagAsync(FeatureFlagKey, UserId, customFlagOptions);
+            }
 
             UnencryptedRemoteConfigSetting = (await posthog.GetRemoteConfigPayloadAsync("unencrypted-remote-config-setting", HttpContext.RequestAborted))?.RootElement.GetRawText();
 
@@ -165,6 +184,54 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
             : $"Something went wrong! Status: {result.Status}";
 
         return RedirectToPage();
+    }
+
+    private void ParsePersonProperties()
+    {
+        ParsedPersonProperties = new Dictionary<string, object?>();
+        PersonPropertiesError = null;
+
+        if (string.IsNullOrWhiteSpace(PersonProperties))
+        {
+            // Use default properties if none provided
+            ParsedPersonProperties = new Dictionary<string, object?>
+            {
+                ["join_date"] = "2023-02-02",
+                ["leave_date"] = "2025-02-02",
+                ["site"] = "sample website",
+                ["rate"] = 2.99
+            };
+            return;
+        }
+
+        try
+        {
+            var jsonDocument = JsonDocument.Parse(PersonProperties);
+            foreach (var property in jsonDocument.RootElement.EnumerateObject())
+            {
+                ParsedPersonProperties[property.Name] = property.Value.ValueKind switch
+                {
+                    JsonValueKind.String => property.Value.GetString(),
+                    JsonValueKind.Number => property.Value.TryGetInt64(out var longValue) ? longValue : property.Value.GetDouble(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.Null => null,
+                    _ => property.Value.GetRawText()
+                };
+            }
+        }
+        catch (JsonException ex)
+        {
+            PersonPropertiesError = $"Invalid JSON: {ex.Message}";
+            // Fall back to default properties on error
+            ParsedPersonProperties = new Dictionary<string, object?>
+            {
+                ["join_date"] = "2023-02-02",
+                ["leave_date"] = "2025-02-02",
+                ["site"] = "sample website",
+                ["rate"] = 2.99
+            };
+        }
     }
 }
 

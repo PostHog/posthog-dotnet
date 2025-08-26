@@ -370,6 +370,13 @@ internal record PropertyFilter : Filter
     public bool Negation { get; init; }
 
     /// <summary>
+    /// Dependency chain for flag-type properties, representing flags that must be evaluated first.
+    /// If empty or null, the flag has no dependencies or has circular dependencies.
+    /// </summary>
+    [JsonPropertyName("dependency_chain")]
+    public IReadOnlyList<string>? DependencyChain { get; init; }
+
+    /// <summary>
     /// Compares this instance to another <see cref="PropertyFilter"/> for equality.
     /// </summary>
     /// <param name="other">The other <see cref="PropertyFilter"/> to compare with.</param>
@@ -391,7 +398,8 @@ internal record PropertyFilter : Filter
                && Value.Equals(other.Value)
                && Operator == other.Operator
                && GroupTypeIndex == other.GroupTypeIndex
-               && Negation == other.Negation;
+               && Negation == other.Negation
+               && (DependencyChain?.SequenceEqual(other.DependencyChain ?? []) ?? other.DependencyChain?.Any() != true);
     }
 
     /// <summary>
