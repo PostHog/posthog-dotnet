@@ -223,7 +223,12 @@ internal sealed class PostHogApiClient : IDisposable
         properties.Merge(_options.Value.SuperProperties);
 
         payload["properties"] = properties;
-        payload["timestamp"] = _timeProvider.GetUtcNow(); // ISO 8601
+        
+        // Only set timestamp if one isn't already provided in properties
+        if (!payload.ContainsKey("timestamp") && !properties.ContainsKey("timestamp"))
+        {
+            payload["timestamp"] = _timeProvider.GetUtcNow(); // ISO 8601
+        }
     }
 
     /// <summary>
