@@ -223,7 +223,7 @@ internal sealed class PostHogApiClient : IDisposable
         properties.Merge(_options.Value.SuperProperties);
 
         payload["properties"] = properties;
-        
+
         // Only set timestamp if one isn't already provided in properties
         if (!payload.ContainsKey("timestamp") && !properties.ContainsKey("timestamp"))
         {
