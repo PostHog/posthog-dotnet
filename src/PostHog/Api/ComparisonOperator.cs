@@ -1,107 +1,107 @@
 using System.Text.Json.Serialization;
+using PostHog.Json;
 
 namespace PostHog.Api;
 
 /// <summary>
 /// An enumeration representing the comparison types that can be used in a filter.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<ComparisonOperator>))]
+[JsonConverter(typeof(JsonStringEnumMemberNameJsonConverter<ComparisonOperator>))]
 public enum ComparisonOperator
 {
     /// <summary>
     /// Matches if the value is in the list of filter values. Only used for cohort filters.
     /// </summary>
-    [JsonPropertyName("in")]
+    [JsonStringEnumMemberName("in")]
     In,
 
     /// <summary>
     /// Matches if the value is an exact match to the filter value.
     /// </summary>
-    [JsonPropertyName("exact")]
+    [JsonStringEnumMemberName("exact")]
     Exact,
 
     /// <summary>
     /// Matches if the value is not an exact match to the filter value.
     /// </summary>
-    [JsonPropertyName("is_not")]
+    [JsonStringEnumMemberName("is_not")]
     IsNot,
 
     /// <summary>
     /// Matches if the value is set.
     /// </summary>
-    [JsonPropertyName("is_set")]
+    [JsonStringEnumMemberName("is_set")]
     IsSet,
 
     /// <summary>
     /// Matches if the value is not set.
     /// </summary>
-    [JsonPropertyName("is_not_set")]
+    [JsonStringEnumMemberName("is_not_set")]
     IsNotSet,
 
     /// <summary>
     /// Matches if the value is greater than the filter value.
     /// </summary>
-    [JsonPropertyName("gt")]
+    [JsonStringEnumMemberName("gt")]
     GreaterThan,
 
     /// <summary>
     /// Matches if the value is less than the filter value.
     /// </summary>
-    [JsonPropertyName("lt")]
+    [JsonStringEnumMemberName("lt")]
     LessThan,
 
     /// <summary>
     /// Matches if the value is greater than or equal to the filter value.
     /// </summary>
-    [JsonPropertyName("gte")]
+    [JsonStringEnumMemberName("gte")]
     GreaterThanOrEquals,
 
     /// <summary>
     /// Matches if the value is less than or equal to the filter value.
     /// </summary>
-    [JsonPropertyName("lte")]
+    [JsonStringEnumMemberName("lte")]
     LessThanOrEquals,
 
     /// <summary>
     /// Matches if the value contains the filter value, ignoring case differences.
     /// </summary>
-    [JsonPropertyName("icontains")]
+    [JsonStringEnumMemberName("icontains")]
     ContainsIgnoreCase,
 
     /// <summary>
     /// Matches if the value does not contain the filter value, ignoring case differences.
     /// </summary>
-    [JsonPropertyName("not_icontains")]
+    [JsonStringEnumMemberName("not_icontains")]
     DoesNotContainIgnoreCase,
 
     /// <summary>
     /// Matches if the value matches the regular expression filter pattern.
     /// </summary>
-    [JsonPropertyName("regex")]
+    [JsonStringEnumMemberName("regex")]
     Regex,
 
     /// <summary>
     /// Matches if regular expression filter value does not match the value.
     /// </summary>
-    [JsonPropertyName("not_regex")]
+    [JsonStringEnumMemberName("not_regex")]
     NotRegex,
 
     /// <summary>
     /// Matches if the date represented by the value is before the filter value.
     /// </summary>
-    [JsonPropertyName("is_date_before")]
+    [JsonStringEnumMemberName("is_date_before")]
     IsDateBefore,
 
     /// <summary>
     /// Matches if the date represented by the value is after the filter value.
     /// </summary>
-    [JsonPropertyName("is_date_after")]
+    [JsonStringEnumMemberName("is_date_after")]
     IsDateAfter,
 
     /// <summary>
     /// Matches if the flag condition evaluates to the specified value.
     /// </summary>
-    [JsonPropertyName("flag_evaluates_to")]
+    [JsonStringEnumMemberName("flag_evaluates_to")]
     FlagEvaluatesTo
-
 }

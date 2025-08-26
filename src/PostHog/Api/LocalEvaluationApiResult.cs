@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using PostHog.Json;
 using PostHog.Library;
@@ -412,42 +411,42 @@ internal record PropertyFilter : Filter
 /// <summary>
 /// The types of comparison operators for a filter.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<FilterType>))]
+[JsonConverter(typeof(JsonStringEnumMemberNameJsonConverter<FilterType>))]
 public enum FilterType
 {
     /// <summary>
     /// Filters on person properties.
     /// </summary>
-    [JsonPropertyName("person")]
+    [JsonStringEnumMemberName("person")]
     Person,
 
     /// <summary>
     /// Filters on group properties.
     /// </summary>
-    [JsonPropertyName("group")]
+    [JsonStringEnumMemberName("group")]
     Group,
 
     /// <summary>
     /// Filters on cohort membership
     /// </summary>
-    [JsonPropertyName("cohort")]
+    [JsonStringEnumMemberName("cohort")]
     Cohort,
 
     /// <summary>
     /// If any of the filters match, the group is considered a match.
     /// </summary>
-    [JsonPropertyName("OR")]
+    [JsonStringEnumMemberName("OR")]
     Or,
 
     /// <summary>
     /// If all of the filters match, the group is considered a match.
     /// </summary>
-    [JsonPropertyName("AND")]
+    [JsonStringEnumMemberName("AND")]
     And,
 
     /// <summary>
     /// Filters on how another flag was evaluated
     /// </summary>
-    [JsonPropertyName("flag")]
+    [JsonStringEnumMemberName("flag")]
     Flag
 }
