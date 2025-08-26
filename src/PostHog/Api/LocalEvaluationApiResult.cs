@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using PostHog.Json;
 using PostHog.Library;
@@ -412,7 +411,7 @@ internal record PropertyFilter : Filter
 /// <summary>
 /// The types of comparison operators for a filter.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<FilterType>))]
+[JsonConverter(typeof(JsonStringEnumMemberNameJsonConverter<FilterType>))]
 public enum FilterType
 {
     /// <summary>
