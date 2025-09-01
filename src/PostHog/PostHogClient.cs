@@ -129,13 +129,20 @@ public sealed class PostHogClient : IPostHogClient
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
-        bool sendFeatureFlags)
+        bool sendFeatureFlags,
+        DateTimeOffset? timestamp = null)
     {
+        // If custom timestamp provided, add it to properties
+        if (timestamp.HasValue)
+        {
+            properties = AddTimestampToProperties(properties, timestamp.Value);
+        }
+
         var capturedEvent = new CapturedEvent(
             eventName,
             distinctId,
             properties,
-            timestamp: _timeProvider.GetUtcNow());
+            timestamp: timestamp ?? _timeProvider.GetUtcNow());
 
         if (groups is { Count: > 0 })
         {
@@ -576,48 +583,7 @@ public sealed class PostHogClient : IPostHogClient
         _featureFlagsLoader.Dispose();
     }
 
-    /// <inheritdoc/>
-    public bool Capture(
-        string distinctId,
-        string eventName,
-        Dictionary<string, object>? properties,
-        GroupCollection? groups,
-        bool sendFeatureFlags,
-        DateTimeOffset timestamp)
-    {
-        // Add timestamp to properties as well
-        properties = AddTimestampToProperties(properties, timestamp);
 
-        var capturedEvent = new CapturedEvent(
-            eventName,
-            distinctId,
-            properties,
-            timestamp: timestamp);
-
-        if (groups is { Count: > 0 })
-        {
-            capturedEvent.Properties["$groups"] = groups.ToDictionary(g => g.GroupType, g => g.GroupKey);
-        }
-
-        capturedEvent.Properties.Merge(_options.Value.SuperProperties);
-
-        var batchItem = new BatchItem<CapturedEvent, CapturedEventBatchContext>(BatchTask);
-
-        if (_asyncBatchHandler.Enqueue(batchItem))
-        {
-            _logger.LogTraceCaptureCalled(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
-            return true;
-        }
-        _logger.LogWarnCaptureFailed(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
-        return false;
-
-        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context) =>
-            sendFeatureFlags
-                ? AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent)
-                : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
-                    ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
-                    : Task.FromResult(capturedEvent);
-    }
 
     static Dictionary<string, object>? AddTimestampToProperties(Dictionary<string, object>? properties, DateTimeOffset timestamp)
     {
