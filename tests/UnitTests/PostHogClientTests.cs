@@ -330,7 +330,7 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        
+
         Assert.Equal($$"""
                      {
                        "api_key": "fake-project-api-key",
@@ -560,8 +560,8 @@ public class TheCaptureMethod
 
         var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
         var existingTimestamp = new DateTimeOffset(2023, 11, 15, 14, 22, 33, TimeSpan.Zero);
-        var properties = new Dictionary<string, object> 
-        { 
+        var properties = new Dictionary<string, object>
+        {
             ["custom_prop"] = "custom_value",
             ["timestamp"] = existingTimestamp // This gets overridden by timestamp parameter
         };
