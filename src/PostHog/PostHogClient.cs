@@ -131,19 +131,11 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags)
     {
-        // Check for custom timestamp in properties
-        var timestamp = properties?.TryGetValue("timestamp", out var timestampValue) == true &&
-            (timestampValue is DateTimeOffset customTimestampOffset || timestampValue is DateTime customTimestamp)
-                ? timestampValue is DateTimeOffset dtOffset
-                    ? dtOffset
-                    : new DateTimeOffset((DateTime)timestampValue)
-                : _timeProvider.GetUtcNow();
-
         var capturedEvent = new CapturedEvent(
             eventName,
             distinctId,
             properties,
-            timestamp: timestamp);
+            timestamp: _timeProvider.GetUtcNow());
 
         if (groups is { Count: > 0 })
         {
@@ -169,6 +161,8 @@ public sealed class PostHogClient : IPostHogClient
                     ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
                     : Task.FromResult(capturedEvent);
     }
+
+
 
     async Task<CapturedEvent> AddFreshFeatureFlagDataAsync(
         IFeatureFlagCache featureFlagCache,
@@ -580,6 +574,56 @@ public sealed class PostHogClient : IPostHogClient
         _apiClient.Dispose();
         _featureFlagCalledEventCache.Dispose();
         _featureFlagsLoader.Dispose();
+    }
+
+    /// <inheritdoc/>
+    public bool Capture(
+        string distinctId,
+        string eventName,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        bool sendFeatureFlags,
+        DateTimeOffset timestamp)
+    {
+        // Add timestamp to properties as well
+        properties = AddTimestampToProperties(properties, timestamp);
+
+        var capturedEvent = new CapturedEvent(
+            eventName,
+            distinctId,
+            properties,
+            timestamp: timestamp);
+
+        if (groups is { Count: > 0 })
+        {
+            capturedEvent.Properties["$groups"] = groups.ToDictionary(g => g.GroupType, g => g.GroupKey);
+        }
+
+        capturedEvent.Properties.Merge(_options.Value.SuperProperties);
+
+        var batchItem = new BatchItem<CapturedEvent, CapturedEventBatchContext>(BatchTask);
+
+        if (_asyncBatchHandler.Enqueue(batchItem))
+        {
+            _logger.LogTraceCaptureCalled(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
+            return true;
+        }
+        _logger.LogWarnCaptureFailed(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
+        return false;
+
+        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context) =>
+            sendFeatureFlags
+                ? AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent)
+                : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
+                    ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
+                    : Task.FromResult(capturedEvent);
+    }
+
+    static Dictionary<string, object>? AddTimestampToProperties(Dictionary<string, object>? properties, DateTimeOffset timestamp)
+    {
+        properties ??= new Dictionary<string, object>();
+        properties["timestamp"] = timestamp;
+        return properties;
     }
 }
 

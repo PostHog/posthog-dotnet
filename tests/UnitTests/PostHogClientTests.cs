@@ -316,6 +316,280 @@ public class TheCaptureMethod
                      }
                      """, received);
     }
+
+    [Fact]
+    public async Task CaptureWithCustomTimestampUsesProvidedTimestamp()
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        client.Capture("test-user", "custom-timestamp-event", customTimestamp);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "custom-timestamp-event",
+                           "properties": {
+                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "distinct_id": "test-user",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true
+                           },
+                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+
+    [Fact]
+    public async Task CaptureWithTimestampAndPropertiesUsesProvidedTimestamp()
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        var properties = new Dictionary<string, object> { ["custom_prop"] = "custom_value" };
+        client.Capture("test-user", "custom-timestamp-with-props", customTimestamp, properties);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "custom-timestamp-with-props",
+                           "properties": {
+                             "custom_prop": "custom_value",
+                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "distinct_id": "test-user",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true
+                           },
+                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+
+    [Fact]
+    public async Task CaptureWithTimestampAndGroupsUsesProvidedTimestamp()
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        var groups = new GroupCollection { { "company", "acme-corp" } };
+        client.Capture("test-user", "custom-timestamp-with-groups", customTimestamp, groups);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "custom-timestamp-with-groups",
+                           "properties": {
+                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "distinct_id": "test-user",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$groups": {
+                               "company": "acme-corp"
+                             }
+                           },
+                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+
+    [Fact]
+    public async Task CaptureWithTimestampAndFeatureFlagsUsesProvidedTimestamp()
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        container.FakeHttpMessageHandler.AddDecideResponse("""{"featureFlags": {"test-flag": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        client.Capture("test-user", "custom-timestamp-with-flags", customTimestamp, sendFeatureFlags: true);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "custom-timestamp-with-flags",
+                           "properties": {
+                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "distinct_id": "test-user",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$feature/test-flag": true,
+                             "$active_feature_flags": [
+                               "test-flag"
+                             ]
+                           },
+                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+
+    [Fact]
+    public async Task CaptureWithTimestampPropertiesAndGroupsUsesProvidedTimestamp()
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        var properties = new Dictionary<string, object> { ["custom_prop"] = "custom_value" };
+        var groups = new GroupCollection { { "company", "acme-corp" } };
+        client.Capture("test-user", "custom-timestamp-full", customTimestamp, properties, groups);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "custom-timestamp-full",
+                           "properties": {
+                             "custom_prop": "custom_value",
+                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "distinct_id": "test-user",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$groups": {
+                               "company": "acme-corp"
+                             }
+                           },
+                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+
+    [Fact]
+    public async Task CaptureWithAllParametersAndTimestampUsesProvidedTimestamp()
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        container.FakeHttpMessageHandler.AddDecideResponse("""{"featureFlags": {"test-flag": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        var properties = new Dictionary<string, object> { ["custom_prop"] = "custom_value" };
+        var groups = new GroupCollection { { "company", "acme-corp" } };
+        client.Capture("test-user", "custom-timestamp-all-params", customTimestamp, properties, groups, sendFeatureFlags: true);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "custom-timestamp-all-params",
+                           "properties": {
+                             "custom_prop": "custom_value",
+                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "distinct_id": "test-user",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true,
+                             "$groups": {
+                               "company": "acme-corp"
+                             },
+                             "$feature/test-flag": true,
+                             "$active_feature_flags": [
+                               "test-flag"
+                             ]
+                           },
+                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+
+    [Fact]
+    public async Task CaptureWithTimestampParameterOverridesTimestampInProperties()
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        var existingTimestamp = new DateTimeOffset(2023, 11, 15, 14, 22, 33, TimeSpan.Zero);
+        var properties = new Dictionary<string, object> 
+        { 
+            ["custom_prop"] = "custom_value",
+            ["timestamp"] = existingTimestamp // This gets overridden by timestamp parameter
+        };
+        client.Capture("test-user", "timestamp-override", customTimestamp, properties);
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "timestamp-override",
+                           "properties": {
+                             "custom_prop": "custom_value",
+                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "distinct_id": "test-user",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true
+                           },
+                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
 }
 
 public class TheLoadFeatureFlagsAsyncMethod
