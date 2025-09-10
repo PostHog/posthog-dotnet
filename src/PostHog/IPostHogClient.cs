@@ -76,13 +76,15 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     bool Capture(
         string distinctId,
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
-        bool sendFeatureFlags);
+        bool sendFeatureFlags,
+        DateTimeOffset? timestamp = null);
 
     /// <summary>
     /// Determines whether a feature is enabled for the specified user.

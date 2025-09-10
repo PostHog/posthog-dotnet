@@ -129,13 +129,20 @@ public sealed class PostHogClient : IPostHogClient
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
-        bool sendFeatureFlags)
+        bool sendFeatureFlags,
+        DateTimeOffset? timestamp = null)
     {
+        // If custom timestamp provided, add it to properties
+        if (timestamp.HasValue)
+        {
+            properties = AddTimestampToProperties(properties, timestamp.Value);
+        }
+
         var capturedEvent = new CapturedEvent(
             eventName,
             distinctId,
             properties,
-            timestamp: _timeProvider.GetUtcNow());
+            timestamp: timestamp ?? _timeProvider.GetUtcNow());
 
         if (groups is { Count: > 0 })
         {
@@ -161,6 +168,8 @@ public sealed class PostHogClient : IPostHogClient
                     ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
                     : Task.FromResult(capturedEvent);
     }
+
+
 
     async Task<CapturedEvent> AddFreshFeatureFlagDataAsync(
         IFeatureFlagCache featureFlagCache,
@@ -318,7 +327,8 @@ public sealed class PostHogClient : IPostHogClient
         {
             // We need to fire and forget the compaction because it can be expensive.
             _taskScheduler.Run(
-                () => _featureFlagCalledEventCache.Compact(_options.Value.FeatureFlagSentCacheCompactionPercentage),
+                () => _featureFlagCalledEventCache.Compact(
+                    _options.Value.FeatureFlagSentCacheCompactionPercentage),
                 cancellationToken);
         }
 
@@ -571,6 +581,15 @@ public sealed class PostHogClient : IPostHogClient
         _apiClient.Dispose();
         _featureFlagCalledEventCache.Dispose();
         _featureFlagsLoader.Dispose();
+    }
+
+
+
+    static Dictionary<string, object>? AddTimestampToProperties(Dictionary<string, object>? properties, DateTimeOffset timestamp)
+    {
+        properties ??= new Dictionary<string, object>();
+        properties["timestamp"] = timestamp;
+        return properties;
     }
 }
 

@@ -67,6 +67,148 @@ public static class CaptureExtensions
             sendFeatureFlags: false);
 
     /// <summary>
+    /// Captures an event with a custom timestamp.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
+    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string distinctId,
+        string eventName,
+        DateTimeOffset timestamp)
+        => NotNull(client).Capture(
+            distinctId,
+            eventName,
+            properties: null,
+            groups: null,
+            sendFeatureFlags: false,
+            timestamp: timestamp);
+
+    /// <summary>
+    /// Captures an event with a custom timestamp and additional properties.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
+    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string distinctId,
+        string eventName,
+        DateTimeOffset timestamp,
+        Dictionary<string, object>? properties)
+        => NotNull(client).Capture(
+            distinctId,
+            eventName,
+            properties: properties,
+            groups: null,
+            sendFeatureFlags: false,
+            timestamp: timestamp);
+
+    /// <summary>
+    /// Captures an event with a custom timestamp and groups.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
+    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="groups">A set of groups to send with the event. The groups are identified by their group_type and group_key.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string distinctId,
+        string eventName,
+        DateTimeOffset timestamp,
+        GroupCollection groups)
+        => NotNull(client).Capture(
+            distinctId,
+            eventName,
+            properties: null,
+            groups: groups,
+            sendFeatureFlags: false,
+            timestamp: timestamp);
+
+    /// <summary>
+    /// Captures an event with a custom timestamp, properties, and groups.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
+    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string distinctId,
+        string eventName,
+        DateTimeOffset timestamp,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups)
+        => NotNull(client).Capture(
+            distinctId,
+            eventName,
+            properties: properties,
+            groups: groups,
+            sendFeatureFlags: false,
+            timestamp: timestamp);
+
+    /// <summary>
+    /// Captures an event with a custom timestamp and feature flags.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
+    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="sendFeatureFlags">If <c>true</c>, feature flags are sent with the captured event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string distinctId,
+        string eventName,
+        DateTimeOffset timestamp,
+        bool sendFeatureFlags)
+        => NotNull(client).Capture(
+            distinctId,
+            eventName,
+            properties: null,
+            groups: null,
+            sendFeatureFlags: sendFeatureFlags,
+            timestamp: timestamp);
+
+    /// <summary>
+    /// Captures an event with a custom timestamp, properties, groups, and feature flags.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
+    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
+    /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string distinctId,
+        string eventName,
+        DateTimeOffset timestamp,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        bool sendFeatureFlags)
+        => NotNull(client).Capture(
+            distinctId,
+            eventName,
+            properties: properties,
+            groups: groups,
+            sendFeatureFlags: sendFeatureFlags,
+            timestamp: timestamp);
+
+    /// <summary>
     /// Captures an event with properties to set on the user.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
@@ -358,6 +500,11 @@ public static class CaptureExtensions
             eventPropertyName: "$survey_id",
             eventPropertyValue: surveyId,
             properties);
+
+
+
+
+
 
     static bool CaptureSpecialEvent(
         this IPostHogClient client,
