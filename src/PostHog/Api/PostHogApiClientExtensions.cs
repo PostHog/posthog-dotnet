@@ -52,10 +52,11 @@ internal static class PostHogApiClientExtensions
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? distinctId = null)
     {
         return await client.SendEventAsync(
-            distinctId: $"${type}_{key}",
+            distinctId: distinctId ?? $"${type}_{key}",
             eventName: "$groupidentify",
             properties: new Dictionary<string, object>
             {

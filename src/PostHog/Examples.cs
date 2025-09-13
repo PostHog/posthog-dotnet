@@ -40,7 +40,8 @@ public static class Examples
             properties: new()
             {
                 ["employees"] = 11
-            }
+            },
+            distinctId: "user_distinct_id"
         );
 
         if (await posthog.GetFeatureFlagAsync(

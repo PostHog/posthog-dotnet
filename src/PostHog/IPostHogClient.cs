@@ -61,12 +61,14 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="key">Unique identifier for that type of group (ex: 'id:5')</param>
     /// <param name="properties">Additional information about the group.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the current user. By default this is set to an identifer in the format "${group_type}_{group_key}"</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     Task<ApiResult> GroupIdentifyAsync(
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? distinctId = null);
 
     /// <summary>
     /// Captures an event.
