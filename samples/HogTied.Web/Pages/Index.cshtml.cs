@@ -177,6 +177,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
                 ["size"] = "large",
                 ["location"] = "San Francisco"
             },
+            distinctId: UserId,
             cancellationToken: HttpContext.RequestAborted);
 
         StatusMessage = result.Status == 1
