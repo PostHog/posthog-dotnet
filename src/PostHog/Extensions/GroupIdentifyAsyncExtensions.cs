@@ -18,17 +18,19 @@ public static class GroupIdentifyAsyncExtensions
     /// <param name="key">Unique identifier for that type of group (ex: 'id:5')</param>
     /// <param name="name">The friendly name of the group.</param>
     /// <param name="properties">Additional information about the group.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the current user. By default this is set to an identifer in the format "${group_type}_{group_key}"</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static async Task<ApiResult> GroupIdentifyAsync(
         this IPostHogClient client,
         string type,
         StringOrValue<int> key,
         string name,
-        Dictionary<string, object>? properties)
+        Dictionary<string, object>? properties,
+        string? distinctId = null)
     {
         properties ??= new Dictionary<string, object>();
         properties["name"] = name;
-        return await NotNull(client).GroupIdentifyAsync(type, key, properties, CancellationToken.None);
+        return await NotNull(client).GroupIdentifyAsync(type, key, properties, CancellationToken.None, distinctId);
     }
 
     /// <summary>
@@ -41,6 +43,7 @@ public static class GroupIdentifyAsyncExtensions
     /// <param name="name">The friendly name of the group.</param>
     /// <param name="properties">Additional information about the group.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the current user. By default this is set to an identifer in the format "${group_type}_{group_key}"</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static async Task<ApiResult> GroupIdentifyAsync(
         this IPostHogClient client,
@@ -48,11 +51,12 @@ public static class GroupIdentifyAsyncExtensions
         StringOrValue<int> key,
         string name,
         Dictionary<string, object>? properties,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? distinctId = null)
     {
         properties ??= new Dictionary<string, object>();
         properties["name"] = name;
-        return await NotNull(client).GroupIdentifyAsync(type, key, properties, cancellationToken);
+        return await NotNull(client).GroupIdentifyAsync(type, key, properties, cancellationToken, distinctId);
     }
 
     /// <summary>
@@ -63,16 +67,19 @@ public static class GroupIdentifyAsyncExtensions
     /// <param name="type">Type of group (ex: 'company'). Limited to 5 per project</param>
     /// <param name="key">Unique identifier for that type of group (ex: 'id:5')</param>
     /// <param name="name">The friendly name of the group.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the current user. By default this is set to an identifer in the format "${group_type}_{group_key}"</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static async Task<ApiResult> GroupIdentifyAsync(
         this IPostHogClient client,
         string type,
         StringOrValue<int> key,
-        string name)
+        string name,
+        string? distinctId = null)
         => await client.GroupIdentifyAsync(
             type,
             key,
             name,
             properties: new Dictionary<string, object>(),
-            CancellationToken.None);
+            CancellationToken.None,
+            distinctId);
 }
