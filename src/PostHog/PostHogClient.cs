@@ -120,7 +120,7 @@ public sealed class PostHogClient : IPostHogClient
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
-        CancellationToken cancellationToken = default,
+        CancellationToken cancellationToken,
         string? distinctId = null)
     => _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken, distinctId);
 
