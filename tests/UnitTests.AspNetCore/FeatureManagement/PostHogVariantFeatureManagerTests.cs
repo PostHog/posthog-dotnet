@@ -196,14 +196,14 @@ public class TheGetVariantAsyncMethod
             PersonProperties = new() { ["email"] = "test@posthog.com" }
         };
         Assert.Equal(
-            "second-variant",
+            "third-variant",
             (await featureManager.GetVariantAsync("beta-feature")).Name);
         contextProvider.Context = new PostHogFeatureFlagContext
         {
             DistinctId = "example_id",
         };
         Assert.Equal(
-            "third-variant",
+            "second-variant",
             (await featureManager.GetVariantAsync("beta-feature")).Name);
         contextProvider.Context = new PostHogFeatureFlagContext
         {

@@ -1933,8 +1933,8 @@ public class TheGetFeatureFlagAsyncMethod
             await client.GetFeatureFlagAsync(featureKey: "beta-feature", distinctId: "example_id"));
     }
 
-    [Fact] // Ported from PostHog/posthog-python test_flag_with_multiple_variant_overrides
-    public async Task GetsFlagWithMultipleVariantOverrides()
+    [Fact]
+    public async Task TestFlagEvaluatesInOrderOfConditions()
     {
         var container = new TestContainer("fake-personal-api-key");
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
@@ -1963,10 +1963,6 @@ public class TheGetFeatureFlagAsyncMethod
                               ],
                               "rollout_percentage":100,
                               "variant":"second-variant"
-                           },
-                           {
-                              "rollout_percentage":50,
-                              "variant":"third-variant"
                            }
                         ],
                         "multivariate":{
@@ -1974,17 +1970,12 @@ public class TheGetFeatureFlagAsyncMethod
                               {
                                  "key":"first-variant",
                                  "name":"First Variant",
-                                 "rollout_percentage":50
+                                 "rollout_percentage":100
                               },
                               {
                                  "key":"second-variant",
                                  "name":"Second Variant",
-                                 "rollout_percentage":25
-                              },
-                              {
-                                 "key":"third-variant",
-                                 "name":"Third Variant",
-                                 "rollout_percentage":25
+                                 "rollout_percentage":0
                               }
                            ]
                         }
@@ -1995,9 +1986,8 @@ public class TheGetFeatureFlagAsyncMethod
             """
         );
         var client = container.Activate<PostHogClient>();
-        // The override applies even if the first condition matches all and gives everyone their default group
         Assert.Equal(
-            "second-variant",
+            "first-variant",
             await client.GetFeatureFlagAsync(
                 featureKey: "beta-feature",
                 distinctId: "test_id",
@@ -2005,12 +1995,6 @@ public class TheGetFeatureFlagAsyncMethod
                 {
                     PersonProperties = new() { ["email"] = "test@posthog.com" }
                 }));
-        Assert.Equal(
-            "third-variant",
-            await client.GetFeatureFlagAsync(featureKey: "beta-feature", distinctId: "example_id"));
-        Assert.Equal(
-            "second-variant",
-            await client.GetFeatureFlagAsync(featureKey: "beta-feature", distinctId: "another_id"));
     }
 
     [Fact] // Ported from PostHog/posthog-python test_boolean_feature_flag_payloads_local

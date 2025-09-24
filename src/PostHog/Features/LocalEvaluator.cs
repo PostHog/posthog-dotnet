@@ -264,11 +264,7 @@ internal sealed class LocalEvaluator
         var isInconclusive = false;
         var flagVariants = filters?.Multivariate?.Variants ?? [];
 
-        // Stable sort conditions with variant overrides to the top. This ensures that if overrides are present,
-        // they are evaluated first, and the variant override is applied to the first matching condition.
-        var sortedConditions = flagConditions.OrderBy(c => c.Variant is null);
-
-        foreach (var condition in sortedConditions)
+        foreach (var condition in flagConditions)
         {
             try
             {
