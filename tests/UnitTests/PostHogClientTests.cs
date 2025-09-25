@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -589,6 +590,231 @@ public class TheCaptureMethod
                        ]
                      }
                      """, received);
+    }
+}
+
+public class TheCaptureExceptionMethod
+{
+    [Fact]
+    public async Task CaptureExceptionWithDivideByZeroException() // based on PostHog/posthog-python test_exception_capture
+    {
+        var container = new TestContainer();
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        try
+        {
+            // Deliberately cause a divide by zero exception
+            var zero = 0;
+            var result = 1 / zero;
+        }
+        catch (DivideByZeroException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var received = requestHandler.GetReceivedRequestBody(indented: true);
+            using var doc = JsonDocument.Parse(received);
+            var root = doc.RootElement;
+            var batch = root.GetProperty("batch");
+            var batchItem = batch.EnumerateArray().Single();
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal("fake-project-api-key", root.GetProperty("api_key").GetString());
+
+            var props = batchItem.GetProperty("properties");
+            Assert.Equal("System.DivideByZeroException", props.GetProperty("$exception_type").GetString());
+            Assert.Contains("divide by zero", props.GetProperty("$exception_message").GetString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("posthog-dotnet", props.GetProperty("$lib").GetString());
+            Assert.Equal(VersionConstants.Version, props.GetProperty("$lib_version").GetString());
+
+            // $exception_list structure
+            var firstException = props.GetProperty("$exception_list").EnumerateArray().First();
+            Assert.Equal("System.DivideByZeroException", firstException.GetProperty("type").GetString());
+            Assert.Contains("divide by zero", firstException.GetProperty("value").GetString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("generic", firstException.GetProperty("mechanism").GetProperty("type").GetString());
+            Assert.True(firstException.GetProperty("mechanism").GetProperty("handled").GetBoolean());
+
+            var stacktrace = firstException.GetProperty("stacktrace");
+            Assert.Equal("raw", stacktrace.GetProperty("type").GetString());
+
+            var frames = stacktrace.GetProperty("frames").EnumerateArray().ToList();
+            Assert.NotEmpty(frames);
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("filename", out var fn) &&
+                fn.GetString()!.EndsWith(".cs", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("context_line", out var cl) &&
+                cl.GetString()!.Contains("var result = 1 / zero;", StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal("2024-01-21T19:08:23+00:00", batchItem.GetProperty("timestamp").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithAggregateException()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        try
+        {
+            var exceptions = new List<Exception>();
+
+            try
+            {
+                var zero = 0;
+                var result = 1 / zero;
+            }
+            catch (DivideByZeroException ex)
+            {
+                exceptions.Add(ex);
+            }
+
+            try
+            {
+                var list = new List<int> { 1, 2, 3 };
+                var invalid = list[5];
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                exceptions.Add(ex);
+            }
+
+            throw new AggregateException("Multiple errors occurred", exceptions);
+        }
+        catch (AggregateException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var received = requestHandler.GetReceivedRequestBody(indented: true);
+            using var doc = JsonDocument.Parse(received);
+            var root = doc.RootElement;
+            var batch = root.GetProperty("batch");
+            var batchItem = batch.EnumerateArray().Single();
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal("fake-project-api-key", root.GetProperty("api_key").GetString());
+
+            var props = batchItem.GetProperty("properties");
+            Assert.Equal("System.AggregateException", props.GetProperty("$exception_type").GetString());
+            Assert.Contains("multiple errors occurred", props.GetProperty("$exception_message").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var exceptionsList = props.GetProperty("$exception_list").EnumerateArray().ToList();
+            Assert.Equal(3, exceptionsList.Count);
+            Assert.Equal("System.AggregateException", exceptionsList[0].GetProperty("type").GetString());
+
+            var divideByZeroException = exceptionsList.First(e =>
+                e.GetProperty("type").GetString() == "System.DivideByZeroException");
+            Assert.Contains("divide by zero", divideByZeroException.GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var argumentOutOfRangeException = exceptionsList.First(e =>
+                e.GetProperty("type").GetString() == "System.ArgumentOutOfRangeException");
+            Assert.Contains("index was out of range", argumentOutOfRangeException.GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var stacktrace = argumentOutOfRangeException.GetProperty("stacktrace");
+            Assert.Equal("raw", stacktrace.GetProperty("type").GetString());
+
+            var frames = stacktrace.GetProperty("frames").EnumerateArray().ToList();
+
+            // Should have a frame with no filename because it's from a system library
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("filename", out var fn) &&
+                string.IsNullOrEmpty(fn.GetString()));
+
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("context_line", out var cl) &&
+                cl.GetString()!.Contains("var invalid = list[5];", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithInnerExceptions()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        try
+        {
+            try
+            {
+                var zero = 0;
+                var result = 1 / zero;
+            }
+            catch (DivideByZeroException ex)
+            {
+                throw new InvalidOperationException("Higher level exception", ex);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var received = requestHandler.GetReceivedRequestBody(indented: true);
+            using var doc = JsonDocument.Parse(received);
+            var root = doc.RootElement;
+            var batch = root.GetProperty("batch");
+            var batchItem = batch.EnumerateArray().Single();
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal("fake-project-api-key", root.GetProperty("api_key").GetString());
+
+            var props = batchItem.GetProperty("properties");
+            Assert.Equal("System.InvalidOperationException", props.GetProperty("$exception_type").GetString());
+            Assert.Contains("higher level exception", props.GetProperty("$exception_message").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var exceptionsList = props.GetProperty("$exception_list").EnumerateArray().ToList();
+            Assert.Equal(2, exceptionsList.Count);
+            Assert.Equal("System.InvalidOperationException", exceptionsList[0].GetProperty("type").GetString());
+            Assert.Contains("higher level exception", exceptionsList[0].GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var divideByZeroException = exceptionsList.First(e =>
+                e.GetProperty("type").GetString() == "System.DivideByZeroException");
+            Assert.Contains("divide by zero", divideByZeroException.GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWhenNoStackTrace()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+#pragma warning disable CA2201 // Do not raise reserved exception types
+        var ex = new Exception("Test exception without stack trace");
+#pragma warning restore CA2201
+        client.CaptureException(ex, "some-distinct-id");
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        using var doc = JsonDocument.Parse(received);
+        var root = doc.RootElement;
+        var batch = root.GetProperty("batch");
+        var batchItem = batch.EnumerateArray().Single();
+
+        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+        Assert.Equal("fake-project-api-key", root.GetProperty("api_key").GetString());
+
+        var props = batchItem.GetProperty("properties");
+        Assert.Equal("System.Exception", props.GetProperty("$exception_type").GetString());
+        Assert.Contains("test exception without stack trace", props.GetProperty("$exception_message").GetString(),
+            StringComparison.OrdinalIgnoreCase);
+
+        var exceptionsList = props.GetProperty("$exception_list").EnumerateArray().ToList();
+        Assert.Single(exceptionsList);
+        Assert.Equal("System.Exception", exceptionsList[0].GetProperty("type").GetString());
+        Assert.Equal("[]", exceptionsList[0].GetProperty("stacktrace").GetProperty("frames").ToString());
     }
 }
 

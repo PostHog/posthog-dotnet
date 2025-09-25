@@ -87,6 +87,24 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         DateTimeOffset? timestamp = null);
 
     /// <summary>
+    /// Capture an exception as an event.
+    /// </summary>
+    /// <param name="exception">The exception to capture.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
+    /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time</param>
+    /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    bool CaptureException(
+        Exception exception,
+        string distinctId,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        bool sendFeatureFlags,
+        DateTimeOffset? timestamp = null);
+
+    /// <summary>
     /// Determines whether a feature is enabled for the specified user.
     /// </summary>
     /// <param name="featureKey">The name of the feature flag.</param>
