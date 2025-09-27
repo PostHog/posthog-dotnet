@@ -3133,7 +3133,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                 """
         );
         container.FakeTimeProvider.Advance(TimeSpan.FromMinutes(1));
-        await Task.Delay(1); // Cede execution to thread that's loading the new flags.
+        await Task.Delay(100); // Cede execution to thread that's loading the new flags.
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
