@@ -19,7 +19,7 @@ For documentation on the specific packages, see the README files in the respecti
 
 ## Platform
 
-These packages currently target `net9.0`. Our goal is to port the [PortHog](./src/PostHog/README.md) package to `netstandard2.1` at some point once we have a sample that requires it (for example, a Unity sample).
+The core [PostHog](./src/PostHog/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility. The [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) package targets `net8.0`.
 
 ## Building
 
@@ -59,6 +59,16 @@ To run the tests, run the following command in the root of the repository:
 ```bash
 $ dotnet test
 ```
+
+### Test Target Frameworks
+
+The test projects target both `net8.0` and `netcoreapp3.1`. While .NET Core 3.1 reached end-of-life in December 2022, we continue to test against it because:
+
+- It was the first runtime to fully support .NET Standard 2.1
+- It serves as our minimum test baseline to ensure the `netstandard2.1` library works correctly on older runtimes
+- It helps catch compatibility issues that might not surface on newer runtimes
+
+This testing approach ensures broad compatibility without requiring users to install legacy runtimes in production.
 
 ## Publishing Releases
 
