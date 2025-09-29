@@ -103,7 +103,8 @@ internal class ExceptionPropertiesBuilder
                 continue;
             }
 
-            var sourceContext = BuildSourceCodeContext(fileName, lineNumber, columnNumber);
+            var sourceContext = BuildSourceCodeContext(fileName, lineNumber, columnNumber,
+                DEFAULT_MAX_LINES, DEFAULT_MAX_LENGTH);
 
             if (!string.IsNullOrEmpty(sourceContext.ContextLine))
             {
@@ -122,77 +123,22 @@ internal class ExceptionPropertiesBuilder
         string absolutePath,
         int lineNumber,
         int columnNumber,
-        int maxLengthBytes = 0)
+        int maxLines = 0,
+        int maxLength = 0)
     {
-        const int maxLines = DEFAULT_MAX_LINES;
         var lines = File.ReadAllLines(absolutePath);
         var lineIndex = lineNumber - 1;
 
         int start = Math.Max(0, lineIndex - maxLines);
         int end = Math.Min(lines.Length - 1, lineIndex + maxLines);
+        var truncatedLines = lines.Select(l => l.Trim('\r', '\n')
+            .TruncateByBytes(maxLength)
+            .TruncateByCharacters(maxLength));
 
-        var pre = lines.Skip(start).Take(Math.Max(0, lineIndex - start))
-                        .Select(l => TrimToMaxLength(l.Trim('\r', '\n'), maxLengthBytes)).ToList();
-        var line = (lineIndex >= 0 && lineNumber <= lines.Length)
-                        ? TrimToMaxLength(lines[lineIndex].Trim('\r', '\n'), maxLengthBytes)
-                        : "";
-        var post = lines.Skip(lineNumber).Take(Math.Max(0, end - lineNumber + 1))
-                        .Select(l => TrimToMaxLength(l.Trim('\r', '\n'), maxLengthBytes)).ToList();
+        var pre = truncatedLines.Skip(start).Take(Math.Max(0, lineIndex - start)).ToArray();
+        var line = (lineIndex >= 0 && lineNumber <= lines.Length) ? lines[lineIndex] : "";
+        var post = lines.Skip(lineNumber).Take(Math.Max(0, end - lineNumber + 1)).ToArray();
 
         return new SourceCodeContext(pre, line, post);
-    }
-
-    // Similar to implementation in posthog-python/posthog/exception_utils.py  strip_string()
-    private static string TrimToMaxLength(string str, int maxLength)
-    {
-        if (string.IsNullOrEmpty(str))
-        {
-            return str;
-        }
-
-        if (maxLength <= 0)
-        {
-            maxLength = DEFAULT_MAX_LENGTH;
-        }
-
-        var utf8 = Encoding.UTF8;
-        int byteCount = utf8.GetByteCount(str);
-        int charCount = str.Length;
-
-        if (byteCount <= maxLength && charCount <= maxLength)
-        {
-            return str;
-        }
-
-        const string ellipsis = "...";
-        int ellipsisBytes = utf8.GetByteCount(ellipsis);
-
-        if (maxLength <= ellipsis.Length)
-        {
-            return ellipsis[..Math.Min(ellipsis.Length, maxLength)];
-        }
-
-        if (byteCount > maxLength)
-        {
-            int cut = maxLength - ellipsisBytes;
-            byte[] bytes = utf8.GetBytes(str);
-
-            // back up to avoid cutting inside a multi-byte UTF-8 char
-            while (cut > 0 && (bytes[cut] & 0b1100_0000) == 0b1000_0000)
-            {
-                cut--;
-            }
-
-            string head = utf8.GetString(bytes, 0, cut);
-
-            if (head.Length > maxLength - ellipsis.Length)
-            {
-                head = head[..(maxLength - ellipsis.Length)];
-            }
-
-            return head + ellipsis;
-        }
-
-        return str[..(maxLength - ellipsis.Length)] + ellipsis;
     }
 }
