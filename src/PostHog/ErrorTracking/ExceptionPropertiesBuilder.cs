@@ -133,11 +133,12 @@ internal class ExceptionPropertiesBuilder
         int end = Math.Min(lines.Length - 1, lineIndex + maxLines);
         var truncatedLines = lines.Select(l => l.Trim('\r', '\n')
             .TruncateByBytes(maxLength)
-            .TruncateByCharacters(maxLength));
+            .TruncateByCharacters(maxLength))
+            .ToArray();
 
         var pre = truncatedLines.Skip(start).Take(Math.Max(0, lineIndex - start)).ToArray();
-        var line = (lineIndex >= 0 && lineNumber <= lines.Length) ? lines[lineIndex] : "";
-        var post = lines.Skip(lineNumber).Take(Math.Max(0, end - lineNumber + 1)).ToArray();
+        var line = (lineIndex >= 0 && lineNumber <= lines.Length) ? truncatedLines[lineIndex] : "";
+        var post = truncatedLines.Skip(lineNumber).Take(Math.Max(0, end - lineNumber + 1)).ToArray();
 
         return new SourceCodeContext(pre, line, post);
     }
