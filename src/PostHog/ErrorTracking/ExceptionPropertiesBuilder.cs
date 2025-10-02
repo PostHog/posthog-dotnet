@@ -5,10 +5,16 @@ using System.Text;
 
 namespace PostHog.ErrorTracking;
 
+/// <summary>
+/// Provides methods to build properties for exception events.
+/// </summary>
 internal class ExceptionPropertiesBuilder
 {
     private const int DEFAULT_MAX_LENGTH = 1024;
     private const int DEFAULT_MAX_LINES = 5;
+    private const int DEFAULT_MAX_EXCEPTION_DEPTH = 4;
+    private const int DEFAULT_MAX_STACK_FRAMES = 50;
+    private const int DEFAULT_MAX_EXCEPTIONS = 50;
 
     public static Dictionary<string, object> Build(
         Dictionary<string, object> properties,
@@ -33,12 +39,12 @@ internal class ExceptionPropertiesBuilder
         var list = new List<Dictionary<string, object>>();
         var seen = new HashSet<Exception>();
 
-        var stack = new Stack<Exception>();
-        stack.Push(exception);
+        var stack = new Stack<(Exception ex, int depth)>();
+        stack.Push((exception, 0));
 
-        while (stack.Count > 0)
+        while (stack.Count > 0 && seen.Count <= DEFAULT_MAX_EXCEPTIONS)
         {
-            var ex = stack.Pop();
+            var (ex, depth) = stack.Pop();
             if (!seen.Add(ex)) continue;
 
             list.Add(new Dictionary<string, object>
@@ -59,14 +65,24 @@ internal class ExceptionPropertiesBuilder
                 }
             });
 
+            if (depth >= DEFAULT_MAX_EXCEPTION_DEPTH)
+            {
+                continue;
+            }
+
             if (ex is AggregateException aex)
             {
                 foreach (var inner in aex.Flatten().InnerExceptions.Reverse())
-                    if (inner is not null) stack.Push(inner);
+                {
+                    if (inner is not null)
+                    {
+                        stack.Push((inner, depth + 1));
+                    }
+                }
             }
             else if (ex.InnerException is not null)
             {
-                stack.Push(ex.InnerException);
+                stack.Push((ex.InnerException, depth + 1));
             }
         }
 
@@ -80,6 +96,11 @@ internal class ExceptionPropertiesBuilder
 
         foreach (var frame in stackTrace.GetFrames() ?? [])
         {
+            if (stackFrames.Count >= DEFAULT_MAX_STACK_FRAMES)
+            {
+                break;
+            }
+
             var method = frame.GetMethod();
             var fileName = frame.GetFileName();
             var lineNumber = frame.GetFileLineNumber();
@@ -126,20 +147,59 @@ internal class ExceptionPropertiesBuilder
         int maxLines = 0,
         int maxLength = 0)
     {
-        var lines = File.ReadAllLines(absolutePath);
-        var lineIndex = lineNumber - 1;
+        string[]? pre = null;
+        string? line = null;
+        string[]? post = null;
 
-        int start = Math.Max(0, lineIndex - maxLines);
-        int end = Math.Min(lines.Length - 1, lineIndex + maxLines);
-        var truncatedLines = lines.Select(l => l.Trim('\r', '\n')
-            .TruncateByBytes(maxLength)
-            .TruncateByCharacters(maxLength))
-            .ToArray();
+        try
+        {
+            var lines = ReadAllLinesSafely(absolutePath);
 
-        var pre = truncatedLines.Skip(start).Take(Math.Max(0, lineIndex - start)).ToArray();
-        var line = (lineIndex >= 0 && lineNumber <= lines.Length) ? truncatedLines[lineIndex] : "";
-        var post = truncatedLines.Skip(lineNumber).Take(Math.Max(0, end - lineNumber + 1)).ToArray();
+            if (lines == null)
+            {
+                return new SourceCodeContext(pre, line, post);
+            }
 
-        return new SourceCodeContext(pre, line, post);
+            var lineIndex = lineNumber - 1;
+
+            int start = Math.Max(0, lineIndex - maxLines);
+            int end = Math.Min(lines.Length - 1, lineIndex + maxLines);
+            var truncatedLines = lines.Select(l => l.Trim('\r', '\n')
+                .TruncateByBytes(maxLength)
+                .TruncateByCharacters(maxLength))
+                .ToArray();
+
+            pre = truncatedLines.Skip(start).Take(Math.Max(0, lineIndex - start)).ToArray();
+            line = (lineIndex >= 0 && lineNumber <= lines.Length) ? truncatedLines[lineIndex] : "";
+            post = truncatedLines.Skip(lineNumber).Take(Math.Max(0, end - lineNumber + 1)).ToArray();
+
+            return new SourceCodeContext(pre, line, post);
+        }
+        catch (Exception ex) when (ex is
+            ArgumentNullException or
+            ArgumentOutOfRangeException or
+            ArgumentException or
+            OverflowException or
+            EncoderFallbackException or
+            DecoderFallbackException)
+        {
+            return new SourceCodeContext(pre, line, post);
+        }
+    }
+
+    private static string[]? ReadAllLinesSafely(string absolutePath)
+    {
+        if (string.IsNullOrEmpty(absolutePath) || !File.Exists(absolutePath))
+            return null;
+
+        try
+        {
+            return File.ReadAllLines(absolutePath);
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return null;
+        }
     }
 }
