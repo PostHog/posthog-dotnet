@@ -169,7 +169,7 @@ public class TheIdentifyGroupAsyncMethod
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.GroupIdentifyAsync(type: "organization", key: "id:5", "PostHog", distinctId: "custom_distinct_id");
+        var result = await client.GroupIdentifyAsync("custom_distinct_id", type: "organization", key: "id:5", "PostHog");
 
         Assert.Equal(1, result.Status);
         var received = requestHandler.GetReceivedRequestBody(indented: true);

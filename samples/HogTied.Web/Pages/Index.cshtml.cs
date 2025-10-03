@@ -169,6 +169,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
 
         // Identify a group
         var result = await posthog.GroupIdentifyAsync(
+            UserId,
             Group.Type,
             Group.Key,
             Group.Name,
@@ -177,7 +178,6 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
                 ["size"] = "large",
                 ["location"] = "San Francisco"
             },
-            distinctId: UserId,
             cancellationToken: HttpContext.RequestAborted);
 
         StatusMessage = result.Status == 1
