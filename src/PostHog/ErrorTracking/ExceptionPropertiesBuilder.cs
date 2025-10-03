@@ -127,12 +127,9 @@ internal class ExceptionPropertiesBuilder
             var sourceContext = BuildSourceCodeContext(fileName, lineNumber, columnNumber,
                 DEFAULT_MAX_LINES, DEFAULT_MAX_LENGTH);
 
-            if (!string.IsNullOrEmpty(sourceContext.ContextLine))
-            {
-                frameDetails["pre_context"] = sourceContext.PreContext ?? [];
-                frameDetails["context_line"] = sourceContext.ContextLine;
-                frameDetails["post_context"] = sourceContext.PostContext ?? [];
-            }
+            frameDetails["pre_context"] = sourceContext.PreContext ?? [];
+            frameDetails["context_line"] = sourceContext.ContextLine ?? "";
+            frameDetails["post_context"] = sourceContext.PostContext ?? [];
 
             stackFrames.Add(frameDetails);
         }

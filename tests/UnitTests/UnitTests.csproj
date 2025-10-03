@@ -7,11 +7,12 @@
         <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
-        <NoWarn>CA1034;CA1052;CA1050;CA1062;CA1308;CA1515;CA1861;CA1869;CA2000;CA2007;</NoWarn>
+        <NoWarn>CA1034;CA1052;CA1050;CA1062;CA1308;CA1515;CA1861;CA1869;CA2000;CA2007;RS1035</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="coverlet.collector" Version="6.0.2"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1"/>
         <PackageReference Include="NSubstitute" Version="5.3.0" />
         <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="1.0.17">
