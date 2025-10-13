@@ -169,6 +169,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
 
         // Identify a group
         var result = await posthog.GroupIdentifyAsync(
+            UserId,
             Group.Type,
             Group.Key,
             Group.Name,
