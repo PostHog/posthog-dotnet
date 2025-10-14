@@ -125,6 +125,15 @@ public sealed class PostHogClient : IPostHogClient
     => _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken);
 
     /// <inheritdoc/>
+    public Task<ApiResult> GroupIdentifyAsync(
+        string distinctId,
+        string type,
+        StringOrValue<int> key,
+        Dictionary<string, object>? properties,
+        CancellationToken cancellationToken)
+    => _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken, distinctId);
+
+    /// <inheritdoc/>
     public bool Capture(
         string distinctId,
         string eventName,
