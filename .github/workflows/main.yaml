@@ -18,6 +18,10 @@ env:
   PackageDirectory: ${{ github.workspace }}/build/packages/Release
   DOTNET_VERSION: 9.0.101
 
+permissions:
+  checks: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
