@@ -10,7 +10,7 @@ internal static class StringExtensions
     /// Truncates <paramref name="value"/> so its UTF-8 byte length is at most <paramref name="maxLength"/>.
     /// Appends <paramref name="truncationSymbol"/> if truncation occurs. Respects UTF-8 code point boundaries, but it can split graphemes.
     /// </summary>
-    /// <param> name="value">The string to truncate.</param>
+    /// <param name="value">The string to truncate.</param>
     /// <param name="maxLength">Maximum allowed byte length in UTF-8 encoding.</param>
     /// <param name="truncationSymbol">Optional: The symbol to append if truncation occurs. Default is "…".</param>
     /// <returns>The truncated string, if longer than <paramref name="maxLength"/>, otherwise original <paramref name="value"/>.</returns>
@@ -48,7 +48,7 @@ internal static class StringExtensions
     /// Truncates <paramref name="value"/> so it is at most <paramref name="maxLength"/> characters.
     /// Appends <paramref name="truncationSymbol"/> if truncation occurs.
     /// </summary>
-    /// <param> name="value">The string to truncate.</param>
+    /// <param name="value">The string to truncate.</param>
     /// <param name="maxLength">Maximum allowed characters.</param>
     /// <param name="truncationSymbol">Optional: The symbol to append if truncation occurs. Default is "…".</param>
     /// <returns>The truncated string, if longer than <paramref name="maxLength"/>, otherwise original <paramref name="value"/>.</returns>
