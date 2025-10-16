@@ -1,4 +1,12 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Loader;
+using System.Text;
+using System.Text.Json;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Emit;
+using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -624,6 +632,490 @@ public class TheCaptureMethod
                        ]
                      }
                      """, received);
+    }
+}
+
+public class TheCaptureExceptionMethod
+{
+    [Fact]
+    public async Task CaptureExceptionWithDivideByZeroException() // based on PostHog/posthog-python test_exception_capture
+    {
+        var (container, requestHandler, client) = CreateClient();
+
+        try
+        {
+            // Deliberately cause a divide by zero exception
+            var zero = 0;
+            var result = 1 / zero;
+        }
+        catch (DivideByZeroException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var received = requestHandler.GetReceivedRequestBody(indented: true);
+            var (_, batchItem, props) = ParseSingleEvent(received);
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal("System.DivideByZeroException", props.GetProperty("$exception_type").GetString());
+            Assert.Contains("divide by zero", props.GetProperty("$exception_message").GetString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("posthog-dotnet", props.GetProperty("$lib").GetString());
+            Assert.Equal(VersionConstants.Version, props.GetProperty("$lib_version").GetString());
+
+            var firstException = GetFirstException(props);
+            Assert.Equal("System.DivideByZeroException", firstException.GetProperty("type").GetString());
+            Assert.Contains("divide by zero", firstException.GetProperty("value").GetString(), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("generic", firstException.GetProperty("mechanism").GetProperty("type").GetString());
+            Assert.True(firstException.GetProperty("mechanism").GetProperty("handled").GetBoolean());
+
+            var stacktrace = firstException.GetProperty("stacktrace");
+            Assert.Equal("raw", stacktrace.GetProperty("type").GetString());
+
+            var frames = GetStackFrames(firstException);
+            Assert.NotEmpty(frames);
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("filename", out var fn) &&
+                fn.GetString()!.EndsWith(".cs", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("context_line", out var cl) &&
+                cl.GetString()!.Contains("var result = 1 / zero;", StringComparison.OrdinalIgnoreCase));
+
+            Assert.Equal("2024-01-21T19:08:23+00:00", batchItem.GetProperty("timestamp").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithAggregateException()
+    {
+        var (container, requestHandler, client) = CreateClient();
+
+        try
+        {
+            var exceptions = new List<Exception>();
+
+            try
+            {
+                var zero = 0;
+                var result = 1 / zero;
+            }
+            catch (DivideByZeroException ex)
+            {
+                exceptions.Add(ex);
+            }
+
+            try
+            {
+                var list = new List<int> { 1, 2, 3 };
+                var invalid = list[5];
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                exceptions.Add(ex);
+            }
+
+            throw new AggregateException("Multiple errors occurred", exceptions);
+        }
+        catch (AggregateException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var received = requestHandler.GetReceivedRequestBody(indented: true);
+            var (_, batchItem, props) = ParseSingleEvent(received);
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal("System.AggregateException", props.GetProperty("$exception_type").GetString());
+            Assert.Contains("multiple errors occurred", props.GetProperty("$exception_message").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var exceptionsList = GetExceptionList(props);
+            Assert.Equal(3, exceptionsList.Count);
+            Assert.Equal("System.AggregateException", exceptionsList[0].GetProperty("type").GetString());
+
+            var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
+            Assert.Contains("divide by zero", divideByZeroException.GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var argumentOutOfRangeException = GetExceptionOfType(props, "System.ArgumentOutOfRangeException");
+            Assert.Contains("index was out of range", argumentOutOfRangeException.GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var frames = GetStackFrames(argumentOutOfRangeException);
+
+            // Should have a frame with no filename because it's from a system library
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("filename", out var fn) &&
+                string.IsNullOrEmpty(fn.GetString()));
+
+            Assert.Contains(frames, f =>
+                f.TryGetProperty("context_line", out var cl) &&
+                cl.GetString()!.Contains("var invalid = list[5];", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithInnerExceptions()
+    {
+        var (container, requestHandler, client) = CreateClient();
+
+        try
+        {
+            try
+            {
+                var zero = 0;
+                var result = 1 / zero;
+            }
+            catch (DivideByZeroException ex)
+            {
+                throw new InvalidOperationException("Higher level exception", ex);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var received = requestHandler.GetReceivedRequestBody(indented: true);
+            var (_, batchItem, props) = ParseSingleEvent(received);
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal("System.InvalidOperationException", props.GetProperty("$exception_type").GetString());
+            Assert.Contains("higher level exception", props.GetProperty("$exception_message").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var exceptionsList = GetExceptionList(props);
+            Assert.Equal(2, exceptionsList.Count);
+            Assert.Equal("System.InvalidOperationException", exceptionsList[0].GetProperty("type").GetString());
+            Assert.Contains("higher level exception", exceptionsList[0].GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+
+            var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
+            Assert.Contains("divide by zero", divideByZeroException.GetProperty("value").GetString(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWhenNoStackTrace()
+    {
+        var (container, requestHandler, client) = CreateClient();
+
+#pragma warning disable CA2201 // Do not raise reserved exception types
+        var ex = new Exception("Test exception without stack trace");
+#pragma warning restore CA2201
+        client.CaptureException(ex, "some-distinct-id");
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        var (_, batchItem, props) = ParseSingleEvent(received);
+
+        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+        Assert.Equal("System.Exception", props.GetProperty("$exception_type").GetString());
+        Assert.Contains("test exception without stack trace", props.GetProperty("$exception_message").GetString(),
+            StringComparison.OrdinalIgnoreCase);
+
+        var exceptionsList = GetExceptionList(props);
+        Assert.Single(exceptionsList);
+        Assert.Equal("System.Exception", exceptionsList[0].GetProperty("type").GetString());
+        Assert.Equal("[]", exceptionsList[0].GetProperty("stacktrace").GetProperty("frames").ToString());
+    }
+
+    [Fact]
+    public async Task CaptureExceptionCauseIOFailureEmptyContext()
+    {
+        FileStream? lockHandle = null;
+        var (container, requestHandler, client) = CreateClient();
+
+        try
+        {
+            try
+            {
+                var zero = 0;
+                var result = 1 / zero;
+            }
+            catch (DivideByZeroException ex)
+            {
+                var st = new System.Diagnostics.StackTrace(ex, true);
+                var path = st.GetFrames()
+                    .Select(f => f?.GetFileName())
+                    .FirstOrDefault(p => !string.IsNullOrEmpty(p) && File.Exists(p));
+
+                // Lock the source file exclusively so File.ReadAllLines(path) will throw IOException
+                // and as result frames will not contain source code context
+                lockHandle = new FileStream(path!, FileMode.Open, FileAccess.Read, FileShare.None);
+
+                client.CaptureException(ex, "some-distinct-id");
+                await client.FlushAsync();
+
+                var received = requestHandler.GetReceivedRequestBody(indented: true);
+                var (_, batchItem, props) = ParseSingleEvent(received);
+                var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
+                var frames = GetStackFrames(divideByZeroException);
+
+                Assert.True(File.Exists(path!));
+                Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+                AssertContextEmpty(frames[0]);
+            }
+        }
+        finally
+        {
+            if (lockHandle != null)
+            {
+                await lockHandle.DisposeAsync();
+            }
+        }
+    }
+
+    // This test is pretty expensive because it dynamically compiles and loads an assembly.
+    // Consider alternatives.
+    [Fact]
+    public async Task CaptureExceptionWithInvalidFilePathInStackFrame()
+    {
+        var (_, requestHandler, client) = CreateClient();
+
+        var fakePath = @"fake_file.cs";
+        var code =
+            """
+            using System;
+            public static class Thrower
+            {
+                public static void Boom()
+                {
+                    int zero = 0;
+                    var _ = 1 / zero;
+                }
+            }
+            """;
+
+        // Parse with the fake source path so PDB embeds it
+        var parse = CSharpParseOptions.Default;
+        var tree = CSharpSyntaxTree.ParseText(SourceText.From(code, Encoding.UTF8), parse, path: fakePath);
+        var trustedPlatformAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
+
+        var refs = trustedPlatformAssemblies
+            .Where(p => p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => MetadataReference.CreateFromFile(g.First()));
+
+        var comp = CSharpCompilation.Create(
+            "ThrowerAsm",
+            [tree],
+            refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Debug));
+
+        using var pe = new MemoryStream();
+        using var pdb = new MemoryStream();
+        var emit = comp.Emit(pe, pdb, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
+        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+
+        pe.Position = 0;
+        pdb.Position = 0;
+
+        var assemblyLoadContext = new AssemblyLoadContext("ThrowerCtx", isCollectible: true);
+        var assembly = assemblyLoadContext.LoadFromStream(pe, pdb);
+        var boom = assembly.GetType("Thrower")!.GetMethod("Boom", BindingFlags.Public | BindingFlags.Static)!;
+
+        try
+        {
+            boom.Invoke(null, null);
+        }
+        catch (TargetInvocationException tie) when (tie.InnerException is DivideByZeroException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var (_, batchItem, props) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: true));
+
+            var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
+            var frames = GetStackFrames(divideByZeroException);
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal(fakePath, frames[0].GetProperty("filename").GetString());
+            AssertContextEmpty(frames[0]);
+        }
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithDeepNesting()
+    {
+        var (container, requestHandler, client) = CreateClient();
+
+        Exception CreateNestedException(int level)
+        {
+            if (level <= 1)
+            {
+                return new InvalidOperationException($"Innermost exception at level {level}");
+            }
+            try
+            {
+                throw CreateNestedException(level - 1);
+            }
+#pragma warning disable CA1031 // Do not catch general exception types
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                return new InvalidOperationException($"Nested exception at level {level}", ex);
+            }
+        }
+
+        var deepException = CreateNestedException(15);
+        client.CaptureException(deepException, "some-distinct-id");
+        await client.FlushAsync();
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        var (_, _, props) = ParseSingleEvent(received);
+        var exceptionsList = GetExceptionList(props);
+
+        Assert.Equal(15, deepException.ToString().Split([" ---> "], StringSplitOptions.None).Length);
+        // Check that we capture up to configured max depth + one top level exception
+        Assert.Equal(5, exceptionsList.Count);
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithCircularInnerReference()
+    {
+        var (_, requestHandler, client) = CreateClient();
+
+        var ex1 = new InvalidOperationException("ex1");
+        var ex2 = new InvalidOperationException("ex2", ex1);
+
+        var fld = typeof(Exception).GetField("_innerException", BindingFlags.NonPublic | BindingFlags.Instance)
+               ?? typeof(Exception).GetField("m_innerException", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        if (fld is null)
+        {
+            // runtime doesn't expose the field
+            return;
+        }
+
+        fld.SetValue(ex1, ex2);
+
+        client.CaptureException(ex1, "some-distinct-id");
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        var (_, _, props) = ParseSingleEvent(received);
+        var exceptionsList = GetExceptionList(props);
+
+        Assert.Equal(2, exceptionsList.Count);
+        Assert.Equal(ex1, ex2.InnerException);
+        Assert.Equal(ex2, ex1.InnerException);
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithLargeAggregateException()
+    {
+        var (container, requestHandler, client) = CreateClient();
+        var innerExceptions = new List<Exception>();
+
+        for (int i = 0; i < 150; i++)
+        {
+            innerExceptions.Add(new InvalidOperationException($"Inner exception {i + 1}"));
+        }
+
+        var aggEx = new AggregateException("Aggregate with many inner exceptions", innerExceptions);
+        client.CaptureException(aggEx, "some-distinct-id");
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        var (_, _, props) = ParseSingleEvent(received);
+        var exceptionsList = GetExceptionList(props);
+
+        // Check that we capture up to configured max exceptions + one top level exception
+        Assert.Equal(51, exceptionsList.Count);
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithLargeStackTrace()
+    {
+        Exception CreateDeepStack(int depth)
+        {
+            try
+            {
+                Frame(depth);
+                throw new InvalidOperationException("Unreachable");
+            }
+#pragma warning disable CA1031 // Do not catch general exception types
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                return ex;
+            }
+
+            static void Frame(int n)
+            {
+                if (n == 0)
+                {
+                    ThrowLeaf();
+                }
+                else
+                {
+                    Frame(n - 1);
+                }
+            }
+
+            static void ThrowLeaf() =>
+                throw new InvalidOperationException("Deep stack reached");
+        }
+
+        var (container, requestHandler, client) = CreateClient();
+
+        var deepException = CreateDeepStack(300);
+        client.CaptureException(deepException, "some-distinct-id");
+        await client.FlushAsync();
+
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        var (_, _, props) = ParseSingleEvent(received);
+        var firstException = GetFirstException(props);
+        var frames = GetStackFrames(firstException);
+
+        // Check that we capture up to configured max stack frames
+        Assert.Equal(50, frames.Count);
+    }
+
+    private static (TestContainer container, FakeHttpMessageHandler.RequestHandler requestHandler, PostHogClient client)
+        CreateClient(DateTimeOffset? now = null)
+    {
+        var container = new TestContainer();
+
+        if (now is DateTimeOffset dt)
+        {
+            container.FakeTimeProvider.SetUtcNow(dt);
+        }
+
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        return (container, requestHandler, client);
+    }
+
+    private static (JsonElement root, JsonElement batchItem, JsonElement props)
+        ParseSingleEvent(string jsonString)
+    {
+        var doc = JsonDocument.Parse(jsonString);
+        var root = doc.RootElement;
+        var batchItem = root.GetProperty("batch").EnumerateArray().Single();
+        var props = batchItem.GetProperty("properties");
+
+        return (root, batchItem, props);
+    }
+
+    private static List<JsonElement> GetExceptionList(JsonElement props)
+        => [.. props.GetProperty("$exception_list").EnumerateArray()];
+
+    private static JsonElement GetFirstException(JsonElement props)
+        => GetExceptionList(props).First();
+
+    private static JsonElement GetExceptionOfType(JsonElement props, string type)
+        => GetExceptionList(props).First(e => e.GetProperty("type").GetString() == type);
+
+    private static List<JsonElement> GetStackFrames(JsonElement exceptionObj)
+        => [.. exceptionObj.GetProperty("stacktrace").GetProperty("frames").EnumerateArray()];
+
+    private static void AssertContextEmpty(JsonElement frame)
+    {
+        Assert.Equal("[]", frame.GetProperty("pre_context").ToString());
+        Assert.Equal("", frame.GetProperty("context_line").GetString());
+        Assert.Equal("[]", frame.GetProperty("post_context").ToString());
     }
 }
 

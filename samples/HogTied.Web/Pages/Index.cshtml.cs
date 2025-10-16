@@ -159,6 +159,27 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostCaptureExceptionAsync()
+    {
+        await OnGetAsync();
+        if (!ProjectApiKeyIsSet || UserId is null)
+        {
+            return RedirectToPage();
+        }
+
+        // Simulate an exception
+        try
+        {
+            throw new InvalidOperationException("This is a test exception from HogTied.Web.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            posthog.CaptureException(ex, UserId, null, null, false, null);
+        }
+        StatusMessage = "Exception captured! Events are sent asynchronously, so it may take a few seconds to appear in PostHog.";
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnPostIdentifyGroupAsync()
     {
         await OnGetAsync();

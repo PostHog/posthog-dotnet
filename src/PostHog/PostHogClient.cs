@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PostHog.Api;
+using PostHog.ErrorTracking;
 using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
@@ -176,6 +177,40 @@ public sealed class PostHogClient : IPostHogClient
                 : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
                     ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
                     : Task.FromResult(capturedEvent);
+    }
+
+    /// <inheritdoc/>
+    public bool CaptureException(
+        Exception exception,
+        string distinctId,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        bool sendFeatureFlags,
+        DateTimeOffset? timestamp = null)
+    {
+        if (exception == null)
+        {
+            _logger.LogErrorCaptureExceptionNull();
+            return false;
+        }
+
+        // Should never throw exceptions in this method to avoid re-raising exceptions to user code, log instead
+        try
+        {
+            var host = _options.Value.HostUrl.ToString().TrimEnd('/').Replace(".i.", ".", StringComparison.Ordinal);
+            properties ??= [];
+            properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectApiKey}/person/{distinctId}";
+            properties = ExceptionPropertiesBuilder.Build(properties, exception);
+
+            return Capture(distinctId, "$exception", properties, groups, sendFeatureFlags, timestamp);
+        }
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch (Exception e)
+#pragma warning restore CA1031
+        {
+            _logger.LogErrorCaptureExceptionFailed(e);
+            return false;
+        }
     }
 
 
@@ -719,4 +754,16 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Failed to load feature flags")]
     public static partial void LogErrorFailedToLoadFeatureFlags(this ILogger<PostHogClient> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 18,
+        Level = LogLevel.Error,
+        Message = "CaptureException called with null exception")]
+    public static partial void LogErrorCaptureExceptionNull(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 19,
+        Level = LogLevel.Error,
+        Message = "CaptureException failed with an exception")]
+    public static partial void LogErrorCaptureExceptionFailed(this ILogger<PostHogClient> logger, Exception exception);
 }
