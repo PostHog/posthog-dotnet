@@ -30,10 +30,11 @@ public class AllFeatureFlagsOptions
     public bool OnlyEvaluateLocally { get; init; }
 
     /// <summary>
-    /// The set of person properties that are known. Used to compute flags locally, if
-    /// <see cref="PostHogOptions.PersonalApiKey"/> is present and <see cref="OnlyEvaluateLocally"/> is <c>true</c>.
-    /// If evaluating a feature flag remotely, this is not required. It can be used to override person properties
-    /// on PostHog's servers when evaluating feature flags.
+    /// The set of person properties used to evaluate feature flags. Required for both local and remote evaluation
+    /// when feature flags have conditions based on person properties.
+    /// For local evaluation (when <see cref="PostHogOptions.PersonalApiKey"/> is present and
+    /// <see cref="OnlyEvaluateLocally"/> is <c>true</c>), these properties are used directly.
+    /// For remote evaluation, these properties are sent to PostHog's servers and can override stored person properties.
     /// </summary>
     public Dictionary<string, object?>? PersonProperties { get; init; }
 
