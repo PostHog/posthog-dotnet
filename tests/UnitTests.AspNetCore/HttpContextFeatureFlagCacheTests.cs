@@ -176,6 +176,220 @@ public class TheGetAndCacheFlagsAsyncMethod
         Assert.NotNull(firstFlag);
         Assert.Equal("flag-key", firstFlag.Key);
     }
+
+    [Fact]
+    public async Task FetchesNewFlagsWhenPersonPropertiesDiffer()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Returns(httpContext);
+
+        var cache = new HttpContextFeatureFlagCache(httpContextAccessor);
+        var distinctId = "user123";
+        var personProperties1 = new Dictionary<string, object?> { ["email"] = "test1@example.com" };
+        var personProperties2 = new Dictionary<string, object?> { ["email"] = "test2@example.com" };
+
+        var flags1 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = true } }
+            }
+        };
+
+        var flags2 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = false } }
+            }
+        };
+
+        var fetchCount = 0;
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher = (_, _) =>
+        {
+            fetchCount++;
+            return Task.FromResult(fetchCount == 1 ? flags1 : flags2);
+        };
+
+        var result1 = await cache.GetAndCacheFlagsAsync(distinctId, personProperties1, null, fetcher, CancellationToken.None);
+        var result2 = await cache.GetAndCacheFlagsAsync(distinctId, personProperties2, null, fetcher, CancellationToken.None);
+
+        Assert.Equal(2, fetchCount); // Should fetch twice because properties differ
+        Assert.NotSame(result1, result2);
+        Assert.True(result1.Flags["flag1"].IsEnabled);
+        Assert.False(result2.Flags["flag1"].IsEnabled);
+    }
+
+    [Fact]
+    public async Task ReturnsCachedFlagsWhenPersonPropertiesMatch()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Returns(httpContext);
+
+        var cache = new HttpContextFeatureFlagCache(httpContextAccessor);
+        var distinctId = "user123";
+        var personProperties = new Dictionary<string, object?> { ["email"] = "test@example.com" };
+
+        var flags = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = true } }
+            }
+        };
+
+        var fetchCount = 0;
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher = (_, _) =>
+        {
+            fetchCount++;
+            return Task.FromResult(flags);
+        };
+
+        var result1 = await cache.GetAndCacheFlagsAsync(distinctId, personProperties, null, fetcher, CancellationToken.None);
+        var result2 = await cache.GetAndCacheFlagsAsync(distinctId, personProperties, null, fetcher, CancellationToken.None);
+
+        Assert.Equal(1, fetchCount); // Should only fetch once
+        Assert.Same(result1, result2);
+    }
+
+    [Fact]
+    public async Task FetchesNewFlagsWhenGroupsDiffer()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Returns(httpContext);
+
+        var cache = new HttpContextFeatureFlagCache(httpContextAccessor);
+        var distinctId = "user123";
+        var groups1 = new GroupCollection { { "company", "acme" } };
+        var groups2 = new GroupCollection { { "company", "initech" } };
+
+        var flags1 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = true } }
+            }
+        };
+
+        var flags2 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = false } }
+            }
+        };
+
+        var fetchCount = 0;
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher = (_, _) =>
+        {
+            fetchCount++;
+            return Task.FromResult(fetchCount == 1 ? flags1 : flags2);
+        };
+
+        var result1 = await cache.GetAndCacheFlagsAsync(distinctId, null, groups1, fetcher, CancellationToken.None);
+        var result2 = await cache.GetAndCacheFlagsAsync(distinctId, null, groups2, fetcher, CancellationToken.None);
+
+        Assert.Equal(2, fetchCount); // Should fetch twice because groups differ
+        Assert.NotSame(result1, result2);
+        Assert.True(result1.Flags["flag1"].IsEnabled);
+        Assert.False(result2.Flags["flag1"].IsEnabled);
+    }
+
+    [Fact]
+    public async Task FetchesNewFlagsWhenGroupPropertiesDiffer()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Returns(httpContext);
+
+        var cache = new HttpContextFeatureFlagCache(httpContextAccessor);
+        var distinctId = "user123";
+        var groups1 = new GroupCollection
+        {
+            new Group("company", "acme") { ["tier"] = "enterprise" }
+        };
+        var groups2 = new GroupCollection
+        {
+            new Group("company", "acme") { ["tier"] = "starter" }
+        };
+
+        var flags1 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = true } }
+            }
+        };
+
+        var flags2 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = false } }
+            }
+        };
+
+        var fetchCount = 0;
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher = (_, _) =>
+        {
+            fetchCount++;
+            return Task.FromResult(fetchCount == 1 ? flags1 : flags2);
+        };
+
+        var result1 = await cache.GetAndCacheFlagsAsync(distinctId, null, groups1, fetcher, CancellationToken.None);
+        var result2 = await cache.GetAndCacheFlagsAsync(distinctId, null, groups2, fetcher, CancellationToken.None);
+
+        Assert.Equal(2, fetchCount); // Should fetch twice because group properties differ
+        Assert.NotSame(result1, result2);
+        Assert.True(result1.Flags["flag1"].IsEnabled);
+        Assert.False(result2.Flags["flag1"].IsEnabled);
+    }
+
+    [Fact]
+    public async Task FetchesNewFlagsWhenNullVsNonNullProperties()
+    {
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        var httpContext = new DefaultHttpContext();
+        httpContextAccessor.HttpContext.Returns(httpContext);
+
+        var cache = new HttpContextFeatureFlagCache(httpContextAccessor);
+        var distinctId = "user123";
+        var personProperties = new Dictionary<string, object?> { ["email"] = "test@example.com" };
+
+        var flags1 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = true } }
+            }
+        };
+
+        var flags2 = new FlagsResult
+        {
+            Flags = new Dictionary<string, FeatureFlag>
+            {
+                { "flag1", new FeatureFlag { Key = "flag1", IsEnabled = false } }
+            }
+        };
+
+        var fetchCount = 0;
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher = (_, _) =>
+        {
+            fetchCount++;
+            return Task.FromResult(fetchCount == 1 ? flags1 : flags2);
+        };
+
+        var result1 = await cache.GetAndCacheFlagsAsync(distinctId, null, null, fetcher, CancellationToken.None);
+        var result2 = await cache.GetAndCacheFlagsAsync(distinctId, personProperties, null, fetcher, CancellationToken.None);
+
+        Assert.Equal(2, fetchCount); // Should fetch twice because one has properties and one doesn't
+        Assert.NotSame(result1, result2);
+        Assert.True(result1.Flags["flag1"].IsEnabled);
+        Assert.False(result2.Flags["flag1"].IsEnabled);
+    }
 }
 
 // Legacy tests

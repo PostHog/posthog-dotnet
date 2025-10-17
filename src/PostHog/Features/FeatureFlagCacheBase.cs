@@ -17,12 +17,23 @@ public abstract class FeatureFlagCacheBase : IFeatureFlagCache
             return new FlagsResult { Flags = flags };
         };
 
-        var results = await GetAndCacheFlagsAsync(distinctId, resultsFetcher, cancellationToken);
+        var results = await GetAndCacheFlagsAsync(distinctId, null, null, resultsFetcher, cancellationToken);
         return results.Flags;
+    }
+
+    public async Task<FlagsResult> GetAndCacheFlagsAsync(
+        string distinctId,
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher,
+        CancellationToken cancellationToken)
+    {
+        // Call the new method with null properties for backward compatibility
+        return await GetAndCacheFlagsAsync(distinctId, null, null, fetcher, cancellationToken);
     }
 
     public abstract Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
+        IReadOnlyDictionary<string, object?>? personProperties,
+        GroupCollection? groups,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
         CancellationToken cancellationToken);
 }

@@ -17,15 +17,17 @@ public class FallbackFeatureFlagCache(IFeatureFlagCache primary, IFeatureFlagCac
     /// <inherititdoc/>
     public override async Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
+        IReadOnlyDictionary<string, object?>? personProperties,
+        GroupCollection? groups,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
         CancellationToken cancellationToken)
     {
-        var flags = await _primary.GetAndCacheFlagsAsync(distinctId, fetcher, cancellationToken);
+        var flags = await _primary.GetAndCacheFlagsAsync(distinctId, personProperties, groups, fetcher, cancellationToken);
         if (flags.Flags.Count > 0)
         {
             return flags;
         }
-        flags = await _fallback.GetAndCacheFlagsAsync(distinctId, fetcher, cancellationToken);
+        flags = await _fallback.GetAndCacheFlagsAsync(distinctId, personProperties, groups, fetcher, cancellationToken);
         if (flags.Flags.Count > 0)
         {
             return flags;
