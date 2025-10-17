@@ -23,11 +23,14 @@ public sealed class MemoryFeatureFlagCache(TimeProvider timeProvider, int sizeLi
     /// <inherititdoc/>
     public override async Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
+        IReadOnlyDictionary<string, object?>? personProperties,
+        GroupCollection? groups,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
         CancellationToken cancellationToken)
     {
+        var cacheKey = FeatureFlagCacheKey.Generate(distinctId, personProperties, groups);
         var flags = await _cache.GetOrCreateAsync(
-            distinctId,
+            cacheKey,
             async cacheEntry =>
             {
                 cacheEntry.SetSize(1);

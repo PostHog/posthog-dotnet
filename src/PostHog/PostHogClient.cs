@@ -223,6 +223,8 @@ public sealed class PostHogClient : IPostHogClient
     {
         var result = await featureFlagCache.GetAndCacheFlagsAsync(
             distinctId,
+            personProperties: null,
+            groups: groups,
             (userId, ctx) => DecideAsync(
                 userId,
                 options: new AllFeatureFlagsOptions
@@ -529,6 +531,8 @@ public sealed class PostHogClient : IPostHogClient
     {
         var result = await cache.GetAndCacheFlagsAsync(
             distinctId,
+            personProperties: options?.PersonProperties,
+            groups: options?.Groups,
             fetcher: FetchDecideAsync,
             cancellationToken: cancellationToken);
 
