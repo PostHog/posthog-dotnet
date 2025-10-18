@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -58,6 +59,8 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     public string? PersonPropertiesError { get; private set; }
 
     public FeatureFlag? FeatureFlagResult { get; private set; }
+
+    public CacheDemoData? CacheDemo { get; private set; }
 
     public async Task OnGetAsync()
     {
@@ -131,6 +134,23 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
             UnencryptedRemoteConfigSetting = (await posthog.GetRemoteConfigPayloadAsync("unencrypted-remote-config-setting", HttpContext.RequestAborted))?.RootElement.GetRawText();
 
             EncryptedRemoteConfigSetting = (await posthog.GetRemoteConfigPayloadAsync("encrypted-remote-config-setting", HttpContext.RequestAborted))?.RootElement.GetRawText();
+
+            // Demonstrate request-level caching by checking the same flag twice
+            var sw1 = Stopwatch.StartNew();
+            var firstCheck = await posthog.IsFeatureEnabledAsync("simple-flag", UserId, flagOptions);
+            sw1.Stop();
+
+            var sw2 = Stopwatch.StartNew();
+            var secondCheck = await posthog.IsFeatureEnabledAsync("simple-flag", UserId, flagOptions);
+            sw2.Stop();
+
+            CacheDemo = new CacheDemoData
+            {
+                FirstCallMs = sw1.Elapsed.TotalMilliseconds,
+                SecondCallMs = sw2.Elapsed.TotalMilliseconds,
+                FirstResult = firstCheck,
+                SecondResult = secondCheck
+            };
         }
     }
 
@@ -267,4 +287,12 @@ public class GroupModel
 
     [Required]
     public string Type { get; set; } = "project";
+}
+
+public class CacheDemoData
+{
+    public double FirstCallMs { get; set; }
+    public double SecondCallMs { get; set; }
+    public bool? FirstResult { get; set; }
+    public bool? SecondResult { get; set; }
 }

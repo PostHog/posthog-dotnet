@@ -44,43 +44,55 @@ public class HttpContextFeatureFlagCache(
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
         CancellationToken cancellationToken)
     {
-        var httpContext = httpContextAccessor.HttpContext;
+        return await GetAndCacheFlagsAsync(distinctId, null, null, fetcher, cancellationToken);
+    }
 
-        var flags = SafeGet(distinctId);
+    /// <inheritdoc/>
+    public async Task<FlagsResult> GetAndCacheFlagsAsync(
+        string distinctId,
+        IReadOnlyDictionary<string, object?>? personProperties,
+        GroupCollection? groups,
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher,
+        CancellationToken cancellationToken)
+    {
+        var httpContext = httpContextAccessor.HttpContext;
+        var cacheKey = GetCacheKey(distinctId, personProperties, groups);
+
+        var flags = SafeGet(cacheKey);
         if (flags is null)
         {
-            logger.LogTraceFetchingFeatureFlags(distinctId);
+            logger.LogTraceCacheMiss(cacheKey);
             flags = await NotNull(fetcher)(distinctId, cancellationToken);
             if (httpContext is null)
             {
                 return flags;
             }
-            logger.LogTraceStoringFeatureFlagsInCache(distinctId);
-            SafeSet(distinctId, flags);
+            logger.LogTraceStoringFeatureFlagsInCache(cacheKey);
+            SafeSet(cacheKey, flags);
         }
         else
         {
-            logger.LogTraceCacheHit(distinctId);
+            logger.LogTraceCacheHit(cacheKey);
         }
 
         return flags;
     }
 
-    FlagsResult? SafeGet(string distinctId)
+    FlagsResult? SafeGet(string cacheKey)
     {
         var httpContext = httpContextAccessor.HttpContext;
         try
         {
-            return httpContext?.Items[GetCacheKey(distinctId)] as FlagsResult;
+            return httpContext?.Items[cacheKey] as FlagsResult;
         }
         catch (ObjectDisposedException ex)
         {
-            logger.LogWarningRetrievingFeatureFlagsFromCacheFailed(ex, distinctId);
+            logger.LogWarningRetrievingFeatureFlagsFromCacheFailed(ex, cacheKey);
             return null;
         }
     }
 
-    void SafeSet(string distinctId, FlagsResult flags)
+    void SafeSet(string cacheKey, FlagsResult flags)
     {
         var httpContext = httpContextAccessor.HttpContext;
         if (httpContext is null)
@@ -90,15 +102,19 @@ public class HttpContextFeatureFlagCache(
 
         try
         {
-            httpContext.Items[GetCacheKey(distinctId)] = flags;
+            httpContext.Items[cacheKey] = flags;
         }
         catch (ObjectDisposedException ex)
         {
-            logger.LogWarningStoringFeatureFlagsInCacheFailed(ex, distinctId);
+            logger.LogWarningStoringFeatureFlagsInCacheFailed(ex, cacheKey);
         }
     }
 
-    static string GetCacheKey(string distinctId) => $"$PostHog(feature_flags):{distinctId}";
+    static string GetCacheKey(
+        string distinctId,
+        IReadOnlyDictionary<string, object?>? personProperties,
+        GroupCollection? groups)
+        => $"$PostHog(feature_flags):{FeatureFlagCacheKey.Generate(distinctId, personProperties, groups)}";
 }
 
 internal static partial class HttpContextFeatureFlagCacheLoggerExtensions
@@ -106,36 +122,36 @@ internal static partial class HttpContextFeatureFlagCacheLoggerExtensions
     [LoggerMessage(
         EventId = 200,
         Level = LogLevel.Trace,
-        Message = "Feature flags retrieved from HttpContext.Items for distinct ID '{distinctId}'.")]
-    public static partial void LogTraceCacheHit(this ILogger logger, string distinctId);
+        Message = "✓ Cache HIT: Feature flags retrieved from HttpContext.Items using cache key '{cacheKey}'.")]
+    public static partial void LogTraceCacheHit(this ILogger logger, string cacheKey);
 
     [LoggerMessage(
         EventId = 201,
         Level = LogLevel.Trace,
-        Message = "Fetching feature flags for '{distinctId}'.")]
-    public static partial void LogTraceFetchingFeatureFlags(this ILogger logger, string distinctId);
+        Message = "✗ Cache MISS: Fetching feature flags for cache key '{cacheKey}'.")]
+    public static partial void LogTraceCacheMiss(this ILogger logger, string cacheKey);
 
     [LoggerMessage(
         EventId = 202,
         Level = LogLevel.Trace,
-        Message = "Storing feature flags in HttpContext.Items for '{distinctId}'.")]
-    public static partial void LogTraceStoringFeatureFlagsInCache(this ILogger logger, string distinctId);
+        Message = "→ Storing feature flags in HttpContext.Items with cache key '{cacheKey}'.")]
+    public static partial void LogTraceStoringFeatureFlagsInCache(this ILogger logger, string cacheKey);
 
     [LoggerMessage(
         EventId = 203,
         Level = LogLevel.Warning,
-        Message = "Fetching feature flags for '{distinctId}'.")]
+        Message = "Failed to retrieve feature flags from HttpContext.Items for cache key '{cacheKey}'.")]
     public static partial void LogWarningRetrievingFeatureFlagsFromCacheFailed(
         this ILogger logger,
         Exception exception,
-        string distinctId);
+        string cacheKey);
 
     [LoggerMessage(
         EventId = 204,
         Level = LogLevel.Warning,
-        Message = "Storing feature flags in HttpContext.Items failed for '{distinctId}'.")]
+        Message = "Storing feature flags in HttpContext.Items failed for cache key '{cacheKey}'.")]
     public static partial void LogWarningStoringFeatureFlagsInCacheFailed(
         this ILogger logger,
         Exception exception,
-        string distinctId);
+        string cacheKey);
 }

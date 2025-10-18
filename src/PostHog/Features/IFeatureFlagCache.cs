@@ -27,11 +27,15 @@ public interface IFeatureFlagCache
     /// Attempts to retrieve the flags API result. If the feature flags are not in the cache, then
     /// they are fetched and stored in the cache.
     /// </summary>
-    /// <remarks>Default implementation uses the existing <see cref="GetAndCacheFeatureFlagsAsync"/> method.</remarks>
+    /// <remarks>
+    /// This method is obsolete because it does not include person properties and groups in the cache key,
+    /// which can lead to incorrect cached results. Use the overload that accepts person properties and groups instead.
+    /// </remarks>
     /// <param name="distinctId">The distinct id. Used as a cache key.</param>
     /// <param name="fetcher">The feature flag fetcher.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The set of feature flags.</returns>
+    [Obsolete("Use GetAndCacheFlagsAsync overload that accepts personProperties and groups to ensure correct cache keys. This method will be removed in a future version.")]
     async Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
@@ -51,6 +55,32 @@ public interface IFeatureFlagCache
                 cancellationToken
             )
         };
+    }
+
+    /// <summary>
+    /// Attempts to retrieve the flags API result. If the feature flags are not in the cache, then
+    /// they are fetched and stored in the cache.
+    /// </summary>
+    /// <remarks>
+    /// Default implementation calls the fetcher directly without caching to avoid incorrect cache keys.
+    /// Implementations should override this method to provide proper caching using all parameters.
+    /// </remarks>
+    /// <param name="distinctId">The distinct id.</param>
+    /// <param name="personProperties">Optional person properties that affect feature flag evaluation.</param>
+    /// <param name="groups">Optional groups with their properties that affect feature flag evaluation.</param>
+    /// <param name="fetcher">The feature flag fetcher.</param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>The set of feature flags.</returns>
+    async Task<FlagsResult> GetAndCacheFlagsAsync(
+        string distinctId,
+        IReadOnlyDictionary<string, object?>? personProperties,
+        GroupCollection? groups,
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher,
+        CancellationToken cancellationToken)
+    {
+        // Default implementation: no caching to avoid incorrect cache keys
+        // Implementations should override this to provide proper caching
+        return await NotNull(fetcher)(distinctId, cancellationToken);
     }
 }
 
@@ -75,6 +105,15 @@ public sealed class NullFeatureFlagCache : IFeatureFlagCache
     /// <inheritdoc/>
     public Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
+        Func<string, CancellationToken, Task<FlagsResult>> fetcher,
+        CancellationToken cancellationToken)
+        => NotNull(fetcher)(distinctId, cancellationToken);
+
+    /// <inheritdoc/>
+    public Task<FlagsResult> GetAndCacheFlagsAsync(
+        string distinctId,
+        IReadOnlyDictionary<string, object?>? personProperties,
+        GroupCollection? groups,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
         CancellationToken cancellationToken)
         => NotNull(fetcher)(distinctId, cancellationToken);
