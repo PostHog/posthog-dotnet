@@ -151,6 +151,7 @@ public sealed class PostHogClient : IPostHogClient
         var capturedEvent = new CapturedEvent(
             eventName,
             distinctId,
+            _options.Value.DisableGeoIp,
             properties,
             timestamp: timestamp ?? _timeProvider.GetUtcNow());
 

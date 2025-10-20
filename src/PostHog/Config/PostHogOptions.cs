@@ -93,6 +93,11 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// </summary>
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Disable geo ip. (Default: true)
+    /// </summary>
+    public bool DisableGeoIp { get; set; } = true;
+    
     // Explicit implementation to hide this value from most users.
     // This is here to make it easier to instantiate the client with the options.
     PostHogOptions IOptions<PostHogOptions>.Value => this;

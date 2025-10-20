@@ -218,7 +218,10 @@ internal sealed class PostHogApiClient : IDisposable
         properties["$os"] = RuntimeInformation.OSDescription;
         properties["$framework"] = RuntimeInformation.FrameworkDescription;
         properties["$arch"] = RuntimeInformation.ProcessArchitecture.ToString();
-        properties["$geoip_disable"] = true;
+        if (_options.Value.DisableGeoIp)
+        {
+            properties["$geoip_disable"] = true;
+        }
 
         properties.Merge(_options.Value.SuperProperties);
 
