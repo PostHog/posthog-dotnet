@@ -3550,4 +3550,77 @@ public class TheQuotaLimitBehavior
         // Assert - should return the API result (set-1), not local evaluation result (set-8)
         Assert.Equal("set-1", result);
     }
+
+    [Fact]
+    public async Task FallsBackToAPIForPayloadWhenFlagHasStaticCohort()
+    {
+        // When a flag has a static cohort, the SDK should fallback to API for the entire flag
+        // evaluation, including retrieving the payload from the API response, not from local
+        // evaluation.
+        //
+        // This test verifies that both the flag value AND the payload are retrieved from the
+        // /decide API when a static cohort is encountered during local evaluation.
+
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {
+               "flags":[
+                  {
+                     "id":1,
+                     "name":"Static Cohort Flag",
+                     "key":"static-cohort-flag",
+                     "active":true,
+                     "filters":{
+                        "groups":[
+                           {
+                              "properties":[
+                                 {
+                                    "key":"id",
+                                    "value":999,
+                                    "type":"cohort"
+                                 }
+                              ],
+                              "rollout_percentage":100
+                           }
+                        ],
+                        "payloads":{
+                           "true":"{\"from\":\"local\"}"
+                        }
+                     }
+                  }
+               ],
+               "cohorts":{}
+            }
+            """
+        );
+
+        // Set up decide API to return the flag with a payload
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {
+              "featureFlags": {
+                "static-cohort-flag": true
+              },
+              "featureFlagPayloads": {
+                "static-cohort-flag": "{\"from\":\"api\",\"cohort\":\"static-999\"}"
+              }
+            }
+            """
+        );
+
+        var client = container.Activate<PostHogClient>();
+
+        // Act - call GetFeatureFlagAsync which should fallback to API
+        var result = await client.GetFeatureFlagAsync(
+            featureKey: "static-cohort-flag",
+            distinctId: "test-distinct-id",
+            options: new FeatureFlagOptions()
+        );
+
+        // Assert - should return the API result with the API payload, not local payload
+        Assert.NotNull(result);
+        Assert.True(result.IsEnabled);
+        JsonAssert.Equal("""{"from":"api","cohort":"static-999"}""", result.Payload);
+    }
 }
