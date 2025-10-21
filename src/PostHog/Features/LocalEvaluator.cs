@@ -13,6 +13,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PostHog.Api;
+using PostHog.Exceptions;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
 
@@ -285,8 +286,15 @@ internal sealed class LocalEvaluator
                     ? new StringOrValue<bool>(variant)
                     : true;
             }
+            catch (RequiresServerEvaluationException)
+            {
+                // Static cohort or other missing server-side data - must fallback to API
+                throw;
+            }
             catch (InconclusiveMatchException)
             {
+                // Evaluation error (bad regex, invalid date, missing property, etc.)
+                // Track that we had an inconclusive match, but try other conditions
                 isInconclusive = true;
             }
         }
@@ -377,7 +385,7 @@ internal sealed class LocalEvaluator
         var cohortId = filter.Value.CohortId;
         if (cohortId is null || !_cohortFilters.TryGetValue(cohortId.Value, out var conditions))
         {
-            throw new InconclusiveMatchException($"Can't match cohort {cohortId} without a given cohort property value");
+            throw new RequiresServerEvaluationException($"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation");
         }
 
         return MatchPropertyGroup(conditions, propertyValues);

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PostHog.Api;
 using PostHog.ErrorTracking;
+using PostHog.Exceptions;
 using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
@@ -314,6 +315,10 @@ public sealed class PostHogClient : IPostHogClient
                     options?.PersonProperties ?? []);
                 response = FeatureFlag.CreateFromLocalEvaluation(featureKey, value, localFeatureFlag);
                 _logger.LogDebugSuccessLocally(featureKey, response);
+            }
+            catch (RequiresServerEvaluationException e)
+            {
+                _logger.LogDebugFailedToComputeFlag(e, featureKey);
             }
             catch (InconclusiveMatchException e)
             {
