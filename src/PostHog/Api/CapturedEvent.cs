@@ -18,6 +18,7 @@ public class CapturedEvent
     public CapturedEvent(
         string eventName,
         string distinctId,
+        bool disableGeoIp,
         Dictionary<string, object>? properties,
         DateTimeOffset timestamp)
     {
@@ -30,7 +31,10 @@ public class CapturedEvent
         Properties["distinct_id"] = distinctId; // See `get_distinct_id` in PostHog/posthog api/capture.py line 321
         Properties["$lib"] = PostHogApiClient.LibraryName;
         Properties["$lib_version"] = VersionConstants.Version;
-        Properties["$geoip_disable"] = true;
+        if (disableGeoIp)
+        {
+            Properties["$geoip_disable"] = true;
+        }
     }
 
     /// <summary>
