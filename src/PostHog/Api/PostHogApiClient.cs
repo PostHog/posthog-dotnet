@@ -177,7 +177,7 @@ internal sealed class PostHogApiClient : IDisposable
     /// <returns></returns>
     public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken)
     {
-        var uriBuilder = new UriBuilder(new Uri(HostUrl, $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"))
+        var uriBuilder = new UriBuilder(new Uri(HostUrl,            $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"))
         {
             Query = $"token={Uri.EscapeDataString(ProjectApiKey)}"
         };
@@ -191,7 +191,8 @@ internal sealed class PostHogApiClient : IDisposable
     {
         var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
         var personalApiKey = options.PersonalApiKey
-            ?? throw new InvalidOperationException("This API requires that a Personal API Key is set.");
+                             ?? throw new InvalidOperationException(
+                                 "This API requires that a Personal API Key is set.");
 
         var endpointUrl = new Uri(HostUrl, relativeUrl);
 
@@ -213,15 +214,12 @@ internal sealed class PostHogApiClient : IDisposable
 
         var properties = payload.GetOrAdd<string, Dictionary<string, object>>("properties");
 
-        properties["$lib"] = LibraryName;
-        properties["$lib_version"] = VersionConstants.Version;
-        properties["$os"] = RuntimeInformation.OSDescription;
-        properties["$framework"] = RuntimeInformation.FrameworkDescription;
-        properties["$arch"] = RuntimeInformation.ProcessArchitecture.ToString();
-        if (_options.Value.DisableGeoIp)
-        {
-            properties["$geoip_disable"] = true;
-        }
+        properties[PostHogProperties.Lib] = LibraryName;
+        properties[PostHogProperties.LibVersion] = VersionConstants.Version;
+        properties[PostHogProperties.Os] = RuntimeInformation.OSDescription;
+        properties[PostHogProperties.Framework] = RuntimeInformation.FrameworkDescription;
+        properties[PostHogProperties.Architecture] = RuntimeInformation.ProcessArchitecture.ToString();
+        properties[PostHogProperties.GeoIpDisable] = properties.GetValueOrDefault(PostHogProperties.GeoIpDisable, true);
 
         properties.Merge(_options.Value.SuperProperties);
 

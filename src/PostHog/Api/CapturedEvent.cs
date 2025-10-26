@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using PostHog.Library;
 using PostHog.Versioning;
 
 namespace PostHog.Api;
@@ -18,7 +19,6 @@ public class CapturedEvent
     public CapturedEvent(
         string eventName,
         string distinctId,
-        bool disableGeoIp,
         Dictionary<string, object>? properties,
         DateTimeOffset timestamp)
     {
@@ -28,13 +28,10 @@ public class CapturedEvent
         Properties = properties ?? new Dictionary<string, object>();
 
         // Every event has to have these properties.
-        Properties["distinct_id"] = distinctId; // See `get_distinct_id` in PostHog/posthog api/capture.py line 321
-        Properties["$lib"] = PostHogApiClient.LibraryName;
-        Properties["$lib_version"] = VersionConstants.Version;
-        if (disableGeoIp)
-        {
-            Properties["$geoip_disable"] = true;
-        }
+        Properties[PostHogProperties.DistinctId] = distinctId; // See `get_distinct_id` in PostHog/posthog api/capture.py line 321
+        Properties[PostHogProperties.Lib] = PostHogApiClient.LibraryName;
+        Properties[PostHogProperties.LibVersion] = VersionConstants.Version;
+        Properties[PostHogProperties.GeoIpDisable] = Properties.GetValueOrDefault(PostHogProperties.GeoIpDisable, true);
     }
 
     /// <summary>

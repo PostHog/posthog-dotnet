@@ -53,7 +53,7 @@ public sealed class TestContainer : IServiceProvider
     {
         services.Configure<PostHogOptions>(options =>
         {
-            options.DisableGeoIp = disableGeoIp;
+            options.SuperProperties.Add("$geoip_disable", disableGeoIp);
         });
     })
     {

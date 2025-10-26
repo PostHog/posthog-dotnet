@@ -70,7 +70,8 @@ public class TheIdentifyPersonAsyncMethod
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
-                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}"
+                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
+                           "$geoip_disable": false
                          },
                          "api_key": "fake-project-api-key",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
