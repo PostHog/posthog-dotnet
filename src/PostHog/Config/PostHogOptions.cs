@@ -49,7 +49,7 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(3);
 
     /// <summary>
-    /// Maximum delay between retries. Defaults to 15 seconds.
+    /// Maximum delay between retries. Defaults to 10 seconds.
     /// </summary>
     public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromSeconds(10);
 
