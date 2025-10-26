@@ -34,6 +34,26 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public Uri HostUrl { get; set; } = new("https://us.i.posthog.com");
 
     /// <summary>
+    /// Timeout in milliseconds for any calls. Defaults to 10 seconds.
+    /// </summary>
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Number of times to retry a failed request. Defaults to 3.
+    /// </summary>
+    public int MaxRetries { get; set; } = 3;
+
+    /// <summary>
+    /// Base delay between retries. Defaults to 3 seconds.
+    /// </summary>
+    public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Maximum delay between retries. Defaults to 15 seconds.
+    /// </summary>
+    public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
     /// Default properties to send when capturing events. These properties override any properties with the same
     /// key sent with the event.
     /// </summary>

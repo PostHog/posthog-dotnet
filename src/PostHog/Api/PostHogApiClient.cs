@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
 using PostHog.Json;
 using PostHog.Library;
 using PostHog.Versioning;
@@ -21,6 +22,7 @@ internal sealed class PostHogApiClient : IDisposable
 
     readonly TimeProvider _timeProvider;
     readonly HttpClient _httpClient;
+    readonly ResiliencePipeline _resiliencePipeline;
     readonly IOptions<PostHogOptions> _options;
     readonly ILogger<PostHogApiClient> _logger;
 
@@ -30,11 +32,13 @@ internal sealed class PostHogApiClient : IDisposable
     /// <param name="httpClient">The <see cref="HttpClient"/> used to make requests.</param>
     /// <param name="options">The options used to configure this client.</param>
     /// <param name="timeProvider">The time provider <see cref="TimeProvider"/> to use to determine time.</param>
+    /// <param name="resiliencePipeline">The <see cref="ResiliencePipeline"/> to use for event request retries and timeouts.</param>
     /// <param name="logger">The logger.</param>
     public PostHogApiClient(
         HttpClient httpClient,
         IOptions<PostHogOptions> options,
         TimeProvider timeProvider,
+        ResiliencePipeline resiliencePipeline,
         ILogger<PostHogApiClient> logger)
     {
         _options = options;
@@ -47,6 +51,7 @@ internal sealed class PostHogApiClient : IDisposable
         var arch = RuntimeInformation.ProcessArchitecture;
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"{LibraryName}/{VersionConstants.Version} ({framework}; {os}; {arch})");
 
+        _resiliencePipeline = resiliencePipeline;
         logger.LogTraceApiClientCreated(HostUrl);
         _logger = logger;
     }
@@ -74,8 +79,13 @@ internal sealed class PostHogApiClient : IDisposable
             ["batch"] = events.ToReadOnlyList()
         };
 
-        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, cancellationToken)
-               ?? new ApiResult(0);
+        return await _resiliencePipeline.ExecuteAsync(
+            static async (state, token) => await state.Client.PostJsonAsync<ApiResult>(
+                state.Endpoint,
+                state.Payload,
+                token) ?? new ApiResult(0),
+            (Endpoint: endpointUrl, Payload: payload, Client: _httpClient),
+            cancellationToken);
     }
 
     /// <summary>
@@ -90,8 +100,13 @@ internal sealed class PostHogApiClient : IDisposable
 
         var endpointUrl = new Uri(HostUrl, "capture");
 
-        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, cancellationToken)
-               ?? new ApiResult(0);
+        return await _resiliencePipeline.ExecuteAsync(
+            static async (state, token) => await state.Client.PostJsonAsync<ApiResult>(
+                state.Endpoint,
+                state.Payload,
+                token) ?? new ApiResult(0),
+            (Endpoint: endpointUrl, Payload: payload, Client: _httpClient),
+            cancellationToken);
     }
 
     /// <summary>

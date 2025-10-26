@@ -3,6 +3,9 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
+using Polly.Timeout;
 using PostHog.Api;
 using PostHog.ErrorTracking;
 using PostHog.Exceptions;
@@ -35,6 +38,7 @@ public sealed class PostHogClient : IPostHogClient
     /// <param name="httpClientFactory">Creates <see cref="HttpClient"/> for making requests to PostHog's API.</param>
     /// <param name="taskScheduler">Used to run tasks on the background.</param>
     /// <param name="timeProvider">The time provider <see cref="TimeProvider"/> to use to determine time.</param>
+    /// <param name="resiliencePipeline">The <see cref="Polly.ResiliencePipeline"/> to use when making event requests to PostHog's API.</param>
     /// <param name="loggerFactory">The logger factory.</param>
     public PostHogClient(
         IOptions<PostHogOptions> options,
@@ -42,6 +46,7 @@ public sealed class PostHogClient : IPostHogClient
         IHttpClientFactory? httpClientFactory = null,
         ITaskScheduler? taskScheduler = null,
         TimeProvider? timeProvider = null,
+        ResiliencePipeline? resiliencePipeline = null,
         ILoggerFactory? loggerFactory = null)
     {
         _options = NotNull(options);
@@ -51,10 +56,28 @@ public sealed class PostHogClient : IPostHogClient
         _timeProvider = timeProvider ?? TimeProvider.System;
         loggerFactory ??= NullLoggerFactory.Instance;
 
+        resiliencePipeline ??= new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = _options.Value.MaxRetries,
+                Delay = _options.Value.RetryDelay,
+                MaxDelay = _options.Value.MaxRetryDelay,
+                BackoffType = DelayBackoffType.Exponential,
+                ShouldHandle = args => args.Outcome switch
+                {
+                    { Exception: ApiException } => PredicateResult.True(),
+                    { Exception: TimeoutRejectedException } => PredicateResult.True(),
+                    _ => PredicateResult.False()
+                }
+            })
+            .AddTimeout(_options.Value.RequestTimeout)
+            .Build();
+
         _apiClient = new PostHogApiClient(
             httpClientFactory.CreateClient(nameof(PostHogClient)),
             options,
             _timeProvider,
+            resiliencePipeline,
             loggerFactory.CreateLogger<PostHogApiClient>()
         );
         _asyncBatchHandler = new AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext>(
