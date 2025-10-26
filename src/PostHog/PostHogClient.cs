@@ -56,7 +56,10 @@ public sealed class PostHogClient : IPostHogClient
         _timeProvider = timeProvider ?? TimeProvider.System;
         loggerFactory ??= NullLoggerFactory.Instance;
 
-        resiliencePipeline ??= new ResiliencePipelineBuilder()
+        resiliencePipeline ??= new ResiliencePipelineBuilder
+            {
+                TimeProvider = _timeProvider
+            }
             .AddRetry(new RetryStrategyOptions
             {
                 MaxRetryAttempts = _options.Value.MaxRetries,
