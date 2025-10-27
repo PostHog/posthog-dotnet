@@ -48,6 +48,17 @@ public sealed class TestContainer : IServiceProvider
     {
     }
 
+    // Convenience constructor.
+    public TestContainer(bool disableGeoIp) : this(services =>
+    {
+        services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties.Add("$geoip_disable", disableGeoIp);
+        });
+    })
+    {
+    }
+
     public FakeHttpMessageHandler FakeHttpMessageHandler { get; } = new();
 
     public FakeTimeProvider FakeTimeProvider { get; } = new();
