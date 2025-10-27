@@ -92,7 +92,7 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// The interval in milliseconds between periodic flushes. (Default: 30s)
     /// </summary>
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(30);
-    
+
     // Explicit implementation to hide this value from most users.
     // This is here to make it easier to instantiate the client with the options.
     PostHogOptions IOptions<PostHogOptions>.Value => this;

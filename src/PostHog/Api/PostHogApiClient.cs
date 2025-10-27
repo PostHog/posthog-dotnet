@@ -177,7 +177,7 @@ internal sealed class PostHogApiClient : IDisposable
     /// <returns></returns>
     public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken)
     {
-        var uriBuilder = new UriBuilder(new Uri(HostUrl,            $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"))
+        var uriBuilder = new UriBuilder(new Uri(HostUrl, $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"))
         {
             Query = $"token={Uri.EscapeDataString(ProjectApiKey)}"
         };

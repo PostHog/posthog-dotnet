@@ -78,7 +78,7 @@ public class TheIdentifyPersonAsyncMethod
                        }
                        """, received);
     }
-    
+
     [Fact]
     public async Task SendsCorrectPayloadWithPersonProperties()
     {
