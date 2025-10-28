@@ -21,6 +21,14 @@ internal static class FakeHttpMessageHandlerExtensions
             HttpMethod.Post,
             responseBody: new { status = 1 });
 
+    public static FakeHttpMessageHandler.RequestHandler AddBatchResponseException(
+        this FakeHttpMessageHandler handler,
+        Exception exception)
+        => handler.AddResponseException(
+            new Uri("https://us.i.posthog.com/batch"),
+            HttpMethod.Post,
+            exception);
+
     public static FakeHttpMessageHandler.RequestHandler AddDecideResponseException(
         this FakeHttpMessageHandler handler,
         Exception exception)
