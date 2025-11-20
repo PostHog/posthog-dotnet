@@ -167,7 +167,7 @@ internal sealed class LocalEvaluator
         bool warnOnUnknownGroups = true)
     {
         // add a "distinct_id" property to enable conditioning on a specific user
-        // that is known but not continained in the person properties
+        // that is known but not contained in the person properties
         var personPropertiesWithId = new Dictionary<string, object?>(personProperties);
         const string DistinctIdKey = "distinct_id";
         if (!personPropertiesWithId.ContainsKey(DistinctIdKey))
