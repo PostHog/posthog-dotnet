@@ -42,6 +42,11 @@ internal record DecideApiResult
     /// The request Id of the API request.
     /// </summary>
     public string? RequestId { get; init; }
+
+    /// <summary>
+    /// The timestamp when the feature flags were evaluated (ISO 8601 format).
+    /// </summary>
+    public long? EvaluatedAt { get; init; }
 }
 
 // This is a transformation of the DecideApiResult to a more usable form.
@@ -61,6 +66,11 @@ public record FlagsResult
     /// The request Id of the API request.
     /// </summary>
     public string? RequestId { get; init; }
+
+    /// <summary>
+    /// The timestamp when the feature flags were evaluated (ISO 8601 format).
+    /// </summary>
+    public long? EvaluatedAt { get; init; }
 
     /// <summary>
     /// The list of feature flags that are limited by quota.
@@ -109,6 +119,7 @@ internal static class DecideResultsExtensions
                 : new Dictionary<string, FeatureFlag>(),
             ErrorsWhileComputingFlags = results.ErrorsWhileComputingFlags,
             RequestId = results.RequestId,
+            EvaluatedAt = results.EvaluatedAt,
             QuotaLimited = results.QuotaLimited ?? []
         };
     }
