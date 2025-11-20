@@ -395,11 +395,12 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddDecideResponse(
             """
-            { 
+            {
                 "featureFlags": {"flag-key": true},
                 "requestId": "the-request-id",
+                "evaluatedAt": 1705862903000,
                 "featureFlagPayloads": {}
-            } 
+            }
             """
         );
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -423,6 +424,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "locally_evaluated": false,
                       "$feature/flag-key": true,
                       "$feature_flag_request_id": "the-request-id",
+                      "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
@@ -454,7 +456,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         messageHandler.AddDecideResponse(
             $$"""
-              { 
+              {
                   "flags": {
                       "flag-key": {
                           "key": "flag-key",
@@ -469,11 +471,12 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                             "id": 1,
                             "version": 23,
                             "payload": "{\"foo\": 1}",
-                            "description": "This is an enabled flag"  
+                            "description": "This is an enabled flag"
                           }
                       }
                   },
-                  "requestId": "the-request-id"
+                  "requestId": "the-request-id",
+                  "evaluatedAt": 1705862903000
               }
               """
         );
@@ -501,6 +504,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_version": 23,
                       "$feature_flag_reason": "Matched conditions set 3",
                       "$feature_flag_request_id": "the-request-id",
+                      "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",

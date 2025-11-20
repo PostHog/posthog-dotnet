@@ -44,7 +44,7 @@ internal record DecideApiResult
     public string? RequestId { get; init; }
 
     /// <summary>
-    /// The timestamp when the feature flags were evaluated (ISO 8601 format).
+    /// The timestamp when the feature flags were evaluated (milliseconds since Unix epoch).
     /// </summary>
     public long? EvaluatedAt { get; init; }
 }
@@ -68,7 +68,7 @@ public record FlagsResult
     public string? RequestId { get; init; }
 
     /// <summary>
-    /// The timestamp when the feature flags were evaluated (ISO 8601 format).
+    /// The timestamp when the feature flags were evaluated (milliseconds since Unix epoch).
     /// </summary>
     public long? EvaluatedAt { get; init; }
 
