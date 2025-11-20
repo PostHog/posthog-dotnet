@@ -80,6 +80,47 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
+    [InlineData("internal/1234", ComparisonOperator.Exact, true)]
+    [InlineData("INTERNAL/1234", ComparisonOperator.Exact, true)] // Case-insensitive
+    [InlineData("public/98765", ComparisonOperator.Exact, false)]
+    [InlineData("", ComparisonOperator.Exact, false)]
+    [InlineData(null, ComparisonOperator.Exact, false)]
+    [InlineData("internal/1234", ComparisonOperator.IsNot, false)]
+    [InlineData("INTERNAL/1234", ComparisonOperator.IsNot, false)] // Case-insensitive
+    [InlineData("public/98765", ComparisonOperator.IsNot, true)]
+    [InlineData("", ComparisonOperator.IsNot, true)]
+    [InlineData(null, ComparisonOperator.IsNot, true)]
+    public void HandlesMatchesByDistinctId(string? distinctId, ComparisonOperator comparison, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "valid_users",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "distinct_id",
+                    Value = new PropertyFilterValue([
+                        "internal/123",
+                        "internal/1234",
+                        "public/12345",
+                        "public/56789"
+                    ]),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>();
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "valid_users",
+            distinctId: distinctId ?? string.Empty,
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
     [InlineData(42, ComparisonOperator.Exact, true)]
     [InlineData(42.5, ComparisonOperator.Exact, true)]
     [InlineData("42.5", ComparisonOperator.Exact, true)]

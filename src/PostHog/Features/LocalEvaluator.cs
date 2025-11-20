@@ -166,11 +166,20 @@ internal sealed class LocalEvaluator
         Dictionary<string, object?> personProperties,
         bool warnOnUnknownGroups = true)
     {
+        // add a "distinct_id" property to enable conditioning on a specific user
+        // that is known but not continained in the person properties
+        var personPropertiesWithId = new Dictionary<string, object?>(personProperties);
+        const string DistinctIdKey = "distinct_id";
+        if (!personPropertiesWithId.ContainsKey(DistinctIdKey))
+        {
+            personPropertiesWithId[DistinctIdKey] = distinctId;
+        }
+
         return ComputeFlagLocallyWithCache(
             flag,
             distinctId,
             groups,
-            personProperties,
+            personPropertiesWithId,
             new Dictionary<string, StringOrValue<bool>>(),
             warnOnUnknownGroups);
     }
