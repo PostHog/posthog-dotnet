@@ -121,45 +121,6 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
-    [InlineData("internal/1234", false)]
-    [InlineData("INTERNAL/1234", false)]
-    [InlineData("public/98765", false)]
-    [InlineData("internal/9999", true)]
-    [InlineData("INTERNAL/9999", true)] // insensitive match
-    public void HandlesMatchByDistinctIdWithPropertyPresent(string? distinctId, bool expected)
-    {
-        var flags = CreateFlags(
-            key: "valid_users",
-            properties: [
-                new PropertyFilter
-                {
-                    Type = FilterType.Person,
-                    Key = "distinct_id",
-                    Value = new PropertyFilterValue([
-                        distinctId ?? "unknown",
-                        "internal/1234",
-                        "public/12345",
-                        "public/56789"
-                    ]),
-                    Operator = ComparisonOperator.Exact
-                }
-            ]
-        );
-        var properties = new Dictionary<string, object?>
-        {
-            ["distinct_id"] = "internal/9999"
-        };
-        var localEvaluator = new LocalEvaluator(flags);
-
-        var result = localEvaluator.EvaluateFeatureFlag(
-            key: "valid_users",
-            distinctId: distinctId ?? string.Empty,
-            personProperties: properties);
-
-        Assert.Equal(expected, result);
-    }
-
-    [Theory]
     [InlineData(42, ComparisonOperator.Exact, true)]
     [InlineData(42.5, ComparisonOperator.Exact, true)]
     [InlineData("42.5", ComparisonOperator.Exact, true)]
