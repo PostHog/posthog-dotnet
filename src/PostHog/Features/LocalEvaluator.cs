@@ -548,7 +548,7 @@ internal sealed class LocalEvaluator
         object? overrideValue;
 
         // distinct_id is a special property that should be available but not necessarily present in properties.
-        if (string.Equals(key, "distinct_id", StringComparison.Ordinal))
+        if (string.Equals(key, PostHogProperties.DistinctId, StringComparison.Ordinal))
         {
             overrideValue = distinctId;
         }
