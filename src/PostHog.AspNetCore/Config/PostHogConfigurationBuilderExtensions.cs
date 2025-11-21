@@ -6,6 +6,7 @@ using PostHog.FeatureManagement;
 using PostHog.Library;
 
 namespace PostHog.Config;
+
 using static Ensure;
 
 /// <summary>
