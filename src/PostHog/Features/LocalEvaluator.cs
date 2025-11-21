@@ -322,9 +322,9 @@ internal sealed class LocalEvaluator
         {
             if (condition.Properties.Select(property => property.Type switch
                 {
-                    FilterType.Cohort => MatchCohort(property, properties),
+                    FilterType.Cohort => MatchCohort(property, distinctId, properties),
                     FilterType.Flag => MatchFlagDependencyFilter(property, distinctId, properties, evaluationCache, groups),
-                    _ => MatchProperty(property, properties)
+                    _ => MatchProperty(property, distinctId, properties)
                 }).Any(isMatch => !isMatch))
             {
                 return false;
@@ -371,6 +371,7 @@ internal sealed class LocalEvaluator
 
     bool MatchCohort(
         PropertyFilter filter,
+        string distinctId,
         Dictionary<string, object?>? propertyValues)
     {
         // Cohort properties are in the form of property groups like this:
@@ -388,10 +389,10 @@ internal sealed class LocalEvaluator
             throw new RequiresServerEvaluationException($"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation");
         }
 
-        return MatchPropertyGroup(conditions, propertyValues);
+        return MatchPropertyGroup(conditions, distinctId, propertyValues);
     }
 
-    bool MatchPropertyGroup(FilterSet? filterSet, Dictionary<string, object?>? propertyValues)
+    bool MatchPropertyGroup(FilterSet? filterSet, string distinctId, Dictionary<string, object?>? propertyValues)
     {
         if (filterSet is null)
         {
@@ -423,7 +424,7 @@ internal sealed class LocalEvaluator
 
                 try
                 {
-                    var isMatch = MatchPropertyGroup(childFilterSet, propertyValues);
+                    var isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues);
                     if (childFilterSet.Type is FilterType.And)
                     {
                         if (!isMatch)
@@ -465,8 +466,8 @@ internal sealed class LocalEvaluator
             try
             {
                 var isMatch = filter.Type is FilterType.Cohort
-                    ? MatchCohort(propertyFilter, propertyValues)
-                    : MatchProperty(propertyFilter, propertyValues);
+                    ? MatchCohort(propertyFilter, distinctId, propertyValues)
+                    : MatchProperty(propertyFilter, distinctId, propertyValues);
                 var negation = propertyFilter.Negation;
 
                 if (filterSet.Type is FilterType.And)
@@ -514,9 +515,10 @@ internal sealed class LocalEvaluator
     /// Doesn't support the operator <c>is_not_set</c>.
     /// </remarks>
     /// <param name="propertyFilter">The <see cref="PropertyFilter"/> to evaluate.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="properties">The overriden values that describe the user/group.</param>
     /// <returns><c>true</c> if the current user/group matches the property. Otherwise <c>false</c>.</returns>
-    bool MatchProperty(PropertyFilter propertyFilter, Dictionary<string, object?>? properties)
+    bool MatchProperty(PropertyFilter propertyFilter, string distinctId, Dictionary<string, object?>? properties)
     {
         // Handle flag dependencies
         if (propertyFilter.Type is FilterType.Flag)
@@ -543,7 +545,19 @@ internal sealed class LocalEvaluator
         // evaluation, it's a bit of a misnomer because this is the *only* value we're concerned with. I thought about
         // naming this to comparand but wanted to keep the naming consistent with the other client libraries.
         // @haacked
-        if (!NotNull(properties).TryGetValue(key, out var overrideValue))
+        object? overrideValue;
+
+        // distinct_id is a special property that should be available but not necessarily present in properties.
+        if (string.Equals(key, PostHogProperties.DistinctId, StringComparison.Ordinal))
+        {
+            overrideValue = distinctId;
+        }
+        // Check all remaining properties.
+        else if (NotNull(properties).TryGetValue(key, out var propValue))
+        {
+            overrideValue = propValue;
+        }
+        else
         {
             throw new InconclusiveMatchException("Can't match properties without a given property value");
         }
