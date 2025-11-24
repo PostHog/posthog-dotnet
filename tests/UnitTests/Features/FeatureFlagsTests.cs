@@ -448,6 +448,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             {
                 "featureFlags": {"flag-key": true},
                 "requestId": "the-request-id",
+                "evaluatedAt": 1705862903000,
                 "featureFlagPayloads": {}
             }
             """
@@ -459,11 +460,6 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-
-        // Verify $feature_flag_evaluated_at is NOT present
-        Assert.DoesNotContain("$feature_flag_evaluated_at", received, StringComparison.Ordinal);
-        // Verify other properties ARE present
-        Assert.Contains("$feature_flag_request_id", received, StringComparison.Ordinal);
         Assert.Equal(
             $$"""
               {
@@ -478,6 +474,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "locally_evaluated": false,
                       "$feature/flag-key": true,
                       "$feature_flag_request_id": "the-request-id",
+                      "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
