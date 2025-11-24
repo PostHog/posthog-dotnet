@@ -1,6 +1,7 @@
 using PostHog.Library;
 
 namespace PostHog;
+
 using static Ensure;
 
 /// <summary>

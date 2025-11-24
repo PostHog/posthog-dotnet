@@ -438,6 +438,105 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             , received);
     }
 
+    [Fact]
+    public async Task CapturesFeatureFlagCalledEventWithoutEvaluatedAtWhenNotPresent()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddDecideResponse(
+            """
+            {
+                "featureFlags": {"flag-key": true},
+                "requestId": "the-request-id",
+                "featureFlagPayloads": {}
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+
+        // Verify $feature_flag_evaluated_at is NOT present
+        Assert.DoesNotContain("$feature_flag_evaluated_at", received, StringComparison.Ordinal);
+        // Verify other properties ARE present
+        Assert.Contains("$feature_flag_request_id", received, StringComparison.Ordinal);
+        Assert.Equal(
+            $$"""
+              {
+                "api_key": "fake-project-api-key",
+                "historical_migrations": false,
+                "batch": [
+                  {
+                    "event": "$feature_flag_called",
+                    "properties": {
+                      "$feature_flag": "flag-key",
+                      "$feature_flag_response": true,
+                      "locally_evaluated": false,
+                      "$feature/flag-key": true,
+                      "$feature_flag_request_id": "the-request-id",
+                      "distinct_id": "a-distinct-id",
+                      "$lib": "posthog-dotnet",
+                      "$lib_version": "{{client.Version}}",
+                      "$geoip_disable": true
+                    },
+                    "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                  }
+                ]
+              }
+              """
+            , received);
+    }
+
+    [Fact]
+    public async Task LocallyEvaluatedFlagsDoNotIncludeEvaluatedAtOrRequestId()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddLocalEvaluationResponse(
+            """
+            {
+              "flags": [
+                {
+                    "key": "local-flag",
+                    "active": true,
+                    "rollout_percentage": 100,
+                    "filters": {
+                        "groups": [
+                            {
+                                "properties": [],
+                                "rollout_percentage": 100
+                            }
+                        ]
+                    }
+                }
+              ]
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        // OnlyEvaluateLocally = true means no remote call
+        var result = await client.IsFeatureEnabledAsync(
+            "local-flag",
+            "a-distinct-id",
+            options: new FeatureFlagOptions { OnlyEvaluateLocally = true });
+
+        Assert.True(result);
+        await client.FlushAsync();
+
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+
+        // Should NOT contain evaluatedAt since it was evaluated locally
+        Assert.DoesNotContain("$feature_flag_evaluated_at", received, StringComparison.Ordinal);
+        // Should NOT contain requestId since no remote call was made
+        Assert.DoesNotContain("$feature_flag_request_id", received, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(true, "true")]
     [InlineData("variant", "\"variant\"")]

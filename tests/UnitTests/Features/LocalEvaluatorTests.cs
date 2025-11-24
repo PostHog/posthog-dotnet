@@ -80,6 +80,116 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
+    [InlineData("internal/1234", ComparisonOperator.Exact, true)]
+    [InlineData("INTERNAL/1234", ComparisonOperator.Exact, true)] // Case-insensitive
+    [InlineData("public/98765", ComparisonOperator.Exact, false)]
+    [InlineData("", ComparisonOperator.Exact, false)]
+    [InlineData(null, ComparisonOperator.Exact, false)]
+    [InlineData("internal/1234", ComparisonOperator.IsNot, false)]
+    [InlineData("INTERNAL/1234", ComparisonOperator.IsNot, false)] // Case-insensitive
+    [InlineData("public/98765", ComparisonOperator.IsNot, true)]
+    [InlineData("", ComparisonOperator.IsNot, true)]
+    [InlineData(null, ComparisonOperator.IsNot, true)]
+    public void HandlesMatchesByDistinctId(string? distinctId, ComparisonOperator comparison, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "valid_users",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "distinct_id",
+                    Value = new PropertyFilterValue([
+                        "internal/123",
+                        "internal/1234",
+                        "public/12345",
+                        "public/56789"
+                    ]),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>();
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "valid_users",
+            distinctId: distinctId ?? string.Empty,
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("internal-123", true)]
+    [InlineData("internal-456", true)]
+    [InlineData("external-789", false)]
+    [InlineData("", false)]
+    public void EvaluatesCohortWithDistinctIdFilter(string distinctId, bool expected)
+    {
+        // Define a cohort that filters by distinct_id
+        var cohortFilters = new Dictionary<string, FilterSet>
+        {
+            ["1"] = new FilterSet
+            {
+                Type = FilterType.And,
+                Values =
+                [
+                    new PropertyFilter
+                    {
+                        Type = FilterType.Person,
+                        Key = "distinct_id",
+                        Value = new PropertyFilterValue(["internal-123", "internal-456"]),
+                        Operator = ComparisonOperator.Exact
+                    }
+                ]
+            }
+        };
+
+        // Create a flag that uses this cohort
+        var apiResult = new LocalEvaluationApiResult
+        {
+            Flags = [
+                new LocalFeatureFlag
+                {
+                    Id = 1,
+                    TeamId = 1,
+                    Key = "internal-users-flag",
+                    Active = true,
+                    Filters = new FeatureFlagFilters
+                    {
+                        Groups = [
+                            new FeatureFlagGroup
+                            {
+                                Properties = [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Cohort,
+                                        Key = "id",
+                                        Value = new PropertyFilterValue(1),
+                                        Operator = ComparisonOperator.In
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ],
+            Cohorts = cohortFilters,
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+
+        var localEvaluator = new LocalEvaluator(apiResult);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "internal-users-flag",
+            distinctId: distinctId,
+            personProperties: new Dictionary<string, object?>());
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
     [InlineData(42, ComparisonOperator.Exact, true)]
     [InlineData(42.5, ComparisonOperator.Exact, true)]
     [InlineData("42.5", ComparisonOperator.Exact, true)]
@@ -1217,7 +1327,7 @@ public class TheFlagDependencyEvaluationMethod
     [Fact]
     public void EvaluatesMultivariateFlagDependencyAgainstBooleanFalse()
     {
-        // Create a multivariate leaf flag  
+        // Create a multivariate leaf flag
         var leafFlag = CreateMultivariateFlagWithVariants("leaf-flag", active: true, "control", "test");
 
         // Create dependent flag that checks if leaf-flag evaluates to false
@@ -1599,7 +1709,7 @@ public class TheMatchesDependencyValueMethod
     [Theory]
     // Type mismatches - these test cases where the implementation should return false
     [InlineData(123, "control", false)] // Long expected value vs string actual
-    [InlineData("control", true, false)] // String expected vs boolean actual  
+    [InlineData("control", true, false)] // String expected vs boolean actual
     public void DoesNotMatchTypeMismatches(object expected, object actual, bool shouldMatch)
     {
         PropertyFilterValue expectedValue = expected switch

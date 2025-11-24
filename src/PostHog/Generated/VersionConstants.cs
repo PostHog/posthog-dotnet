@@ -6,5 +6,5 @@
 namespace PostHog.Versioning;
 public static class VersionConstants
 {
-    public const string Version = "2.2.1";
+    public const string Version = "2.2.2";
 }
