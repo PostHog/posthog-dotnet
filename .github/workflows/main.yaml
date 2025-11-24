@@ -16,7 +16,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
   PackageDirectory: ${{ github.workspace }}/build/packages/Release
-  DOTNET_VERSION: 9.0.101
+  DOTNET_VERSION: 9.0.102
 
 permissions:
   checks: write
