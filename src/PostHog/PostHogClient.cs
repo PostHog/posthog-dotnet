@@ -332,6 +332,7 @@ public sealed class PostHogClient : IPostHogClient
 
         var flagWasLocallyEvaluated = response is not null;
         string? requestId = null;
+        long? evaluatedAt = null;
         if (!flagWasLocallyEvaluated && options is not { OnlyEvaluateLocally: true })
         {
             try
@@ -345,6 +346,7 @@ public sealed class PostHogClient : IPostHogClient
                     },
                     cancellationToken);
                 requestId = flagsResult.RequestId;
+                evaluatedAt = flagsResult.EvaluatedAt;
                 response = flagsResult.Flags.GetValueOrDefault(featureKey) ?? new FeatureFlag
                 {
                     Key = featureKey,
@@ -371,6 +373,7 @@ public sealed class PostHogClient : IPostHogClient
                     cacheEntry,
                     response,
                     requestId,
+                    evaluatedAt,
                     options.Groups));
         }
 
@@ -440,6 +443,7 @@ public sealed class PostHogClient : IPostHogClient
         ICacheEntry cacheEntry,
         FeatureFlag? flag,
         string? requestId,
+        long? evaluatedAt,
         GroupCollection? groupProperties)
     {
         cacheEntry.SetSize(1); // Each entry has a size of 1
@@ -463,6 +467,11 @@ public sealed class PostHogClient : IPostHogClient
         if (requestId is not null)
         {
             properties["$feature_flag_request_id"] = requestId;
+        }
+
+        if (evaluatedAt is not null)
+        {
+            properties["$feature_flag_evaluated_at"] = evaluatedAt;
         }
 
         Capture(

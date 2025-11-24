@@ -395,11 +395,12 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         var messageHandler = container.FakeHttpMessageHandler;
         messageHandler.AddDecideResponse(
             """
-            { 
+            {
                 "featureFlags": {"flag-key": true},
                 "requestId": "the-request-id",
+                "evaluatedAt": 1705862903000,
                 "featureFlagPayloads": {}
-            } 
+            }
             """
         );
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -423,6 +424,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "locally_evaluated": false,
                       "$feature/flag-key": true,
                       "$feature_flag_request_id": "the-request-id",
+                      "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
@@ -434,6 +436,102 @@ public class TheIsFeatureFlagEnabledAsyncMethod
               }
               """
             , received);
+    }
+
+    [Fact]
+    public async Task CapturesFeatureFlagCalledEventWithoutEvaluatedAtWhenNotPresent()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddDecideResponse(
+            """
+            {
+                "featureFlags": {"flag-key": true},
+                "requestId": "the-request-id",
+                "evaluatedAt": 1705862903000,
+                "featureFlagPayloads": {}
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal(
+            $$"""
+              {
+                "api_key": "fake-project-api-key",
+                "historical_migrations": false,
+                "batch": [
+                  {
+                    "event": "$feature_flag_called",
+                    "properties": {
+                      "$feature_flag": "flag-key",
+                      "$feature_flag_response": true,
+                      "locally_evaluated": false,
+                      "$feature/flag-key": true,
+                      "$feature_flag_request_id": "the-request-id",
+                      "$feature_flag_evaluated_at": 1705862903000,
+                      "distinct_id": "a-distinct-id",
+                      "$lib": "posthog-dotnet",
+                      "$lib_version": "{{client.Version}}",
+                      "$geoip_disable": true
+                    },
+                    "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                  }
+                ]
+              }
+              """
+            , received);
+    }
+
+    [Fact]
+    public async Task LocallyEvaluatedFlagsDoNotIncludeEvaluatedAtOrRequestId()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddLocalEvaluationResponse(
+            """
+            {
+              "flags": [
+                {
+                    "key": "local-flag",
+                    "active": true,
+                    "rollout_percentage": 100,
+                    "filters": {
+                        "groups": [
+                            {
+                                "properties": [],
+                                "rollout_percentage": 100
+                            }
+                        ]
+                    }
+                }
+              ]
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        // OnlyEvaluateLocally = true means no remote call
+        var result = await client.IsFeatureEnabledAsync(
+            "local-flag",
+            "a-distinct-id",
+            options: new FeatureFlagOptions { OnlyEvaluateLocally = true });
+
+        Assert.True(result);
+        await client.FlushAsync();
+
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+
+        // Should NOT contain evaluatedAt since it was evaluated locally
+        Assert.DoesNotContain("$feature_flag_evaluated_at", received, StringComparison.Ordinal);
+        // Should NOT contain requestId since no remote call was made
+        Assert.DoesNotContain("$feature_flag_request_id", received, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -454,7 +552,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         messageHandler.AddDecideResponse(
             $$"""
-              { 
+              {
                   "flags": {
                       "flag-key": {
                           "key": "flag-key",
@@ -469,11 +567,12 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                             "id": 1,
                             "version": 23,
                             "payload": "{\"foo\": 1}",
-                            "description": "This is an enabled flag"  
+                            "description": "This is an enabled flag"
                           }
                       }
                   },
-                  "requestId": "the-request-id"
+                  "requestId": "the-request-id",
+                  "evaluatedAt": 1705862903000
               }
               """
         );
@@ -501,6 +600,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_version": 23,
                       "$feature_flag_reason": "Matched conditions set 3",
                       "$feature_flag_request_id": "the-request-id",
+                      "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
