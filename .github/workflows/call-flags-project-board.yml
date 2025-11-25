@@ -10,7 +10,7 @@
 # If you need to create a similar workflow, please use a
 # different name
 
-name: "[BLOCKED] Workflow name placeholder"
+name: Call Feature Flags Project Workflow
 
 on:
   workflow_dispatch:
