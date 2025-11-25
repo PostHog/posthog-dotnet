@@ -8,7 +8,7 @@ additional functionality for ASP.NET Core projects.
 > feedback. While we always strive to maintain a high level of quality, use this package at your own
 > risk. There *will* be many breaking changes until we reach a stable release.
 
-## Installation
+## Installation -
 
 Use the `dotnet` CLI to add the package to your project:
 
