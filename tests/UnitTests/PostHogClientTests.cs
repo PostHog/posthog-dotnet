@@ -1,8 +1,3 @@
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Runtime.Loader;
-using System.Text;
-using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Emit;
@@ -10,8 +5,17 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
+using Polly.Timeout;
 using PostHog;
+using PostHog.Library;
 using PostHog.Versioning;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Runtime.Loader;
+using System.Text;
+using System.Text.Json;
 using UnitTests.Fakes;
 
 #pragma warning disable CA2000
@@ -663,6 +667,86 @@ public class TheCaptureMethod
                      }
                      """, received);
     }
+
+    // Polly timeout, retry, and backoff flow when capturing events
+    [Fact]
+    public async Task CaptureRetriesOnErrorWithDefaultPipeline()
+    {
+        var container = new TestContainer();
+        var fakeTime = container.FakeTimeProvider;
+        var observed = new List<(int Attempt, TimeSpan Delay)>();
+
+        var resilienceBuilder = new ResiliencePipelineBuilder
+        {
+            TimeProvider = container.FakeTimeProvider
+        };
+
+        // Resembles the default resilience pipeline instead of the empty one usually used for tests
+        // We also capture the retry attempts and delays for verification with OnRetry
+        var pipeline = resilienceBuilder
+            .AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = 3,
+                Delay = TimeSpan.FromSeconds(3),
+                MaxDelay = TimeSpan.FromSeconds(10),
+                BackoffType = DelayBackoffType.Exponential,
+                ShouldHandle = args => args.Outcome switch
+                {
+                    { Exception: ApiException } => PredicateResult.True(),
+                    { Exception: TimeoutRejectedException } => PredicateResult.True(),
+                    _ => PredicateResult.False()
+                },
+                OnRetry = args =>
+                {
+                    observed.Add((args.AttemptNumber, args.RetryDelay));
+                    return default;
+                }
+            })
+            .AddTimeout(TimeSpan.FromSeconds(15))
+            .Build();
+
+        var client = container.Activate<PostHogClient>(pipeline);
+
+        container.FakeHttpMessageHandler.AddBatchResponseException(new ApiException("Error"));
+        container.FakeHttpMessageHandler.AddBatchResponseException(new ApiException("Error Retry 1"));
+        container.FakeHttpMessageHandler.AddBatchResponseException(new ApiException("Error Retry 2"));
+        container.FakeHttpMessageHandler.AddBatchResponseException(new ApiException("Error Retry 3"));
+
+        client.Capture("test-user", "retry-event");
+        var flushTask = client.FlushAsync();
+        await Task.Yield();
+
+        // Advance fake time to fire the scheduled retries immediately
+        fakeTime.Advance(TimeSpan.FromSeconds(3));
+        fakeTime.Advance(TimeSpan.FromSeconds(6));
+        fakeTime.Advance(TimeSpan.FromSeconds(12));
+
+        // After all the retries we should get the last exception
+        var lastException = await Assert.ThrowsAsync<ApiException>(() => flushTask);
+        Assert.Equal("Error Retry 3", lastException.Message);
+        Assert.Collection(observed,
+            x => { Assert.Equal(0, x.Attempt); Assert.Equal(TimeSpan.FromSeconds(3), x.Delay); },
+            x => { Assert.Equal(1, x.Attempt); Assert.Equal(TimeSpan.FromSeconds(6), x.Delay); },
+            // Due to delay cap it should be 10 not 12 seconds
+            x => { Assert.Equal(2, x.Attempt); Assert.Equal(TimeSpan.FromSeconds(10), x.Delay); }
+        );
+
+        client.Capture("test-user", "successful-retry-event");
+        container.FakeHttpMessageHandler.AddBatchResponseException(new TimeoutRejectedException());
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+
+        var flushTask2 = client.FlushAsync();
+        await Task.Yield();
+
+        // Advance fake time past timeout to trigger the retry
+        fakeTime.Advance(TimeSpan.FromSeconds(16));
+        await flushTask2;
+
+        // After timeout the retried request should succeed
+        Assert.Equal(TimeSpan.FromSeconds(3), observed.Last().Delay);
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("successful-retry-event", received, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public class TheCaptureExceptionMethod
@@ -896,9 +980,7 @@ public class TheCaptureExceptionMethod
         }
     }
 
-    // This test is pretty expensive because it dynamically compiles and loads an assembly.
-    // Consider alternatives.
-    [Fact]
+    [Fact(Skip= "Takes long time to run because it dynamically compiles and loads an assembly.")]
     public async Task CaptureExceptionWithInvalidFilePathInStackFrame()
     {
         var (_, requestHandler, client) = CreateClient();

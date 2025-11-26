@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Polly;
 using PostHog;
 using PostHog.Config;
 using PostHog.Library;
@@ -97,7 +98,7 @@ public sealed class TestContainer : IServiceProvider
             var taskScheduler = sp.GetRequiredService<ITaskScheduler>();
             var timeProvider = sp.GetRequiredService<TimeProvider>();
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-            return new PostHogClient(options, cache, httpClientFactory, taskScheduler, timeProvider, loggerFactory);
+            return new PostHogClient(options, cache, httpClientFactory, taskScheduler, timeProvider, ResiliencePipeline.Empty, loggerFactory);
         });
     }
 
