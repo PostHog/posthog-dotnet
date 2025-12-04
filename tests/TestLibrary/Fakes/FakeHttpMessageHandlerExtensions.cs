@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
@@ -66,6 +68,8 @@ internal static class FakeHttpMessageHandlerExtensions
     public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
         => handler.AddRepeatedDecideResponse(count, _ => responseBody);
 
+    static readonly Uri LocalEvaluationUrl = new("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts");
+
     public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
         this FakeHttpMessageHandler handler,
         string responseBody)
@@ -75,10 +79,69 @@ internal static class FakeHttpMessageHandlerExtensions
         this FakeHttpMessageHandler handler,
         LocalEvaluationApiResult responseBody) =>
         handler.AddResponse(
-            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts"),
+            LocalEvaluationUrl,
             HttpMethod.Get,
             responseBody: responseBody);
 
+    /// <summary>
+    /// Adds a local evaluation response with an ETag header.
+    /// </summary>
+    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponseWithETag(
+        this FakeHttpMessageHandler handler,
+        string responseBody,
+        string etag)
+    {
+#pragma warning disable CA2000 // HttpResponseMessage is disposed by the handler
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
+        };
+#pragma warning restore CA2000
+        response.Headers.ETag = new EntityTagHeaderValue(etag);
+
+        return handler.AddResponse(LocalEvaluationUrl, HttpMethod.Get, response);
+    }
+
+    /// <summary>
+    /// Adds a 304 Not Modified response for local evaluation.
+    /// </summary>
+    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationNotModifiedResponse(
+        this FakeHttpMessageHandler handler,
+        string? etag = null)
+    {
+#pragma warning disable CA2000 // HttpResponseMessage is disposed by the handler
+        var response = new HttpResponseMessage(HttpStatusCode.NotModified);
+#pragma warning restore CA2000
+        if (etag is not null)
+        {
+            response.Headers.ETag = new EntityTagHeaderValue(etag);
+        }
+
+        return handler.AddResponse(LocalEvaluationUrl, HttpMethod.Get, response);
+    }
+
+    /// <summary>
+    /// Adds a quota_limited error response for local evaluation.
+    /// </summary>
+    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationQuotaLimitedResponse(
+        this FakeHttpMessageHandler handler)
+    {
+        const string quotaLimitedBody = """
+            {
+                "type": "quota_limited",
+                "detail": "You have exceeded your feature flag request quota",
+                "code": "payment_required"
+            }
+            """;
+#pragma warning disable CA2000 // HttpResponseMessage is disposed by the handler
+        var response = new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+        {
+            Content = new StringContent(quotaLimitedBody, System.Text.Encoding.UTF8, "application/json")
+        };
+#pragma warning restore CA2000
+
+        return handler.AddResponse(LocalEvaluationUrl, HttpMethod.Get, response);
+    }
 
     public static FakeHttpMessageHandler.RequestHandler AddRemoteConfigResponse(
         this FakeHttpMessageHandler handler,
