@@ -24,7 +24,7 @@ internal sealed class LocalFeatureFlagsLoader(
 {
     volatile int _started;
     LocalEvaluator? _localEvaluator;
-    string? _etag; // ETag for conditional requests to reduce bandwidth
+    volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
     readonly ILogger<LocalFeatureFlagsLoader> _logger = loggerFactory.CreateLogger<LocalFeatureFlagsLoader>();
@@ -89,22 +89,21 @@ internal sealed class LocalFeatureFlagsLoader(
         StartPollingIfNotStarted();
         var response = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(_etag, cancellationToken);
 
-        // Update ETag from response (preserve existing if not provided on 304)
-        if (response.ETag is not null || !response.IsNotModified)
-        {
-            _etag = response.ETag;
-        }
-
-        // If 304 Not Modified, keep using cached data
+        // If 304 Not Modified, keep using cached data (update ETag if server sent a new one)
         if (response.IsNotModified)
         {
+            _etag = response.ETag ?? _etag;
             return _localEvaluator;
         }
 
+        // On failure (no result), preserve existing ETag for retry
         if (response.Result is null)
         {
             return _localEvaluator;
         }
+
+        // Success: update ETag (or clear if server stopped sending one)
+        _etag = response.ETag;
 
         var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
