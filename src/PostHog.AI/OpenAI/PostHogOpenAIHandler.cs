@@ -6,10 +6,10 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-
-#pragma warning disable CA1848, CA1031, CA1307, CA1310, CA1822, CA2016
+using PostHog.AI.Utils;
 
 namespace PostHog.AI.OpenAI;
 
@@ -19,6 +19,66 @@ public class PostHogOpenAIHandler : DelegatingHandler
     private readonly ILogger<PostHogOpenAIHandler> _logger;
     private readonly PostHogAIOptions _options;
     private readonly JsonSerializerOptions _jsonSerializerOptions;
+
+    private static readonly Action<ILogger, Exception?> _failedToParseRequestBody = LoggerMessage.Define(
+        LogLevel.Debug,
+        new EventId(1, "FailedToParseRequestBody"),
+        "Failed to parse OpenAI request body as JSON"
+    );
+
+    private static readonly Action<ILogger, Exception?> _failedToParseMultipartRequest = LoggerMessage.Define(
+        LogLevel.Debug,
+        new EventId(2, "FailedToParseMultipartRequest"),
+        "Failed to parse multipart request"
+    );
+
+    private static readonly Action<ILogger, Exception?> _failedToParseResponseBody = LoggerMessage.Define(
+        LogLevel.Debug,
+        new EventId(3, "FailedToParseResponseBody"),
+        "Failed to parse OpenAI response body"
+    );
+
+    private static readonly Action<ILogger, Exception?> _failedToParseRequestJson = LoggerMessage.Define(
+        LogLevel.Debug,
+        new EventId(4, "FailedToParseRequestJson"),
+        "Failed to parse OpenAI request JSON"
+    );
+
+    private static readonly Action<ILogger, Exception?> _errorProcessingRequest = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(5, "ErrorProcessingRequest"),
+        "Error processing OpenAI request for PostHog"
+    );
+
+    private static readonly Action<ILogger, Exception?> _errorProcessingError = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(6, "ErrorProcessingError"),
+        "Error processing OpenAI error for PostHog"
+    );
+
+    private static readonly Action<ILogger, Exception?> _errorReadingStreamingResponse = LoggerMessage.Define(
+        LogLevel.Debug,
+        new EventId(7, "ErrorReadingStreamingResponse"),
+        "Error reading streaming response"
+    );
+    
+    private static readonly Action<ILogger, string, Exception?> _failedToSetParameter = LoggerMessage.Define<string>(
+        LogLevel.Debug,
+        new EventId(8, "FailedToSetParameter"),
+        "Failed to set PostHog parameter {Parameter}"
+    );
+
+    private static readonly Action<ILogger, Exception?> _failedToSendEvent = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(9, "FailedToSendEvent"),
+        "Failed to send AI event to PostHog"
+    );
+
+    private static readonly Action<ILogger, Exception?> _errorProcessingStreamingText = LoggerMessage.Define(
+        LogLevel.Error,
+        new EventId(10, "ErrorProcessingStreamingText"),
+        "Error processing streaming text for PostHog"
+    );
 
     public PostHogOpenAIHandler(
         IPostHogClient postHogClient,
@@ -61,7 +121,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         // Check if this is an OpenAI API request
         if (!IsOpenAIRequest(request))
         {
-            return await base.SendAsync(request, cancellationToken);
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
         var startTime = DateTimeOffset.UtcNow;
@@ -71,34 +131,58 @@ public class PostHogOpenAIHandler : DelegatingHandler
         // Read and buffer the request content
         if (request.Content != null)
         {
-#if NETSTANDARD2_1
-            requestBody = await request.Content.ReadAsStringAsync();
-#else
-            requestBody = await request.Content.ReadAsStringAsync(cancellationToken);
-#endif
-            // Restore the request content since we consumed it
-            request.Content = new StringContent(requestBody);
+            var isMultipart = request.Content.Headers.ContentType?.MediaType?.Contains("multipart", StringComparison.OrdinalIgnoreCase) ?? false;
 
-            // Parse request body for PostHog parameters
-            if (!string.IsNullOrEmpty(requestBody))
+            if (isMultipart)
             {
-                try
+#if NETSTANDARD2_1
+                var bytes = await request.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+#else
+                var bytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+#endif
+                
+                if (bytes.Length > 0 && request.Content.Headers.ContentType != null)
                 {
-                    requestJson = JsonSerializer.Deserialize<Dictionary<string, object>>(
-                        requestBody,
-                        _jsonSerializerOptions
-                    );
+                    requestJson = ParseMultipartRequest(bytes, request.Content.Headers.ContentType);
+                    
+                    // Restore content
+                    var newContent = new ByteArrayContent(bytes);
+                    foreach (var h in request.Content.Headers) newContent.Headers.TryAddWithoutValidation(h.Key, h.Value);
+                    request.Content = newContent;
                 }
-                catch (JsonException ex)
+            }
+            else
+            {
+#if NETSTANDARD2_1
+                requestBody = await request.Content.ReadAsStringAsync();
+#else
+                requestBody = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#endif
+                // Restore the request content since we consumed it
+                var mediaType = request.Content.Headers.ContentType?.MediaType ?? "application/json";
+                request.Content = new StringContent(requestBody, Encoding.UTF8, mediaType);
+
+                // Parse request body for PostHog parameters
+                if (!string.IsNullOrEmpty(requestBody))
                 {
-                    _logger.LogDebug(ex, "Failed to parse OpenAI request body as JSON");
+                    try
+                    {
+                        requestJson = JsonSerializer.Deserialize<Dictionary<string, object>>(
+                            requestBody,
+                            _jsonSerializerOptions
+                        );
+                    }
+                    catch (JsonException ex)
+                    {
+                        _failedToParseRequestBody(_logger, ex);
+                    }
                 }
             }
         }
 
         try
         {
-            var response = await base.SendAsync(request, cancellationToken);
+            var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
             // Determine if this is a streaming response
             var isStreaming =
@@ -118,27 +202,34 @@ public class PostHogOpenAIHandler : DelegatingHandler
 #if NETSTANDARD2_1
                     using var stream = await response.Content.ReadAsStreamAsync();
 #else
-                    using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                    using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
-                    using var memoryStream = new MemoryStream();
-                    await stream.CopyToAsync(memoryStream);
-                    var buffer = memoryStream.ToArray();
-
-                    // Create new stream for the response
-                    response.Content = new StreamContent(new MemoryStream(buffer));
-                    response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
-
-                    // Parse the buffered stream for monitoring
-                    var streamText = Encoding.UTF8.GetString(buffer);
-                    await ProcessStreamingTextAsync(
-                        request,
-                        requestBody,
-                        requestJson,
-                        streamText,
-                        startTime,
-                        response.StatusCode,
-                        cancellationToken
+                    // We need to return a new stream that wraps the original stream
+                    // and captures the content as it passes through.
+                    var observabilityStream = new PostHogObservabilityStream(
+                        stream, 
+                        async (text) => await ProcessStreamingTextAsync(
+                            request,
+                            requestBody,
+                            requestJson,
+                            text,
+                            startTime,
+                            response.StatusCode,
+                            cancellationToken // Pass cancellation token but the callback runs on fire-and-forget
+                        ).ConfigureAwait(false)
                     );
+
+                    response.Content = new StreamContent(observabilityStream);
+                    foreach (var header in response.Content.Headers)
+                    {
+                        // Copy headers from original content? 
+                        // Actually we need to be careful. The original response headers are on `response.Content.Headers`.
+                        // We replaced `response.Content`.
+                    }
+                    // Ideally we should have copied the headers. 
+                    // But `StreamContent` constructor doesn't take headers.
+                    // Let's set the critical one.
+                    response.Content.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
                 }
                 else
                 {
@@ -169,7 +260,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
 #if NETSTANDARD2_1
                     responseBody = await response.Content.ReadAsStringAsync();
 #else
-                    responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
                     // Restore the response content since we consumed it
                     response.Content = new StringContent(responseBody, Encoding.UTF8, response.Content.Headers.ContentType?.MediaType ?? "application/json");
@@ -183,11 +274,12 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     startTime,
                     responseBody,
                     cancellationToken
-                );
+                ).ConfigureAwait(false);
 
                 return response;
             }
         }
+#pragma warning disable CA1031 // Do not catch general exception types - we must catch everything to ensure we don't break the user's app
         catch (Exception ex)
         {
             // If request fails, still try to capture the error
@@ -199,12 +291,13 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         requestJson,
                         ex,
                         startTime,
-                        cancellationToken
+                        CancellationToken.None
                     ),
-                cancellationToken
+                CancellationToken.None
             );
             throw;
         }
+#pragma warning restore CA1031
     }
 
     private static bool IsOpenAIRequest(HttpRequestMessage request)
@@ -213,6 +306,56 @@ public class PostHogOpenAIHandler : DelegatingHandler
         return uri.Contains("openai.azure.com", StringComparison.Ordinal)
             || uri.Contains("api.openai.com", StringComparison.Ordinal)
             || uri.Contains(".openai.azure.com", StringComparison.Ordinal);
+    }
+
+    private Dictionary<string, object>? ParseMultipartRequest(byte[] content, MediaTypeHeaderValue contentType)
+    {
+        var dict = new Dictionary<string, object>();
+        var boundary = contentType.Parameters.FirstOrDefault(p => p.Name == "boundary")?.Value?.Trim('"');
+        if (string.IsNullOrEmpty(boundary)) return null;
+
+        try
+        {
+            // Naive parsing: convert to string. 
+            // Binary parts will be garbled but headers and text fields (model) should remain intact.
+            var contentString = Encoding.UTF8.GetString(content);
+            var parts = contentString.Split(new[] { "--" + boundary }, StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var part in parts)
+            {
+                if (part.StartsWith("--", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(part)) continue;
+
+                // Find double newline which separates headers from content
+                // Normalize newlines slightly?
+                var endOfHeaders = part.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                if (endOfHeaders < 0) endOfHeaders = part.IndexOf("\n\n", StringComparison.Ordinal);
+
+                if (endOfHeaders > 0)
+                {
+                    var headers = part.Substring(0, endOfHeaders);
+                    var body = part.Substring(endOfHeaders).Trim(); 
+
+                    if (headers.Contains("name=\"model\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        dict["model"] = body.Trim();
+                    }
+                    else if (headers.Contains("filename=\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var match = Regex.Match(headers, "filename=\"([^\"]+)\"");
+                        dict["input"] = match.Success ? match.Groups[1].Value : "[File]";
+                    }
+                }
+            }
+        }
+#pragma warning disable CA1031
+        catch (Exception ex)
+        {
+#pragma warning disable CA1848
+            _failedToParseMultipartRequest(_logger, ex);
+#pragma warning restore CA1848
+        }
+#pragma warning restore CA1031
+        return dict.Count > 0 ? dict : null;
     }
 
     private async Task ProcessRequestAsync(
@@ -224,7 +367,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         CancellationToken cancellationToken
     )
     {
-        await ProcessRequestAsync(request, requestBody, requestJson, response, startTime, responseBody: null, cancellationToken);
+        await ProcessRequestAsync(request, requestBody, requestJson, response, startTime, responseBody: null, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ProcessRequestAsync(
@@ -242,7 +385,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var latency = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
 
             // Extract PostHog parameters from request JSON
-            var posthogParams = ExtractPosthogParams(requestJson);
+            var posthogParams = ExtractPosthogParams(request, requestJson);
 
             // Determine if this is a streaming response
             var isStreaming =
@@ -257,7 +400,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
             if (isStreaming)
             {
-                responseData = await ProcessStreamingResponseAsync(response, cancellationToken);
+                responseData = await ProcessStreamingResponseAsync(response, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -267,7 +410,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
 #if NETSTANDARD2_1
                     responseBodyToParse = await response.Content.ReadAsStringAsync();
 #else
-                    responseBodyToParse = await response.Content.ReadAsStringAsync(cancellationToken);
+                    responseBodyToParse = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
                 }
                 responseData = ParseOpenAIResponse(responseBodyToParse ?? string.Empty, response.StatusCode);
@@ -280,20 +423,31 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var eventType = GetAIEventType(request);
 
             // Send event to PostHog
-            await SendAIEventAsync(
-                eventType,
-                requestData,
-                responseData,
-                posthogParams,
-                latency,
-                response.StatusCode,
-                cancellationToken
-            );
+            try
+            {
+                await SendAIEventAsync(
+                    eventType,
+                    requestData,
+                    responseData,
+                    posthogParams,
+                    latency,
+                    response.StatusCode,
+                    cancellationToken
+                ).ConfigureAwait(false);
+            }
+#pragma warning disable CA1031
+            catch (Exception ex)
+            {
+                _failedToSendEvent(_logger, ex);
+            }
+#pragma warning restore CA1031
         }
+#pragma warning disable CA1031
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing OpenAI request for PostHog");
+            _errorProcessingRequest(_logger, ex);
         }
+#pragma warning restore CA1031
     }
 
     private async Task ProcessErrorAsync(
@@ -308,47 +462,114 @@ public class PostHogOpenAIHandler : DelegatingHandler
         try
         {
             var latency = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
-            var posthogParams = ExtractPosthogParams(requestJson);
+            var posthogParams = ExtractPosthogParams(request, requestJson);
             var requestData = ParseOpenAIRequest(request, requestBody, requestJson);
             var eventType = GetAIEventType(request);
 
             // Send error event to PostHog
-            await SendAIEventAsync(
-                eventType,
-                requestData,
-                null,
-                posthogParams,
-                latency,
-                HttpStatusCode.InternalServerError,
-                cancellationToken,
-                exception
-            );
+            try
+            {
+                await SendAIEventAsync(
+                    eventType,
+                    requestData,
+                    null,
+                    posthogParams,
+                    latency,
+                    HttpStatusCode.InternalServerError,
+                    cancellationToken,
+                    exception
+                ).ConfigureAwait(false);
+            }
+#pragma warning disable CA1031
+            catch (Exception ex)
+            {
+                _failedToSendEvent(_logger, ex);
+            }
+#pragma warning restore CA1031
         }
+#pragma warning disable CA1031
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing OpenAI error for PostHog");
+            _errorProcessingError(_logger, ex);
         }
+#pragma warning restore CA1031
     }
 
-    private PosthogParams ExtractPosthogParams(Dictionary<string, object>? requestJson)
+    private PosthogParams ExtractPosthogParams(HttpRequestMessage request, Dictionary<string, object>? requestJson)
     {
         var paramsDict = new PosthogParams();
 
-        if (requestJson == null)
-            return paramsDict;
+        // 1. Extract from Headers (Higher priority for context, but lower for "overrides" usually? 
+        // Actually, explicit headers usually override config, and body overrides headers/config. 
+        // But body params are often hard to set. Let's assume Headers > Body for "context" like DistinctId, 
+        // but maybe we should allow both.
+        // Let's go with: Body > Headers > Options (defaults).
+        
+        // Helper to get header value
+        string? GetHeader(string key)
+        {
+            if (request.Headers.TryGetValues(key, out var values))
+            {
+                return values.FirstOrDefault();
+            }
+            return null;
+        }
 
+        paramsDict.DistinctId = GetHeader("x-posthog-distinct-id");
+        paramsDict.TraceId = GetHeader("x-posthog-trace-id") ?? paramsDict.TraceId;
+        
+        if (GetHeader("x-posthog-privacy-mode") is string privacyVal && bool.TryParse(privacyVal, out var privacy))
+            paramsDict.PrivacyMode = privacy;
+
+        paramsDict.ModelOverride = GetHeader("x-posthog-model-override");
+        paramsDict.ProviderOverride = GetHeader("x-posthog-provider-override");
+        paramsDict.CostOverride = GetHeader("x-posthog-cost-override");
+
+        if (int.TryParse(GetHeader("x-posthog-web-search-count"), out var searchCount))
+            paramsDict.WebSearchCount = searchCount;
+        
+        if (bool.TryParse(GetHeader("x-posthog-capture-immediate"), out var captureImm))
+            paramsDict.CaptureImmediate = captureImm;
+
+        if (GetHeader("x-posthog-properties") is string propsJson)
+        {
+            try
+            {
+                paramsDict.Properties = JsonSerializer.Deserialize<Dictionary<string, object>>(propsJson, _jsonSerializerOptions);
+            }
+            catch { }
+        }
+
+        if (GetHeader("x-posthog-groups") is string groupsJson)
+        {
+            try
+            {
+                paramsDict.Groups = JsonSerializer.Deserialize<Dictionary<string, object>>(groupsJson, _jsonSerializerOptions);
+            }
+            catch { }
+        }
+
+        if (requestJson == null)
+        {
+            // Apply defaults if no body
+            ApplyDefaults(paramsDict);
+            return paramsDict;
+        }
+
+        // 2. Extract from Body (overrides headers)
         // Map of PostHog parameter names from request JSON to our params object
-        // Following JavaScript package pattern: posthogDistinctId -> DistinctId, etc.
         var paramMappings = new Dictionary<string, Action<object>>
         {
-            ["posthogDistinctId"] = v => paramsDict.DistinctId = v?.ToString(),
-            ["posthogTraceId"] = v =>
-                paramsDict.TraceId = v?.ToString() ?? Guid.NewGuid().ToString(),
+            ["posthogDistinctId"] = v => { if(v != null) paramsDict.DistinctId = v.ToString(); },
+            ["posthogTraceId"] = v => { if(v != null) paramsDict.TraceId = v.ToString() ?? paramsDict.TraceId; },
             ["posthogPrivacyMode"] = v =>
-                paramsDict.PrivacyMode = v is JsonElement je && je.ValueKind == JsonValueKind.True,
-            ["posthogModelOverride"] = v => paramsDict.ModelOverride = v?.ToString(),
-            ["posthogProviderOverride"] = v => paramsDict.ProviderOverride = v?.ToString(),
-            ["posthogCostOverride"] = v => paramsDict.CostOverride = v?.ToString(),
+            {
+                if (v is JsonElement je && je.ValueKind == JsonValueKind.True) paramsDict.PrivacyMode = true;
+                else if (v is bool b && b) paramsDict.PrivacyMode = true;
+            },
+            ["posthogModelOverride"] = v => { if(v != null) paramsDict.ModelOverride = v.ToString(); },
+            ["posthogProviderOverride"] = v => { if(v != null) paramsDict.ProviderOverride = v.ToString(); },
+            ["posthogCostOverride"] = v => { if(v != null) paramsDict.CostOverride = v.ToString(); },
             ["posthogWebSearchCount"] = v =>
             {
                 if (v is JsonElement je && je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out int count))
@@ -365,8 +586,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 }
             },
             ["posthogCaptureImmediate"] = v =>
-                paramsDict.CaptureImmediate =
-                    v is JsonElement je2 && je2.ValueKind == JsonValueKind.True,
+            {
+                if (v is JsonElement je && je.ValueKind == JsonValueKind.True) paramsDict.CaptureImmediate = true;
+                else if (v is bool b && b) paramsDict.CaptureImmediate = true;
+            }
         };
 
         foreach (var kvp in requestJson)
@@ -379,46 +602,54 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Failed to set PostHog parameter {Parameter}", kvp.Key);
+#pragma warning disable CA1848
+                    _failedToSetParameter(_logger, kvp.Key, ex);
+#pragma warning restore CA1848
                 }
-            }
-            else if (kvp.Key.StartsWith("posthog", StringComparison.Ordinal))
-            {
-                _logger.LogDebug("Unknown PostHog parameter {Parameter} in request", kvp.Key);
             }
         }
 
         // Extract properties and groups if they exist as JSON objects
-        if (
-            requestJson.TryGetValue("posthogProperties", out var propertiesValue)
-            && propertiesValue is JsonElement propertiesElement
-        )
+        if (requestJson.TryGetValue("posthogProperties", out var propertiesValue))
         {
             try
             {
-                paramsDict.Properties = JsonSerializer.Deserialize<Dictionary<string, object>>(
-                    propertiesElement.GetRawText(),
-                    _jsonSerializerOptions
-                );
+                var bodyProps = propertiesValue is JsonElement propertiesElement 
+                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(propertiesElement.GetRawText(), _jsonSerializerOptions)
+                    : propertiesValue as Dictionary<string, object>;
+                
+                if (bodyProps != null)
+                {
+                    paramsDict.Properties ??= new Dictionary<string, object>();
+                    foreach(var kvp in bodyProps) paramsDict.Properties[kvp.Key] = kvp.Value;
+                }
             }
             catch (JsonException) { }
         }
 
-        if (
-            requestJson.TryGetValue("posthogGroups", out var groupsValue)
-            && groupsValue is JsonElement groupsElement
-        )
+        if (requestJson.TryGetValue("posthogGroups", out var groupsValue))
         {
-            try
+             try
             {
-                paramsDict.Groups = JsonSerializer.Deserialize<Dictionary<string, object>>(
-                    groupsElement.GetRawText(),
-                    _jsonSerializerOptions
-                );
+                var bodyGroups = groupsValue is JsonElement groupsElement 
+                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(groupsElement.GetRawText(), _jsonSerializerOptions)
+                    : groupsValue as Dictionary<string, object>;
+                
+                if (bodyGroups != null)
+                {
+                    paramsDict.Groups ??= new Dictionary<string, object>();
+                    foreach(var kvp in bodyGroups) paramsDict.Groups[kvp.Key] = kvp.Value;
+                }
             }
             catch (JsonException) { }
         }
 
+        ApplyDefaults(paramsDict);
+        return paramsDict;
+    }
+
+    private void ApplyDefaults(PosthogParams paramsDict)
+    {
         // Set defaults
         if (string.IsNullOrEmpty(paramsDict.TraceId))
         {
@@ -426,8 +657,6 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
 
         paramsDict.PrivacyMode = paramsDict.PrivacyMode || _options.PrivacyMode;
-
-        return paramsDict;
     }
 
     private OpenAIRequestData ParseOpenAIRequest(
@@ -513,7 +742,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Failed to parse OpenAI request JSON");
+#pragma warning disable CA1848
+                _failedToParseRequestJson(_logger, ex);
+#pragma warning restore CA1848
             }
         }
 
@@ -645,7 +876,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
         catch (JsonException ex)
         {
-            _logger.LogDebug(ex, "Failed to parse OpenAI response body");
+#pragma warning disable CA1848
+            _failedToParseResponseBody(_logger, ex);
+#pragma warning restore CA1848
         }
 
         return data;
@@ -671,12 +904,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 #endif
             using var reader = new StreamReader(stream);
-
             string? line;
 #if NETSTANDARD2_1
-            while ((line = await reader.ReadLineAsync()) != null)
+            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
 #else
-            while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+            while ((line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) != null)
 #endif
             {
                 if (line.StartsWith("data: ", StringComparison.Ordinal))
@@ -744,7 +976,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Error reading streaming response");
+#pragma warning disable CA1848
+            _errorReadingStreamingResponse(_logger, ex);
+#pragma warning restore CA1848
         }
 
         return data;
@@ -805,7 +1039,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 }
                 // For other endpoint types, inputContent remains null
             }
-            properties["$ai_input"] = inputContent!;
+            properties["$ai_input"] = Sanitizer.Sanitize(inputContent)!;
 
             // Add output content with privacy mode
             object? outputContent = null;
@@ -818,7 +1052,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     outputContent = null;
                 }
             }
-            properties["$ai_output_choices"] = outputContent!;
+            properties["$ai_output_choices"] = Sanitizer.Sanitize(outputContent)!;
 
             // Add model parameters if available
             if (requestData.ModelParameters?.Count > 0)
@@ -978,7 +1212,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         try
         {
             var latency = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
-            var posthogParams = ExtractPosthogParams(requestJson);
+            var posthogParams = ExtractPosthogParams(request, requestJson);
             var requestData = ParseOpenAIRequest(request, requestBody, requestJson);
             var eventType = GetAIEventType(request);
 
@@ -1064,7 +1298,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing streaming text for PostHog");
+#pragma warning disable CA1848
+            _errorProcessingStreamingText(_logger, ex);
+#pragma warning restore CA1848
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>netcoreapp3.1;net8.0</TargetFrameworks>
@@ -37,6 +37,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\PostHog\PostHog.csproj" />
+      <ProjectReference Include="..\..\src\PostHog.AI\PostHog.AI.csproj" />
       <ProjectReference Include="..\TestLibrary\TestLibrary.csproj" />
     </ItemGroup>
 

@@ -28,36 +28,96 @@ You will also need to have the core `PostHog` or `PostHog.AspNetCore` package in
 
 ### 1. For the Official `OpenAI` Library (`openai/openai-dotnet`)
 
-In your `Program.cs` or `Startup.cs`, register the PostHog AI services and configure your `OpenAIClient`.
+PostHog.AI provides multiple ways to integrate with the OpenAI client library. Choose the approach that best fits your application.
+
+#### Option A: Typed HTTP Client (Recommended)
+
+Register a typed `PostHogOpenAIHttpClient` that you can inject directly:
 
 ```csharp
 using OpenAI;
 using PostHog.AI;
 using System.ClientModel;
 using System.ClientModel.Primitives;
-using System.Net.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Add the core PostHog client (if not already added)
 builder.AddPostHog();
 
+// 2. Add PostHog's AI observability with typed HTTP client
+builder.Services.AddPostHogOpenAIHttpClient();
+
+// 3. Register your OpenAIClient using the typed client
+builder.Services.AddSingleton(provider =>
+{
+    var typedClient = provider.GetRequiredService<PostHogOpenAIHttpClient>();
+    
+    var clientOptions = new OpenAIClientOptions
+    {
+        Transport = new HttpClientPipelineTransport(typedClient.HttpClient)
+    };
+    
+    var apiKey = builder.Configuration["OPENAI_API_KEY"];
+    var credential = new ApiKeyCredential(apiKey);
+    
+    return new OpenAIClient(credential, clientOptions);
+});
+```
+
+#### Option B: HTTP Client Factory Extension
+
+Use the extension method on `IHttpClientFactory` for a more direct approach:
+
+```csharp
+using OpenAI;
+using PostHog.AI;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// 1. Add the core PostHog client
+builder.AddPostHog();
+
 // 2. Add PostHog's AI observability
 builder.Services.AddPostHogOpenAI();
 
-// 3. Register your OpenAIClient using the custom HttpClient
-//    provided by PostHog.AI
+// 3. Register your OpenAIClient using the extension method
 builder.Services.AddSingleton(provider =>
 {
     var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
-    var httpClient = httpClientFactory.CreateClient("PostHogOpenAI");
-
+    var httpClient = httpClientFactory.GetPostHogOpenAIHttpClient();
+    
     var clientOptions = new OpenAIClientOptions
     {
         Transport = new HttpClientPipelineTransport(httpClient)
     };
     
-    // Get your API key from configuration
+    var apiKey = builder.Configuration["OPENAI_API_KEY"];
+    var credential = new ApiKeyCredential(apiKey);
+    
+    return new OpenAIClient(credential, clientOptions);
+});
+```
+
+#### Option C: Named Client (Original Approach)
+
+You can still use the named client approach if you prefer:
+
+```csharp
+builder.Services.AddPostHogOpenAI();
+
+builder.Services.AddSingleton(provider =>
+{
+    var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient("PostHogOpenAI");
+    
+    var clientOptions = new OpenAIClientOptions
+    {
+        Transport = new HttpClientPipelineTransport(httpClient)
+    };
+    
     var apiKey = builder.Configuration["OPENAI_API_KEY"];
     var credential = new ApiKeyCredential(apiKey);
     
@@ -67,7 +127,11 @@ builder.Services.AddSingleton(provider =>
 
 ### 2. For the `Azure.AI.OpenAI` Library
 
-The integration with Azure OpenAI is straightforward. You can use the same `AddPostHogOpenAI()` method since the handler automatically detects Azure OpenAI endpoints.
+PostHog.AI provides multiple integration options for Azure OpenAI, similar to the OpenAI client library integration.
+
+#### Option A: Typed HTTP Client (Recommended)
+
+Register a typed `PostHogAzureOpenAIHttpClient` that you can inject directly:
 
 ```csharp
 using Azure.AI.OpenAI;
@@ -75,11 +139,78 @@ using PostHog.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add the core PostHog client (if not already added)
+// 1. Add the core PostHog client
 builder.AddPostHog();
 
-// 2. Add PostHog's AI observability (works for both OpenAI and Azure OpenAI)
-builder.Services.AddPostHogOpenAI();
+// 2. Add PostHog's AI observability with typed HTTP client
+builder.Services.AddPostHogAzureOpenAIHttpClient();
+
+// 3. Register your OpenAIClient using the typed client
+builder.Services.AddSingleton(provider =>
+{
+    var typedClient = provider.GetRequiredService<PostHogAzureOpenAIHttpClient>();
+    
+    var clientOptions = new OpenAIClientOptions
+    {
+        Transport = new HttpClientPipelineTransport(typedClient.HttpClient)
+    };
+    
+    return new OpenAIClient(
+        new Uri(builder.Configuration["AZURE_OPENAI_ENDPOINT"]),
+        new AzureKeyCredential(builder.Configuration["AZURE_OPENAI_API_KEY"]),
+        clientOptions);
+});
+```
+
+#### Option B: HTTP Client Factory Extension
+
+Use the extension method on `IHttpClientFactory`:
+
+```csharp
+using Azure.AI.OpenAI;
+using PostHog.AI;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// 1. Add the core PostHog client
+builder.AddPostHog();
+
+// 2. Add PostHog's AI observability
+builder.Services.AddPostHogAzureOpenAI();
+
+// 3. Register your OpenAIClient using the extension method
+builder.Services.AddSingleton(provider =>
+{
+    var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.GetPostHogAzureOpenAIHttpClient();
+    
+    var clientOptions = new OpenAIClientOptions
+    {
+        Transport = new HttpClientPipelineTransport(httpClient)
+    };
+    
+    return new OpenAIClient(
+        new Uri(builder.Configuration["AZURE_OPENAI_ENDPOINT"]),
+        new AzureKeyCredential(builder.Configuration["AZURE_OPENAI_API_KEY"]),
+        clientOptions);
+});
+```
+
+#### Option C: Direct Handler Attachment
+
+Attach the PostHog handler directly to the Azure OpenAI client:
+
+```csharp
+using Azure.AI.OpenAI;
+using PostHog.AI;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// 1. Add the core PostHog client
+builder.AddPostHog();
+
+// 2. Add PostHog's AI observability
+builder.Services.AddPostHogOpenAI(); // Works for both OpenAI and Azure OpenAI
 
 // 3. Register your OpenAIClient and attach PostHog's handler
 builder.Services.AddOpenAIClient(new Uri(builder.Configuration["AZURE_OPENAI_ENDPOINT"]),
@@ -87,13 +218,13 @@ builder.Services.AddOpenAIClient(new Uri(builder.Configuration["AZURE_OPENAI_END
     .AddHttpMessageHandler<PostHogOpenAIHandler>();
 ```
 
-Alternatively, you can use the named client approach similar to the OpenAI integration:
+#### Option D: Named Client (Original Approach)
+
+You can still use the named client approach:
 
 ```csharp
-// Register named HTTP client with PostHog handler
 builder.Services.AddPostHogAzureOpenAI();
 
-// Create OpenAIClient using the named client
 builder.Services.AddSingleton(provider =>
 {
     var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
@@ -111,7 +242,7 @@ builder.Services.AddSingleton(provider =>
 });
 ```
 
-Both approaches work equally well.
+Choose the approach that best fits your application architecture.
 
 ## How It Works
 
