@@ -172,12 +172,23 @@ public sealed class PostHogClient : IPostHogClient
         _logger.LogWarnCaptureFailed(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
         return false;
 
-        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context) =>
-            sendFeatureFlags
-                ? AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent)
-                : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
-                    ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
-                    : Task.FromResult(capturedEvent);
+        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context)
+        {
+            var shouldEnrich = sendFeatureFlags || (_featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called");
+            if (!shouldEnrich)
+            {
+                return Task.FromResult(capturedEvent);
+            }
+
+            // Prefer local evaluation when available
+            if (_featureFlagsLoader.IsLoaded)
+            {
+                return AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent);
+            }
+
+            // Otherwise we fall back to remote /flags call
+            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent);
+        }
     }
 
     /// <inheritdoc/>
