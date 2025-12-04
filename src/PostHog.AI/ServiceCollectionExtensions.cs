@@ -1,8 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Http;
-using PostHog.AI.OpenAI;
 
 namespace PostHog.AI;
 
@@ -41,7 +37,9 @@ public static class ServiceCollectionExtensions
 
         // Register a typed HTTP client that includes our handler
         // This will be used by the OpenAI client when configured
-        services.AddHttpClient(PostHogAIConstants.OpenAINamedClient).AddHttpMessageHandler<PostHogOpenAIHandler>();
+        services
+            .AddHttpClient(PostHogAIConstants.OpenAINamedClient)
+            .AddHttpMessageHandler<PostHogOpenAIHandler>();
 
         return services;
     }
@@ -94,8 +92,9 @@ public static class ServiceCollectionExtensions
         AddPostHogOpenAI(services, configureOptions);
 
         // Register typed client
-        services.AddHttpClient<PostHogOpenAIHttpClient>()
-                .AddHttpMessageHandler<PostHogOpenAIHandler>();
+        services
+            .AddHttpClient<PostHogOpenAIHttpClient>()
+            .AddHttpMessageHandler<PostHogOpenAIHandler>();
 
         return services;
     }
@@ -117,8 +116,9 @@ public static class ServiceCollectionExtensions
         AddPostHogAzureOpenAI(services, configureOptions);
 
         // Register typed client
-        services.AddHttpClient<PostHogAzureOpenAIHttpClient>()
-                .AddHttpMessageHandler<PostHogOpenAIHandler>();
+        services
+            .AddHttpClient<PostHogAzureOpenAIHttpClient>()
+            .AddHttpMessageHandler<PostHogOpenAIHandler>();
 
         return services;
     }
@@ -127,12 +127,14 @@ public static class ServiceCollectionExtensions
 public class PostHogOpenAIHttpClient
 {
     public HttpClient HttpClient { get; }
+
     public PostHogOpenAIHttpClient(HttpClient httpClient) => HttpClient = httpClient;
 }
 
 public class PostHogAzureOpenAIHttpClient
 {
     public HttpClient HttpClient { get; }
+
     public PostHogAzureOpenAIHttpClient(HttpClient httpClient) => HttpClient = httpClient;
 }
 
@@ -162,7 +164,9 @@ public static class HttpClientFactoryExtensions
     /// </summary>
     /// <param name="httpClientFactory">The HTTP client factory.</param>
     /// <returns>An HTTP client with PostHog AI handler attached.</returns>
-    public static HttpClient GetPostHogAzureOpenAIHttpClient(this IHttpClientFactory httpClientFactory)
+    public static HttpClient GetPostHogAzureOpenAIHttpClient(
+        this IHttpClientFactory httpClientFactory
+    )
     {
 #if NETSTANDARD2_1
         if (httpClientFactory == null)

@@ -1,13 +1,6 @@
-using System;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-using NSubstitute;
-using PostHog;
-using PostHog.AI.OpenAI;
 
 namespace PostHog.AI.Tests;
 
@@ -157,7 +150,7 @@ public class PostHogOpenAIHandlerTests : IDisposable
         var jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         };
 
         // Act
@@ -375,11 +368,7 @@ public class PostHogOpenAIHandlerTests : IDisposable
                 },
             },
             model = "text-embedding-ada-002",
-            usage = new
-            {
-                prompt_tokens = 9,
-                total_tokens = 9,
-            },
+            usage = new { prompt_tokens = 9, total_tokens = 9 },
         };
 
         _fakeHttpMessageHandler.AddResponse(requestUrl, HttpMethod.Post, responseBody);
@@ -404,15 +393,16 @@ public class PostHogOpenAIHandlerTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Is<string>(e => e == "$ai_embedding"),
                 Arg.Is<Dictionary<string, object>>(props =>
-                    props.ContainsKey("$ai_model") &&
-                    props["$ai_model"].ToString() == "text-embedding-ada-002" &&
-                    props.ContainsKey("$ai_input_tokens") &&
-                    (int)props["$ai_input_tokens"] == 9 &&
-                    props.ContainsKey("$ai_input") &&
-                    props["$ai_input"] != null &&
+                    props.ContainsKey("$ai_model")
+                    && props["$ai_model"].ToString() == "text-embedding-ada-002"
+                    && props.ContainsKey("$ai_input_tokens")
+                    && (int)props["$ai_input_tokens"] == 9
+                    && props.ContainsKey("$ai_input")
+                    && props["$ai_input"] != null
+                    &&
                     // Output should be null for embeddings (following JavaScript package)
-                    props.ContainsKey("$ai_output_choices") &&
-                    props["$ai_output_choices"] == null
+                    props.ContainsKey("$ai_output_choices")
+                    && props["$ai_output_choices"] == null
                 ),
                 Arg.Any<GroupCollection?>(),
                 Arg.Any<bool>()
@@ -443,11 +433,7 @@ public class PostHogOpenAIHandlerTests : IDisposable
                 },
             },
             model = "text-embedding-ada-002",
-            usage = new
-            {
-                prompt_tokens = 9,
-                total_tokens = 9,
-            },
+            usage = new { prompt_tokens = 9, total_tokens = 9 },
         };
 
         _fakeHttpMessageHandler.AddResponse(requestUrl, HttpMethod.Post, responseBody);
@@ -478,16 +464,18 @@ public class PostHogOpenAIHandlerTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Is<string>(e => e == "$ai_embedding"),
                 Arg.Is<Dictionary<string, object>>(props =>
-                    props.ContainsKey("$ai_model") &&
-                    props["$ai_model"].ToString() == "text-embedding-ada-002" &&
-                    props.ContainsKey("$ai_input_tokens") &&
-                    (int)props["$ai_input_tokens"] == 9 &&
+                    props.ContainsKey("$ai_model")
+                    && props["$ai_model"].ToString() == "text-embedding-ada-002"
+                    && props.ContainsKey("$ai_input_tokens")
+                    && (int)props["$ai_input_tokens"] == 9
+                    &&
                     // Input should be null with privacy mode
-                    props.ContainsKey("$ai_input") &&
-                    props["$ai_input"] == null &&
+                    props.ContainsKey("$ai_input")
+                    && props["$ai_input"] == null
+                    &&
                     // Output should be null for embeddings
-                    props.ContainsKey("$ai_output_choices") &&
-                    props["$ai_output_choices"] == null
+                    props.ContainsKey("$ai_output_choices")
+                    && props["$ai_output_choices"] == null
                 ),
                 Arg.Any<GroupCollection?>(),
                 Arg.Any<bool>()

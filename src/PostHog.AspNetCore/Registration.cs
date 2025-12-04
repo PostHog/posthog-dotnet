@@ -1,8 +1,3 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
-using PostHog.Config;
-using static PostHog.Library.Ensure;
-
 namespace PostHog;
 
 /// <summary>

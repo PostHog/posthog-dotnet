@@ -6,13 +6,21 @@ namespace PostHog.AI.Utils;
 public static class Sanitizer
 {
     private const string RedactedImagePlaceholder = "[base64 image redacted]";
-    private static readonly Regex DataUrlRegex = new(@"^data:([^;]+);base64,", RegexOptions.Compiled);
+    private static readonly Regex DataUrlRegex = new(
+        @"^data:([^;]+);base64,",
+        RegexOptions.Compiled
+    );
+
     // Conservative check: length > 20 and valid base64 chars
-    private static readonly Regex RawBase64Regex = new(@"^[A-Za-z0-9+/]+=*$", RegexOptions.Compiled);
+    private static readonly Regex RawBase64Regex = new(
+        @"^[A-Za-z0-9+/]+=*$",
+        RegexOptions.Compiled
+    );
 
     public static object? Sanitize(object? input)
     {
-        if (input == null) return null;
+        if (input == null)
+            return null;
 
         if (input is string str)
         {
@@ -66,16 +74,19 @@ public static class Sanitizer
             case JsonValueKind.Array:
                 return element.EnumerateArray().Select(SanitizeJsonElement).ToList();
             case JsonValueKind.Object:
-                return element.EnumerateObject()
+                return element
+                    .EnumerateObject()
                     .ToDictionary(p => p.Name, p => SanitizeJsonElement(p.Value)!);
             case JsonValueKind.True:
                 return true;
             case JsonValueKind.False:
                 return false;
             case JsonValueKind.Number:
-                 if (element.TryGetInt32(out var i)) return i;
-                 if (element.TryGetInt64(out var l)) return l;
-                 return element.GetDouble();
+                if (element.TryGetInt32(out var i))
+                    return i;
+                if (element.TryGetInt64(out var l))
+                    return l;
+                return element.GetDouble();
             case JsonValueKind.Null:
                 return null;
             default:
@@ -91,7 +102,12 @@ public static class Sanitizer
     private static bool IsRawBase64(string str)
     {
         // Skip if it looks like a URL/path
-        if (str.StartsWith("http", StringComparison.OrdinalIgnoreCase) || str.StartsWith('/') || str.StartsWith("./", StringComparison.OrdinalIgnoreCase) || str.StartsWith("../", StringComparison.OrdinalIgnoreCase))
+        if (
+            str.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+            || str.StartsWith('/')
+            || str.StartsWith("./", StringComparison.OrdinalIgnoreCase)
+            || str.StartsWith("../", StringComparison.OrdinalIgnoreCase)
+        )
         {
             return false;
         }

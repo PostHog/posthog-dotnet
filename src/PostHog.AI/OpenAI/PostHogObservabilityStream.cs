@@ -37,18 +37,32 @@ public class PostHogObservabilityStream : Stream
         return bytesRead;
     }
 
-    public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    public override async Task<int> ReadAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken
+    )
     {
         // Wrapper to satisfy CA1835 (Prefer Memory overloads)
-        var bytesRead = await _innerStream.ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken);
+        var bytesRead = await _innerStream.ReadAsync(
+            new Memory<byte>(buffer, offset, count),
+            cancellationToken
+        );
         if (bytesRead > 0)
         {
-            await _capturedContent.WriteAsync(new ReadOnlyMemory<byte>(buffer, offset, bytesRead), cancellationToken);
+            await _capturedContent.WriteAsync(
+                new ReadOnlyMemory<byte>(buffer, offset, bytesRead),
+                cancellationToken
+            );
         }
         return bytesRead;
     }
 
-    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    public override async ValueTask<int> ReadAsync(
+        Memory<byte> buffer,
+        CancellationToken cancellationToken = default
+    )
     {
         var bytesRead = await _innerStream.ReadAsync(buffer, cancellationToken);
         if (bytesRead > 0)
@@ -74,7 +88,7 @@ public class PostHogObservabilityStream : Stream
                 // Swallow exceptions during dispose to prevent crashing the app
             }
 #pragma warning restore CA1031
-            
+
             await _capturedContent.DisposeAsync();
             await _innerStream.DisposeAsync();
         }
@@ -83,8 +97,11 @@ public class PostHogObservabilityStream : Stream
     }
 
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
     public override void SetLength(long value) => throw new NotSupportedException();
-    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    public override void Write(byte[] buffer, int offset, int count) =>
+        throw new NotSupportedException();
 
     protected override void Dispose(bool disposing)
     {
@@ -103,7 +120,7 @@ public class PostHogObservabilityStream : Stream
                 // Swallow exceptions during dispose to prevent crashing the app
             }
 #pragma warning restore CA1031
-            
+
             _capturedContent.Dispose();
             _innerStream.Dispose();
         }
