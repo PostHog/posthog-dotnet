@@ -1,6 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -96,21 +99,93 @@ public class PostHogOpenAIHandler : DelegatingHandler
         {
             var response = await base.SendAsync(request, cancellationToken);
 
-            // Process the response asynchronously without blocking
-            _ = Task.Run(
-                () =>
-                    ProcessRequestAsync(
+            // Determine if this is a streaming response
+            var isStreaming =
+                response.Content.Headers.ContentType?.MediaType == "text/event-stream"
+                || (
+                    requestJson?.ContainsKey("stream") == true
+                    && requestJson["stream"] is JsonElement streamElement
+                    && streamElement.ValueKind == JsonValueKind.True
+                );
+
+            if (isStreaming)
+            {
+                // For streaming responses, buffer the entire content and process synchronously
+                // This ensures monitoring happens and the response is preserved
+                if (response.Content != null)
+                {
+#if NETSTANDARD2_1
+                    using var stream = await response.Content.ReadAsStreamAsync();
+#else
+                    using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+#endif
+                    using var memoryStream = new MemoryStream();
+                    await stream.CopyToAsync(memoryStream);
+                    var buffer = memoryStream.ToArray();
+                    
+                    // Create new stream for the response
+                    response.Content = new StreamContent(new MemoryStream(buffer));
+                    response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
+                    
+                    // Parse the buffered stream for monitoring
+                    var streamText = Encoding.UTF8.GetString(buffer);
+                    await ProcessStreamingTextAsync(
                         request,
                         requestBody,
                         requestJson,
-                        response,
+                        streamText,
                         startTime,
+                        response.StatusCode,
                         cancellationToken
-                    ),
-                cancellationToken
-            );
+                    );
+                }
+                else
+                {
+                    // No content, process asynchronously
+                    _ = Task.Run(
+                        () =>
+                            ProcessRequestAsync(
+                                request,
+                                requestBody,
+                                requestJson,
+                                response,
+                                startTime,
+                                cancellationToken
+                            ),
+                        CancellationToken.None // Don't cancel monitoring
+                    );
+                }
 
-            return response;
+                return response;
+            }
+            else
+            {
+                // For non-streaming responses, process synchronously to ensure content is available
+                // Buffer the response content first
+                string? responseBody = null;
+                if (response.Content != null)
+                {
+#if NETSTANDARD2_1
+                    responseBody = await response.Content.ReadAsStringAsync();
+#else
+                    responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+#endif
+                    // Restore the response content since we consumed it
+                    response.Content = new StringContent(responseBody, Encoding.UTF8, response.Content.Headers.ContentType?.MediaType ?? "application/json");
+                }
+
+                await ProcessRequestAsync(
+                    request,
+                    requestBody,
+                    requestJson,
+                    response,
+                    startTime,
+                    responseBody,
+                    cancellationToken
+                );
+
+                return response;
+            }
         }
         catch (Exception ex)
         {
@@ -148,6 +223,19 @@ public class PostHogOpenAIHandler : DelegatingHandler
         CancellationToken cancellationToken
     )
     {
+        await ProcessRequestAsync(request, requestBody, requestJson, response, startTime, responseBody: null, cancellationToken);
+    }
+
+    private async Task ProcessRequestAsync(
+        HttpRequestMessage request,
+        string? requestBody,
+        Dictionary<string, object>? requestJson,
+        HttpResponseMessage response,
+        DateTimeOffset startTime,
+        string? responseBody,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
             var latency = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
@@ -172,12 +260,16 @@ public class PostHogOpenAIHandler : DelegatingHandler
             }
             else
             {
+                string? responseBodyToParse = responseBody;
+                if (responseBodyToParse == null && response.Content != null)
+                {
 #if NETSTANDARD2_1
-                var responseBody = await response.Content.ReadAsStringAsync();
+                    responseBodyToParse = await response.Content.ReadAsStringAsync();
 #else
-                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    responseBodyToParse = await response.Content.ReadAsStringAsync(cancellationToken);
 #endif
-                responseData = ParseOpenAIResponse(responseBody, response.StatusCode);
+                }
+                responseData = ParseOpenAIResponse(responseBodyToParse ?? string.Empty, response.StatusCode);
             }
 
             // Parse request data
@@ -724,6 +816,12 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 properties["$ai_is_error"] = true;
                 properties["$ai_error"] = exception.Message;
             }
+            // Add error flag for non-success HTTP status codes
+            else if ((int)statusCode >= 400)
+            {
+                properties["$ai_is_error"] = true;
+                properties["$ai_error"] = $"HTTP {(int)statusCode}";
+            }
 
             // Merge with PostHog params from request
             if (posthogParams.Properties != null)
@@ -786,6 +884,109 @@ public class PostHogOpenAIHandler : DelegatingHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send AI event to PostHog");
+        }
+    }
+
+    private async Task ProcessStreamingTextAsync(
+        HttpRequestMessage request,
+        string? requestBody,
+        Dictionary<string, object>? requestJson,
+        string streamText,
+        DateTimeOffset startTime,
+        HttpStatusCode statusCode,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            var latency = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
+            var posthogParams = ExtractPosthogParams(requestJson);
+            var requestData = ParseOpenAIRequest(request, requestBody, requestJson);
+            var eventType = GetAIEventType(request);
+            
+            // Parse streaming text to extract metadata
+            var responseData = new OpenAIResponseData { StatusCode = statusCode, IsStreaming = true };
+            
+            using var reader = new StringReader(streamText);
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                if (line.StartsWith("data: ", StringComparison.Ordinal))
+                {
+                    var jsonData = line.Substring(6);
+                    if (jsonData == "[DONE]")
+                        break;
+
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(jsonData);
+                        var root = doc.RootElement;
+
+                        // Extract model from first chunk if available
+                        if (
+                            responseData.Model == null
+                            && root.TryGetProperty("model", out var modelElement)
+                        )
+                        {
+                            responseData.Model = modelElement.GetString();
+                        }
+
+                        // Extract usage from last chunk
+                        if (root.TryGetProperty("usage", out var usageElement))
+                        {
+                            responseData.Usage ??= new TokenUsage();
+
+                            if (
+                                usageElement.TryGetProperty(
+                                    "prompt_tokens",
+                                    out var promptTokensElement
+                                )
+                            )
+                            {
+                                responseData.Usage.InputTokens = promptTokensElement.GetInt32();
+                            }
+
+                            if (
+                                usageElement.TryGetProperty(
+                                    "completion_tokens",
+                                    out var completionTokensElement
+                                )
+                            )
+                            {
+                                responseData.Usage.OutputTokens = completionTokensElement.GetInt32();
+                            }
+
+                            if (
+                                usageElement.TryGetProperty(
+                                    "total_tokens",
+                                    out var totalTokensElement
+                                )
+                            )
+                            {
+                                responseData.Usage.TotalTokens = totalTokensElement.GetInt32();
+                            }
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // Ignore malformed JSON in streaming
+                    }
+                }
+            }
+
+            await SendAIEventAsync(
+                eventType,
+                requestData,
+                responseData,
+                posthogParams,
+                latency,
+                statusCode,
+                cancellationToken
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing streaming text for PostHog");
         }
     }
 }
