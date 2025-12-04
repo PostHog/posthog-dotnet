@@ -159,7 +159,7 @@ public class PostHogOpenAIHandlerTests : IDisposable
             PropertyNameCaseInsensitive = true,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
-        
+
         // Act
         var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
@@ -346,6 +346,148 @@ public class PostHogOpenAIHandlerTests : IDisposable
                 Arg.Is<string>(e => e == "$ai_generation"),
                 Arg.Is<Dictionary<string, object>>(props =>
                     props.ContainsKey("$ai_is_error") && true.Equals(props["$ai_is_error"])
+                ),
+                Arg.Any<GroupCollection?>(),
+                Arg.Any<bool>()
+            );
+    }
+
+    [Fact]
+    public async Task SendAsyncEmbeddingsRequestCapturesEmbeddingEvent()
+    {
+        // Arrange
+        var requestUrl = new Uri("https://api.openai.com/v1/embeddings");
+        var requestBody = new
+        {
+            model = "text-embedding-ada-002",
+            input = "The quick brown fox jumps over the lazy dog",
+        };
+        var responseBody = new
+        {
+            objectProperty = "list",
+            data = new[]
+            {
+                new
+                {
+                    objectProperty = "embedding",
+                    embedding = new[] { 0.1, 0.2, 0.3, 0.4, 0.5 },
+                    index = 0,
+                },
+            },
+            model = "text-embedding-ada-002",
+            usage = new
+            {
+                prompt_tokens = 9,
+                total_tokens = 9,
+            },
+        };
+
+        _fakeHttpMessageHandler.AddResponse(requestUrl, HttpMethod.Post, responseBody);
+
+        // Act
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            ),
+        };
+        using var response = await _httpClient.SendAsync(request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                Arg.Is<string>(e => e == "$ai_embedding"),
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey("$ai_model") &&
+                    props["$ai_model"].ToString() == "text-embedding-ada-002" &&
+                    props.ContainsKey("$ai_input_tokens") &&
+                    (int)props["$ai_input_tokens"] == 9 &&
+                    props.ContainsKey("$ai_input") &&
+                    props["$ai_input"] != null &&
+                    // Output should be null for embeddings (following JavaScript package)
+                    props.ContainsKey("$ai_output_choices") &&
+                    props["$ai_output_choices"] == null
+                ),
+                Arg.Any<GroupCollection?>(),
+                Arg.Any<bool>()
+            );
+    }
+
+    [Fact]
+    public async Task SendAsyncEmbeddingsRequestWithPrivacyModeExcludesContent()
+    {
+        // Arrange
+        var requestUrl = new Uri("https://api.openai.com/v1/embeddings");
+        var requestBody = new
+        {
+            model = "text-embedding-ada-002",
+            input = "The quick brown fox jumps over the lazy dog",
+            posthogPrivacyMode = true,
+        };
+        var responseBody = new
+        {
+            objectProperty = "list",
+            data = new[]
+            {
+                new
+                {
+                    objectProperty = "embedding",
+                    embedding = new[] { 0.1, 0.2, 0.3, 0.4, 0.5 },
+                    index = 0,
+                },
+            },
+            model = "text-embedding-ada-002",
+            usage = new
+            {
+                prompt_tokens = 9,
+                total_tokens = 9,
+            },
+        };
+
+        _fakeHttpMessageHandler.AddResponse(requestUrl, HttpMethod.Post, responseBody);
+
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        };
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(requestBody, jsonOptions),
+                Encoding.UTF8,
+                "application/json"
+            ),
+        };
+        var response = await _httpClient.SendAsync(request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                Arg.Is<string>(e => e == "$ai_embedding"),
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey("$ai_model") &&
+                    props["$ai_model"].ToString() == "text-embedding-ada-002" &&
+                    props.ContainsKey("$ai_input_tokens") &&
+                    (int)props["$ai_input_tokens"] == 9 &&
+                    // Input should be null with privacy mode
+                    props.ContainsKey("$ai_input") &&
+                    props["$ai_input"] == null &&
+                    // Output should be null for embeddings
+                    props.ContainsKey("$ai_output_choices") &&
+                    props["$ai_output_choices"] == null
                 ),
                 Arg.Any<GroupCollection?>(),
                 Arg.Any<bool>()

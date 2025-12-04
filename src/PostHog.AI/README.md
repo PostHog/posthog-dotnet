@@ -1,9 +1,3 @@
-# PostHog.AI Observability Feature: README
-
-This document contains the full `README.md` for the new `PostHog.AI` observability feature.
-
----
-
 # PostHog.AI: AI Observability for .NET
 
 [![NuGet version (PostHog.AI)](https://img.shields.io/nuget/v/PostHog.AI.svg?style=flat-square)](https://www.nuget.org/packages/PostHog.AI/)
@@ -73,7 +67,7 @@ builder.Services.AddSingleton(provider =>
 
 ### 2. For the `Azure.AI.OpenAI` Library
 
-The integration with the Azure library is even simpler.
+The integration with Azure OpenAI is straightforward. You can use the same `AddPostHogOpenAI()` method since the handler automatically detects Azure OpenAI endpoints.
 
 ```csharp
 using Azure.AI.OpenAI;
@@ -84,15 +78,40 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Add the core PostHog client (if not already added)
 builder.AddPostHog();
 
-// 2. Add PostHog's AI observability
-builder.Services.AddPostHogAzureOpenAI();
+// 2. Add PostHog's AI observability (works for both OpenAI and Azure OpenAI)
+builder.Services.AddPostHogOpenAI();
 
-// 3. Register your OpenAIClient as you normally would,
-//    and PostHog's handler will be attached automatically.
+// 3. Register your OpenAIClient and attach PostHog's handler
 builder.Services.AddOpenAIClient(new Uri(builder.Configuration["AZURE_OPENAI_ENDPOINT"]),
     new AzureKeyCredential(builder.Configuration["AZURE_OPENAI_API_KEY"]))
     .AddHttpMessageHandler<PostHogOpenAIHandler>();
 ```
+
+Alternatively, you can use the named client approach similar to the OpenAI integration:
+
+```csharp
+// Register named HTTP client with PostHog handler
+builder.Services.AddPostHogAzureOpenAI();
+
+// Create OpenAIClient using the named client
+builder.Services.AddSingleton(provider =>
+{
+    var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient("PostHogAzureOpenAI");
+    
+    var clientOptions = new OpenAIClientOptions
+    {
+        Transport = new HttpClientPipelineTransport(httpClient)
+    };
+    
+    return new OpenAIClient(
+        new Uri(builder.Configuration["AZURE_OPENAI_ENDPOINT"]),
+        new AzureKeyCredential(builder.Configuration["AZURE_OPENAI_API_KEY"]),
+        clientOptions);
+});
+```
+
+Both approaches work equally well.
 
 ## How It Works
 

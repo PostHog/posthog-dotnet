@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -122,11 +123,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     using var memoryStream = new MemoryStream();
                     await stream.CopyToAsync(memoryStream);
                     var buffer = memoryStream.ToArray();
-                    
+
                     // Create new stream for the response
                     response.Content = new StreamContent(new MemoryStream(buffer));
                     response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
-                    
+
                     // Parse the buffered stream for monitoring
                     var streamText = Encoding.UTF8.GetString(buffer);
                     await ProcessStreamingTextAsync(
@@ -347,6 +348,22 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 paramsDict.PrivacyMode = v is JsonElement je && je.ValueKind == JsonValueKind.True,
             ["posthogModelOverride"] = v => paramsDict.ModelOverride = v?.ToString(),
             ["posthogProviderOverride"] = v => paramsDict.ProviderOverride = v?.ToString(),
+            ["posthogCostOverride"] = v => paramsDict.CostOverride = v?.ToString(),
+            ["posthogWebSearchCount"] = v =>
+            {
+                if (v is JsonElement je && je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out int count))
+                    paramsDict.WebSearchCount = count;
+                else if (v is JsonElement je2 && je2.ValueKind == JsonValueKind.Number && je2.TryGetDouble(out double dCount))
+                    paramsDict.WebSearchCount = (int)dCount;
+                else if (v != null)
+                {
+                    try
+                    {
+                        paramsDict.WebSearchCount = Convert.ToInt32(v, CultureInfo.InvariantCulture);
+                    }
+                    catch { }
+                }
+            },
             ["posthogCaptureImmediate"] = v =>
                 paramsDict.CaptureImmediate =
                     v is JsonElement je2 && je2.ValueKind == JsonValueKind.True,
@@ -441,7 +458,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     data.EndpointType = OpenAIEndpointType.ChatCompletion;
                     if (requestJson.TryGetValue("messages", out var messagesValue))
                     {
-                        data.Messages = messagesValue as JsonElement?;
+                        data.Messages = messagesValue is JsonElement messagesElement ? ConvertJsonElementToObject(messagesElement) : messagesValue;
+                    }
+                    if (requestJson.TryGetValue("tools", out var toolsValue))
+                    {
+                        data.Tools = toolsValue is JsonElement toolsElement ? ConvertJsonElementToObject(toolsElement) : toolsValue;
                     }
                 }
                 else if (path.Contains("/embeddings", StringComparison.Ordinal))
@@ -449,7 +470,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     data.EndpointType = OpenAIEndpointType.Embedding;
                     if (requestJson.TryGetValue("input", out var inputValue))
                     {
-                        data.Input = inputValue as JsonElement?;
+                        data.Input = inputValue is JsonElement inputElement ? ConvertJsonElementToObject(inputElement) : inputValue;
                     }
                 }
                 else if (path.Contains("/audio/transcriptions", StringComparison.Ordinal))
@@ -472,6 +493,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     "stream",
                     "response_format",
                     "seed",
+                    "tool_choice",
                 };
 
                 foreach (var key in paramKeys)
@@ -608,14 +630,17 @@ public class PostHogOpenAIHandler : DelegatingHandler
             )
             {
                 data.HasOutput = true;
+                data.OutputContent = ConvertJsonElementToObject(choicesElement);
             }
-            else if (root.TryGetProperty("output", out _))
+            else if (root.TryGetProperty("output", out var outputElement))
             {
                 data.HasOutput = true;
+                data.OutputContent = ConvertJsonElementToObject(outputElement);
             }
-            else if (root.TryGetProperty("data", out _))
+            else if (root.TryGetProperty("data", out var dataElement))
             {
                 data.HasOutput = true; // For embeddings
+                data.OutputContent = ConvertJsonElementToObject(dataElement);
             }
         }
         catch (JsonException ex)
@@ -766,10 +791,57 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 ["$ai_base_url"] = requestData.RequestUri?.GetLeftPart(UriPartial.Authority) ?? "",
             };
 
+            // Add input content with privacy mode
+            object? inputContent = null;
+            if (!posthogParams.PrivacyMode)
+            {
+                if (requestData.EndpointType == OpenAIEndpointType.ChatCompletion)
+                {
+                    inputContent = requestData.Messages;
+                }
+                else if (requestData.EndpointType == OpenAIEndpointType.Embedding)
+                {
+                    inputContent = requestData.Input;
+                }
+                // For other endpoint types, inputContent remains null
+            }
+            properties["$ai_input"] = inputContent!;
+
+            // Add output content with privacy mode
+            object? outputContent = null;
+            if (!posthogParams.PrivacyMode && responseData != null && !responseData.IsStreaming)
+            {
+                outputContent = responseData.OutputContent;
+                // For embeddings, set output to null (following JavaScript package)
+                if (requestData.EndpointType == OpenAIEndpointType.Embedding)
+                {
+                    outputContent = null;
+                }
+            }
+            properties["$ai_output_choices"] = outputContent!;
+
             // Add model parameters if available
             if (requestData.ModelParameters?.Count > 0)
             {
                 properties["$ai_model_parameters"] = requestData.ModelParameters;
+            }
+
+            // Add tools if available
+            if (requestData.Tools != null)
+            {
+                properties["$ai_tools"] = requestData.Tools;
+            }
+
+            // Add web search count if available
+            if (posthogParams.WebSearchCount.HasValue)
+            {
+                properties["$ai_web_search_count"] = posthogParams.WebSearchCount.Value;
+            }
+
+            // Add cost override if available
+            if (posthogParams.CostOverride != null)
+            {
+                properties["$ai_cost_override"] = posthogParams.CostOverride;
             }
 
             // Add token usage if available
@@ -845,6 +917,12 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var distinctId =
                 posthogParams.DistinctId ?? _options.DefaultDistinctId ?? posthogParams.TraceId;
 
+            // Add $process_person_profile: false when no distinctId was provided (following JavaScript package)
+            if (posthogParams.DistinctId == null && _options.DefaultDistinctId == null)
+            {
+                properties["$process_person_profile"] = false;
+            }
+
             // Determine groups (from request params, then options)
             var groupsDict = posthogParams.Groups ?? _options.Groups;
             GroupCollection? groups = null;
@@ -903,10 +981,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var posthogParams = ExtractPosthogParams(requestJson);
             var requestData = ParseOpenAIRequest(request, requestBody, requestJson);
             var eventType = GetAIEventType(request);
-            
+
             // Parse streaming text to extract metadata
             var responseData = new OpenAIResponseData { StatusCode = statusCode, IsStreaming = true };
-            
+
             using var reader = new StringReader(streamText);
             string? line;
             while ((line = await reader.ReadLineAsync()) != null)
@@ -994,8 +1072,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
 public class OpenAIRequestData
 {
     public string? Model { get; set; }
-    public JsonElement? Messages { get; set; }
-    public JsonElement? Input { get; set; }
+    public object? Messages { get; set; }
+    public object? Input { get; set; }
+    public object? Tools { get; set; }
     public Uri? RequestUri { get; set; }
     public OpenAIEndpointType EndpointType { get; set; }
 
@@ -1010,6 +1089,7 @@ public class OpenAIResponseData
     public bool HasOutput { get; set; }
     public bool IsStreaming { get; set; }
     public HttpStatusCode StatusCode { get; set; }
+    public object? OutputContent { get; set; }
 }
 
 public class TokenUsage
@@ -1034,6 +1114,8 @@ public class PosthogParams
     public Dictionary<string, object>? Groups { get; set; }
     public string? ModelOverride { get; set; }
     public string? ProviderOverride { get; set; }
+    public string? CostOverride { get; set; }
+    public int? WebSearchCount { get; set; }
     public bool CaptureImmediate { get; set; }
 }
 

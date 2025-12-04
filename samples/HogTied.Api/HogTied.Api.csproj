@@ -6,6 +6,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PostHog.AspNetCore\PostHog.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\PostHog.AI\PostHog.AI.csproj" />
     <!-- <PackageReference Include="PostHog.AspNetCore" Version="1.0.0-beta.4" /> -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenAI" Version="2.1.0" />
+    <PackageReference Include="System.ClientModel" Version="1.4.0" />
   </ItemGroup>
 </Project>
