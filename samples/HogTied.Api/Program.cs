@@ -1,4 +1,5 @@
 // Program.cs
+
 using PostHog;
 
 var builder = WebApplication.CreateBuilder(args);
