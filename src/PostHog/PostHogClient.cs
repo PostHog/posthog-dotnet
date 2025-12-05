@@ -594,11 +594,8 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            // Clear existing cache to force a reload
-            _featureFlagsLoader.Clear();
-
-            // Load fresh feature flags
-            await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+            // Refresh feature flags (ETag will be used for conditional requests to minimize bandwidth)
+            await _featureFlagsLoader.RefreshAsync(cancellationToken);
 
             // Determine polling status for logging
             var pollingStatus = _featureFlagsLoader.IsLoaded ? "active" : "inactive";
