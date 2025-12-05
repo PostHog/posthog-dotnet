@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -63,17 +63,17 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnitTests.AspNetCore", "tes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HogTied.Api", "samples\HogTied.Api\HogTied.Api.csproj", "{97B0F150-CE6A-4AB5-9DCC-221C7E05A0E2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PostHog.AI", "src\PostHog.AI\PostHog.AI.csproj", "{90CDEA7F-0DCC-4887-BECA-BEADD521CB89}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{BB9A6B63-4435-4357-AD99-2E43C38E73F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{BB9A6B63-4435-4357-AD99-2E43C38E73F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+
 		{BB9A6B63-4435-4357-AD99-2E43C38E73F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BB9A6B63-4435-4357-AD99-2E43C38E73F7}.Release|Any CPU.Build.0 = Release|Any CPU
 		{8C2AF890-4917-493A-BE14-71405397602A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -100,6 +100,13 @@ Global
 		{97B0F150-CE6A-4AB5-9DCC-221C7E05A0E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{97B0F150-CE6A-4AB5-9DCC-221C7E05A0E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{97B0F150-CE6A-4AB5-9DCC-221C7E05A0E2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{90CDEA7F-0DCC-4887-BECA-BEADD521CB89}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{90CDEA7F-0DCC-4887-BECA-BEADD521CB89}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{90CDEA7F-0DCC-4887-BECA-BEADD521CB89}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{90CDEA7F-0DCC-4887-BECA-BEADD521CB89}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{BB9A6B63-4435-4357-AD99-2E43C38E73F7} = {9BA7A137-62AD-4837-BE21-B501EF9D66B7}
@@ -112,5 +119,6 @@ Global
 		{369AE9E5-4FA6-48BF-A35A-03A401DE22AE} = {9BA7A137-62AD-4837-BE21-B501EF9D66B7}
 		{B16BEF9F-76FC-4362-A7D5-A87DB10933A3} = {9BA7A137-62AD-4837-BE21-B501EF9D66B7}
 		{97B0F150-CE6A-4AB5-9DCC-221C7E05A0E2} = {5F21F6BA-8ED0-4A96-BDF2-65ABAE0A7A90}
+		{90CDEA7F-0DCC-4887-BECA-BEADD521CB89} = {AC5FC694-028B-4AB0-AF76-09726F966A78}
 	EndGlobalSection
 EndGlobal

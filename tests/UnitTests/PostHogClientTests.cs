@@ -14,7 +14,6 @@ using PostHog;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 
-#pragma warning disable CA2000
 namespace PostHogClientTests;
 
 public class TheIdentifyPersonAsyncMethod

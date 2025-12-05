@@ -18,6 +18,7 @@
     
     <ItemGroup>
       <ProjectReference Include="..\PostHog\PostHog.csproj" />
+      <ProjectReference Include="..\PostHog.AI\PostHog.AI.csproj" />
     </ItemGroup>
 
 </Project>

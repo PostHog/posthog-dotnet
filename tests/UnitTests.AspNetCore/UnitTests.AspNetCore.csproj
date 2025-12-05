@@ -7,13 +7,15 @@
 
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
-        <NoWarn>CA1034;CA1052;CA1050;CA1062;CA1515;CA1861;CA1869;CA2007</NoWarn>
+        <NoWarn>CA1034;CA1052;CA1050;CA1062;CA1515;CA1861;CA1869;CA2007;CA2000</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="coverlet.collector" Version="6.0.2"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1"/>
         <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0"/>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+        <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
         <PackageReference Include="NSubstitute" Version="5.3.0" />
         <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="1.0.17">
             <PrivateAssets>all</PrivateAssets>
@@ -29,6 +31,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\PostHog.AspNetCore\PostHog.AspNetCore.csproj" Condition="'$(TargetFramework)' == 'net8.0'" />
+      <ProjectReference Include="..\..\src\PostHog.AI\PostHog.AI.csproj" />
       <ProjectReference Include="..\TestLibrary\TestLibrary.csproj" />
     </ItemGroup>
 
