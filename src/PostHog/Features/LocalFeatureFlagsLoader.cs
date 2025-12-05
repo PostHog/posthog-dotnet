@@ -24,7 +24,7 @@ internal sealed class LocalFeatureFlagsLoader(
 {
     volatile int _started;
     LocalEvaluator? _localEvaluator;
-    volatile string? _etag; // ETag for conditional requests to reduce bandwidth
+    string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
     readonly ILogger<LocalFeatureFlagsLoader> _logger = loggerFactory.CreateLogger<LocalFeatureFlagsLoader>();
@@ -79,7 +79,7 @@ internal sealed class LocalFeatureFlagsLoader(
         }
         catch (ApiException e) when (e.ErrorType is "quota_limited")
         {
-            _etag = null; // Clear ETag on quota limit so next request starts fresh
+            Interlocked.Exchange(ref _etag, null); // Clear ETag on quota limit so next request starts fresh
             throw;
         }
     }
@@ -92,7 +92,10 @@ internal sealed class LocalFeatureFlagsLoader(
         // If 304 Not Modified, keep using cached data (update ETag if server sent a new one)
         if (response.IsNotModified)
         {
-            _etag = response.ETag ?? _etag;
+            if (response.ETag is not null)
+            {
+                Interlocked.Exchange(ref _etag, response.ETag);
+            }
             return _localEvaluator;
         }
 
@@ -103,7 +106,7 @@ internal sealed class LocalFeatureFlagsLoader(
         }
 
         // Success: update ETag (or clear if server stopped sending one)
-        _etag = response.ETag;
+        Interlocked.Exchange(ref _etag, response.ETag);
 
         var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
@@ -122,7 +125,7 @@ internal sealed class LocalFeatureFlagsLoader(
                 }
                 catch (ApiException e) when (e.ErrorType is "quota_limited")
                 {
-                    _etag = null; // Clear ETag on quota limit
+                    Interlocked.Exchange(ref _etag, null); // Clear ETag on quota limit
                     _logger.LogWarningQuotaExceeded(e);
                     return;
                 }
@@ -149,7 +152,7 @@ internal sealed class LocalFeatureFlagsLoader(
     public void Clear()
     {
         Interlocked.Exchange(ref _localEvaluator, null);
-        _etag = null;
+        Interlocked.Exchange(ref _etag, null);
     }
 }
 
