@@ -24,7 +24,7 @@ internal sealed class LocalFeatureFlagsLoader(
 {
     volatile int _started;
     LocalEvaluator? _localEvaluator;
-    string? _etag; // ETag for conditional requests to reduce bandwidth
+    volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
     readonly ILogger<LocalFeatureFlagsLoader> _logger = loggerFactory.CreateLogger<LocalFeatureFlagsLoader>();

@@ -231,7 +231,7 @@ internal sealed class PostHogApiClient : IDisposable
         // Add If-None-Match header for conditional request if we have an ETag
         if (!string.IsNullOrEmpty(etag))
         {
-            request.Headers.TryAddWithoutValidation("If-None-Match", etag);
+            request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(etag));
         }
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
