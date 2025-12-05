@@ -38,7 +38,7 @@ internal static class PostHogAIConstants
     public const string ParamGroups = "posthogGroups";
 
     // Default values
-    public const string DefaultLibVersion = "1.0.0";
+    public static string DefaultLibVersion => PostHog.AI.Versioning.VersionConstants.Version;
     public const string DefaultLibName = "posthog-dotnet-ai";
     public const string DefaultProvider = "openai";
 
