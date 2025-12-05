@@ -1,5 +1,11 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using PostHog;
+using PostHog.AI.OpenAI;
+using PostHog.AI.Utils;
 
 #pragma warning disable CA1707
 

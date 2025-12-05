@@ -1,3 +1,10 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using PostHog.Library;
+using PostHog.Config;
+
 namespace PostHog;
 
 /// <summary>
@@ -14,8 +21,8 @@ public static class Registration
     /// </summary>
     /// <param name="builder">The <see cref="IHostApplicationBuilder"/>.</param>
     /// <returns>The passed in <see cref="IHostApplicationBuilder"/>.</returns>
-    public static IHostApplicationBuilder AddPostHog(this IHostApplicationBuilder builder)
-        => builder.AddPostHog(null);
+    public static IHostApplicationBuilder AddPostHog(this IHostApplicationBuilder builder) =>
+        builder.AddPostHog(null);
 
     /// <summary>
     /// Registers <see cref="PostHogClient"/> as a singleton.
@@ -26,21 +33,30 @@ public static class Registration
     /// <exception cref="ArgumentNullException">If <see cref="builder"/> is null.</exception>
     public static IHostApplicationBuilder AddPostHog(
         this IHostApplicationBuilder builder,
-        Action<IPostHogConfigurationBuilder>? options)
+        Action<IPostHogConfigurationBuilder>? options
+    )
     {
-        builder = NotNull(builder);
+        builder = Ensure.NotNull(builder);
 
-        builder.Services.AddPostHog(
+        ServiceCollectionExtensions.AddPostHog(
+            builder.Services,
             o =>
             {
-                if (builder.Services.All(service => service.ServiceType != typeof(IConfigureOptions<PostHogOptions>)))
+                if (
+                    builder.Services.All(service =>
+                        service.ServiceType != typeof(IConfigureOptions<PostHogOptions>)
+                    )
+                )
                 {
                     // Set the default.
-                    o.UseConfigurationSection(builder.Configuration.GetSection(DefaultConfigurationSectionName));
+                    o.UseConfigurationSection(
+                        builder.Configuration.GetSection(DefaultConfigurationSectionName)
+                    );
                 }
                 o.UseAspNetCore();
                 options?.Invoke(o);
-            });
+            }
+        );
         return builder;
     }
-}
+};

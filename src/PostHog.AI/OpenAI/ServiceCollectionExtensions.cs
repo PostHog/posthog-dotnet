@@ -1,17 +1,14 @@
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
-namespace PostHog.AI;
-
-public static class PostHogAIConstants
-{
-    public const string OpenAINamedClient = "PostHogOpenAI";
-    public const string AzureOpenAINamedClient = "PostHogAzureOpenAI";
-}
+namespace PostHog.AI.OpenAI;
 
 /// <summary>
 /// Extension methods for <see cref="IServiceCollection"/> to register PostHog AI observability.
 /// </summary>
-public static class ServiceCollectionExtensions
+public static class ServiceCollectionPostHogOpenAIExtensions
 {
     /// <summary>
     /// Registers PostHog AI observability for the official OpenAI client.

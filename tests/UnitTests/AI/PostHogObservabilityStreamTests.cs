@@ -1,4 +1,6 @@
 using System.Text;
+using PostHog.AI.Utils;
+using PostHog.AI.OpenAI;
 
 #pragma warning disable CA1707
 
@@ -23,7 +25,8 @@ public class PostHogObservabilityStreamTests
                 capturedContent = text;
                 tcs.SetResult(text);
                 await Task.CompletedTask;
-            }
+            },
+            5 * 1024 * 1024 // MaxStreamBufferSize
         );
 
         var buffer = new byte[1024];

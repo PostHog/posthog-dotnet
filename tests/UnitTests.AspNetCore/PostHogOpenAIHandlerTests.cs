@@ -1,6 +1,15 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using PostHog;
+using PostHog.AI.OpenAI;
+using PostHog.Features;
+using TestLibrary.Fakes;
+using Xunit;
 
 namespace PostHog.AI.Tests;
 

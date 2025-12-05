@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PostHog.AI.Utils;
 
 #pragma warning disable CA1707
 

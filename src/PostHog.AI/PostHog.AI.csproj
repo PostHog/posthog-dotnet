@@ -23,6 +23,10 @@
     <ProjectReference Include="../PostHog/PostHog.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="UnitTests" />
+    <InternalsVisibleTo Include="UnitTests.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None
       Include="../package-icon.png"

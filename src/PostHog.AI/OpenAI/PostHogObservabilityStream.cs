@@ -2,17 +2,24 @@ using System.Text;
 
 namespace PostHog.AI.OpenAI;
 
-public class PostHogObservabilityStream : Stream
+internal sealed class PostHogObservabilityStream : Stream
 {
     private readonly Stream _innerStream;
-    private readonly MemoryStream _capturedContent = new();
+    private readonly MemoryStream _captureStream;
     private readonly Func<string, Task> _onComplete;
-    private bool _disposed;
+    private bool _isDisposed;
+    private readonly int _maxCaptureSize;
 
-    public PostHogObservabilityStream(Stream innerStream, Func<string, Task> onComplete)
+    public PostHogObservabilityStream(
+        Stream innerStream,
+        Func<string, Task> onComplete,
+        int maxCaptureSize
+    )
     {
-        _innerStream = innerStream;
-        _onComplete = onComplete;
+        _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
+        _onComplete = onComplete ?? throw new ArgumentNullException(nameof(onComplete));
+        _maxCaptureSize = maxCaptureSize;
+        _captureStream = new MemoryStream();
     }
 
     public override bool CanRead => _innerStream.CanRead;
@@ -32,7 +39,7 @@ public class PostHogObservabilityStream : Stream
         var bytesRead = _innerStream.Read(buffer, offset, count);
         if (bytesRead > 0)
         {
-            _capturedContent.Write(buffer, offset, bytesRead);
+            CaptureBytes(buffer, offset, bytesRead);
         }
         return bytesRead;
     }
@@ -44,57 +51,65 @@ public class PostHogObservabilityStream : Stream
         CancellationToken cancellationToken
     )
     {
-        // Wrapper to satisfy CA1835 (Prefer Memory overloads)
-        var bytesRead = await _innerStream.ReadAsync(
-            new Memory<byte>(buffer, offset, count),
-            cancellationToken
-        );
+#if NETSTANDARD2_1
+        var bytesRead = await _innerStream
+            .ReadAsync(buffer, offset, count, cancellationToken)
+            .ConfigureAwait(false);
         if (bytesRead > 0)
         {
-            await _capturedContent.WriteAsync(
-                new ReadOnlyMemory<byte>(buffer, offset, bytesRead),
-                cancellationToken
-            );
+            CaptureBytes(buffer, offset, bytesRead);
         }
         return bytesRead;
+#else
+        var bytesRead = await _innerStream
+            .ReadAsync(buffer.AsMemory(offset, count), cancellationToken)
+            .ConfigureAwait(false);
+        if (bytesRead > 0)
+        {
+            CaptureBytes(buffer, offset, bytesRead);
+        }
+        return bytesRead;
+#endif
     }
 
+#if !NETSTANDARD2_1
     public override async ValueTask<int> ReadAsync(
         Memory<byte> buffer,
         CancellationToken cancellationToken = default
     )
     {
-        var bytesRead = await _innerStream.ReadAsync(buffer, cancellationToken);
+        var bytesRead = await _innerStream
+            .ReadAsync(buffer, cancellationToken)
+            .ConfigureAwait(false);
         if (bytesRead > 0)
         {
-            await _capturedContent.WriteAsync(buffer.Slice(0, bytesRead), cancellationToken);
+            CaptureBytes(buffer.Span.Slice(0, bytesRead));
         }
         return bytesRead;
     }
+#endif
 
-    public override async ValueTask DisposeAsync()
+    private void CaptureBytes(byte[] buffer, int offset, int count)
     {
-        if (!_disposed)
+        if (_captureStream.Length < _maxCaptureSize)
         {
-            _disposed = true;
-            try
-            {
-                var text = Encoding.UTF8.GetString(_capturedContent.ToArray());
-                await _onComplete(text);
-            }
-#pragma warning disable CA1031
-            catch
-            {
-                // Swallow exceptions during dispose to prevent crashing the app
-            }
-#pragma warning restore CA1031
-
-            await _capturedContent.DisposeAsync();
-            await _innerStream.DisposeAsync();
+            var remaining = _maxCaptureSize - (int)_captureStream.Length;
+            var toWrite = Math.Min(remaining, count);
+            _captureStream.Write(buffer, offset, toWrite);
         }
-        await base.DisposeAsync();
-        GC.SuppressFinalize(this);
     }
+
+#if !NETSTANDARD2_1
+    private void CaptureBytes(ReadOnlySpan<byte> buffer)
+    {
+        if (_captureStream.Length < _maxCaptureSize)
+        {
+            var remaining = _maxCaptureSize - (int)_captureStream.Length;
+            var toWrite = Math.Min(remaining, buffer.Length);
+            _captureStream.Write(buffer.Slice(0, toWrite));
+        }
+    }
+#endif
 
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
@@ -105,25 +120,51 @@ public class PostHogObservabilityStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing && !_disposed)
+        if (!_isDisposed)
         {
-            _disposed = true;
-            try
+            if (disposing)
             {
-                var text = Encoding.UTF8.GetString(_capturedContent.ToArray());
-                // Fire and forget the processing task
-                Task.Run(() => _onComplete(text));
+                ProcessCapturedDataAsync().GetAwaiter().GetResult();
+                _captureStream.Dispose();
+                _innerStream.Dispose();
             }
-#pragma warning disable CA1031
-            catch
-            {
-                // Swallow exceptions during dispose to prevent crashing the app
-            }
-#pragma warning restore CA1031
-
-            _capturedContent.Dispose();
-            _innerStream.Dispose();
+            _isDisposed = true;
         }
         base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (!_isDisposed)
+        {
+            await ProcessCapturedDataAsync().ConfigureAwait(false);
+            await _captureStream.DisposeAsync().ConfigureAwait(false);
+            await _innerStream.DisposeAsync().ConfigureAwait(false);
+            _isDisposed = true;
+        }
+        await base.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private async Task ProcessCapturedDataAsync()
+    {
+        try
+        {
+            _captureStream.Position = 0;
+            using var reader = new StreamReader(
+                _captureStream,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: false,
+                bufferSize: 1024,
+                leaveOpen: true
+            );
+            var content = await reader.ReadToEndAsync().ConfigureAwait(false);
+            await _onComplete(content).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch
+        {
+            // Ignore errors during processing to avoid affecting the original stream
+        }
+#pragma warning restore CA1031 // Do not catch general exception types
     }
 }
