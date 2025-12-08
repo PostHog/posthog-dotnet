@@ -516,7 +516,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
     private sealed class TrackingStream : Stream
     {
-        private static readonly string[] LineSeparators = { "\n", "\r\n" };
+        private static readonly string[] LineSeparators = { "\r\n", "\n" };
 
         private readonly Stream _innerStream;
         private readonly Action<string, JsonNode?> _onComplete;
