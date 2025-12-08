@@ -14,7 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.AddPostHog(options =>
 {
-    // In general this call is not needed. The default settings are in the "PostHoc" configuration section.
+    // In general this call is not needed. The default settings are in the "PostHog" configuration section.
     // This is here so I can easily switch testing against my local install and production.
     options.UseConfigurationSection(builder.Configuration.GetSection("PostHogLocal"));
 
