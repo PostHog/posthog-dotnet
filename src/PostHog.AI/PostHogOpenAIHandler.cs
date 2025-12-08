@@ -29,37 +29,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
         ArgumentNullException.ThrowIfNull(request);
 
         var stopwatch = Stopwatch.StartNew();
-        string? requestContent = null;
-        JsonNode? requestJson = null;
-
-        try
-        {
-            if (request.Content != null)
-            {
-#pragma warning disable CA2016 // Forward cancellation token (ReadAsStringAsync has an overload with CancellationToken in .NET 5+, LoadIntoBufferAsync doesn't)
-                await request.Content.LoadIntoBufferAsync();
-                requestContent = await request.Content.ReadAsStringAsync(cancellationToken);
-#pragma warning restore CA2016
-
-                if (!string.IsNullOrWhiteSpace(requestContent))
-                {
-                    try
-                    {
-                        requestJson = JsonNode.Parse(requestContent);
-                    }
-                    catch (JsonException)
-                    {
-                        // Ignore if not JSON
-                    }
-                }
-            }
-        }
-#pragma warning disable CA1031 // Do not catch general exception types
-        catch (Exception ex)
-        {
-            _logger.LogRequestContentFailure(ex);
-        }
-#pragma warning restore CA1031
+        var (requestContent, requestJson) = await ReadContentAndParseJsonAsync(
+            request.Content,
+            cancellationToken,
+            ex => _logger.LogRequestContentFailure(ex)
+        );
 
         HttpResponseMessage response;
         try
@@ -155,37 +129,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
         else
         {
             stopwatch.Stop();
-            string? responseContent = null;
-            JsonNode? responseJson = null;
-
-            try
-            {
-                if (response.Content != null)
-                {
-#pragma warning disable CA2016 // Forward cancellation token
-                    await response.Content.LoadIntoBufferAsync();
-                    responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-#pragma warning restore CA2016
-
-                    if (!string.IsNullOrWhiteSpace(responseContent))
-                    {
-                        try
-                        {
-                            responseJson = JsonNode.Parse(responseContent);
-                        }
-                        catch (JsonException)
-                        {
-                            // Ignore
-                        }
-                    }
-                }
-            }
-#pragma warning disable CA1031 // Do not catch general exception types
-            catch (Exception ex)
-            {
-                _logger.LogResponseContentFailure(ex);
-            }
-#pragma warning restore CA1031
+            var (responseContent, responseJson) = await ReadContentAndParseJsonAsync(
+                response.Content,
+                cancellationToken,
+                ex => _logger.LogResponseContentFailure(ex)
+            );
 
             _ = Task.Run(
                 () =>
@@ -204,6 +152,47 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
 
         return response;
+    }
+
+    private static async Task<(string? Content, JsonNode? Json)> ReadContentAndParseJsonAsync(
+        HttpContent? content,
+        CancellationToken cancellationToken,
+        Action<Exception> onException
+    )
+    {
+        string? contentString = null;
+        JsonNode? jsonNode = null;
+
+        try
+        {
+            if (content != null)
+            {
+#pragma warning disable CA2016 // Forward cancellation token (ReadAsStringAsync has an overload with CancellationToken in .NET 5+, LoadIntoBufferAsync doesn't)
+                await content.LoadIntoBufferAsync();
+                contentString = await content.ReadAsStringAsync(cancellationToken);
+#pragma warning restore CA2016
+
+                if (!string.IsNullOrWhiteSpace(contentString))
+                {
+                    try
+                    {
+                        jsonNode = JsonNode.Parse(contentString);
+                    }
+                    catch (JsonException)
+                    {
+                        // Ignore if not JSON
+                    }
+                }
+            }
+        }
+#pragma warning disable CA1031 // Do not catch general exception types
+        catch (Exception ex)
+        {
+            onException(ex);
+        }
+#pragma warning restore CA1031
+
+        return (contentString, jsonNode);
     }
 
     private static string DetermineEventName(HttpRequestMessage request)
@@ -277,7 +266,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 // Extract specific model parameters
                 if (requestJson["temperature"] is JsonValue temperature)
                 {
-                    eventProperties["$ai_temperature"] = temperature.ToString();
+                    if (temperature.TryGetValue<double>(out var temperatureDouble))
+                        eventProperties["$ai_temperature"] = temperatureDouble;
+                    else
+                        eventProperties["$ai_temperature"] = temperature.ToString();
                 }
 
                 if (requestJson["max_tokens"] is JsonValue maxTokens)
@@ -497,8 +489,6 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 false, // sendFeatureFlags
                 DateTimeOffset.UtcNow
             );
-            // We do not await anything here as Capture is synchronous (enqueues)
-            await Task.CompletedTask;
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception ex)
