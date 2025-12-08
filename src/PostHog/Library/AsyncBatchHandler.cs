@@ -52,16 +52,19 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
         IOptions<PostHogOptions> options,
         ITaskScheduler taskScheduler,
         TimeProvider timeProvider,
-        ILogger<AsyncBatchHandler> logger)
+        ILogger<AsyncBatchHandler> logger
+    )
     {
         _options = NotNull(options);
         _batchHandlerFunc = batchHandlerFunc;
         _batchContextFunc = batchContextFunc;
         _logger = logger;
-        _channel = Channel.CreateBounded<BatchItem<TItem, TBatchContext>>(new BoundedChannelOptions(_options.Value.MaxQueueSize)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest
-        });
+        _channel = Channel.CreateBounded<BatchItem<TItem, TBatchContext>>(
+            new BoundedChannelOptions(_options.Value.MaxQueueSize)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+            }
+        );
         _timer = new PeriodicTimer(options.Value.FlushInterval, timeProvider);
         taskScheduler.Run(() => HandleTimer(_cancellationTokenSource.Token));
         taskScheduler.Run(() => HandleFlushSignal(_cancellationTokenSource.Token));
@@ -71,16 +74,16 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
         Func<IEnumerable<TItem>, Task> batchHandlerFunc,
         Func<TBatchContext> batchContextFunc,
         TimeProvider timeProvider,
-        IOptions<PostHogOptions> options)
+        IOptions<PostHogOptions> options
+    )
         : this(
             batchHandlerFunc,
             batchContextFunc,
             options,
             new TaskRunTaskScheduler(),
             timeProvider,
-            NullLogger<AsyncBatchHandler>.Instance)
-    {
-    }
+            NullLogger<AsyncBatchHandler>.Instance
+        ) { }
 
     public int Count => _channel.Reader.Count;
 
@@ -89,7 +92,8 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
     /// </summary>
     /// <param name="item">The item to enqueue</param>
     /// <returns><c>true</c> if the item was enqueued, otherwise <c>false</c>ß</returns>
-    public bool Enqueue(Task<TItem> item) => Enqueue(new BatchItem<TItem, TBatchContext>(_ => item));
+    public bool Enqueue(Task<TItem> item) =>
+        Enqueue(new BatchItem<TItem, TBatchContext>(_ => item));
 
     /// <summary>
     /// Enqueues a batch item and returns true if the item was successfully enqueued.
@@ -147,8 +151,10 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
 #pragma warning restore CA1031
         {
             // When running locally we want this to throw so we can see the exception.
-            Debug.Assert(ex is not ArgumentException and not NullReferenceException,
-                $"Unexpected {ex.GetType().FullName} occurred during async batch handling.");
+            Debug.Assert(
+                ex is not ArgumentException and not NullReferenceException,
+                $"Unexpected {ex.GetType().FullName} occurred during async batch handling."
+            );
 
             _logger.LogErrorUnexpectedException(ex);
         }
@@ -178,8 +184,10 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
 #pragma warning restore CA1031
         {
             // When running locally we want this to throw so we can see the exception.
-            Debug.Assert(ex is not ArgumentException and not NullReferenceException,
-                $"Unexpected {ex.GetType().FullName} occurred during async batch handling.");
+            Debug.Assert(
+                ex is not ArgumentException and not NullReferenceException,
+                $"Unexpected {ex.GetType().FullName} occurred during async batch handling."
+            );
 
             _logger.LogErrorUnexpectedException(ex);
         }
@@ -262,8 +270,10 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
 #pragma warning restore CA1031
         {
             // When running locally we want this to throw so we can see the exception.
-            Debug.Assert(e is not ArgumentException and not NullReferenceException,
-                $"Unexpected {e.GetType().FullName} occurred during async batch handling.");
+            Debug.Assert(
+                e is not ArgumentException and not NullReferenceException,
+                $"Unexpected {e.GetType().FullName} occurred during async batch handling."
+            );
 
             _logger.LogErrorUnexpectedException(e);
         }
@@ -274,88 +284,113 @@ internal abstract class AsyncBatchHandler;
 
 internal static partial class AsyncBatchHandlerLoggerExtensions
 {
-    [LoggerMessage(
-        EventId = 100,
-        Level = LogLevel.Debug,
-        Message = "Sending Batch: {Count} items")]
-    public static partial void LogDebugSendingBatch(this ILogger<AsyncBatchHandler> logger, int count);
+    [LoggerMessage(EventId = 100, Level = LogLevel.Debug, Message = "Sending Batch: {Count} items")]
+    public static partial void LogDebugSendingBatch(
+        this ILogger<AsyncBatchHandler> logger,
+        int count
+    );
 
     [LoggerMessage(
         EventId = 101,
         Level = LogLevel.Trace,
-        Message = "Batch sent: Queue is now at {Count} items")]
+        Message = "Batch sent: Queue is now at {Count} items"
+    )]
     public static partial void LogTraceBatchSent(this ILogger<AsyncBatchHandler> logger, int count);
 
     [LoggerMessage(
         EventId = 102,
         Level = LogLevel.Trace,
-        Message = "Flush called on capture because FlushAt ({FlushAt}) count met, {Count} items in the queue")]
+        Message = "Flush called on capture because FlushAt ({FlushAt}) count met, {Count} items in the queue"
+    )]
     public static partial void LogTraceFlushCalledOnCaptureFlushAt(
-        this ILogger<AsyncBatchHandler> logger, int flushAt, int count);
+        this ILogger<AsyncBatchHandler> logger,
+        int flushAt,
+        int count
+    );
 
     [LoggerMessage(
         EventId = 103,
         Level = LogLevel.Trace,
-        Message = "Flush called on the Flush Interval: {Interval}, {Count} items in the queue")]
+        Message = "Flush called on the Flush Interval: {Interval}, {Count} items in the queue"
+    )]
     public static partial void LogTraceFlushCalledOnFlushInterval(
         this ILogger<AsyncBatchHandler> logger,
         TimeSpan interval,
-        int count);
+        int count
+    );
 
     [LoggerMessage(
         EventId = 104,
         Level = LogLevel.Trace,
-        Message = "Flush called because we're disposing: {Count} items in the queue")]
+        Message = "Flush called because we're disposing: {Count} items in the queue"
+    )]
     public static partial void LogTraceFlushCalledInDispose(
         this ILogger<AsyncBatchHandler> logger,
-        int count);
+        int count
+    );
 
     [LoggerMessage(
         EventId = 105,
         Level = LogLevel.Information,
-        Message = "Flush called directly via code: {Count} items in the queue")]
-    public static partial void LogInfoFlushCalledDirectly(this ILogger<AsyncBatchHandler> logger, int count);
+        Message = "Flush called directly via code: {Count} items in the queue"
+    )]
+    public static partial void LogInfoFlushCalledDirectly(
+        this ILogger<AsyncBatchHandler> logger,
+        int count
+    );
 
     [LoggerMessage(
         EventId = 106,
         Level = LogLevel.Information,
-        Message = "DisposeAsync called in AsyncBatchHandler")]
+        Message = "DisposeAsync called in AsyncBatchHandler"
+    )]
     public static partial void LogInfoDisposeAsyncCalled(this ILogger<AsyncBatchHandler> logger);
 
     [LoggerMessage(
         EventId = 107,
         Level = LogLevel.Warning,
-        Message = "Cannot enqueue event. Disposed: {Disposed}")]
+        Message = "Cannot enqueue event. Disposed: {Disposed}"
+    )]
     public static partial void LogWarningCannotEnqueueEvent(
         this ILogger<AsyncBatchHandler> logger,
-        bool disposed);
+        bool disposed
+    );
 
     [LoggerMessage(
         EventId = 108,
         Level = LogLevel.Warning,
-        Message = "Dispose called a second time. Ignoring")]
+        Message = "Dispose called a second time. Ignoring"
+    )]
     public static partial void LogWarningDisposeCalledTwice(this ILogger<AsyncBatchHandler> logger);
 
     [LoggerMessage(
         EventId = 110,
         Level = LogLevel.Trace,
-        Message = "{MethodName} exiting due to OperationCancelled exception")]
+        Message = "{MethodName} exiting due to OperationCancelled exception"
+    )]
     public static partial void LogTraceOperationCancelled(
         this ILogger<AsyncBatchHandler> logger,
-        string methodName);
+        string methodName
+    );
 
     [LoggerMessage(
         EventId = 111,
         Level = LogLevel.Warning,
-        Message = "MaxQueueSize ({MaxQueueSize}) reached. Count: {count}. Dropping oldest item.")]
+        Message = "MaxQueueSize ({MaxQueueSize}) reached. Count: {count}. Dropping oldest item."
+    )]
     public static partial void LogWarningMaxQueueSizeReached(
         this ILogger<AsyncBatchHandler> logger,
         int maxQueueSize,
-        int count);
+        int count
+    );
 
     [LoggerMessage(
         EventId = 500,
         Level = LogLevel.Error,
-        Message = "Unexpected exception occurred during async batch handling.")]
-    public static partial void LogErrorUnexpectedException(this ILogger<AsyncBatchHandler> logger, Exception exception);
+        Message = "Unexpected exception occurred during async batch handling."
+    )]
+    public static partial void LogErrorUnexpectedException(
+        this ILogger<AsyncBatchHandler> logger,
+        Exception exception
+    );
 }

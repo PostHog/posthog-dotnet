@@ -7,4 +7,6 @@ public class TokenUsage
     public int? TotalTokens { get; set; }
     public int? ReasoningTokens { get; set; }
     public int? CacheReadInputTokens { get; set; }
+    public int? CacheCreationInputTokens { get; set; }
+    public int? WebSearchCount { get; set; }
 }

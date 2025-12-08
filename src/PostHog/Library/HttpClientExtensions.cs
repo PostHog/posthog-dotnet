@@ -25,25 +25,36 @@ internal static class HttpClientExtensions
         this HttpClient httpClient,
         Uri requestUri,
         object content,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var response = await httpClient.PostAsJsonAsync(
             requestUri,
             content,
             JsonSerializerHelper.Options,
-            cancellationToken);
+            cancellationToken
+        );
 
         await response.EnsureSuccessfulApiCall(cancellationToken);
 
+#if NETSTANDARD2_1
+        var result = await response.Content.ReadAsStreamAsync();
+        var str = await response.Content.ReadAsStringAsync();
+#else
         var result = await response.Content.ReadAsStreamAsync(cancellationToken);
-        return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
+        var str = await response.Content.ReadAsStringAsync(cancellationToken);
+#endif
+        var deserialized = await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
             result,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken
+        );
+        return deserialized;
     }
 
     public static async Task EnsureSuccessfulApiCall(
         this HttpResponseMessage response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         if (response.IsSuccessStatusCode)
         {
@@ -61,8 +72,10 @@ internal static class HttpClientExtensions
         throw response.StatusCode switch
         {
             HttpStatusCode.Unauthorized => new UnauthorizedAccessException(
-                error?.Detail ?? "Unauthorized. Could not deserialize the response for more info.", exception),
-            _ => new ApiException(error, response.StatusCode, exception)
+                error?.Detail ?? "Unauthorized. Could not deserialize the response for more info.",
+                exception
+            ),
+            _ => new ApiException(error, response.StatusCode, exception),
         };
 
         async Task<(ApiErrorResult?, Exception?)> ReadApiErrorResultAsync()
@@ -72,7 +85,8 @@ internal static class HttpClientExtensions
                 // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
 #pragma warning disable CA2016
                 var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
-                    cancellationToken: cancellationToken);
+                    cancellationToken: cancellationToken
+                );
                 return (result, null);
             }
             catch (JsonException e)

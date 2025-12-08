@@ -27,7 +27,7 @@ internal partial class OpenAIResponseParser
             var root = doc.RootElement;
 
             // Extract model
-            if (root.TryGetProperty("model", out var modelElement))
+            if (root.TryGetProperty("model", out var modelElement) && modelElement.ValueKind == JsonValueKind.String)
             {
                 data.Model = modelElement.GetString();
             }
@@ -103,16 +103,27 @@ internal partial class OpenAIResponseParser
             {
                 data.HasOutput = true;
                 data.OutputContent = OpenAIRequestParser.ConvertJsonElementToObject(choicesElement);
+                // Format output for PostHog
+                data.SetOutputFormatted(OpenAIFormatter.FormatResponseOpenAI(root));
+                // Calculate web search count
+                data.Usage ??= new TokenUsage();
+                data.Usage.WebSearchCount = OpenAIFormatter.CalculateWebSearchCount(root);
             }
             else if (root.TryGetProperty("output", out var outputElement))
             {
                 data.HasOutput = true;
                 data.OutputContent = OpenAIRequestParser.ConvertJsonElementToObject(outputElement);
+                // Format output for PostHog
+                data.SetOutputFormatted(OpenAIFormatter.FormatResponseOpenAI(root));
+                // Calculate web search count
+                data.Usage ??= new TokenUsage();
+                data.Usage.WebSearchCount = OpenAIFormatter.CalculateWebSearchCount(root);
             }
             else if (root.TryGetProperty("data", out var dataElement))
             {
                 data.HasOutput = true; // For embeddings
                 data.OutputContent = OpenAIRequestParser.ConvertJsonElementToObject(dataElement);
+                // Embeddings don't have formatted output or web search
             }
         }
         catch (JsonException ex)
@@ -149,13 +160,13 @@ internal partial class OpenAIResponseParser
                     var root = doc.RootElement;
 
                     // Extract model from first chunk if available
-                    if (data.Model == null && root.TryGetProperty("model", out var modelElement))
+                    if (data.Model == null && root.TryGetProperty("model", out var modelElement) && modelElement.ValueKind == JsonValueKind.String)
                     {
                         data.Model = modelElement.GetString();
                     }
 
                     // Extract usage from last chunk
-                    if (root.TryGetProperty("usage", out var usageElement))
+                    if (root.TryGetProperty("usage", out var usageElement) && usageElement.ValueKind == JsonValueKind.Object)
                     {
                         data.Usage ??= new TokenUsage();
 
@@ -163,7 +174,7 @@ internal partial class OpenAIResponseParser
                             usageElement.TryGetProperty(
                                 "prompt_tokens",
                                 out var promptTokensElement
-                            )
+                            ) && promptTokensElement.ValueKind == JsonValueKind.Number
                         )
                         {
                             data.Usage.InputTokens = promptTokensElement.GetInt32();
@@ -173,15 +184,87 @@ internal partial class OpenAIResponseParser
                             usageElement.TryGetProperty(
                                 "completion_tokens",
                                 out var completionTokensElement
-                            )
+                            ) && completionTokensElement.ValueKind == JsonValueKind.Number
                         )
                         {
                             data.Usage.OutputTokens = completionTokensElement.GetInt32();
                         }
 
-                        if (usageElement.TryGetProperty("total_tokens", out var totalTokensElement))
+                        if (usageElement.TryGetProperty("total_tokens", out var totalTokensElement) && totalTokensElement.ValueKind == JsonValueKind.Number)
                         {
                             data.Usage.TotalTokens = totalTokensElement.GetInt32();
+                        }
+                    }
+
+                    // Calculate web search count for this chunk
+                    var chunkWebSearchCount = OpenAIFormatter.CalculateWebSearchCount(root);
+                    if (chunkWebSearchCount > 0)
+                    {
+                        data.Usage ??= new TokenUsage();
+                        if (chunkWebSearchCount > (data.Usage.WebSearchCount ?? 0))
+                        {
+                            data.Usage.WebSearchCount = chunkWebSearchCount;
+                        }
+                    }
+
+                    // Accumulate streaming content
+                    if (root.TryGetProperty("choices", out var choicesElement) && choicesElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var choice in choicesElement.EnumerateArray())
+                        {
+                            if (choice.ValueKind != JsonValueKind.Object) continue;
+                            if (choice.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.Object)
+                            {
+                                // Accumulate text content
+                                if (deltaElement.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String)
+                                {
+                                    var content = contentElement.GetString();
+                                    if (!string.IsNullOrEmpty(content))
+                                    {
+                                        data.AddAccumulatedContent(content);
+                                    }
+                                }
+                                // Handle tool calls
+                                if (deltaElement.TryGetProperty("tool_calls", out var toolCallsElement) && toolCallsElement.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var toolCall in toolCallsElement.EnumerateArray())
+                                    {
+                                        if (toolCall.ValueKind != JsonValueKind.Object) continue;
+                                        int? index = null;
+                                        string? id = null;
+                                        string? name = null;
+                                        string? arguments = null;
+                                        
+                                        if (toolCall.TryGetProperty("index", out var indexElement) && indexElement.ValueKind == JsonValueKind.Number)
+                                        {
+                                            index = indexElement.GetInt32();
+                                        }
+                                        
+                                        if (toolCall.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String)
+                                        {
+                                            id = idElement.GetString();
+                                        }
+                                        
+                                        if (toolCall.TryGetProperty("function", out var functionElement) && functionElement.ValueKind == JsonValueKind.Object)
+                                        {
+                                            if (functionElement.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
+                                            {
+                                                name = nameElement.GetString();
+                                            }
+                                            
+                                            if (functionElement.TryGetProperty("arguments", out var argsElement) && argsElement.ValueKind == JsonValueKind.String)
+                                            {
+                                                arguments = argsElement.GetString();
+                                            }
+                                        }
+                                        
+                                        if (index.HasValue)
+                                        {
+                                            data.AddOrUpdateToolCall(index.Value, id, name, arguments);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -200,13 +283,7 @@ internal partial class OpenAIResponseParser
         CancellationToken cancellationToken
     )
     {
-        var data = new OpenAIResponseData { StatusCode = response.StatusCode, IsStreaming = true };
-
-        // For streaming responses, we don't accumulate the full content
-        // but we can still capture metadata if available in headers or initial response
-        // In a more complete implementation, we would parse SSE events
-
-        // For now, read the response to get any metadata in the stream
+        // For streaming responses, parse the SSE events
         try
         {
 #if NETSTANDARD2_1
@@ -216,18 +293,22 @@ internal partial class OpenAIResponseParser
 #endif
             using var reader = new StreamReader(stream);
 
-            var parsedData = await ParseStreamingDataAsync(reader, cancellationToken);
-            data.Model = parsedData.Model;
-            data.Usage = parsedData.Usage;
+            var data = await ParseStreamingDataAsync(reader, cancellationToken);
+            data.StatusCode = response.StatusCode;
+            data.IsStreaming = true;
+            
+            // Build formatted output from accumulated streaming content
+            data.BuildFormattedOutputFromStreaming();
+            
+            return data;
         }
 #pragma warning disable CA1031
         catch (Exception ex)
         {
             _logger.ErrorReadingOpenAIStreamingResponse(ex);
+            return new OpenAIResponseData { StatusCode = response.StatusCode, IsStreaming = true };
         }
 #pragma warning restore CA1031
-
-        return data;
     }
 }
 

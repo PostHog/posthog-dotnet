@@ -90,9 +90,9 @@ internal class AIEventSender
 
             // Add output content with privacy mode
             object? outputContent = null;
-            if (!posthogParams.PrivacyMode && responseData != null && !responseData.IsStreaming)
+            if (!posthogParams.PrivacyMode && responseData != null)
             {
-                outputContent = responseData.OutputContent;
+                outputContent = responseData.OutputFormatted ?? responseData.OutputContent;
                 // For embeddings, set output to null (following JavaScript package)
                 if (requestData.EndpointType == OpenAIEndpointType.Embedding)
                 {
@@ -116,10 +116,20 @@ internal class AIEventSender
                 properties["$ai_tools"] = requestData.Tools;
             }
 
-            // Add web search count if available
-            if (posthogParams.WebSearchCount.HasValue)
+            // Add web search count if available (prefer calculated from response, then header)
+            int? webSearchCount = null;
+            if (responseData?.Usage?.WebSearchCount.HasValue == true)
             {
-                properties["$ai_web_search_count"] = posthogParams.WebSearchCount.Value;
+                webSearchCount = responseData.Usage.WebSearchCount.Value;
+            }
+            else if (posthogParams.WebSearchCount.HasValue)
+            {
+                webSearchCount = posthogParams.WebSearchCount.Value;
+            }
+            
+            if (webSearchCount.HasValue)
+            {
+                properties["$ai_web_search_count"] = webSearchCount.Value;
             }
 
             // Add cost override if available
@@ -199,6 +209,7 @@ internal class AIEventSender
                     properties[kvp.Key] = kvp.Value;
                 }
             }
+            posthogParams.CaptureImmediate = true;
 
             // Merge with global options
             if (_options.Properties != null)

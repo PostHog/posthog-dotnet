@@ -20,13 +20,6 @@ public partial class PostHogOpenAIHandler : DelegatingHandler
     private readonly OpenAIResponseParser _responseParser;
     private readonly AIEventSender _aiEventSender;
 
-
-
-
-
-
-
-
     public PostHogOpenAIHandler(
         IPostHogClient postHogClient,
         ILogger<PostHogOpenAIHandler> logger,
@@ -539,6 +532,10 @@ public partial class PostHogOpenAIHandler : DelegatingHandler
                 IsStreaming = true,
             };
 
+# pragma warning disable CA1848
+# pragma warning disable CA2254
+            this._logger.LogInformation(streamText);
+
             using var reader = new StringReader(streamText);
             var parsedData = await OpenAIResponseParser.ParseStreamingDataAsync(
                 reader,
@@ -546,6 +543,13 @@ public partial class PostHogOpenAIHandler : DelegatingHandler
             );
             responseData.Model = parsedData.Model;
             responseData.Usage = parsedData.Usage;
+            // Build formatted output from accumulated streaming content
+            parsedData.BuildFormattedOutputFromStreaming();
+            if (parsedData.OutputFormatted != null)
+            {
+                responseData.SetOutputFormatted(parsedData.OutputFormatted);
+                responseData.HasOutput = true;
+            }
 
             await _aiEventSender.SendAIEventAsync(
                 eventType,
@@ -569,36 +573,42 @@ internal static partial class PostHogOpenAIHandlerLoggerExtensions
     [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Debug,
-        Message = "Failed to parse OpenAI request body as JSON")]
+        Message = "Failed to parse OpenAI request body as JSON"
+    )]
     public static partial void FailedToParseRequestBody(this ILogger logger, Exception? ex);
 
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Debug,
-        Message = "Failed to parse multipart request")]
+        Message = "Failed to parse multipart request"
+    )]
     public static partial void FailedToParseMultipartRequest(this ILogger logger, Exception? ex);
 
     [LoggerMessage(
         EventId = 3,
         Level = LogLevel.Debug,
-        Message = "Failed to parse OpenAI response body")]
+        Message = "Failed to parse OpenAI response body"
+    )]
     public static partial void FailedToParseResponseBody(this ILogger logger, Exception? ex);
 
     [LoggerMessage(
         EventId = 6,
         Level = LogLevel.Error,
-        Message = "Error processing OpenAI error for PostHog")]
+        Message = "Error processing OpenAI error for PostHog"
+    )]
     public static partial void ErrorProcessingError(this ILogger logger, Exception? ex);
 
     [LoggerMessage(
         EventId = 7,
         Level = LogLevel.Debug,
-        Message = "Error reading streaming response")]
+        Message = "Error reading streaming response"
+    )]
     public static partial void ErrorReadingStreamingResponse(this ILogger logger, Exception? ex);
 
     [LoggerMessage(
         EventId = 10,
         Level = LogLevel.Error,
-        Message = "Error processing streaming text for PostHog")]
+        Message = "Error processing streaming text for PostHog"
+    )]
     public static partial void ErrorProcessingStreamingText(this ILogger logger, Exception? ex);
 }
