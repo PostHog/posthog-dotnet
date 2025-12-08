@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis; // Added for SuppressMessage
 using System.Runtime.InteropServices; // Added for MemoryMarshal
 using System.Text;
 using System.Text.Json;
@@ -11,11 +10,6 @@ namespace PostHog.AI;
 /// <summary>
 /// A delegating handler that intercepts OpenAI API calls and sends events to PostHog.
 /// </summary>
-[SuppressMessage(
-    "Performance",
-    "CA1835:Prefer Stream.ReadAsync(Memory<byte>, CancellationToken) over Stream.ReadAsync(Byte[], Int32, Int32, CancellationToken)",
-    Justification = "False positive or specific overload required by framework version. The explicit Memory<byte> overload is already used."
-)]
 public class PostHogOpenAIHandler : DelegatingHandler
 {
     private readonly IPostHogClient _postHogClient;
@@ -562,23 +556,12 @@ public class PostHogOpenAIHandler : DelegatingHandler
             CancellationToken cancellationToken
         )
         {
-            var read = await _innerStream
-                .ReadAsync(buffer, offset, count, cancellationToken)
+            // Delegate to the Memory<byte> overload to satisfy CA1835 and keep a single code path.
+            var read = await ReadAsync(buffer.AsMemory(offset, count), cancellationToken)
                 .ConfigureAwait(false);
-            if (read > 0)
-            {
-                ProcessChunk(buffer, offset, read);
-            }
-
             return read;
         }
 
-        // Suppressing CA1835 at the method level
-        [SuppressMessage(
-            "Performance",
-            "CA1835:Prefer Stream.ReadAsync(Memory<byte>, CancellationToken) over Stream.ReadAsync(Byte[], Int32, Int32, CancellationToken)",
-            Justification = "The explicit Memory<byte> overload is already used, this seems to be a false positive or specific analyzer bug."
-        )]
         public override async ValueTask<int> ReadAsync(
             Memory<byte> buffer,
             CancellationToken cancellationToken = default
