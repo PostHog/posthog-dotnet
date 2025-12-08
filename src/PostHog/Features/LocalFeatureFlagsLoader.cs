@@ -24,6 +24,7 @@ internal sealed class LocalFeatureFlagsLoader(
 {
     volatile int _started;
     LocalEvaluator? _localEvaluator;
+    volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
     readonly ILogger<LocalFeatureFlagsLoader> _logger = loggerFactory.CreateLogger<LocalFeatureFlagsLoader>();
@@ -59,17 +60,55 @@ internal sealed class LocalFeatureFlagsLoader(
         return await LoadLocalEvaluatorAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Forces a refresh of feature flags from the API. Uses ETag for conditional requests
+    /// to minimize bandwidth when flags haven't changed (304 Not Modified).
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>The local evaluator with the feature flags.</returns>
+    public async ValueTask<LocalEvaluator?> RefreshAsync(CancellationToken cancellationToken)
+    {
+        if (options.Value.PersonalApiKey is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await LoadLocalEvaluatorAsync(cancellationToken);
+        }
+        catch (ApiException e) when (e.ErrorType is "quota_limited")
+        {
+            Interlocked.Exchange(ref _etag, null); // Clear ETag on quota limit so next request starts fresh
+            throw;
+        }
+    }
+
     async Task<LocalEvaluator?> LoadLocalEvaluatorAsync(CancellationToken cancellationToken)
     {
         StartPollingIfNotStarted();
-        var newApiResult = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+        var response = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(_etag, cancellationToken);
 
-        if (newApiResult is null)
+        // If 304 Not Modified, keep using cached data (update ETag if server sent a new one)
+        if (response.IsNotModified)
+        {
+            if (response.ETag is not null)
+            {
+                Interlocked.Exchange(ref _etag, response.ETag);
+            }
+            return _localEvaluator;
+        }
+
+        // On failure (no result), preserve existing ETag for retry
+        if (response.Result is null)
         {
             return _localEvaluator;
         }
 
-        var localEvaluator = new LocalEvaluator(newApiResult, timeProvider, _localEvaluatorLogger);
+        // Success: update ETag (or clear if server stopped sending one)
+        Interlocked.Exchange(ref _etag, response.ETag);
+
+        var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
         return localEvaluator;
     }
@@ -86,6 +125,7 @@ internal sealed class LocalFeatureFlagsLoader(
                 }
                 catch (ApiException e) when (e.ErrorType is "quota_limited")
                 {
+                    Interlocked.Exchange(ref _etag, null); // Clear ETag on quota limit
                     _logger.LogWarningQuotaExceeded(e);
                     return;
                 }
@@ -109,7 +149,11 @@ internal sealed class LocalFeatureFlagsLoader(
         _timer.Dispose();
     }
 
-    public void Clear() => Interlocked.Exchange(ref _localEvaluator, null);
+    public void Clear()
+    {
+        Interlocked.Exchange(ref _localEvaluator, null);
+        Interlocked.Exchange(ref _etag, null);
+    }
 }
 
 internal static partial class LocalFeatureFlagsLoaderLoggerExtensions
