@@ -1,0 +1,53 @@
+# Unity
+.DS_Store
+*.pidb
+*.suo
+*.user
+*.userprefs
+*.unityproj
+*.booproj
+*.sln
+*.csproj
+*.orig
+*.meta.orig
+
+# Unity Generated
+Library/
+Temp/
+Obj/
+Build/
+Logs/
+UserSettings/
+ProjectSettings.asset
+Assets/AssetStoreTools/
+Assets/Plugins/Editor/AssetStoreTools/
+
+# Visual Studio / Rider / IDE Specific
+.vs/
+.idea/
+*.csproj.user
+*.resharper
+*.resharper.user
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.VC.db
+*.VC.VC.sdf
+*.VC.VC.suo
+*.VC.VC.user
+*.VC.VC.vcxproj.filters
+*.VC.VC.vcxproj.user
+*.VC.VC.vsprops
+*.VC.VC.vsprops.user
+*.VC.VC.vsw
+*.VC.VC.vxproj
+*.VC.VC.vxproj.filters
+*.VC.VC.vxproj.user
+
+# Mac Specific
+.DS_Store
+.Trashes
+Thumbs.db
+
+# Windows Specific
+Desktop.ini
