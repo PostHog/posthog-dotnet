@@ -106,6 +106,10 @@ jobs:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      checks: write
+      contents: read
+      id-token: write
     steps:
       # Download the NuGet packages created in the build job for this tagged commit.
       - uses: actions/download-artifact@v4
@@ -118,9 +122,16 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # Get a short-lived NuGet API key
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: PostHog-Engineering
+
       # Publish all NuGet packages to NuGet.org
       # Use --skip-duplicate to prevent errors if a package with the same version already exists.
       # If you retry a failed workflow, already published packages will be skipped without error.
       - name: Publish NuGet package
         shell: bash
-        run: find . -type f -name "*.nupkg" -exec dotnet nuget push {} --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate \;
+        run: find . -type f -name "*.nupkg" -exec dotnet nuget push {} --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate \;
