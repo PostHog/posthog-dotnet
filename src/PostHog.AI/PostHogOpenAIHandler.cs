@@ -31,8 +31,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
         var stopwatch = Stopwatch.StartNew();
         var (requestContent, requestJson) = await ReadContentAndParseJsonAsync(
             request.Content,
-            cancellationToken,
-            ex => _logger.LogRequestContentFailure(ex)
+            ex => _logger.LogRequestContentFailure(ex),
+            cancellationToken
         );
 
         HttpResponseMessage response;
@@ -131,8 +131,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
             stopwatch.Stop();
             var (responseContent, responseJson) = await ReadContentAndParseJsonAsync(
                 response.Content,
-                cancellationToken,
-                ex => _logger.LogResponseContentFailure(ex)
+                ex => _logger.LogResponseContentFailure(ex),
+                cancellationToken
             );
 
             _ = Task.Run(
@@ -156,8 +156,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
     private static async Task<(string? Content, JsonNode? Json)> ReadContentAndParseJsonAsync(
         HttpContent? content,
-        CancellationToken cancellationToken,
-        Action<Exception> onException
+        Action<Exception> onException,
+        CancellationToken cancellationToken
     )
     {
         string? contentString = null;
@@ -210,7 +210,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         return "$ai_generation";
     }
 
-    private async Task CaptureEventAsync(
+    private Task CaptureEventAsync(
         HttpRequestMessage request,
         JsonNode? requestJson,
         HttpResponseMessage? response,
@@ -495,6 +495,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
         {
             _logger.LogCaptureFailure(ex);
         }
+
+        return Task.CompletedTask;
 #pragma warning restore CA1031
     }
 
@@ -668,11 +670,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                                         if (deltaNode is JsonObject deltaObject)
                                         {
                                             if (
-                                                deltaObject!.TryGetPropertyValue(
+                                                deltaObject.TryGetPropertyValue(
                                                     "content",
                                                     out var contentNode
                                                 )
-                                            ) // Null-forgiving operator applied
+                                            )
                                             {
                                                 if (contentNode is JsonValue contentValue)
                                                 {
