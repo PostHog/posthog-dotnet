@@ -39,7 +39,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 .Setup(x =>
                     x.Capture(
                         It.IsAny<string>(),
-                        "$ai_generation",
+                        PostHogAIFieldNames.Generation,
                         It.Is<Dictionary<string, object>>(props => VerifyProps(props)),
                         null,
                         false,
@@ -113,7 +113,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 x =>
                     x.Capture(
                         It.IsAny<string>(), // distinctId
-                        "$ai_generation",
+                        PostHogAIFieldNames.Generation,
                         It.Is<Dictionary<string, object>>(props => VerifyProps(props)),
                         null,
                         false,
@@ -142,12 +142,12 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 .Setup(x =>
                     x.Capture(
                         It.IsAny<string>(),
-                        "$ai_embedding",
+                        PostHogAIFieldNames.Embedding,
                         It.Is<Dictionary<string, object>>(props =>
-                            (string)props["$ai_model"] == "text-embedding-ada-002-v2"
-                            && (string)props["$ai_input"] == "The quick brown fox"
-                            && (int)props["$ai_input_tokens"] == 5
-                            && (string)props["$ai_provider"] == "openai"
+                            (string)props[PostHogAIFieldNames.Model] == "text-embedding-ada-002-v2"
+                            && (string)props[PostHogAIFieldNames.Input] == "The quick brown fox"
+                            && (int)props[PostHogAIFieldNames.InputTokens] == 5
+                            && (string)props[PostHogAIFieldNames.Provider] == "openai"
                         ),
                         null,
                         false,
@@ -214,12 +214,12 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 x =>
                     x.Capture(
                         It.IsAny<string>(),
-                        "$ai_embedding",
+                        PostHogAIFieldNames.Embedding,
                         It.Is<Dictionary<string, object>>(props =>
-                            (string)props["$ai_model"] == "text-embedding-ada-002-v2"
-                            && (string)props["$ai_input"] == "The quick brown fox"
-                            && (int)props["$ai_input_tokens"] == 5
-                            && (string)props["$ai_provider"] == "openai"
+                            (string)props[PostHogAIFieldNames.Model] == "text-embedding-ada-002-v2"
+                            && (string)props[PostHogAIFieldNames.Input] == "The quick brown fox"
+                            && (int)props[PostHogAIFieldNames.InputTokens] == 5
+                            && (string)props[PostHogAIFieldNames.Provider] == "openai"
                         ),
                         null,
                         false,
@@ -248,7 +248,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 .Setup(x =>
                     x.Capture(
                         It.IsAny<string>(),
-                        "$ai_generation",
+                        PostHogAIFieldNames.Generation,
                         It.Is<Dictionary<string, object>>(props => VerifyStreamingProps(props)),
                         null,
                         false,
@@ -322,7 +322,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 var resultStream = await response.Content.ReadAsStreamAsync();
                 using (var reader = new StreamReader(resultStream))
                 {
-                    _ = await reader.ReadToEndAsync();
+                    await reader.ReadToEndAsync();
                 }
                 // StreamReader disposal will dispose the underlying stream (TrackingStream),
                 // which triggers the capture callback in its Dispose method
@@ -345,7 +345,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 x =>
                     x.Capture(
                         It.IsAny<string>(),
-                        "$ai_generation",
+                        PostHogAIFieldNames.Generation,
                         It.Is<Dictionary<string, object>>(props => VerifyStreamingProps(props)),
                         null,
                         false,
@@ -364,7 +364,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
     private static bool VerifyStreamingProps(Dictionary<string, object> props)
     {
         if (
-            !props.TryGetValue("$ai_output_choices", out var choicesObj)
+            !props.TryGetValue(PostHogAIFieldNames.OutputChoices, out var choicesObj)
             || !(choicesObj is JsonArray choices)
         )
             return false;
@@ -375,9 +375,15 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         if (content != "Why did the chicken cross output")
             return false;
 
-        if (!props.TryGetValue("$ai_input_tokens", out var inputTokens) || (int)inputTokens != 10)
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.InputTokens, out var inputTokens)
+            || (int)inputTokens != 10
+        )
             return false;
-        if (!props.TryGetValue("$ai_output_tokens", out var outputTokens) || (int)outputTokens != 5)
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.OutputTokens, out var outputTokens)
+            || (int)outputTokens != 5
+        )
             return false;
 
         return true;
@@ -385,16 +391,25 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
 
     private static bool VerifyProps(Dictionary<string, object> props)
     {
-        if (!props.TryGetValue("$ai_model", out var model) || (string)model != "gpt-4-0613")
-            return false;
-        if (!props.TryGetValue("$ai_input_tokens", out var inputTokens) || (int)inputTokens != 9)
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.Model, out var model)
+            || (string)model != "gpt-4-0613"
+        )
             return false;
         if (
-            !props.TryGetValue("$ai_output_tokens", out var outputTokens)
+            !props.TryGetValue(PostHogAIFieldNames.InputTokens, out var inputTokens)
+            || (int)inputTokens != 9
+        )
+            return false;
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.OutputTokens, out var outputTokens)
             || (int)outputTokens != 12
         )
             return false;
-        if (!props.TryGetValue("$ai_provider", out var provider) || (string)provider != "openai")
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.Provider, out var provider)
+            || (string)provider != "openai"
+        )
             return false;
         return true;
     }

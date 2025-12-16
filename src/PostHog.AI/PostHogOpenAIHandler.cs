@@ -129,9 +129,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
         else
         {
             stopwatch.Stop();
-            var (responseContent, responseJson) = await ReadContentAndParseJsonAsync(
+            var (_, responseJson) = await ReadContentAndParseJsonAsync(
                 response.Content,
-                ex => _logger.LogResponseContentFailure(ex),
+                _logger.LogResponseContentFailure,
                 cancellationToken
             );
 
@@ -204,10 +204,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
             ) == true
         )
         {
-            return "$ai_embedding";
+            return PostHogAIFieldNames.Embedding;
         }
 
-        return "$ai_generation";
+        return PostHogAIFieldNames.Generation;
     }
 
     private Task CaptureEventAsync(
@@ -218,7 +218,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         double latency,
         string eventName,
         Exception? exception,
-        CancellationToken cancellationToken
+        CancellationToken _
     )
     {
         try
@@ -226,16 +226,16 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var eventProperties = new Dictionary<string, object>();
 
             // Basic Info
-            eventProperties["$ai_provider"] = "openai";
-            eventProperties["$ai_lib"] = "posthog-dotnet";
-            eventProperties["$ai_latency"] = latency;
+            eventProperties[PostHogAIFieldNames.Provider] = "openai";
+            eventProperties[PostHogAIFieldNames.Lib] = "posthog-dotnet";
+            eventProperties[PostHogAIFieldNames.Latency] = latency;
 
             if (request.RequestUri != null)
             {
-                eventProperties["$ai_base_url"] = request.RequestUri.GetLeftPart(
+                eventProperties[PostHogAIFieldNames.BaseUrl] = request.RequestUri.GetLeftPart(
                     UriPartial.Authority
                 );
-                eventProperties["$ai_request_url"] = request.RequestUri.ToString();
+                eventProperties[PostHogAIFieldNames.RequestUrl] = request.RequestUri.ToString();
             }
 
             // Request extraction
@@ -243,60 +243,62 @@ public class PostHogOpenAIHandler : DelegatingHandler
             if (requestJson != null)
             {
                 model = requestJson["model"]?.ToString();
-                eventProperties["$ai_model"] = model ?? "";
+                eventProperties[PostHogAIFieldNames.Model] = model ?? "";
 
-                // Extract input
                 if (requestJson["messages"] is JsonArray messages)
                 {
-                    eventProperties["$ai_input"] = messages;
+                    eventProperties[PostHogAIFieldNames.Input] = messages;
                 }
                 else if (requestJson["prompt"] != null)
                 {
-                    eventProperties["$ai_input"] = requestJson["prompt"]?.ToString() ?? "";
+                    eventProperties[PostHogAIFieldNames.Input] =
+                        requestJson["prompt"]?.ToString() ?? "";
                 }
                 else if (requestJson["input"] != null) // For embeddings
                 {
                     var inputNode = requestJson["input"];
                     if (inputNode is JsonArray arr)
-                        eventProperties["$ai_input"] = arr;
+                        eventProperties[PostHogAIFieldNames.Input] = arr;
                     else
-                        eventProperties["$ai_input"] = inputNode?.ToString() ?? "";
+                        eventProperties[PostHogAIFieldNames.Input] = inputNode?.ToString() ?? "";
                 }
 
                 // Extract specific model parameters
                 if (requestJson["temperature"] is JsonValue temperature)
                 {
-                    if (temperature.TryGetValue<double>(out var temperatureDouble))
-                        eventProperties["$ai_temperature"] = temperatureDouble;
-                    else
-                        eventProperties["$ai_temperature"] = temperature.ToString();
+                    eventProperties[PostHogAIFieldNames.Temperature] =
+                        temperature.TryGetValue<double>(out var temperatureDouble)
+                            ? temperatureDouble
+                            : temperature.ToString();
                 }
 
                 if (requestJson["max_tokens"] is JsonValue maxTokens)
                 {
-                    if (maxTokens.TryGetValue<int>(out var maxTokensInt))
-                        eventProperties["$ai_max_tokens"] = maxTokensInt;
-                    else
-                        eventProperties["$ai_max_tokens"] = maxTokens.ToString();
+                    eventProperties[PostHogAIFieldNames.MaxTokens] = maxTokens.TryGetValue<int>(
+                        out var maxTokensInt
+                    )
+                        ? maxTokensInt
+                        : maxTokens.ToString();
                 }
 
                 if (requestJson["stream"] is JsonValue stream)
                 {
-                    if (stream.TryGetValue<bool>(out var streamBool))
-                        eventProperties["$ai_stream"] = streamBool;
-                    else
-                        eventProperties["$ai_stream"] = stream.ToString();
+                    eventProperties[PostHogAIFieldNames.Stream] = stream.TryGetValue<bool>(
+                        out var streamBool
+                    )
+                        ? streamBool
+                        : stream.ToString();
                 }
 
                 // Extract tools (check both "tools" and "functions" for compatibility)
                 if (requestJson["tools"] is JsonArray tools)
                 {
-                    eventProperties["$ai_tools"] = tools;
+                    eventProperties[PostHogAIFieldNames.Tools] = tools;
                 }
                 else if (requestJson["functions"] is JsonArray functions)
                 {
                     // Legacy support for functions parameter
-                    eventProperties["$ai_tools"] = functions;
+                    eventProperties[PostHogAIFieldNames.Tools] = functions;
                 }
 
                 // Extract other parameters for model_parameters dictionary
@@ -328,23 +330,23 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
                 if (modelParams.Count > 0)
                 {
-                    eventProperties["$ai_model_parameters"] = modelParams;
+                    eventProperties[PostHogAIFieldNames.ModelParameters] = modelParams;
                 }
             }
 
             // Detect streaming from response if not in request JSON
             if (
-                !eventProperties.ContainsKey("$ai_stream")
-                && response?.Content?.Headers.ContentType?.MediaType == "text/event-stream"
+                !eventProperties.ContainsKey(PostHogAIFieldNames.Stream)
+                && response?.Content.Headers.ContentType?.MediaType == "text/event-stream"
             )
             {
-                eventProperties["$ai_stream"] = true;
+                eventProperties[PostHogAIFieldNames.Stream] = true;
             }
 
             // Response extraction
             if (response != null)
             {
-                eventProperties["$ai_http_status"] = (int)response.StatusCode;
+                eventProperties[PostHogAIFieldNames.HttpStatus] = (int)response.StatusCode;
             }
 
             if (responseJson != null)
@@ -353,42 +355,47 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 if (responseJson["usage"] is JsonObject usage)
                 {
                     if (usage["prompt_tokens"] is JsonValue inputTokens)
-                        eventProperties["$ai_input_tokens"] = inputTokens.GetValue<int>();
+                        eventProperties[PostHogAIFieldNames.InputTokens] =
+                            inputTokens.GetValue<int>();
 
                     if (usage["completion_tokens"] is JsonValue outputTokens)
-                        eventProperties["$ai_output_tokens"] = outputTokens.GetValue<int>();
+                        eventProperties[PostHogAIFieldNames.OutputTokens] =
+                            outputTokens.GetValue<int>();
 
                     if (usage["total_tokens"] is JsonValue totalTokens)
                     {
                         // Optional but good to have
-                        eventProperties["$ai_total_tokens"] = totalTokens.GetValue<int>();
+                        eventProperties[PostHogAIFieldNames.TotalTokens] =
+                            totalTokens.GetValue<int>();
                     }
 
                     // Cache properties (may not be present in OpenAI responses, but extract if available)
                     if (usage["cache_read_input_tokens"] is JsonValue cacheReadTokens)
                     {
                         if (cacheReadTokens.TryGetValue<int>(out var cacheReadInt))
-                            eventProperties["$ai_cache_read_input_tokens"] = cacheReadInt;
+                            eventProperties[PostHogAIFieldNames.CacheReadInputTokens] =
+                                cacheReadInt;
                         else
-                            eventProperties["$ai_cache_read_input_tokens"] =
+                            eventProperties[PostHogAIFieldNames.CacheReadInputTokens] =
                                 cacheReadTokens.ToString();
                     }
 
                     if (usage["cache_creation_input_tokens"] is JsonValue cacheCreationTokens)
                     {
                         if (cacheCreationTokens.TryGetValue<int>(out var cacheCreationInt))
-                            eventProperties["$ai_cache_creation_input_tokens"] = cacheCreationInt;
+                            eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
+                                cacheCreationInt;
                         else
-                            eventProperties["$ai_cache_creation_input_tokens"] =
+                            eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
                                 cacheCreationTokens.ToString();
                     }
                 }
 
                 // Output choices (for generation)
-                if (eventName == "$ai_generation" && responseJson["choices"] is JsonArray choices)
-                {
-                    eventProperties["$ai_output_choices"] = choices;
-                }
+                eventProperties[PostHogAIFieldNames.OutputChoices] =
+                    eventName == PostHogAIFieldNames.Generation && responseJson["choices"] is JsonArray choices
+                        ? choices
+                        : "";
 
                 // Model from response might be more accurate
                 if (responseJson["model"] != null)
@@ -396,7 +403,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     var responseModel = responseJson["model"]?.ToString();
                     if (!string.IsNullOrEmpty(responseModel))
                     {
-                        eventProperties["$ai_model"] = responseModel;
+                        eventProperties[PostHogAIFieldNames.Model] = responseModel;
                     }
                 }
             }
@@ -404,53 +411,61 @@ public class PostHogOpenAIHandler : DelegatingHandler
             // Error handling
             if (exception != null || (response != null && !response.IsSuccessStatusCode))
             {
-                eventProperties["$ai_is_error"] = true;
+                eventProperties[PostHogAIFieldNames.IsError] = true;
                 if (exception != null)
                 {
-                    eventProperties["$ai_error"] = exception.Message;
+                    eventProperties[PostHogAIFieldNames.Error] = exception.Message;
                 }
                 else if (responseJson != null && responseJson["error"] != null)
                 {
-                    eventProperties["$ai_error"] =
+                    eventProperties[PostHogAIFieldNames.Error] =
                         responseJson["error"]?.ToString() ?? "Unknown API Error";
                 }
             }
 
             // Defaults if missing
-            if (!eventProperties.ContainsKey("$ai_model"))
-                eventProperties["$ai_model"] = model ?? "unknown";
-            eventProperties["$ai_request_url"] ??= request.RequestUri?.ToString() ?? "unknown";
+            if (!eventProperties.ContainsKey(PostHogAIFieldNames.Model))
+                eventProperties[PostHogAIFieldNames.Model] = model ?? "unknown";
 
             // Context integration
             var context = PostHogAIContext.Current;
             var traceId = context?.TraceId ?? Guid.NewGuid().ToString(); // Use context traceId or generate new
-            eventProperties["$ai_trace_id"] = traceId; // Ensure we update the property
+            eventProperties[PostHogAIFieldNames.TraceId] = traceId; // Ensure we update the property
 
             var distinctId = context?.DistinctId ?? traceId;
 
             // Add context-based properties (Properties dictionary takes precedence over context properties)
             // Session ID
-            if (!eventProperties.ContainsKey("$ai_session_id") && context?.SessionId != null)
+            if (
+                !eventProperties.ContainsKey(PostHogAIFieldNames.SessionId)
+                && context?.SessionId != null
+            )
             {
-                eventProperties["$ai_session_id"] = context.SessionId;
+                eventProperties[PostHogAIFieldNames.SessionId] = context.SessionId;
             }
 
             // Span ID
-            if (!eventProperties.ContainsKey("$ai_span_id") && context?.SpanId != null)
+            if (!eventProperties.ContainsKey(PostHogAIFieldNames.SpanId) && context?.SpanId != null)
             {
-                eventProperties["$ai_span_id"] = context.SpanId;
+                eventProperties[PostHogAIFieldNames.SpanId] = context.SpanId;
             }
 
             // Span Name
-            if (!eventProperties.ContainsKey("$ai_span_name") && context?.SpanName != null)
+            if (
+                !eventProperties.ContainsKey(PostHogAIFieldNames.SpanName)
+                && context?.SpanName != null
+            )
             {
-                eventProperties["$ai_span_name"] = context.SpanName;
+                eventProperties[PostHogAIFieldNames.SpanName] = context.SpanName;
             }
 
             // Parent ID
-            if (!eventProperties.ContainsKey("$ai_parent_id") && context?.ParentId != null)
+            if (
+                !eventProperties.ContainsKey(PostHogAIFieldNames.ParentId)
+                && context?.ParentId != null
+            )
             {
-                eventProperties["$ai_parent_id"] = context.ParentId;
+                eventProperties[PostHogAIFieldNames.ParentId] = context.ParentId;
             }
 
             // Merge context properties (this will override context properties if they exist in Properties dict)
@@ -459,12 +474,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
             {
                 foreach (var kvp in context.Properties)
                 {
-                    // Only set property if value is not null
-                    // This ensures cost fields ($ai_input_cost_usd, etc.) are not set unless explicitly provided
-                    if (kvp.Value != null)
-                    {
-                        eventProperties[kvp.Key] = kvp.Value;
-                    }
+                    eventProperties.Add(kvp.Key, kvp.Value);
                 }
             }
 
@@ -474,10 +484,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 groups = new GroupCollection();
                 foreach (var kvp in context.Groups)
                 {
-                    if (kvp.Value != null)
-                    {
-                        groups.Add(kvp.Key, kvp.Value.ToString() ?? "");
-                    }
+                    eventProperties.Add(kvp.Key, kvp.Value);
                 }
             }
             // Create captured event
