@@ -225,6 +225,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
         {
             var eventProperties = new Dictionary<string, object>();
 
+            // Context integration - get context early so it can be used for privacy checks
+            var context = PostHogAIContext.Current;
+
             // Basic Info
             eventProperties[PostHogAIFieldNames.Provider] = "openai";
             eventProperties[PostHogAIFieldNames.Lib] = "posthog-dotnet";
@@ -245,22 +248,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 model = requestJson["model"]?.ToString();
                 eventProperties[PostHogAIFieldNames.Model] = model ?? "";
 
-                if (requestJson["messages"] is JsonArray messages)
+                var input = GetInputFromRequest(requestJson, context);
+                if (input != null)
                 {
-                    eventProperties[PostHogAIFieldNames.Input] = messages;
-                }
-                else if (requestJson["prompt"] != null)
-                {
-                    eventProperties[PostHogAIFieldNames.Input] =
-                        requestJson["prompt"]?.ToString() ?? "";
-                }
-                else if (requestJson["input"] != null) // For embeddings
-                {
-                    var inputNode = requestJson["input"];
-                    if (inputNode is JsonArray arr)
-                        eventProperties[PostHogAIFieldNames.Input] = arr;
-                    else
-                        eventProperties[PostHogAIFieldNames.Input] = inputNode?.ToString() ?? "";
+                    eventProperties[PostHogAIFieldNames.Input] = input;
                 }
 
                 // Extract specific model parameters
@@ -392,10 +383,15 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 }
 
                 // Output choices (for generation)
-                eventProperties[PostHogAIFieldNames.OutputChoices] =
-                    eventName == PostHogAIFieldNames.Generation && responseJson["choices"] is JsonArray choices
-                        ? choices
-                        : "";
+                var outputChoices = GetOutputChoicesFromResponse(
+                    responseJson,
+                    eventName,
+                    context
+                );
+                if (outputChoices != null)
+                {
+                    eventProperties[PostHogAIFieldNames.OutputChoices] = outputChoices;
+                }
 
                 // Model from response might be more accurate
                 if (responseJson["model"] != null)
@@ -428,7 +424,6 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 eventProperties[PostHogAIFieldNames.Model] = model ?? "unknown";
 
             // Context integration
-            var context = PostHogAIContext.Current;
             var traceId = context?.TraceId ?? Guid.NewGuid().ToString(); // Use context traceId or generate new
             eventProperties[PostHogAIFieldNames.TraceId] = traceId; // Ensure we update the property
 
@@ -505,6 +500,68 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         return Task.CompletedTask;
 #pragma warning restore CA1031
+    }
+
+    private static object? GetInputFromRequest(JsonNode? requestJson, PostHogAIContext? context)
+    {
+        if (requestJson == null)
+        {
+            return null;
+        }
+
+        // Don't extract input if privacy mode is enabled
+        if (context?.PrivacyMode == true)
+        {
+            return null;
+        }
+
+        if (requestJson["messages"] is JsonArray messages)
+        {
+            return messages;
+        }
+
+        if (requestJson["prompt"] != null)
+        {
+            return requestJson["prompt"]?.ToString() ?? "";
+        }
+
+        if (requestJson["input"] != null) // For embeddings
+        {
+            var inputNode = requestJson["input"];
+            if (inputNode is JsonArray arr)
+            {
+                return arr;
+            }
+
+            return inputNode?.ToString() ?? "";
+        }
+
+        return null;
+    }
+
+    private static object? GetOutputChoicesFromResponse(
+        JsonNode? responseJson,
+        string eventName,
+        PostHogAIContext? context
+    )
+    {
+        if (responseJson == null)
+        {
+            return null;
+        }
+
+        // Don't extract output choices if privacy mode is enabled
+        if (context?.PrivacyMode == true)
+        {
+            return null;
+        }
+
+        if (eventName == PostHogAIFieldNames.Generation && responseJson["choices"] is JsonArray choices)
+        {
+            return choices;
+        }
+
+        return null;
     }
 
     private sealed class TrackingStream : Stream

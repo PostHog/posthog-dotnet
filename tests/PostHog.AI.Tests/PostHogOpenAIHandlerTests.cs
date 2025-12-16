@@ -414,6 +414,563 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         return true;
     }
 
+    [Fact]
+    public async Task SendAsyncExcludesInputAndOutputChoicesWhenPrivacyModeIsTrueSimpleMessages()
+    {
+        // Arrange
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            !props.ContainsKey(PostHogAIFieldNames.Input)
+                            && !props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var requestBody = new
+            {
+                model = "gpt-4",
+                messages = new[] { new { role = "user", content = "Hello" } },
+            };
+
+            var responseBody = new
+            {
+                id = "chatcmpl-123",
+                @object = "chat.completion",
+                created = 1677652288,
+                model = "gpt-4-0613",
+                choices = new[]
+                {
+                    new
+                    {
+                        index = 0,
+                        message = new { role = "assistant", content = "Hi there!" },
+                        finish_reason = "stop",
+                    },
+                },
+                usage = new
+                {
+                    prompt_tokens = 9,
+                    completion_tokens = 12,
+                    total_tokens = 21,
+                },
+            };
+
+            using var responseContent = new StringContent(
+                JsonSerializer.Serialize(responseBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act - Use privacy mode scope
+            using (PostHogAIContext.BeginScope(privacyMode: true))
+            {
+                using var response = await _client.PostAsync(
+                    new Uri("/v1/chat/completions", UriKind.Relative),
+                    requestContent
+                );
+
+                Assert.True(response.IsSuccessStatusCode);
+            }
+
+            // Assert
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within the expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            !props.ContainsKey(PostHogAIFieldNames.Input)
+                            && !props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncIncludesInputAndOutputChoicesWhenPrivacyModeIsFalseSimpleMessages()
+    {
+        // Arrange
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            props.ContainsKey(PostHogAIFieldNames.Input)
+                            && props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var requestBody = new
+            {
+                model = "gpt-4",
+                messages = new[] { new { role = "user", content = "Hello" } },
+            };
+
+            var responseBody = new
+            {
+                id = "chatcmpl-123",
+                @object = "chat.completion",
+                created = 1677652288,
+                model = "gpt-4-0613",
+                choices = new[]
+                {
+                    new
+                    {
+                        index = 0,
+                        message = new { role = "assistant", content = "Hi there!" },
+                        finish_reason = "stop",
+                    },
+                },
+                usage = new
+                {
+                    prompt_tokens = 9,
+                    completion_tokens = 12,
+                    total_tokens = 21,
+                },
+            };
+
+            using var responseContent = new StringContent(
+                JsonSerializer.Serialize(responseBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act - Use privacy mode explicitly set to false
+            using (PostHogAIContext.BeginScope(privacyMode: false))
+            {
+                using var response = await _client.PostAsync(
+                    new Uri("/v1/chat/completions", UriKind.Relative),
+                    requestContent
+                );
+
+                Assert.True(response.IsSuccessStatusCode);
+            }
+
+            // Assert
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within the expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            props.ContainsKey(PostHogAIFieldNames.Input)
+                            && props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncExcludesInputWhenPrivacyModeIsTrueEmbeddings()
+    {
+        // Arrange
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Embedding,
+                        It.Is<Dictionary<string, object>>(props =>
+                            !props.ContainsKey(PostHogAIFieldNames.Input)
+                            && (string)props[PostHogAIFieldNames.Model] == "text-embedding-ada-002-v2"
+                            && (int)props[PostHogAIFieldNames.InputTokens] == 5
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var requestBody = new
+            {
+                model = "text-embedding-ada-002",
+                input = "The quick brown fox",
+            };
+
+            var responseBody = new
+            {
+                @object = "list",
+                data = new[]
+                {
+                    new
+                    {
+                        @object = "embedding",
+                        index = 0,
+                        embedding = new[] { 0.0023, -0.0012 },
+                    },
+                },
+                model = "text-embedding-ada-002-v2",
+                usage = new { prompt_tokens = 5, total_tokens = 5 },
+            };
+
+            using var responseContent = new StringContent(
+                JsonSerializer.Serialize(responseBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act - Use privacy mode scope
+            using (PostHogAIContext.BeginScope(privacyMode: true))
+            {
+                using var response = await _client.PostAsync(
+                    new Uri("/v1/embeddings", UriKind.Relative),
+                    requestContent
+                );
+
+                Assert.True(response.IsSuccessStatusCode);
+            }
+
+            // Assert
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within the expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Embedding,
+                        It.Is<Dictionary<string, object>>(props =>
+                            !props.ContainsKey(PostHogAIFieldNames.Input)
+                            && (string)props[PostHogAIFieldNames.Model] == "text-embedding-ada-002-v2"
+                            && (int)props[PostHogAIFieldNames.InputTokens] == 5
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncExcludesInputAndOutputChoicesWhenPrivacyModeIsTrueStreaming()
+    {
+        // Arrange
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            !props.ContainsKey(PostHogAIFieldNames.Input)
+                            && !props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                            && (int)props[PostHogAIFieldNames.InputTokens] == 10
+                            && (int)props[PostHogAIFieldNames.OutputTokens] == 5
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var requestBody = new
+            {
+                model = "gpt-4",
+                messages = new[] { new { role = "user", content = "Tell me a joke" } },
+                stream = true,
+            };
+
+            // Simulate SSE stream
+            var sseStream = new MemoryStream();
+            using var writer = new StreamWriter(
+                sseStream,
+                new UTF8Encoding(false),
+                1024,
+                leaveOpen: true
+            );
+            await writer.WriteAsync(
+                "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Why did\"}}]}\n\n"
+            );
+            await writer.WriteAsync(
+                "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \" the chicken\"}}]}\n\n"
+            );
+            await writer.WriteAsync(
+                "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \" cross output\"}}]}\n\n"
+            );
+            await writer.WriteAsync(
+                "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 5, \"total_tokens\": 15}}\n\n"
+            );
+            await writer.WriteAsync("data: [DONE]\n\n");
+            await writer.FlushAsync();
+            sseStream.Position = 0;
+
+            var streamContent = new StreamContent(sseStream);
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = streamContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act - Use privacy mode scope
+            HttpResponseMessage? response = null;
+            using (PostHogAIContext.BeginScope(privacyMode: true))
+            {
+                try
+                {
+                    response = await _client.PostAsync(
+                        new Uri("/v1/chat/completions", UriKind.Relative),
+                        requestContent
+                    );
+
+                    Assert.True(response.IsSuccessStatusCode);
+
+                    // Consume the stream - TrackingStream callback fires on disposal
+                    var resultStream = await response.Content.ReadAsStreamAsync();
+                    using (var reader = new StreamReader(resultStream))
+                    {
+                        await reader.ReadToEndAsync();
+                    }
+                }
+                finally
+                {
+                    // Dispose response while scope is still active
+                    response?.Dispose();
+                }
+            }
+
+            // Assert
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within the expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            !props.ContainsKey(PostHogAIFieldNames.Input)
+                            && !props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                            && (int)props[PostHogAIFieldNames.InputTokens] == 10
+                            && (int)props[PostHogAIFieldNames.OutputTokens] == 5
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncIncludesInputAndOutputChoicesWhenPrivacyModeIsNullSimpleMessages()
+    {
+        // Arrange
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            props.ContainsKey(PostHogAIFieldNames.Input)
+                            && props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var requestBody = new
+            {
+                model = "gpt-4",
+                messages = new[] { new { role = "user", content = "Hello" } },
+            };
+
+            var responseBody = new
+            {
+                id = "chatcmpl-123",
+                @object = "chat.completion",
+                created = 1677652288,
+                model = "gpt-4-0613",
+                choices = new[]
+                {
+                    new
+                    {
+                        index = 0,
+                        message = new { role = "assistant", content = "Hi there!" },
+                        finish_reason = "stop",
+                    },
+                },
+                usage = new
+                {
+                    prompt_tokens = 9,
+                    completion_tokens = 12,
+                    total_tokens = 21,
+                },
+            };
+
+            using var responseContent = new StringContent(
+                JsonSerializer.Serialize(responseBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act - No privacy mode scope (null by default)
+            using var response = await _client.PostAsync(
+                new Uri("/v1/chat/completions", UriKind.Relative),
+                requestContent
+            );
+
+            Assert.True(response.IsSuccessStatusCode);
+
+            // Assert
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within the expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            props.ContainsKey(PostHogAIFieldNames.Input)
+                            && props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
     public void Dispose()
     {
         _client.Dispose();
