@@ -688,54 +688,68 @@ public class PostHogOpenAIHandler : DelegatingHandler
         private void ProcessSSEMessage(string message)
         {
             // Enumerate lines using span-based enumeration to avoid allocations
+#if NET8_0_OR_GREATER
             foreach (var line in message.AsSpan().EnumerateLines())
             {
-                var trimmed = line.Trim();
-                if (trimmed.IsEmpty)
-                    continue;
+                ProcessLine(line);
+            }
+#else
+            // Simpler but less efficient: split by newlines
+            var lines = message.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+            foreach (var line in lines)
+            {
+                ProcessLine(line.AsSpan());
+            }
+#endif
+        }
 
-                if (trimmed.StartsWith("data: ".AsSpan(), StringComparison.Ordinal))
+        private void ProcessLine(ReadOnlySpan<char> line)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.IsEmpty)
+                return;
+
+            if (trimmed.StartsWith("data: ".AsSpan(), StringComparison.Ordinal))
+            {
+                var dataSpan = trimmed.Slice(6).Trim();
+                if (dataSpan.IsEmpty || dataSpan.SequenceEqual("[DONE]".AsSpan()))
+                    return;
+
+                // Convert to string only when needed for JSON parsing
+                var data = dataSpan.ToString();
+                try
                 {
-                    var dataSpan = trimmed.Slice(6).Trim();
-                    if (dataSpan.IsEmpty || dataSpan.SequenceEqual("[DONE]".AsSpan()))
-                        continue;
-
-                    // Convert to string only when needed for JSON parsing
-                    var data = dataSpan.ToString();
-                    try
+                    var node = JsonNode.Parse(data);
+                    if (node != null)
                     {
-                        var node = JsonNode.Parse(data);
-                        if (node != null)
+                        // Check for usage (usually in the last chunk, but can appear earlier for some models)
+                        if (node["usage"] != null && _usage == null) // Only capture first usage if multiple sent
                         {
-                            // Check for usage (usually in the last chunk, but can appear earlier for some models)
-                            if (node["usage"] != null && _usage == null) // Only capture first usage if multiple sent
-                            {
-                                _usage = node["usage"]?.DeepClone();
-                            }
+                            _usage = node["usage"]?.DeepClone();
+                        }
 
-                            // Check for delta content
-                            if (
-                                node["choices"] is JsonArray choices
-                                && choices.Count > 0
-                                && choices[0] is JsonObject firstChoiceObject
-                                && firstChoiceObject.TryGetPropertyValue("delta", out var deltaNode)
-                                && deltaNode is JsonObject deltaObject
-                                && deltaObject.TryGetPropertyValue("content", out var contentNode)
-                                && contentNode is JsonValue contentValue
-                            )
+                        // Check for delta content
+                        if (
+                            node["choices"] is JsonArray choices
+                            && choices.Count > 0
+                            && choices[0] is JsonObject firstChoiceObject
+                            && firstChoiceObject.TryGetPropertyValue("delta", out var deltaNode)
+                            && deltaNode is JsonObject deltaObject
+                            && deltaObject.TryGetPropertyValue("content", out var contentNode)
+                            && contentNode is JsonValue contentValue
+                        )
+                        {
+                            var content = contentValue.ToString();
+                            if (!string.IsNullOrEmpty(content))
                             {
-                                var content = contentValue.ToString();
-                                if (!string.IsNullOrEmpty(content))
-                                {
-                                    _accumulatedContent.Append(content);
-                                }
+                                _accumulatedContent.Append(content);
                             }
                         }
                     }
-                    catch (JsonException)
-                    {
-                        // Ignore parsing errors for malformed JSON, this can happen in streaming.
-                    }
+                }
+                catch (JsonException)
+                {
+                    // Ignore parsing errors for malformed JSON, this can happen in streaming.
                 }
             }
         }
