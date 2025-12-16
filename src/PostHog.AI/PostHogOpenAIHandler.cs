@@ -707,8 +707,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 _onComplete(_accumulatedContent.ToString(), _usage);
             }
 
+            if (disposing)
+            {
+                _innerStream.Dispose();
+            }
             base.Dispose(disposing);
-            _innerStream.Dispose();
         }
 
         public override long Seek(long offset, SeekOrigin origin) =>
