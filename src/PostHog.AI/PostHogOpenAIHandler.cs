@@ -62,10 +62,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
 
         // Check for streaming
-        var isStreaming = response.Content?.Headers.ContentType?.MediaType == "text/event-stream";
+        var isStreaming = response.Content.Headers.ContentType?.MediaType == "text/event-stream";
         var eventName = DetermineEventName(request);
 
-        if (isStreaming && response.Content != null)
+        if (isStreaming)
         {
             var originalStream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var trackingStream = new TrackingStream(
@@ -642,9 +642,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
             // Split message into lines
             var lines = message.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
 
-            foreach (var line in lines)
+            foreach (var trimmed in lines.Select(line => line.Trim()))
             {
-                var trimmed = line.Trim();
                 if (trimmed.StartsWith("data: ", StringComparison.Ordinal))
                 {
                     var data = trimmed.Substring(6).Trim();
@@ -663,37 +662,20 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             }
 
                             // Check for delta content
-                            if (node["choices"] is JsonArray choices && choices.Count > 0)
+                            if (
+                                node["choices"] is JsonArray choices
+                                && choices.Count > 0
+                                && choices[0] is JsonObject firstChoiceObject
+                                && firstChoiceObject.TryGetPropertyValue("delta", out var deltaNode)
+                                && deltaNode is JsonObject deltaObject
+                                && deltaObject.TryGetPropertyValue("content", out var contentNode)
+                                && contentNode is JsonValue contentValue
+                            )
                             {
-                                if (choices[0] is JsonObject firstChoiceObject)
+                                var content = contentValue.ToString();
+                                if (!string.IsNullOrEmpty(content))
                                 {
-                                    if (
-                                        firstChoiceObject.TryGetPropertyValue(
-                                            "delta",
-                                            out var deltaNode
-                                        )
-                                    )
-                                    {
-                                        if (deltaNode is JsonObject deltaObject)
-                                        {
-                                            if (
-                                                deltaObject.TryGetPropertyValue(
-                                                    "content",
-                                                    out var contentNode
-                                                )
-                                            )
-                                            {
-                                                if (contentNode is JsonValue contentValue)
-                                                {
-                                                    var content = contentValue.ToString();
-                                                    if (!string.IsNullOrEmpty(content))
-                                                    {
-                                                        _accumulatedContent.Append(content);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    _accumulatedContent.Append(content);
                                 }
                             }
                         }
