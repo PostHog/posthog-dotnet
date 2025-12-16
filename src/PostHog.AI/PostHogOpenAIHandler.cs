@@ -562,8 +562,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         private readonly Stream _innerStream;
         private readonly Action<string, JsonNode?> _onComplete;
-        private readonly StringBuilder _accumulatedContent = new();
-        private readonly StringBuilder _lineBuffer = new(); // Buffer for incomplete lines across chunks
+        private readonly StringBuilder _accumulatedContent = new(capacity: 4 * 1024);
+        private readonly StringBuilder _lineBuffer = new(capacity: 512); // Buffer for incomplete lines across chunks
         private JsonNode? _usage;
         private bool _completed;
 
