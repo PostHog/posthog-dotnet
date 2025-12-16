@@ -596,26 +596,26 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 // Append chunk to line buffer
                 _lineBuffer.Append(chunk);
 
-                // Process complete SSE messages (terminated by \n\n or \r\n\r\n)
+                // Process complete SSE messages (terminated by \r\n\r\n or \n\n)
                 while (true)
                 {
                     var bufferText = _lineBuffer.ToString();
                     if (string.IsNullOrEmpty(bufferText))
                         break;
 
-                    // Look for complete SSE message (terminated by \n\n or \r\n\r\n)
-                    var messageEnd = bufferText.IndexOf("\n\n", StringComparison.Ordinal);
-                    var lineEndLength = 2;
+                    // Look for complete SSE message (terminated by \r\n\r\n or \n\n)
+                    var messageEnd = bufferText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                    var lineEndLength = 4;
 
                     if (messageEnd == -1)
                     {
-                        messageEnd = bufferText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                        messageEnd = bufferText.IndexOf("\n\n", StringComparison.Ordinal);
                         if (messageEnd == -1)
                         {
                             // No complete message found, keep remaining buffer
                             break;
                         }
-                        lineEndLength = 4;
+                        lineEndLength = 2;
                     }
 
                     // Extract complete message (including the line ending)
