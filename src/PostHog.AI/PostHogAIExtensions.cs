@@ -45,6 +45,11 @@ public static class PostHogAIExtensions
         Action<OpenAIClientOptions>? configureOptions = null
     )
     {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new ArgumentException("API key cannot be null or whitespace.", nameof(apiKey));
+        }
+
         if (!services.Any(x => x.ServiceType == typeof(IPostHogClient)))
         {
             throw new InvalidOperationException(
