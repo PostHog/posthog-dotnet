@@ -29,7 +29,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         ArgumentNullException.ThrowIfNull(request);
 
         var stopwatch = Stopwatch.StartNew();
-        var (_, requestJson) = await ReadContentAndParseJsonAsync(
+        var requestJson = await ReadContentAndParseJsonAsync(
             request.Content,
             ex => _logger.LogRequestContentFailure(ex),
             cancellationToken
@@ -129,7 +129,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         else
         {
             stopwatch.Stop();
-            var (_, responseJson) = await ReadContentAndParseJsonAsync(
+            var responseJson = await ReadContentAndParseJsonAsync(
                 response.Content,
                 _logger.LogResponseContentFailure,
                 cancellationToken
@@ -154,34 +154,26 @@ public class PostHogOpenAIHandler : DelegatingHandler
         return response;
     }
 
-    private static async Task<(string? Content, JsonNode? Json)> ReadContentAndParseJsonAsync(
+    private static async Task<JsonNode?> ReadContentAndParseJsonAsync(
         HttpContent? content,
         Action<Exception> onException,
         CancellationToken cancellationToken
     )
     {
-        string? contentString = null;
         JsonNode? jsonNode = null;
 
         try
         {
             if (content != null)
             {
-#pragma warning disable CA2016 // Forward cancellation token (ReadAsStringAsync has an overload with CancellationToken in .NET 5+, LoadIntoBufferAsync doesn't)
-                await content.LoadIntoBufferAsync();
-                contentString = await content.ReadAsStringAsync(cancellationToken);
-#pragma warning restore CA2016
-
-                if (!string.IsNullOrWhiteSpace(contentString))
+                try
                 {
-                    try
-                    {
-                        jsonNode = JsonNode.Parse(contentString);
-                    }
-                    catch (JsonException)
-                    {
-                        // Ignore if not JSON
-                    }
+                    using var stream = await content.ReadAsStreamAsync(cancellationToken);
+                    jsonNode = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    // Ignore if not JSON
                 }
             }
         }
@@ -192,7 +184,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
 #pragma warning restore CA1031
 
-        return (contentString, jsonNode);
+        return jsonNode;
     }
 
     private static string DetermineEventName(HttpRequestMessage request)
@@ -654,7 +646,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 _lineBuffer.Append(chunk);
 
                 // Process complete SSE messages (terminated by \r\n\r\n or \n\n)
-                while (true)
+                // Convert to string once per chunk to avoid multiple ToString() calls in the loop
+                while (_lineBuffer.Length > 0)
                 {
                     var bufferText = _lineBuffer.ToString();
                     if (string.IsNullOrEmpty(bufferText))
