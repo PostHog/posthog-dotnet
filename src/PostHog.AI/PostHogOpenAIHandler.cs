@@ -26,7 +26,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(request);
+        if (request is null)
+        {
+            throw new ArgumentNullException(nameof(request));
+        }
 
         var stopwatch = Stopwatch.StartNew();
         var requestJson = await ReadContentAndParseJsonAsync(
@@ -67,7 +70,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         if (isStreaming)
         {
-            var originalStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var originalStream = await response.Content.ReadAsStreamAsync();
             var trackingStream = new TrackingStream(
                 originalStream,
                 (accumulatedResponse, usageNode) =>
@@ -168,8 +171,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
             {
                 try
                 {
-                    using var stream = await content.ReadAsStreamAsync(cancellationToken);
-                    jsonNode = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken);
+                    using var stream = await content.ReadAsStreamAsync();
+                    jsonNode = await JsonNode.ParseAsync(
+                        stream,
+                        cancellationToken: cancellationToken
+                    );
                 }
                 catch (JsonException)
                 {
@@ -375,11 +381,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 }
 
                 // Output choices (for generation)
-                var outputChoices = GetOutputChoicesFromResponse(
-                    responseJson,
-                    eventName,
-                    context
-                );
+                var outputChoices = GetOutputChoicesFromResponse(responseJson, eventName, context);
                 if (outputChoices != null)
                 {
                     eventProperties[PostHogAIFieldNames.OutputChoices] = outputChoices;
@@ -548,7 +550,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
             return null;
         }
 
-        if (eventName == PostHogAIFieldNames.Generation && responseJson["choices"] is JsonArray choices)
+        if (
+            eventName == PostHogAIFieldNames.Generation
+            && responseJson["choices"] is JsonArray choices
+        )
         {
             return choices;
         }
