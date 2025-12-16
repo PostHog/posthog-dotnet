@@ -29,7 +29,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         ArgumentNullException.ThrowIfNull(request);
 
         var stopwatch = Stopwatch.StartNew();
-        var (requestContent, requestJson) = await ReadContentAndParseJsonAsync(
+        var (_, requestJson) = await ReadContentAndParseJsonAsync(
             request.Content,
             ex => _logger.LogRequestContentFailure(ex),
             cancellationToken
