@@ -558,8 +558,6 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
     private sealed class TrackingStream : Stream
     {
-        private static readonly string[] LineSeparators = { "\r\n", "\n" };
-
         private readonly Stream _innerStream;
         private readonly Action<string, JsonNode?> _onComplete;
         private readonly StringBuilder _accumulatedContent = new(capacity: 4 * 1024);
@@ -689,17 +687,21 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         private void ProcessSSEMessage(string message)
         {
-            // Split message into lines
-            var lines = message.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
-
-            foreach (var trimmed in lines.Select(line => line.Trim()))
+            // Enumerate lines using span-based enumeration to avoid allocations
+            foreach (var line in message.AsSpan().EnumerateLines())
             {
-                if (trimmed.StartsWith("data: ", StringComparison.Ordinal))
+                var trimmed = line.Trim();
+                if (trimmed.IsEmpty)
+                    continue;
+
+                if (trimmed.StartsWith("data: ".AsSpan(), StringComparison.Ordinal))
                 {
-                    var data = trimmed.Substring(6).Trim();
-                    if (string.IsNullOrEmpty(data) || data == "[DONE]")
+                    var dataSpan = trimmed.Slice(6).Trim();
+                    if (dataSpan.IsEmpty || dataSpan.SequenceEqual("[DONE]".AsSpan()))
                         continue;
 
+                    // Convert to string only when needed for JSON parsing
+                    var data = dataSpan.ToString();
                     try
                     {
                         var node = JsonNode.Parse(data);
