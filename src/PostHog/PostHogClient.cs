@@ -343,12 +343,22 @@ public sealed class PostHogClient : IPostHogClient
         var flagWasLocallyEvaluated = response is not null;
         string? requestId = null;
         long? evaluatedAt = null;
+        var errors = new List<string>();
+        FlagsResult? flagsResult = null;
+
+        void HandleRemoteError(Exception ex, string errorType)
+        {
+            _logger.LogErrorUnableToGetRemotely(ex, featureKey);
+            errors.Add(errorType);
+            response = new FeatureFlag { Key = featureKey, IsEnabled = false };
+        }
+
         if (!flagWasLocallyEvaluated && options is not { OnlyEvaluateLocally: true })
         {
             try
             {
                 // Fallback to Decide
-                var flagsResult = await DecideAsync(
+                flagsResult = await DecideAsync(
                     distinctId,
                     options ?? new FeatureFlagOptions
                     {
@@ -357,16 +367,45 @@ public sealed class PostHogClient : IPostHogClient
                     cancellationToken);
                 requestId = flagsResult.RequestId;
                 evaluatedAt = flagsResult.EvaluatedAt;
-                response = flagsResult.Flags.GetValueOrDefault(featureKey) ?? new FeatureFlag
+
+                if (flagsResult.ErrorsWhileComputingFlags)
                 {
-                    Key = featureKey,
-                    IsEnabled = false
-                };
+                    errors.Add(FeatureFlagError.ErrorsWhileComputingFlags);
+                }
+
+                if (flagsResult.QuotaLimited.Contains("feature_flags"))
+                {
+                    errors.Add(FeatureFlagError.QuotaLimited);
+                }
+
+                response = flagsResult.Flags.GetValueOrDefault(featureKey);
+                if (response is null)
+                {
+                    errors.Add(FeatureFlagError.FlagMissing);
+                    response = new FeatureFlag
+                    {
+                        Key = featureKey,
+                        IsEnabled = false
+                    };
+                }
+
                 _logger.LogDebugSuccessRemotely(featureKey, response);
+            }
+            catch (TaskCanceledException e) when (!cancellationToken.IsCancellationRequested)
+            {
+                HandleRemoteError(e, FeatureFlagError.Timeout);
+            }
+            catch (HttpRequestException e)
+            {
+                HandleRemoteError(e, FeatureFlagError.ConnectionError);
+            }
+            catch (ApiException e)
+            {
+                HandleRemoteError(e, FeatureFlagError.ApiError((int)e.Status));
             }
             catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
             {
-                _logger.LogErrorUnableToGetRemotely(e, featureKey);
+                HandleRemoteError(e, FeatureFlagError.UnknownError);
             }
         }
 
@@ -384,7 +423,8 @@ public sealed class PostHogClient : IPostHogClient
                     response,
                     requestId,
                     evaluatedAt,
-                    options.Groups));
+                    options.Groups,
+                    errors));
         }
 
         if (_featureFlagCalledEventCache.Count >= _options.Value.FeatureFlagSentCacheSizeLimit)
@@ -454,7 +494,8 @@ public sealed class PostHogClient : IPostHogClient
         FeatureFlag? flag,
         string? requestId,
         long? evaluatedAt,
-        GroupCollection? groupProperties)
+        GroupCollection? groupProperties,
+        List<string> errors)
     {
         cacheEntry.SetSize(1); // Each entry has a size of 1
         cacheEntry.SetPriority(CacheItemPriority.Low);
@@ -482,6 +523,11 @@ public sealed class PostHogClient : IPostHogClient
         if (evaluatedAt is not null)
         {
             properties["$feature_flag_evaluated_at"] = evaluatedAt;
+        }
+
+        if (errors.Count > 0)
+        {
+            properties["$feature_flag_error"] = string.Join(",", errors);
         }
 
         Capture(
@@ -563,7 +609,7 @@ public sealed class PostHogClient : IPostHogClient
         if (result.QuotaLimited.Contains("feature_flags"))
         {
             _logger.LogWarningQuotaExceeded();
-            return new FlagsResult();
+            return new FlagsResult { QuotaLimited = result.QuotaLimited };
         }
 
         return result;
