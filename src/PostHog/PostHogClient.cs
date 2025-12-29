@@ -174,8 +174,7 @@ public sealed class PostHogClient : IPostHogClient
 
         Task<CapturedEvent> BatchTask(CapturedEventBatchContext context)
         {
-            var shouldEnrich = sendFeatureFlags || (_featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called");
-            if (!shouldEnrich)
+            if (!sendFeatureFlags)
             {
                 return Task.FromResult(capturedEvent);
             }

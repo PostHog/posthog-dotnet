@@ -742,6 +742,125 @@ public class TheCaptureMethod
                      }
                      """, received);
     }
+
+    [Fact]
+    public async Task CaptureWithSendFeatureFlagsFalseDoesNotAddFeatureFlagsEvenWhenLocalEvaluationEnabled()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {
+                "flags": [
+                    {
+                        "id": 1,
+                        "name": "Local Flag",
+                        "key": "local-flag",
+                        "active": true,
+                        "rollout_percentage": 100,
+                        "filters": {
+                            "groups": [
+                                {
+                                    "properties": [],
+                                    "rollout_percentage": 100
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+            """
+        );
+
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        // Preload local flags to ensure they are available
+        await client.GetAllFeatureFlagsAsync("preload-user", options: null, CancellationToken.None);
+
+        client.Capture("test-distinct-id", "test-event", sendFeatureFlags: false);
+        await client.FlushAsync();
+
+        var received = batchHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "test-event",
+                           "properties": {
+                             "distinct_id": "test-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
+
+    [Fact]
+    public async Task CaptureDefaultsToNotSendingFeatureFlagsEvenWhenLocalEvaluationEnabled()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {
+                "flags": [
+                    {
+                        "id": 1,
+                        "name": "Local Flag",
+                        "key": "local-flag",
+                        "active": true,
+                        "rollout_percentage": 100,
+                        "filters": {
+                            "groups": [
+                                {
+                                    "properties": [],
+                                    "rollout_percentage": 100
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+            """
+        );
+
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        // Preload local flags to ensure they are available
+        await client.GetAllFeatureFlagsAsync("preload-user", options: null, CancellationToken.None);
+
+        // Capture event WITHOUT specifying sendFeatureFlags (should default to false)
+        client.Capture("test-distinct-id", "test-event");
+        await client.FlushAsync();
+
+        var received = batchHandler.GetReceivedRequestBody(indented: true);
+        Assert.Equal($$"""
+                     {
+                       "api_key": "fake-project-api-key",
+                       "historical_migrations": false,
+                       "batch": [
+                         {
+                           "event": "test-event",
+                           "properties": {
+                             "distinct_id": "test-distinct-id",
+                             "$lib": "posthog-dotnet",
+                             "$lib_version": "{{VersionConstants.Version}}",
+                             "$geoip_disable": true
+                           },
+                           "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                         }
+                       ]
+                     }
+                     """, received);
+    }
 }
 
 public class TheCaptureExceptionMethod
