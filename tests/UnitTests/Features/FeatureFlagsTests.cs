@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Api;
 using PostHog.Features;
+using PostHog.Library;
 using PostHog.Json;
 using PostHog.Versioning;
 using UnitTests.Fakes;
@@ -3722,5 +3723,198 @@ public class TheQuotaLimitBehavior
         Assert.NotNull(result);
         Assert.True(result.IsEnabled);
         JsonAssert.Equal("""{"from":"api","cohort":"static-999"}""", result.Payload);
+    }
+}
+
+public class FeatureFlagErrorTracking
+{
+    [Fact]
+    public async Task IncludesFlagMissingErrorWhenFlagNotInResponse()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponse("""{"featureFlags": {}}""");
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("missing-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesErrorsWhileComputingFlagsErrorWhenErrorsWhileComputingFlagsIsTrue()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {
+                "featureFlags": {"some-flag": true},
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.True(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesQuotaLimitedErrorWhenQuotaLimitedContainsFeatureFlags()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {
+                "featureFlags": {},
+                "quotaLimited": ["feature_flags"]
+            }
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"quota_limited,flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesUnknownErrorWhenUnexpectedExceptionOccurs()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponseException(new InvalidOperationException("Unexpected error"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"unknown_error\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task JoinsMultipleErrorsWithCommas()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {
+                "featureFlags": {},
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("missing-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags,flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DoesNotIncludeErrorPropertyWhenNoErrors()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponse(
+            """
+            {"featureFlags": {"some-flag": true}}
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.True(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.DoesNotContain("$feature_flag_error", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesTimeoutErrorWhenRequestTimesOut()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponseException(new TaskCanceledException("Request timed out"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"timeout\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesConnectionErrorWhenNetworkFails()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponseException(new HttpRequestException("Network error"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"connection_error\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesApiErrorWithStatusCodeWhenApiFails()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddDecideResponseException(
+            new ApiException(null, System.Net.HttpStatusCode.InternalServerError, null));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"api_error_500\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PropagatesCancellationWhenUserCancelsRequest()
+    {
+        var container = new TestContainer();
+        var cts = new CancellationTokenSource();
+
+        // Simulate: request starts, then user cancels
+        container.FakeHttpMessageHandler.AddDecideResponseException(
+            new TaskCanceledException("Cancelled", null, cts.Token));
+#pragma warning disable CA1849 // Call async methods when available
+        cts.Cancel();  // User's token is now cancelled
+#pragma warning restore CA1849
+
+        var client = container.Activate<PostHogClient>();
+
+        // Should throw, NOT silently return false with "timeout" error
+        await Assert.ThrowsAsync<TaskCanceledException>(() =>
+            client.GetFeatureFlagAsync("flag", "id", null, cts.Token));
     }
 }
