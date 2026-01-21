@@ -3897,4 +3897,24 @@ public class FeatureFlagErrorTracking
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
         Assert.Contains("\"$feature_flag_error\": \"api_error_500\"", received, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task PropagatesCancellationWhenUserCancelsRequest()
+    {
+        var container = new TestContainer();
+        var cts = new CancellationTokenSource();
+
+        // Simulate: request starts, then user cancels
+        container.FakeHttpMessageHandler.AddDecideResponseException(
+            new TaskCanceledException("Cancelled", null, cts.Token));
+#pragma warning disable CA1849 // Call async methods when available
+        cts.Cancel();  // User's token is now cancelled
+#pragma warning restore CA1849
+
+        var client = container.Activate<PostHogClient>();
+
+        // Should throw, NOT silently return false with "timeout" error
+        await Assert.ThrowsAsync<TaskCanceledException>(() =>
+            client.GetFeatureFlagAsync("flag", "id", null, cts.Token));
+    }
 }

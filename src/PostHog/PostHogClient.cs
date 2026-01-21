@@ -403,7 +403,7 @@ public sealed class PostHogClient : IPostHogClient
             {
                 HandleRemoteError(e, FeatureFlagError.ApiError((int)e.Status));
             }
-            catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+            catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
             {
                 HandleRemoteError(e, FeatureFlagError.UnknownError);
             }
