@@ -1,0 +1,412 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using PostHog;
+using PostHog.Versioning;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Configure JSON options for consistent serialization
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+});
+
+var app = builder.Build();
+
+// Global state for the adapter
+var state = new AdapterState();
+
+app.MapGet("/health", () => new HealthResponse(
+    SdkName: "posthog-dotnet",
+    SdkVersion: VersionConstants.Version,
+    AdapterVersion: "1.0.0"
+));
+
+app.MapPost("/init", async (InitRequest request) =>
+{
+    await state.ResetAsync();
+
+    state.ApiKey = request.ApiKey;
+    state.Host = request.Host;
+    state.FlushAt = request.FlushAt ?? 100;
+    state.FlushIntervalMs = request.FlushIntervalMs ?? 500;
+    state.MaxRetries = request.MaxRetries ?? 3;
+
+    var options = new PostHogOptions
+    {
+        ProjectApiKey = request.ApiKey,
+        HostUrl = new Uri(request.Host),
+        FlushAt = state.FlushAt,
+        FlushInterval = TimeSpan.FromMilliseconds(state.FlushIntervalMs),
+        MaxBatchSize = 100,
+        MaxQueueSize = 1000
+    };
+
+    // Create a new tracked HTTP client factory for each init
+    var httpClientFactory = new TrackedHttpClientFactory(state);
+    state.HttpClientFactory = httpClientFactory;
+    state.Client = new PostHogClient(options, httpClientFactory: httpClientFactory);
+
+    return Results.Ok(new { success = true });
+});
+
+app.MapPost("/capture", (CaptureRequest request) =>
+{
+    if (state.Client is null)
+    {
+        return Results.BadRequest(new { error = "SDK not initialized" });
+    }
+
+    if (string.IsNullOrEmpty(request.DistinctId) || string.IsNullOrEmpty(request.Event))
+    {
+        return Results.BadRequest(new { error = "distinct_id and event are required" });
+    }
+
+    // Generate UUID for the event
+    var uuid = Guid.NewGuid().ToString();
+
+    // Add UUID to properties so it gets sent with the event
+    var properties = request.Properties ?? new Dictionary<string, object>();
+    properties["$event_uuid"] = uuid;
+
+    DateTimeOffset? timestamp = null;
+    if (!string.IsNullOrEmpty(request.Timestamp))
+    {
+        if (DateTimeOffset.TryParse(request.Timestamp, out var parsed))
+        {
+            timestamp = parsed;
+        }
+    }
+
+    // Track the event
+    state.TrackCapturedEvent(uuid);
+
+    var success = state.Client.Capture(
+        request.DistinctId,
+        request.Event,
+        properties,
+        groups: null,
+        sendFeatureFlags: false,
+        timestamp: timestamp
+    );
+
+    if (!success)
+    {
+        return Results.StatusCode(500);
+    }
+
+    return Results.Ok(new { success = true, uuid });
+});
+
+app.MapPost("/flush", async () =>
+{
+    if (state.Client is null)
+    {
+        return Results.BadRequest(new { error = "SDK not initialized" });
+    }
+
+    try
+    {
+        await state.Client.FlushAsync();
+
+        // Wait a bit for any pending requests to complete
+        await Task.Delay(100);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Flush error: {ex}");
+        state.RecordError(ex.Message);
+    }
+
+    return Results.Ok(new { success = true, events_flushed = state.TotalEventsSent });
+});
+
+app.MapGet("/state", () =>
+{
+    return Results.Ok(new StateResponse(
+        PendingEvents: Math.Max(0, state.TotalEventsCaptured - state.TotalEventsSent),
+        TotalEventsCaptured: state.TotalEventsCaptured,
+        TotalEventsSent: state.TotalEventsSent,
+        TotalRetries: state.TotalRetries,
+        LastError: state.LastError,
+        RequestsMade: state.RequestsMade.ToList()
+    ));
+});
+
+app.MapPost("/reset", async () =>
+{
+    await state.ResetAsync();
+    return Results.Ok(new { success = true });
+});
+
+app.Run();
+
+// --- Models ---
+
+record HealthResponse(
+    [property: JsonPropertyName("sdk_name")] string SdkName,
+    [property: JsonPropertyName("sdk_version")] string SdkVersion,
+    [property: JsonPropertyName("adapter_version")] string AdapterVersion
+);
+
+record InitRequest(
+    [property: JsonPropertyName("api_key")] string ApiKey,
+    [property: JsonPropertyName("host")] string Host,
+    [property: JsonPropertyName("flush_at")] int? FlushAt = null,
+    [property: JsonPropertyName("flush_interval_ms")] int? FlushIntervalMs = null,
+    [property: JsonPropertyName("max_retries")] int? MaxRetries = null,
+    [property: JsonPropertyName("enable_compression")] bool? EnableCompression = null
+);
+
+record CaptureRequest(
+    [property: JsonPropertyName("distinct_id")] string DistinctId,
+    [property: JsonPropertyName("event")] string Event,
+    [property: JsonPropertyName("properties")] Dictionary<string, object>? Properties = null,
+    [property: JsonPropertyName("timestamp")] string? Timestamp = null
+);
+
+record StateResponse(
+    [property: JsonPropertyName("pending_events")] int PendingEvents,
+    [property: JsonPropertyName("total_events_captured")] int TotalEventsCaptured,
+    [property: JsonPropertyName("total_events_sent")] int TotalEventsSent,
+    [property: JsonPropertyName("total_retries")] int TotalRetries,
+    [property: JsonPropertyName("last_error")] string? LastError,
+    [property: JsonPropertyName("requests_made")] List<RequestInfo> RequestsMade
+);
+
+record RequestInfo(
+    [property: JsonPropertyName("timestamp_ms")] long TimestampMs,
+    [property: JsonPropertyName("status_code")] int StatusCode,
+    [property: JsonPropertyName("retry_attempt")] int RetryAttempt,
+    [property: JsonPropertyName("event_count")] int EventCount,
+    [property: JsonPropertyName("uuid_list")] List<string> UuidList
+);
+
+// --- Adapter State ---
+
+class AdapterState
+{
+    readonly object _lock = new();
+
+    public PostHogClient? Client { get; set; }
+    public TrackedHttpClientFactory? HttpClientFactory { get; set; }
+    public string? ApiKey { get; set; }
+    public string? Host { get; set; }
+    public int FlushAt { get; set; } = 100;
+    public int FlushIntervalMs { get; set; } = 500;
+    public int MaxRetries { get; set; } = 3;
+
+    public int TotalEventsCaptured { get; private set; }
+    public int TotalEventsSent { get; private set; }
+    public int TotalRetries { get; private set; }
+    public string? LastError { get; private set; }
+
+    readonly ConcurrentBag<RequestInfo> _requestsMade = [];
+    public IReadOnlyCollection<RequestInfo> RequestsMade => _requestsMade;
+
+    // Track UUIDs we've captured
+    readonly ConcurrentBag<string> _capturedUuids = [];
+
+    public void TrackCapturedEvent(string uuid)
+    {
+        lock (_lock)
+        {
+            TotalEventsCaptured++;
+            _capturedUuids.Add(uuid);
+        }
+    }
+
+    public void RecordRequest(int statusCode, int eventCount, List<string> uuids, int retryAttempt = 0)
+    {
+        lock (_lock)
+        {
+            _requestsMade.Add(new RequestInfo(
+                TimestampMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                StatusCode: statusCode,
+                RetryAttempt: retryAttempt,
+                EventCount: eventCount,
+                UuidList: uuids
+            ));
+
+            if (statusCode is >= 200 and < 300)
+            {
+                TotalEventsSent += eventCount;
+            }
+        }
+    }
+
+    public void RecordRetry()
+    {
+        lock (_lock)
+        {
+            TotalRetries++;
+        }
+    }
+
+    public void RecordError(string error)
+    {
+        lock (_lock)
+        {
+            LastError = error;
+        }
+    }
+
+    public async Task ResetAsync()
+    {
+        // Dispose client first
+        if (Client is not null)
+        {
+            try
+            {
+                await Client.DisposeAsync();
+            }
+            catch
+            {
+                // Ignore disposal errors
+            }
+            Client = null;
+        }
+
+        // Dispose http client factory
+        HttpClientFactory?.Dispose();
+        HttpClientFactory = null;
+
+        lock (_lock)
+        {
+            ApiKey = null;
+            Host = null;
+            FlushAt = 100;
+            FlushIntervalMs = 500;
+            MaxRetries = 3;
+            TotalEventsCaptured = 0;
+            TotalEventsSent = 0;
+            TotalRetries = 0;
+            LastError = null;
+        }
+
+        // Clear collections
+        while (_requestsMade.TryTake(out _)) { }
+        while (_capturedUuids.TryTake(out _)) { }
+    }
+
+    public List<string> GetCapturedUuids()
+    {
+        return [.. _capturedUuids];
+    }
+}
+
+// --- HTTP Client Factory and Handler ---
+
+class TrackedHttpClientFactory : IHttpClientFactory, IDisposable
+{
+    readonly AdapterState _state;
+    readonly HttpClient _httpClient;
+    readonly TrackedHttpMessageHandler _handler;
+    bool _disposed;
+
+    public TrackedHttpClientFactory(AdapterState state)
+    {
+        _state = state;
+        _handler = new TrackedHttpMessageHandler(state);
+        _httpClient = new HttpClient(_handler, disposeHandler: false);
+    }
+
+    public HttpClient CreateClient(string name)
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(TrackedHttpClientFactory));
+        }
+        return _httpClient;
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _disposed = true;
+            _httpClient.Dispose();
+            _handler.Dispose();
+        }
+    }
+}
+
+class TrackedHttpMessageHandler : DelegatingHandler
+{
+    readonly AdapterState _state;
+
+    public TrackedHttpMessageHandler(AdapterState state)
+        : base(new HttpClientHandler())
+    {
+        _state = state;
+    }
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        // Read request body to extract UUIDs
+        var uuids = new List<string>();
+        var eventCount = 0;
+
+        if (request.Content is not null)
+        {
+            var bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+
+            // Restore content for the actual request
+            request.Content = new ByteArrayContent(bodyBytes);
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+            // Parse body to extract UUIDs
+            try
+            {
+                using var doc = JsonDocument.Parse(bodyBytes);
+                if (doc.RootElement.TryGetProperty("batch", out var batch) && batch.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var evt in batch.EnumerateArray())
+                    {
+                        eventCount++;
+                        // Check for UUID in properties.$event_uuid (where we put it)
+                        if (evt.TryGetProperty("properties", out var props) &&
+                            props.TryGetProperty("$event_uuid", out var uuidProp))
+                        {
+                            uuids.Add(uuidProp.GetString() ?? "");
+                        }
+                        // Also check for uuid field directly
+                        else if (evt.TryGetProperty("uuid", out var directUuid))
+                        {
+                            uuids.Add(directUuid.GetString() ?? "");
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore parsing errors
+            }
+        }
+
+        // Make the actual request
+        var response = await base.SendAsync(request, cancellationToken);
+
+        // Record the request
+        _state.RecordRequest((int)response.StatusCode, eventCount, uuids);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            try
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                _state.RecordError($"HTTP {(int)response.StatusCode}: {errorBody}");
+            }
+            catch
+            {
+                _state.RecordError($"HTTP {(int)response.StatusCode}");
+            }
+        }
+
+        return response;
+    }
+}
