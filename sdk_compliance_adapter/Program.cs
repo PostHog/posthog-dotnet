@@ -80,9 +80,6 @@ app.MapPost("/capture", (CaptureRequest request) =>
         }
     }
 
-    // Track the event
-    state.TrackCapturedEvent(uuid);
-
     var success = state.Client.Capture(
         request.DistinctId,
         request.Event,
@@ -96,6 +93,9 @@ app.MapPost("/capture", (CaptureRequest request) =>
     {
         return Results.StatusCode(500);
     }
+
+    // Only track after successful enqueue
+    state.TrackCapturedEvent(uuid);
 
     return Results.Ok(new { success = true, uuid });
 });
