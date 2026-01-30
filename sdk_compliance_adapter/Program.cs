@@ -353,11 +353,15 @@ class TrackedHttpMessageHandler : DelegatingHandler
 
         if (request.Content is not null)
         {
+            var originalContentType = request.Content.Headers.ContentType;
             var bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
 
-            // Restore content for the actual request
+            // Restore content for the actual request, preserving the original Content-Type
             request.Content = new ByteArrayContent(bodyBytes);
-            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            if (originalContentType is not null)
+            {
+                request.Content.Headers.ContentType = originalContentType;
+            }
 
             // Parse body to extract UUIDs
             try
