@@ -32,7 +32,6 @@ app.MapPost("/init", async (InitRequest request) =>
     state.Host = request.Host;
     state.FlushAt = request.FlushAt ?? 100;
     state.FlushIntervalMs = request.FlushIntervalMs ?? 500;
-    state.MaxRetries = request.MaxRetries ?? 3;
 
     var options = new PostHogOptions
     {
@@ -95,7 +94,7 @@ app.MapPost("/capture", (CaptureRequest request) =>
     }
 
     // Only track after successful enqueue
-    state.TrackCapturedEvent(uuid);
+    state.TrackCapturedEvent();
 
     return Results.Ok(new { success = true, uuid });
 });
@@ -129,7 +128,7 @@ app.MapGet("/state", () =>
         PendingEvents: Math.Max(0, state.TotalEventsCaptured - state.TotalEventsSent),
         TotalEventsCaptured: state.TotalEventsCaptured,
         TotalEventsSent: state.TotalEventsSent,
-        TotalRetries: state.TotalRetries,
+        TotalRetries: 0, // SDK doesn't expose retry events
         LastError: state.LastError,
         RequestsMade: state.RequestsMade.ToList()
     ));
@@ -196,25 +195,19 @@ class AdapterState
     public string? Host { get; set; }
     public int FlushAt { get; set; } = 100;
     public int FlushIntervalMs { get; set; } = 500;
-    public int MaxRetries { get; set; } = 3;
 
     public int TotalEventsCaptured { get; private set; }
     public int TotalEventsSent { get; private set; }
-    public int TotalRetries { get; private set; }
     public string? LastError { get; private set; }
 
     readonly ConcurrentBag<RequestInfo> _requestsMade = [];
     public IReadOnlyCollection<RequestInfo> RequestsMade => _requestsMade;
 
-    // Track UUIDs we've captured
-    readonly ConcurrentBag<string> _capturedUuids = [];
-
-    public void TrackCapturedEvent(string uuid)
+    public void TrackCapturedEvent()
     {
         lock (_lock)
         {
             TotalEventsCaptured++;
-            _capturedUuids.Add(uuid);
         }
     }
 
@@ -234,14 +227,6 @@ class AdapterState
             {
                 TotalEventsSent += eventCount;
             }
-        }
-    }
-
-    public void RecordRetry()
-    {
-        lock (_lock)
-        {
-            TotalRetries++;
         }
     }
 
@@ -279,21 +264,13 @@ class AdapterState
             Host = null;
             FlushAt = 100;
             FlushIntervalMs = 500;
-            MaxRetries = 3;
             TotalEventsCaptured = 0;
             TotalEventsSent = 0;
-            TotalRetries = 0;
             LastError = null;
         }
 
         // Clear collections
         while (_requestsMade.TryTake(out _)) { }
-        while (_capturedUuids.TryTake(out _)) { }
-    }
-
-    public List<string> GetCapturedUuids()
-    {
-        return [.. _capturedUuids];
     }
 }
 
