@@ -93,6 +93,28 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// </summary>
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// The maximum number of retries for failed requests. (Default: 3)
+    /// </summary>
+    /// <remarks>
+    /// Retries are performed for transient failures such as 5xx errors, 408 (Request Timeout),
+    /// and 429 (Too Many Requests).
+    /// </remarks>
+    public int MaxRetries { get; set; } = 3;
+
+    /// <summary>
+    /// The initial delay between retries. (Default: 1 second)
+    /// </summary>
+    /// <remarks>
+    /// The delay is doubled after each retry (exponential backoff).
+    /// </remarks>
+    public TimeSpan InitialRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// The maximum delay between retries. (Default: 30 seconds)
+    /// </summary>
+    public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromSeconds(30);
+
     // Explicit implementation to hide this value from most users.
     // This is here to make it easier to instantiate the client with the options.
     PostHogOptions IOptions<PostHogOptions>.Value => this;

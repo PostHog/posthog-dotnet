@@ -41,6 +41,115 @@ internal static class HttpClientExtensions
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// Sends a POST request with retry logic for transient failures.
+    /// Retries on 5xx, 408 (Request Timeout), and 429 (Too Many Requests) status codes.
+    /// </summary>
+    public static async Task<TBody?> PostJsonWithRetryAsync<TBody>(
+        this HttpClient httpClient,
+        Uri requestUri,
+        object content,
+        TimeProvider timeProvider,
+        PostHogOptions options,
+        CancellationToken cancellationToken)
+    {
+        var maxRetries = options.MaxRetries;
+        var currentDelay = options.InitialRetryDelay;
+        var maxDelay = options.MaxRetryDelay;
+        var attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+            HttpResponseMessage? response = null;
+
+            try
+            {
+                response = await httpClient.PostAsJsonAsync(
+                    requestUri,
+                    content,
+                    JsonSerializerHelper.Options,
+                    cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadAsStreamAsync(cancellationToken);
+                    return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
+                        result,
+                        cancellationToken: cancellationToken);
+                }
+
+                // Check if we should retry
+                if (!ShouldRetry(response.StatusCode) || attempt > maxRetries)
+                {
+                    await response.EnsureSuccessfulApiCall(cancellationToken);
+                    return default; // Won't reach here, EnsureSuccessfulApiCall throws
+                }
+
+                // Calculate delay with Retry-After header support
+                var delay = GetRetryDelay(response, currentDelay, maxDelay);
+                await Delay(timeProvider, delay, cancellationToken);
+
+                // Exponential backoff for next attempt
+                currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, maxDelay.Ticks));
+            }
+            catch (HttpRequestException) when (attempt <= maxRetries)
+            {
+                // Network errors are retryable
+                await Delay(timeProvider, currentDelay, cancellationToken);
+                currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, maxDelay.Ticks));
+            }
+            finally
+            {
+                response?.Dispose();
+            }
+        }
+    }
+
+    static bool ShouldRetry(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.RequestTimeout // 408
+            or HttpStatusCode.TooManyRequests // 429
+            or >= HttpStatusCode.InternalServerError; // 5xx
+
+    static TimeSpan GetRetryDelay(HttpResponseMessage response, TimeSpan defaultDelay, TimeSpan maxDelay)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter is null)
+        {
+            return defaultDelay;
+        }
+
+        TimeSpan delay;
+        if (retryAfter.Delta.HasValue)
+        {
+            delay = retryAfter.Delta.Value;
+        }
+        else if (retryAfter.Date.HasValue)
+        {
+            delay = retryAfter.Date.Value - DateTimeOffset.UtcNow;
+            if (delay < TimeSpan.Zero)
+            {
+                delay = TimeSpan.Zero;
+            }
+        }
+        else
+        {
+            return defaultDelay;
+        }
+
+        // Cap at maxDelay
+        return delay > maxDelay ? maxDelay : delay;
+    }
+
+    static Task Delay(TimeProvider timeProvider, TimeSpan delay, CancellationToken cancellationToken)
+    {
+#if NET8_0_OR_GREATER
+        return Task.Delay(delay, timeProvider, cancellationToken);
+#else
+        return Task.Delay(delay, cancellationToken);
+#endif
+    }
+
     public static async Task EnsureSuccessfulApiCall(
         this HttpResponseMessage response,
         CancellationToken cancellationToken)
