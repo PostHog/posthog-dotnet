@@ -74,6 +74,7 @@ public sealed class TestContainer : IServiceProvider
         services.Configure<PostHogOptions>(options =>
         {
             options.ProjectApiKey = "fake-project-api-key";
+            options.EnableCompression = false; // Disable compression for tests to avoid gzip handling in fake handler
         });
         services.AddSingleton<ITestOutputHelper>(ConsoleTestOutputHelper);
         services.AddSingleton<FakeLoggerProvider>();

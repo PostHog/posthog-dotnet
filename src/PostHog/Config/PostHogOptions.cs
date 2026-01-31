@@ -115,6 +115,15 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// </summary>
     public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Whether to enable gzip compression for batch requests. (Default: true)
+    /// </summary>
+    /// <remarks>
+    /// When enabled, batch requests will be compressed with gzip before sending,
+    /// which reduces bandwidth usage and improves performance.
+    /// </remarks>
+    public bool EnableCompression { get; set; } = true;
+
     // Explicit implementation to hide this value from most users.
     // This is here to make it easier to instantiate the client with the options.
     PostHogOptions IOptions<PostHogOptions>.Value => this;

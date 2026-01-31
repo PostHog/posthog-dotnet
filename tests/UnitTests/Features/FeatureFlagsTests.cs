@@ -2529,7 +2529,8 @@ public class TheGetFeatureFlagAsyncMethod
         {
             ProjectApiKey = "test-api-key",
             FeatureFlagSentCacheSizeLimit = 20,
-            FeatureFlagSentCacheSlidingExpiration = TimeSpan.FromSeconds(3)
+            FeatureFlagSentCacheSlidingExpiration = TimeSpan.FromSeconds(3),
+            EnableCompression = false // Disable for tests to avoid gzip handling in fake handler
         }));
         var timeProvider = container.FakeTimeProvider;
         var messageHandler = container.FakeHttpMessageHandler;
