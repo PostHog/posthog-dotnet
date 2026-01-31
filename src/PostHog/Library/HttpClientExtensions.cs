@@ -1,5 +1,7 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
@@ -44,6 +46,7 @@ internal static class HttpClientExtensions
     /// <summary>
     /// Sends a POST request with retry logic for transient failures.
     /// Retries on 5xx, 408 (Request Timeout), and 429 (Too Many Requests) status codes.
+    /// Optionally compresses the request body with gzip.
     /// </summary>
     public static async Task<TBody?> PostJsonWithRetryAsync<TBody>(
         this HttpClient httpClient,
@@ -56,6 +59,7 @@ internal static class HttpClientExtensions
         var maxRetries = options.MaxRetries;
         var currentDelay = options.InitialRetryDelay;
         var maxDelay = options.MaxRetryDelay;
+        var enableCompression = options.EnableCompression;
         var attempt = 0;
 
         while (true)
@@ -65,11 +69,13 @@ internal static class HttpClientExtensions
 
             try
             {
-                response = await httpClient.PostAsJsonAsync(
-                    requestUri,
-                    content,
-                    JsonSerializerHelper.Options,
-                    cancellationToken);
+                response = enableCompression
+                    ? await PostCompressedJsonAsync(httpClient, requestUri, content, cancellationToken)
+                    : await httpClient.PostAsJsonAsync(
+                        requestUri,
+                        content,
+                        JsonSerializerHelper.Options,
+                        cancellationToken);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -148,6 +154,36 @@ internal static class HttpClientExtensions
 #else
         return Task.Delay(delay, cancellationToken);
 #endif
+    }
+
+    static async Task<HttpResponseMessage> PostCompressedJsonAsync(
+        HttpClient httpClient,
+        Uri requestUri,
+        object content,
+        CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(content, JsonSerializerHelper.Options);
+        var jsonBytes = Encoding.UTF8.GetBytes(json);
+
+        byte[] compressedBytes;
+        using (var memoryStream = new MemoryStream())
+        {
+            using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
+            {
+#if NET8_0_OR_GREATER
+                await gzipStream.WriteAsync(jsonBytes.AsMemory(), cancellationToken);
+#else
+                await gzipStream.WriteAsync(jsonBytes, 0, jsonBytes.Length, cancellationToken);
+#endif
+            }
+            compressedBytes = memoryStream.ToArray();
+        }
+
+        using var compressedContent = new ByteArrayContent(compressedBytes);
+        compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        compressedContent.Headers.ContentEncoding.Add("gzip");
+
+        return await httpClient.PostAsync(requestUri, compressedContent, cancellationToken);
     }
 
     public static async Task EnsureSuccessfulApiCall(

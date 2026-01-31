@@ -131,7 +131,8 @@ public class TheIdentifyPersonAsyncMethod
             sp.AddSingleton<IOptions<PostHogOptions>>(new PostHogOptions
             {
                 ProjectApiKey = "fake-project-api-key",
-                SuperProperties = new Dictionary<string, object> { ["source"] = "repo-name" }
+                SuperProperties = new Dictionary<string, object> { ["source"] = "repo-name" },
+                EnableCompression = false // Disable for tests to avoid gzip handling in fake handler
             });
         });
         container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
