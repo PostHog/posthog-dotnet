@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#/ Usage: bin/sdk-compliance [options]
+#/ Description: Runs the SDK compliance tests using the PostHog SDK Test Harness
+#/
+#/ Options:
+#/   --build     Force rebuild of the adapter image
+#/   --clean     Clean up containers and network after running
+#/   --help      Show this help message
+#/
+#/ Examples:
+#/   bin/sdk-compliance              # Run compliance tests
+#/   bin/sdk-compliance --build      # Rebuild and run
+#/   bin/sdk-compliance --clean      # Run and clean up after
+
+source bin/helpers/_utils.sh
+set_source_and_root_dir
+
+show_help() {
+    grep "^#/" "$0" | cut -c4-
+}
+
+# Parse arguments
+BUILD_FLAG=""
+CLEAN_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --build)
+            BUILD_FLAG="--build"
+            shift
+            ;;
+        --clean)
+            CLEAN_FLAG="true"
+            shift
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        *)
+            error "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+echo "Running SDK compliance tests…"
+echo ""
+
+cd "$root_dir/sdk_compliance_adapter"
+
+# Run docker-compose with appropriate flags
+docker-compose up $BUILD_FLAG --abort-on-container-exit
+exit_code=$?
+
+# Clean up if requested
+if [ "$CLEAN_FLAG" = "true" ]; then
+    echo ""
+    echo "Cleaning up containers…"
+    docker-compose down --volumes --remove-orphans
+fi
+
+exit $exit_code
