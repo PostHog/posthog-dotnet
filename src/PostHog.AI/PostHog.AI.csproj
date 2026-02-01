@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>PostHog.AI</PackageId>
+    <Description>AI Observability for .NET applications using PostHog. Intercepts and traces OpenAI and Azure OpenAI requests.</Description>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -14,5 +17,9 @@
     />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageReference Include="OpenAI" Version="2.1.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\"/>
+    <None Include="../package-icon.png" Link="package-icon.png" Pack="true" PackagePath="\package-icon.png" />
   </ItemGroup>
 </Project>

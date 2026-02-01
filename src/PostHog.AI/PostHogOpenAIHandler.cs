@@ -463,7 +463,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
             {
                 foreach (var kvp in context.Properties)
                 {
-                    eventProperties.Add(kvp.Key, kvp.Value);
+                    eventProperties[kvp.Key] = kvp.Value;
                 }
             }
 
@@ -473,7 +473,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 groups = new GroupCollection();
                 foreach (var kvp in context.Groups)
                 {
-                    eventProperties.Add(kvp.Key, kvp.Value);
+                    groups.Add(kvp.Key, kvp.Value?.ToString() ?? string.Empty);
                 }
             }
             // Create captured event

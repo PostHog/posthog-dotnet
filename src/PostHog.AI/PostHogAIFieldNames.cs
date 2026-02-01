@@ -154,5 +154,3 @@ public static class PostHogAIFieldNames
     /// </summary>
     public const string Error = "$ai_error";
 }
-
-
