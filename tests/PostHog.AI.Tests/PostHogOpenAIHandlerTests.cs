@@ -971,6 +971,453 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task SendAsyncCapturesErrorEventOnNetworkException()
+    {
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            (bool)props[PostHogAIFieldNames.IsError] == true
+                            && props.ContainsKey(PostHogAIFieldNames.Error)
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            _innerHandler.ExceptionToThrow = new HttpRequestException("Connection refused");
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        model = "gpt-4",
+                        messages = new[] { new { role = "user", content = "Hello" } },
+                    }
+                ),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act & Assert - should rethrow the exception
+            await Assert.ThrowsAsync<HttpRequestException>(
+                () =>
+                    _client.PostAsync(
+                        new Uri("/v1/chat/completions", UriKind.Relative),
+                        requestContent
+                    )
+            );
+
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Error capture was not called within expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            (bool)props[PostHogAIFieldNames.IsError] == true
+                            && (string)props[PostHogAIFieldNames.Error] == "Connection refused"
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncCapturesErrorPropertiesOnHttp429()
+    {
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            (bool)props[PostHogAIFieldNames.IsError] == true
+                            && (int)props[PostHogAIFieldNames.HttpStatus] == 429
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var errorResponse = new
+            {
+                error = new { message = "Rate limit exceeded", type = "rate_limit_error" },
+            };
+            using var responseContent = new StringContent(
+                JsonSerializer.Serialize(errorResponse),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage((HttpStatusCode)429)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        model = "gpt-4",
+                        messages = new[] { new { role = "user", content = "Hello" } },
+                    }
+                ),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act
+            using var response = await _client.PostAsync(
+                new Uri("/v1/chat/completions", UriKind.Relative),
+                requestContent
+            );
+
+            // Assert
+            Assert.Equal((HttpStatusCode)429, response.StatusCode);
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Error capture was not called within expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            (bool)props[PostHogAIFieldNames.IsError] == true
+                            && (int)props[PostHogAIFieldNames.HttpStatus] == 429
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncHandlesGracefullyOnMalformedJsonResponse()
+    {
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        It.IsAny<string>(),
+                        It.IsAny<Dictionary<string, object>>(),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            using var responseContent = new StringContent(
+                "this is not json {{{{",
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        model = "gpt-4",
+                        messages = new[] { new { role = "user", content = "Hello" } },
+                    }
+                ),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act — should not throw; handler should gracefully handle malformed JSON
+            using var response = await _client.PostAsync(
+                new Uri("/v1/chat/completions", UriKind.Relative),
+                requestContent
+            );
+
+            Assert.True(response.IsSuccessStatusCode);
+
+            // Event should still be captured (with whatever properties could be extracted)
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within expected time"
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncPassesGroupsToCaptureWhenContextHasGroups()
+    {
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.IsAny<Dictionary<string, object>>(),
+                        It.Is<GroupCollection>(g => g != null && g.Count == 1),
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var requestBody = new
+            {
+                model = "gpt-4",
+                messages = new[] { new { role = "user", content = "Hello" } },
+            };
+
+            var responseBody = new
+            {
+                id = "chatcmpl-123",
+                @object = "chat.completion",
+                created = 1677652288,
+                model = "gpt-4-0613",
+                choices = new[]
+                {
+                    new
+                    {
+                        index = 0,
+                        message = new { role = "assistant", content = "Hi!" },
+                        finish_reason = "stop",
+                    },
+                },
+                usage = new
+                {
+                    prompt_tokens = 9,
+                    completion_tokens = 3,
+                    total_tokens = 12,
+                },
+            };
+
+            using var responseContent = new StringContent(
+                JsonSerializer.Serialize(responseBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act — set groups in context
+            using (
+                PostHogAIContext.BeginScope(
+                    groups: new Dictionary<string, object> { { "company", "acme-corp" } }
+                )
+            )
+            {
+                using var response = await _client.PostAsync(
+                    new Uri("/v1/chat/completions", UriKind.Relative),
+                    requestContent
+                );
+
+                Assert.True(response.IsSuccessStatusCode);
+            }
+
+            // Assert — groups should be passed as GroupCollection, NOT in eventProperties
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            !props.ContainsKey("company")
+                        ),
+                        It.Is<GroupCollection>(g =>
+                            g != null
+                            && g.Count == 1
+                            && g.Contains("company")
+                        ),
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsyncContextPropertiesOverrideEventProperties()
+    {
+        var captureSignal = new ManualResetEventSlim(false);
+        try
+        {
+            var signal = captureSignal;
+            _mockPostHogClient
+                .Setup(x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            (string)props["custom_prop"] == "custom_value"
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    )
+                )
+                .Returns(true)
+                .Callback(() => signal.Set());
+
+            var requestBody = new
+            {
+                model = "gpt-4",
+                messages = new[] { new { role = "user", content = "Hello" } },
+            };
+
+            var responseBody = new
+            {
+                id = "chatcmpl-123",
+                @object = "chat.completion",
+                created = 1677652288,
+                model = "gpt-4-0613",
+                choices = new[]
+                {
+                    new
+                    {
+                        index = 0,
+                        message = new { role = "assistant", content = "Hi!" },
+                        finish_reason = "stop",
+                    },
+                },
+                usage = new
+                {
+                    prompt_tokens = 9,
+                    completion_tokens = 3,
+                    total_tokens = 12,
+                },
+            };
+
+            using var responseContent = new StringContent(
+                JsonSerializer.Serialize(responseBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+            _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = responseContent,
+            };
+
+            using var requestContent = new StringContent(
+                JsonSerializer.Serialize(requestBody),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act — set custom properties via context (including a key that might already exist)
+            using (
+                PostHogAIContext.BeginScope(
+                    properties: new Dictionary<string, object>
+                    {
+                        { "custom_prop", "custom_value" },
+                    }
+                )
+            )
+            {
+                using var response = await _client.PostAsync(
+                    new Uri("/v1/chat/completions", UriKind.Relative),
+                    requestContent
+                );
+
+                Assert.True(response.IsSuccessStatusCode);
+            }
+
+            // Assert — properties should be merged without throwing
+            Assert.True(
+                captureSignal.Wait(TimeSpan.FromSeconds(5)),
+                "Capture was not called within expected time"
+            );
+
+            _mockPostHogClient.Verify(
+                x =>
+                    x.Capture(
+                        It.IsAny<string>(),
+                        PostHogAIFieldNames.Generation,
+                        It.Is<Dictionary<string, object>>(props =>
+                            (string)props["custom_prop"] == "custom_value"
+                        ),
+                        null,
+                        false,
+                        It.IsAny<DateTimeOffset?>()
+                    ),
+                Times.Once
+            );
+        }
+        finally
+        {
+            captureSignal.Dispose();
+        }
+    }
+
     public void Dispose()
     {
         _client.Dispose();
@@ -981,12 +1428,18 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
     private sealed class MockHttpMessageHandler : HttpMessageHandler
     {
         public HttpResponseMessage Response { get; set; } = new(HttpStatusCode.OK);
+        public Exception? ExceptionToThrow { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken
         )
         {
+            if (ExceptionToThrow != null)
+            {
+                throw ExceptionToThrow;
+            }
+
             return Task.FromResult(Response);
         }
     }

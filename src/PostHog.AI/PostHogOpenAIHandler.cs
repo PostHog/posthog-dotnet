@@ -26,10 +26,14 @@ public class PostHogOpenAIHandler : DelegatingHandler
         CancellationToken cancellationToken
     )
     {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(request);
+#else
         if (request is null)
         {
             throw new ArgumentNullException(nameof(request));
         }
+#endif
 
         var stopwatch = Stopwatch.StartNew();
         var requestJson = await ReadContentAndParseJsonAsync(
@@ -70,7 +74,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         if (isStreaming)
         {
+#if NET8_0_OR_GREATER
+            var originalStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+#else
             var originalStream = await response.Content.ReadAsStreamAsync();
+#endif
             var trackingStream = new TrackingStream(
                 originalStream,
                 (accumulatedResponse, usageNode) =>
@@ -171,7 +179,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
             {
                 try
                 {
+#if NET8_0_OR_GREATER
+                    using var stream = await content.ReadAsStreamAsync(cancellationToken);
+#else
                     using var stream = await content.ReadAsStreamAsync();
+#endif
                     jsonNode = await JsonNode.ParseAsync(
                         stream,
                         cancellationToken: cancellationToken
@@ -533,7 +545,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
         return null;
     }
 
-    private static object? GetOutputChoicesFromResponse(
+    private static JsonArray? GetOutputChoicesFromResponse(
         JsonNode? responseJson,
         string eventName,
         PostHogAIContext? context
