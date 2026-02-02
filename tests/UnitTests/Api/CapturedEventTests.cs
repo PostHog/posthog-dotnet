@@ -40,8 +40,8 @@ public class TheConstructor
         var distinctId = "my-distinct-id";
         var capturedEvent = new CapturedEvent("test-event", distinctId, null, DateTimeOffset.UtcNow);
 
-        Assert.True(capturedEvent.Properties.ContainsKey("distinct_id"));
-        Assert.Equal(distinctId, capturedEvent.Properties["distinct_id"]);
+        Assert.True(capturedEvent.Properties.TryGetValue("distinct_id", out var propertyDistinctId));
+        Assert.Equal(distinctId, propertyDistinctId);
     }
 
     [Fact]
@@ -80,8 +80,8 @@ public class TheConstructor
     {
         var capturedEvent = new CapturedEvent("test-event", "user-1", null, DateTimeOffset.UtcNow);
 
-        Assert.True(capturedEvent.Properties.ContainsKey("$lib"));
-        Assert.Equal("posthog-dotnet", capturedEvent.Properties["$lib"]);
+        Assert.True(capturedEvent.Properties.TryGetValue("$lib", out var lib));
+        Assert.Equal("posthog-dotnet", lib);
         Assert.True(capturedEvent.Properties.ContainsKey("$lib_version"));
     }
 
@@ -90,8 +90,8 @@ public class TheConstructor
     {
         var capturedEvent = new CapturedEvent("test-event", "user-1", null, DateTimeOffset.UtcNow);
 
-        Assert.True(capturedEvent.Properties.ContainsKey("$geoip_disable"));
-        Assert.Equal(true, capturedEvent.Properties["$geoip_disable"]);
+        Assert.True(capturedEvent.Properties.TryGetValue("$geoip_disable", out var geoipDisable));
+        Assert.Equal(true, geoipDisable);
     }
 
     [Fact]

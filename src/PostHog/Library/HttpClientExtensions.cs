@@ -67,6 +67,7 @@ internal static class HttpClientExtensions
             attempt++;
             HttpResponseMessage? response = null;
             TimeSpan? retryDelay = null;
+            Exception? exceptionToThrow = null;
 
             try
             {
@@ -89,12 +90,14 @@ internal static class HttpClientExtensions
                 // Check if we should retry
                 if (!ShouldRetry(response.StatusCode) || attempt > maxRetries)
                 {
-                    await response.EnsureSuccessfulApiCall(cancellationToken);
-                    return default; // Won't reach here, EnsureSuccessfulApiCall throws
+                    // Capture exception to throw after disposal - throwing inside try would be caught by retry logic
+                    exceptionToThrow = await CreateApiException(response, cancellationToken);
                 }
-
-                // Signal retry with Retry-After header support
-                retryDelay = GetRetryDelay(response, currentDelay, maxDelay);
+                else
+                {
+                    // Signal retry with Retry-After header support
+                    retryDelay = GetRetryDelay(response, currentDelay, maxDelay, timeProvider);
+                }
             }
             catch (HttpRequestException) when (attempt <= maxRetries)
             {
@@ -104,6 +107,12 @@ internal static class HttpClientExtensions
             finally
             {
                 response?.Dispose();
+            }
+
+            // Throw outside try-catch so non-retryable errors won't be caught by retry logic
+            if (exceptionToThrow != null)
+            {
+                throw exceptionToThrow;
             }
 
             // Retry delay and exponential backoff (single location for both code paths)
@@ -120,7 +129,11 @@ internal static class HttpClientExtensions
             or HttpStatusCode.TooManyRequests // 429
             or >= HttpStatusCode.InternalServerError; // 5xx
 
-    static TimeSpan GetRetryDelay(HttpResponseMessage response, TimeSpan defaultDelay, TimeSpan maxDelay)
+    static TimeSpan GetRetryDelay(
+        HttpResponseMessage response,
+        TimeSpan defaultDelay,
+        TimeSpan maxDelay,
+        TimeProvider timeProvider)
     {
         var retryAfter = response.Headers.RetryAfter;
         if (retryAfter is null)
@@ -135,7 +148,7 @@ internal static class HttpClientExtensions
         }
         else if (retryAfter.Date.HasValue)
         {
-            delay = retryAfter.Date.Value - DateTimeOffset.UtcNow;
+            delay = retryAfter.Date.Value - timeProvider.GetUtcNow();
             if (delay < TimeSpan.Zero)
             {
                 delay = TimeSpan.Zero;
@@ -148,6 +161,47 @@ internal static class HttpClientExtensions
 
         // Cap at maxDelay
         return delay > maxDelay ? maxDelay : delay;
+    }
+
+    /// <summary>
+    /// Creates an exception for a failed API response without throwing it.
+    /// This allows the exception to be thrown outside the try-catch block so non-retryable errors
+    /// won't be caught by retry logic.
+    /// </summary>
+    static async Task<Exception> CreateApiException(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Return HttpRequestException for 404, matching EnsureSuccessStatusCode behavior
+            return new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).");
+        }
+
+        var (error, deserializationException) = await ReadApiErrorResultAsync();
+
+        return response.StatusCode switch
+        {
+            HttpStatusCode.Unauthorized => new UnauthorizedAccessException(
+                error?.Detail ?? "Unauthorized. Could not deserialize the response for more info.",
+                deserializationException),
+            _ => new ApiException(error, response.StatusCode, deserializationException)
+        };
+
+        async Task<(ApiErrorResult?, Exception?)> ReadApiErrorResultAsync()
+        {
+            try
+            {
+#pragma warning disable CA2016
+                var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
+                    cancellationToken: cancellationToken);
+                return (result, null);
+            }
+            catch (JsonException e)
+            {
+                return (null, e);
+            }
+        }
     }
 
     static Task Delay(TimeProvider timeProvider, TimeSpan delay, CancellationToken cancellationToken)
