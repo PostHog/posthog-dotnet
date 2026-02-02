@@ -78,8 +78,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Let the first request complete and start waiting
-        await Task.Delay(10);
+        // Wait for first request to complete before advancing time
+        await handler.WaitForRequestAsync();
 
         // Advance time to trigger the retry
         timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -135,15 +135,11 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Keep advancing time until the task completes or we time out
-        for (int i = 0; i < 10; i++)
+        // Advance time for each retry attempt (1 initial + 3 retries)
+        for (int i = 0; i < 4 && !task.IsCompleted; i++)
         {
-            await Task.Delay(10);
+            await handler.WaitForRequestAsync();
             timeProvider.Advance(TimeSpan.FromSeconds(1));
-            if (task.IsCompleted)
-            {
-                break;
-            }
         }
 
         await Assert.ThrowsAsync<ApiException>(() => task);
@@ -172,8 +168,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Let the first request complete and start waiting for retry
-        await Task.Delay(10);
+        // Wait for first request to complete before advancing time
+        await handler.WaitForRequestAsync();
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting for the Retry-After delay
@@ -213,8 +209,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Let the first request complete and start waiting for retry
-        await Task.Delay(10);
+        // Wait for first request to complete before advancing time
+        await handler.WaitForRequestAsync();
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting for the Retry-After delay
@@ -253,8 +249,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Let the first request complete
-        await Task.Delay(10);
+        // Wait for first request to complete before advancing time
+        await handler.WaitForRequestAsync();
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting (delay was capped, not skipped)
@@ -286,7 +282,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        await Task.Delay(10);
+        // Wait for first request to complete before advancing time
+        await handler.WaitForRequestAsync();
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await task;
 
@@ -315,16 +312,12 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Advance time incrementally to trigger each retry with exponential backoff
+        // Advance time for each retry with exponential backoff
         // Delays: 10ms, 20ms, 40ms (doubled each time)
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 4 && !task.IsCompleted; i++)
         {
-            await Task.Delay(10);
+            await handler.WaitForRequestAsync();
             timeProvider.Advance(TimeSpan.FromMilliseconds(50));
-            if (task.IsCompleted)
-            {
-                break;
-            }
         }
 
         var result = await task;
@@ -454,9 +447,29 @@ public class ThePostCompressedJsonAsyncMethod
 sealed class FakeRetryHttpMessageHandler : HttpMessageHandler
 {
     readonly Queue<Func<Task<HttpResponseMessage>>> _responses = new();
+    readonly object _lock = new();
+    TaskCompletionSource<bool>? _requestSignal;
     int _requestCount;
 
     public int RequestCount => _requestCount;
+
+    /// <summary>
+    /// Waits until at least one request has been processed.
+    /// Use this instead of Task.Delay for deterministic test synchronization.
+    /// </summary>
+    public Task WaitForRequestAsync()
+    {
+        lock (_lock)
+        {
+            if (_requestCount > 0 && _requestSignal == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            _requestSignal ??= new TaskCompletionSource<bool>();
+            return _requestSignal.Task;
+        }
+    }
 
     // Note: HttpResponseMessage disposal is handled by the HttpClient pipeline after processing.
     // The handler creates responses that are owned and disposed by the caller.
@@ -484,6 +497,12 @@ sealed class FakeRetryHttpMessageHandler : HttpMessageHandler
         CancellationToken cancellationToken)
     {
         _requestCount++;
+
+        lock (_lock)
+        {
+            _requestSignal?.TrySetResult(true);
+            _requestSignal = null;
+        }
 
         if (_responses.Count == 0)
         {
