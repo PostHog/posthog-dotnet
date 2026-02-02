@@ -42,10 +42,14 @@ app.MapPost("/init", async (InitRequest request) =>
         FlushInterval = TimeSpan.FromMilliseconds(state.FlushIntervalMs),
         MaxBatchSize = 100,
         MaxQueueSize = 1000,
-        MaxRetries = request.MaxRetries ?? 3,
-        // Only set EnableCompression if explicitly provided; otherwise use SDK default (true)
-        EnableCompression = request.EnableCompression ?? true
+        MaxRetries = request.MaxRetries ?? 3
     };
+
+    // Only set EnableCompression if explicitly provided; otherwise use SDK default (true)
+    if (request.EnableCompression.HasValue)
+    {
+        options.EnableCompression = request.EnableCompression.Value;
+    }
 
     // Create a new tracked HTTP client factory for each init
     var httpClientFactory = new TrackedHttpClientFactory(state);

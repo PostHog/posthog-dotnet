@@ -123,10 +123,13 @@ internal static class HttpClientExtensions
         }
     }
 
-    static bool ShouldRetry(HttpStatusCode statusCode) =>
-        statusCode is HttpStatusCode.RequestTimeout // 408
-            or HttpStatusCode.TooManyRequests // 429
-            or >= HttpStatusCode.InternalServerError; // 5xx
+    static bool ShouldRetry(HttpStatusCode statusCode)
+    {
+        var code = (int)statusCode;
+        return code is 408 // Request Timeout
+            or 429 // Too Many Requests
+            or (>= 500 and <= 599); // 5xx
+    }
 
     /// <summary>
     /// Doubles the delay with overflow protection, capping at maxDelay.

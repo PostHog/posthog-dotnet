@@ -397,6 +397,7 @@ public class ThePostCompressedJsonAsyncMethod
             options,
             CancellationToken.None);
 
+        Assert.NotNull(result);
         Assert.NotNull(capturedBody);
         Assert.Equal("application/json", capturedContentType);
         Assert.Contains("gzip", capturedContentEncoding!);
@@ -419,6 +420,7 @@ public class ThePostCompressedJsonAsyncMethod
         var handler = new LambdaHttpMessageHandler(request =>
         {
             capturedContentEncoding = request.Content?.Headers.ContentEncoding;
+            // Response disposal is handled by HttpClient after processing
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"status\": 1}")
@@ -456,6 +458,8 @@ sealed class FakeRetryHttpMessageHandler : HttpMessageHandler
 
     public int RequestCount => _requestCount;
 
+    // Note: HttpResponseMessage disposal is handled by the HttpClient pipeline after processing.
+    // The handler creates responses that are owned and disposed by the caller.
     public void AddResponse(HttpStatusCode statusCode, object body)
     {
         var json = JsonSerializer.Serialize(body);
