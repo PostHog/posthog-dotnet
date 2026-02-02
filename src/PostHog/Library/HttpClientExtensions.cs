@@ -29,7 +29,7 @@ internal static class HttpClientExtensions
         object content,
         CancellationToken cancellationToken)
     {
-        var response = await httpClient.PostAsJsonAsync(
+        using var response = await httpClient.PostAsJsonAsync(
             requestUri,
             content,
             JsonSerializerHelper.Options,
@@ -66,6 +66,7 @@ internal static class HttpClientExtensions
         {
             attempt++;
             HttpResponseMessage? response = null;
+            TimeSpan? retryDelay = null;
 
             try
             {
@@ -92,22 +93,24 @@ internal static class HttpClientExtensions
                     return default; // Won't reach here, EnsureSuccessfulApiCall throws
                 }
 
-                // Calculate delay with Retry-After header support
-                var delay = GetRetryDelay(response, currentDelay, maxDelay);
-                await Delay(timeProvider, delay, cancellationToken);
-
-                // Exponential backoff for next attempt
-                currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, maxDelay.Ticks));
+                // Signal retry with Retry-After header support
+                retryDelay = GetRetryDelay(response, currentDelay, maxDelay);
             }
             catch (HttpRequestException) when (attempt <= maxRetries)
             {
-                // Network errors are retryable
-                await Delay(timeProvider, currentDelay, cancellationToken);
-                currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, maxDelay.Ticks));
+                // Network errors are retryable with default delay
+                retryDelay = currentDelay;
             }
             finally
             {
                 response?.Dispose();
+            }
+
+            // Retry delay and exponential backoff (single location for both code paths)
+            if (retryDelay.HasValue)
+            {
+                await Delay(timeProvider, retryDelay.Value, cancellationToken);
+                currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, maxDelay.Ticks));
             }
         }
     }
