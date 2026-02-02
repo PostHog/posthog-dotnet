@@ -100,8 +100,8 @@ internal static class HttpClientExtensions
             }
             catch (HttpRequestException) when (attempt <= maxRetries)
             {
-                // Network errors are retryable with default delay
-                retryDelay = currentDelay;
+                // Network errors are retryable with default delay, capped at maxDelay
+                retryDelay = currentDelay > maxDelay ? maxDelay : currentDelay;
             }
             finally
             {

@@ -79,7 +79,7 @@ public class ThePostJsonWithRetryAsyncMethod
             CancellationToken.None);
 
         // Wait for first request to complete before advancing time
-        await handler.WaitForRequestAsync();
+        await handler.WaitForRequestCountAsync(1);
 
         // Advance time to trigger the retry
         timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -136,9 +136,9 @@ public class ThePostJsonWithRetryAsyncMethod
             CancellationToken.None);
 
         // Advance time for each retry attempt (1 initial + 3 retries)
-        for (int i = 0; i < 4 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 4 && !task.IsCompleted; i++)
         {
-            await handler.WaitForRequestAsync();
+            await handler.WaitForRequestCountAsync(i);
             timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
@@ -169,7 +169,7 @@ public class ThePostJsonWithRetryAsyncMethod
             CancellationToken.None);
 
         // Wait for first request to complete before advancing time
-        await handler.WaitForRequestAsync();
+        await handler.WaitForRequestCountAsync(1);
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting for the Retry-After delay
@@ -210,7 +210,7 @@ public class ThePostJsonWithRetryAsyncMethod
             CancellationToken.None);
 
         // Wait for first request to complete before advancing time
-        await handler.WaitForRequestAsync();
+        await handler.WaitForRequestCountAsync(1);
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting for the Retry-After delay
@@ -250,7 +250,7 @@ public class ThePostJsonWithRetryAsyncMethod
             CancellationToken.None);
 
         // Wait for first request to complete before advancing time
-        await handler.WaitForRequestAsync();
+        await handler.WaitForRequestCountAsync(1);
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting (delay was capped, not skipped)
@@ -283,7 +283,7 @@ public class ThePostJsonWithRetryAsyncMethod
             CancellationToken.None);
 
         // Wait for first request to complete before advancing time
-        await handler.WaitForRequestAsync();
+        await handler.WaitForRequestCountAsync(1);
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await task;
 
@@ -314,9 +314,9 @@ public class ThePostJsonWithRetryAsyncMethod
 
         // Advance time for each retry with exponential backoff
         // Delays: 10ms, 20ms, 40ms (doubled each time)
-        for (int i = 0; i < 4 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 4 && !task.IsCompleted; i++)
         {
-            await handler.WaitForRequestAsync();
+            await handler.WaitForRequestCountAsync(i);
             timeProvider.Advance(TimeSpan.FromMilliseconds(50));
         }
 
@@ -447,27 +447,24 @@ public class ThePostCompressedJsonAsyncMethod
 sealed class FakeRetryHttpMessageHandler : HttpMessageHandler
 {
     readonly Queue<Func<Task<HttpResponseMessage>>> _responses = new();
-    readonly object _lock = new();
-    TaskCompletionSource<bool>? _requestSignal;
     int _requestCount;
 
     public int RequestCount => _requestCount;
 
     /// <summary>
-    /// Waits until at least one request has been processed.
+    /// Waits until the request count reaches the specified value.
     /// Use this instead of Task.Delay for deterministic test synchronization.
     /// </summary>
-    public Task WaitForRequestAsync()
+    public async Task WaitForRequestCountAsync(int count, int timeoutMs = 5000)
     {
-        lock (_lock)
+        var start = DateTime.UtcNow;
+        while (Volatile.Read(ref _requestCount) < count)
         {
-            if (_requestCount > 0 && _requestSignal == null)
+            if ((DateTime.UtcNow - start).TotalMilliseconds > timeoutMs)
             {
-                return Task.CompletedTask;
+                throw new TimeoutException($"Timed out waiting for request count {count}. Current: {_requestCount}");
             }
-
-            _requestSignal ??= new TaskCompletionSource<bool>();
-            return _requestSignal.Task;
+            await Task.Yield();
         }
     }
 
@@ -496,13 +493,7 @@ sealed class FakeRetryHttpMessageHandler : HttpMessageHandler
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        _requestCount++;
-
-        lock (_lock)
-        {
-            _requestSignal?.TrySetResult(true);
-            _requestSignal = null;
-        }
+        Interlocked.Increment(ref _requestCount);
 
         if (_responses.Count == 0)
         {

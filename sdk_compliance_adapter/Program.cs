@@ -333,11 +333,13 @@ class TrackedHttpMessageHandler : DelegatingHandler
 
         if (request.Content is not null)
         {
-            var originalContentType = request.Content.Headers.ContentType;
-            var originalContentEncoding = request.Content.Headers.ContentEncoding.ToList();
-            var bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+            var originalContent = request.Content;
+            var originalContentType = originalContent.Headers.ContentType;
+            var originalContentEncoding = originalContent.Headers.ContentEncoding.ToList();
+            var bodyBytes = await originalContent.ReadAsByteArrayAsync(cancellationToken);
 
-            // Restore content for the actual request, preserving headers
+            // Dispose original content and replace with new ByteArrayContent
+            originalContent.Dispose();
             request.Content = new ByteArrayContent(bodyBytes);
             if (originalContentType is not null)
             {
