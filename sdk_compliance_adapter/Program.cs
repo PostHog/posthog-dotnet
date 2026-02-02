@@ -46,9 +46,9 @@ app.MapPost("/init", async (InitRequest request) =>
     };
 
     // Only set EnableCompression if explicitly provided; otherwise use SDK default (true)
-    if (request.EnableCompression.HasValue)
+    if (request.EnableCompression is { } compression)
     {
-        options.EnableCompression = request.EnableCompression.Value;
+        options.EnableCompression = compression;
     }
 
     // Create a new tracked HTTP client factory for each init
@@ -349,15 +349,10 @@ class TrackedHttpMessageHandler : DelegatingHandler
             }
 
             // Decompress if gzip (case-insensitive per HTTP spec)
-            var jsonBytes = bodyBytes;
-            if (originalContentEncoding.Any(e => string.Equals(e, "gzip", StringComparison.OrdinalIgnoreCase)))
-            {
-                using var compressedStream = new MemoryStream(bodyBytes);
-                using var gzipStream = new GZipStream(compressedStream, CompressionMode.Decompress);
-                using var decompressedStream = new MemoryStream();
-                await gzipStream.CopyToAsync(decompressedStream, cancellationToken);
-                jsonBytes = decompressedStream.ToArray();
-            }
+            var isGzipped = originalContentEncoding.Any(e => string.Equals(e, "gzip", StringComparison.OrdinalIgnoreCase));
+            var jsonBytes = isGzipped
+                ? await GzipHelper.DecompressGzipAsync(bodyBytes, cancellationToken)
+                : bodyBytes;
 
             // Parse body to extract UUIDs from top-level uuid field
             try
@@ -402,5 +397,17 @@ class TrackedHttpMessageHandler : DelegatingHandler
         }
 
         return response;
+    }
+}
+
+static class GzipHelper
+{
+    public static async Task<byte[]> DecompressGzipAsync(byte[] compressedBytes, CancellationToken cancellationToken)
+    {
+        using var compressedStream = new MemoryStream(compressedBytes);
+        using var gzipStream = new GZipStream(compressedStream, CompressionMode.Decompress);
+        using var decompressedStream = new MemoryStream();
+        await gzipStream.CopyToAsync(decompressedStream, cancellationToken);
+        return decompressedStream.ToArray();
     }
 }
