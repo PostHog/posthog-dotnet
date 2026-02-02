@@ -264,27 +264,25 @@ internal static class HttpClientExtensions
         object content,
         CancellationToken cancellationToken)
     {
-        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(content, JsonSerializerHelper.Options);
-
-        byte[] compressedBytes;
-        using (var memoryStream = new MemoryStream())
+        // Stream JSON directly into gzip to avoid intermediate allocation
+        using var memoryStream = new MemoryStream();
+        using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
         {
-            using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
-            {
-#if NET8_0_OR_GREATER
-                await gzipStream.WriteAsync(jsonBytes.AsMemory(), cancellationToken);
-#else
-                await gzipStream.WriteAsync(jsonBytes, 0, jsonBytes.Length, cancellationToken);
-#endif
-            }
-            compressedBytes = memoryStream.ToArray();
+            await JsonSerializer.SerializeAsync(gzipStream, content, JsonSerializerHelper.Options, cancellationToken);
         }
 
-        using var compressedContent = new ByteArrayContent(compressedBytes);
-        compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-        compressedContent.Headers.ContentEncoding.Add("gzip");
+        // Use TryGetBuffer to avoid ToArray() copy when possible
+        var compressedContent = memoryStream.TryGetBuffer(out var buffer)
+            ? new ByteArrayContent(buffer.Array!, buffer.Offset, buffer.Count)
+            : new ByteArrayContent(memoryStream.ToArray());
 
-        return await httpClient.PostAsync(requestUri, compressedContent, cancellationToken);
+        using (compressedContent)
+        {
+            compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            compressedContent.Headers.ContentEncoding.Add("gzip");
+
+            return await httpClient.PostAsync(requestUri, compressedContent, cancellationToken);
+        }
     }
 
     public static async Task EnsureSuccessfulApiCall(
