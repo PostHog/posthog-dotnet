@@ -123,6 +123,15 @@ internal static class HttpClientExtensions
         }
     }
 
+    /// <summary>
+    /// Determines if a status code indicates a transient failure that should be retried.
+    /// </summary>
+    /// <remarks>
+    /// Note: 429 (Too Many Requests) is retried here but not in the Python SDK. This is acceptable
+    /// because the .NET SDK only applies retry logic to the batch endpoint, which is idempotent due
+    /// to UUID-based event deduplication. Additionally, Retry-After headers are respected and capped
+    /// at MaxRetryDelay, preventing server-controlled indefinite delays.
+    /// </remarks>
     static bool ShouldRetry(HttpStatusCode statusCode)
     {
         var code = (int)statusCode;
@@ -235,8 +244,11 @@ internal static class HttpClientExtensions
     {
         try
         {
-            // CA2016: The JsonSerializerOptions overload that accepts CancellationToken isn't available
-            // in all target frameworks. The cancellationToken is still passed to the method.
+            // CA2016: The ReadFromJsonAsync overload that accepts both JsonSerializerOptions and
+            // CancellationToken is only available on .NET 5+. On netstandard2.0/netstandard2.1,
+            // only the overload with cancellationToken (no options) is available. The cancellation
+            // token is still passed and will be respected. This suppression can be removed when
+            // these older targets are dropped from the SDK.
 #pragma warning disable CA2016
             var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
                 cancellationToken: cancellationToken);
