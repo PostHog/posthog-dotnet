@@ -158,7 +158,7 @@ public class ThePostJsonWithRetryAsyncMethod
         {
             Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
         };
-        responseWithRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(5));
+        responseWithRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(100));
         handler.AddResponse(responseWithRetryAfter);
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
@@ -172,11 +172,57 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Let the first request complete
+        // Let the first request complete and start waiting for retry
         await Task.Delay(10);
 
+#if NET8_0_OR_GREATER
+        // Verify task is waiting for the Retry-After delay
+        Assert.False(task.IsCompleted, "Task should be waiting for Retry-After delay");
+#endif
+
         // Advance time by the Retry-After value
-        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Status);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task RespectsRetryAfterDateHeader()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        using var responseWithRetryAfter = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
+        };
+        var timeProvider = new FakeTimeProvider();
+        // Set Retry-After to a date 100ms in the future
+        var retryAfterDate = timeProvider.GetUtcNow().AddMilliseconds(100);
+        responseWithRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(retryAfterDate);
+        handler.AddResponse(responseWithRetryAfter);
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 3);
+
+        var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
+            BatchUrl,
+            new { api_key = "test", batch = Array.Empty<object>() },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        // Let the first request complete and start waiting for retry
+        await Task.Delay(10);
+
+#if NET8_0_OR_GREATER
+        // Verify task is waiting for the Retry-After delay
+        Assert.False(task.IsCompleted, "Task should be waiting for Retry-After date");
+#endif
+
+        // Advance time past the Retry-After date
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
         var result = await task;
 
         Assert.NotNull(result);
@@ -192,12 +238,12 @@ public class ThePostJsonWithRetryAsyncMethod
         {
             Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
         };
-        // Server requests 60 second delay, but our max is 5 seconds
-        responseWithLargeRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(60));
+        // Server requests 500ms delay, but our max is 50ms
+        responseWithLargeRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(500));
         handler.AddResponse(responseWithLargeRetryAfter);
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
-        var options = CreateOptions(maxRetries: 3, maxRetryDelay: TimeSpan.FromSeconds(5));
+        var options = CreateOptions(maxRetries: 3, maxRetryDelay: TimeSpan.FromMilliseconds(50));
         var timeProvider = new FakeTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
@@ -210,8 +256,13 @@ public class ThePostJsonWithRetryAsyncMethod
         // Let the first request complete
         await Task.Delay(10);
 
-        // Advance time by max delay (5s), not the full 60s - should be enough
-        timeProvider.Advance(TimeSpan.FromSeconds(5));
+#if NET8_0_OR_GREATER
+        // Verify task is waiting (delay was capped, not skipped)
+        Assert.False(task.IsCompleted, "Task should be waiting for capped delay");
+#endif
+
+        // Advance time by max delay (50ms), not the full 500ms - should be enough due to capping
+        timeProvider.Advance(TimeSpan.FromMilliseconds(50));
         var result = await task;
 
         Assert.NotNull(result);
@@ -253,7 +304,8 @@ public class ThePostJsonWithRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.ServiceUnavailable, new { type = "error" });
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
-        var options = CreateOptions(maxRetries: 3, initialRetryDelay: TimeSpan.FromSeconds(1));
+        // Use small delays for fast tests
+        var options = CreateOptions(maxRetries: 3, initialRetryDelay: TimeSpan.FromMilliseconds(10));
         var timeProvider = new FakeTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
@@ -263,11 +315,12 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Advance time incrementally to trigger each retry
+        // Advance time incrementally to trigger each retry with exponential backoff
+        // Delays: 10ms, 20ms, 40ms (doubled each time)
         for (int i = 0; i < 10; i++)
         {
             await Task.Delay(10);
-            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            timeProvider.Advance(TimeSpan.FromMilliseconds(50));
             if (task.IsCompleted)
             {
                 break;
@@ -278,7 +331,7 @@ public class ThePostJsonWithRetryAsyncMethod
 
         Assert.NotNull(result);
         Assert.Equal(1, result.Status);
-        Assert.Equal(4, handler.RequestCount);
+        Assert.Equal(4, handler.RequestCount); // 1 initial + 3 retries
     }
 
     [Fact]

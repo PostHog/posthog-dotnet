@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
@@ -119,7 +118,7 @@ internal static class HttpClientExtensions
             if (retryDelay.HasValue)
             {
                 await Delay(timeProvider, retryDelay.Value, cancellationToken);
-                currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, maxDelay.Ticks));
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
             }
         }
     }
@@ -128,6 +127,29 @@ internal static class HttpClientExtensions
         statusCode is HttpStatusCode.RequestTimeout // 408
             or HttpStatusCode.TooManyRequests // 429
             or >= HttpStatusCode.InternalServerError; // 5xx
+
+    /// <summary>
+    /// Doubles the delay with overflow protection, capping at maxDelay.
+    /// </summary>
+    static TimeSpan DoubleWithCap(TimeSpan current, TimeSpan max)
+    {
+        var currentTicks = current.Ticks;
+        var maxTicks = max.Ticks;
+
+        // If already at or above max, stay at max
+        if (currentTicks >= maxTicks)
+        {
+            return max;
+        }
+
+        // If doubling would overflow or exceed max, cap at max
+        if (currentTicks > maxTicks / 2)
+        {
+            return max;
+        }
+
+        return TimeSpan.FromTicks(currentTicks * 2);
+    }
 
     static TimeSpan GetRetryDelay(
         HttpResponseMessage response,
@@ -174,8 +196,19 @@ internal static class HttpClientExtensions
     {
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            // Return HttpRequestException for 404, matching EnsureSuccessStatusCode behavior
-            return new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).");
+            // Use EnsureSuccessStatusCode to get HttpRequestException with proper metadata
+            // (including StatusCode property on .NET 5+)
+            try
+            {
+                response.EnsureSuccessStatusCode();
+                // Should never reach here since status is 404
+                return new HttpRequestException(
+                    $"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).");
+            }
+            catch (HttpRequestException ex)
+            {
+                return ex;
+            }
         }
 
         var (error, deserializationException) = await ReadApiErrorResultAsync();
@@ -219,8 +252,7 @@ internal static class HttpClientExtensions
         object content,
         CancellationToken cancellationToken)
     {
-        var json = JsonSerializer.Serialize(content, JsonSerializerHelper.Options);
-        var jsonBytes = Encoding.UTF8.GetBytes(json);
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(content, JsonSerializerHelper.Options);
 
         byte[] compressedBytes;
         using (var memoryStream = new MemoryStream())
