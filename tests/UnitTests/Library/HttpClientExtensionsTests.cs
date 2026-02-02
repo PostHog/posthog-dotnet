@@ -227,6 +227,75 @@ public class ThePostJsonWithRetryAsyncMethod
     }
 
     [Fact]
+    public async Task RespectsRetryAfterDateInThePastByUsingZeroDelay()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        var timeProvider = new FakeTimeProvider();
+
+        using var responseWithPastRetryAfter = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
+        };
+        // Set Retry-After to a date 100ms in the PAST (simulates clock skew between client and server)
+        var retryAfterDate = timeProvider.GetUtcNow().AddMilliseconds(-100);
+        responseWithPastRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(retryAfterDate);
+        handler.AddResponse(responseWithPastRetryAfter);
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 3);
+
+        var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
+            BatchUrl,
+            new { api_key = "test", batch = Array.Empty<object>() },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        // Wait for first request to complete
+        await handler.WaitForRequestCountAsync(1);
+
+        // With date in past, delay should be clamped to 0 - even minimal time advancement should trigger retry
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Status);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public async Task ThrowsOperationCanceledExceptionWhenCancellationRequestedDuringDelay()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddResponse(HttpStatusCode.ServiceUnavailable, new { type = "error" });
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 }); // Should never be reached
+        using var httpClient = CreateHttpClient(handler);
+        // Use a long delay so we can cancel during it
+        var options = CreateOptions(maxRetries: 3, initialRetryDelay: TimeSpan.FromMinutes(1));
+        var timeProvider = new FakeTimeProvider();
+        using var cts = new CancellationTokenSource();
+
+        var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
+            BatchUrl,
+            new { api_key = "test", batch = Array.Empty<object>() },
+            timeProvider,
+            options,
+            cts.Token);
+
+        // Wait for first request to complete (the one that returns 503)
+        await handler.WaitForRequestCountAsync(1);
+
+        // Cancel while waiting for retry delay
+        await cts.CancelAsync();
+
+        // TaskCanceledException inherits from OperationCanceledException
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+        Assert.Equal(1, handler.RequestCount); // Should not have retried after cancellation
+    }
+#endif
+
+    [Fact]
     public async Task CapsRetryDelayAtMaxRetryDelay()
     {
         var handler = new FakeRetryHttpMessageHandler();
