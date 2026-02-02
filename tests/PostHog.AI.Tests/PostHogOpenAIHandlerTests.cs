@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -1416,6 +1417,21 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         {
             captureSignal.Dispose();
         }
+    }
+
+    [Fact]
+    public void AddPostHogOpenAIClientThrowsOnNullOrEmptyApiKey()
+    {
+        var services = new ServiceCollection();
+        Assert.Throws<ArgumentException>(() => services.AddPostHogOpenAIClient(""));
+        Assert.Throws<ArgumentException>(() => services.AddPostHogOpenAIClient("   "));
+    }
+
+    [Fact]
+    public void AddPostHogOpenAIClientThrowsWhenPostHogNotRegistered()
+    {
+        var services = new ServiceCollection();
+        Assert.Throws<InvalidOperationException>(() => services.AddPostHogOpenAIClient("sk-test-key"));
     }
 
     public void Dispose()
