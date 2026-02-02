@@ -94,8 +94,7 @@ public class ThePostJsonWithRetryAsyncMethod
     [InlineData(HttpStatusCode.BadRequest)] // 400
     [InlineData(HttpStatusCode.Unauthorized)] // 401
     [InlineData(HttpStatusCode.Forbidden)] // 403
-    // Note: 404 is handled specially in EnsureSuccessfulApiCall and throws HttpRequestException,
-    // which gets caught by the retry logic. This may be unintended behavior.
+    [InlineData(HttpStatusCode.NotFound)] // 404
     public async Task DoesNotRetryOnNonRetryableStatusCode(HttpStatusCode statusCode)
     {
         var handler = new FakeRetryHttpMessageHandler();
@@ -155,7 +154,7 @@ public class ThePostJsonWithRetryAsyncMethod
     public async Task RespectsRetryAfterDeltaHeader()
     {
         var handler = new FakeRetryHttpMessageHandler();
-        var responseWithRetryAfter = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        using var responseWithRetryAfter = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
         {
             Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
         };
@@ -189,7 +188,7 @@ public class ThePostJsonWithRetryAsyncMethod
     public async Task CapsRetryDelayAtMaxRetryDelay()
     {
         var handler = new FakeRetryHttpMessageHandler();
-        var responseWithLargeRetryAfter = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        using var responseWithLargeRetryAfter = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
         {
             Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
         };
@@ -246,7 +245,7 @@ public class ThePostJsonWithRetryAsyncMethod
     }
 
     [Fact]
-    public async Task ExponentialBackoffDoublesDelayEachRetry()
+    public async Task RetriesUntilSuccessAfterMultipleServiceUnavailableResponses()
     {
         var handler = new FakeRetryHttpMessageHandler();
         handler.AddResponse(HttpStatusCode.ServiceUnavailable, new { type = "error" });
