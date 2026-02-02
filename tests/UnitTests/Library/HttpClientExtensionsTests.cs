@@ -413,7 +413,7 @@ public class ThePostCompressedJsonAsyncMethod
         var handler = new LambdaHttpMessageHandler(request =>
         {
             capturedContentEncoding = request.Content?.Headers.ContentEncoding;
-            // Response disposal is handled by HttpClient after processing
+            // Response disposal is handled by PostJsonWithRetryAsync in its finally block
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"status\": 1}")
@@ -468,8 +468,8 @@ sealed class FakeRetryHttpMessageHandler : HttpMessageHandler
         }
     }
 
-    // Note: HttpResponseMessage disposal is handled by the HttpClient pipeline after processing.
-    // The handler creates responses that are owned and disposed by the caller.
+    // Note: HttpResponseMessage disposal is handled by PostJsonWithRetryAsync in its finally block.
+    // The handler creates responses that are returned to and disposed by the calling code.
     public void AddResponse(HttpStatusCode statusCode, object body)
     {
         var json = JsonSerializer.Serialize(body);
