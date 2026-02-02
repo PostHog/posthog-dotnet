@@ -490,6 +490,145 @@ sealed class FakeRetryHttpMessageHandler : HttpMessageHandler
     }
 }
 
+public class TheDoubleWithCapMethod
+{
+    [Fact]
+    public void DoublesValueWhenBelowMax()
+    {
+        var current = TimeSpan.FromMilliseconds(100);
+        var max = TimeSpan.FromMilliseconds(1000);
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(200), result);
+    }
+
+    [Fact]
+    public void CapsAtMaxWhenDoublingWouldExceedMax()
+    {
+        var current = TimeSpan.FromMilliseconds(600);
+        var max = TimeSpan.FromMilliseconds(1000);
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        // 600 * 2 = 1200, which exceeds 1000, so cap at 1000
+        Assert.Equal(TimeSpan.FromMilliseconds(1000), result);
+    }
+
+    [Fact]
+    public void ReturnsMaxWhenCurrentEqualsMax()
+    {
+        var current = TimeSpan.FromMilliseconds(1000);
+        var max = TimeSpan.FromMilliseconds(1000);
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        Assert.Equal(max, result);
+    }
+
+    [Fact]
+    public void ReturnsMaxWhenCurrentExceedsMax()
+    {
+        var current = TimeSpan.FromMilliseconds(1500);
+        var max = TimeSpan.FromMilliseconds(1000);
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        Assert.Equal(max, result);
+    }
+
+    [Fact]
+    public void HandlesOverflowProtectionForLargeValues()
+    {
+        // Use a value that would overflow if doubled without protection
+        var current = TimeSpan.FromTicks(long.MaxValue / 2 + 1);
+        var max = TimeSpan.MaxValue;
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        // Should cap at max instead of overflowing
+        Assert.Equal(max, result);
+    }
+
+    [Fact]
+    public void DoublesCorrectlyAtBoundaryJustBelowHalfMax()
+    {
+        var max = TimeSpan.FromMilliseconds(1000);
+        var current = TimeSpan.FromMilliseconds(499); // Just below half of max
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        // 499 * 2 = 998, which is below 1000
+        Assert.Equal(TimeSpan.FromMilliseconds(998), result);
+    }
+
+    [Fact]
+    public void CapsAtMaxWhenCurrentIsExactlyHalfOfMax()
+    {
+        var max = TimeSpan.FromMilliseconds(1000);
+        var current = TimeSpan.FromMilliseconds(500); // Exactly half of max
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        // 500 * 2 = 1000, equals max
+        Assert.Equal(max, result);
+    }
+
+    [Fact]
+    public void CapsAtMaxWhenCurrentIsJustAboveHalfOfMax()
+    {
+        var max = TimeSpan.FromMilliseconds(1000);
+        var current = TimeSpan.FromMilliseconds(501); // Just above half of max
+
+        var result = HttpClientExtensions.DoubleWithCap(current, max);
+
+        // 501 > 1000/2, so cap at max to avoid exceeding
+        Assert.Equal(max, result);
+    }
+}
+
+public class TheExponentialBackoffBehavior
+{
+    [Fact]
+    public void DelaysDoubleWithEachRetry()
+    {
+        // Verify the exponential backoff sequence: 100ms -> 200ms -> 400ms -> 800ms
+        var initialDelay = TimeSpan.FromMilliseconds(100);
+        var maxDelay = TimeSpan.FromSeconds(30);
+
+        var delay1 = initialDelay;
+        var delay2 = HttpClientExtensions.DoubleWithCap(delay1, maxDelay);
+        var delay3 = HttpClientExtensions.DoubleWithCap(delay2, maxDelay);
+        var delay4 = HttpClientExtensions.DoubleWithCap(delay3, maxDelay);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(100), delay1);
+        Assert.Equal(TimeSpan.FromMilliseconds(200), delay2);
+        Assert.Equal(TimeSpan.FromMilliseconds(400), delay3);
+        Assert.Equal(TimeSpan.FromMilliseconds(800), delay4);
+    }
+
+    [Fact]
+    public void DelaysCappedAtMaxAfterMultipleDoublings()
+    {
+        // Start with 1 second, max of 5 seconds
+        // Sequence: 1s -> 2s -> 4s -> 5s (capped) -> 5s (stays at cap)
+        var initialDelay = TimeSpan.FromSeconds(1);
+        var maxDelay = TimeSpan.FromSeconds(5);
+
+        var delay1 = initialDelay;
+        var delay2 = HttpClientExtensions.DoubleWithCap(delay1, maxDelay);
+        var delay3 = HttpClientExtensions.DoubleWithCap(delay2, maxDelay);
+        var delay4 = HttpClientExtensions.DoubleWithCap(delay3, maxDelay);
+        var delay5 = HttpClientExtensions.DoubleWithCap(delay4, maxDelay);
+
+        Assert.Equal(TimeSpan.FromSeconds(1), delay1);
+        Assert.Equal(TimeSpan.FromSeconds(2), delay2);
+        Assert.Equal(TimeSpan.FromSeconds(4), delay3);
+        Assert.Equal(TimeSpan.FromSeconds(5), delay4); // Capped
+        Assert.Equal(TimeSpan.FromSeconds(5), delay5); // Stays at cap
+    }
+}
+
 /// <summary>
 /// A simple lambda-based HTTP message handler for testing.
 /// </summary>

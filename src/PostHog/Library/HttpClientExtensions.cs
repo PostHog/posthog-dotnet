@@ -131,7 +131,7 @@ internal static class HttpClientExtensions
     /// <summary>
     /// Doubles the delay with overflow protection, capping at maxDelay.
     /// </summary>
-    static TimeSpan DoubleWithCap(TimeSpan current, TimeSpan max)
+    internal static TimeSpan DoubleWithCap(TimeSpan current, TimeSpan max)
     {
         var currentTicks = current.Ticks;
         var maxTicks = max.Ticks;
@@ -211,7 +211,7 @@ internal static class HttpClientExtensions
             }
         }
 
-        var (error, deserializationException) = await ReadApiErrorResultAsync();
+        var (error, deserializationException) = await TryReadApiErrorResultAsync(response, cancellationToken);
 
         return response.StatusCode switch
         {
@@ -220,20 +220,29 @@ internal static class HttpClientExtensions
                 deserializationException),
             _ => new ApiException(error, response.StatusCode, deserializationException)
         };
+    }
 
-        async Task<(ApiErrorResult?, Exception?)> ReadApiErrorResultAsync()
+    /// <summary>
+    /// Attempts to deserialize an API error response. Returns the error result and any
+    /// exception that occurred during deserialization.
+    /// </summary>
+    static async Task<(ApiErrorResult?, Exception?)> TryReadApiErrorResultAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            try
-            {
+            // CA2016: The JsonSerializerOptions overload that accepts CancellationToken isn't available
+            // in all target frameworks. The cancellationToken is still passed to the method.
 #pragma warning disable CA2016
-                var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
-                    cancellationToken: cancellationToken);
-                return (result, null);
-            }
-            catch (JsonException e)
-            {
-                return (null, e);
-            }
+            var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
+                cancellationToken: cancellationToken);
+#pragma warning restore CA2016
+            return (result, null);
+        }
+        catch (JsonException e)
+        {
+            return (null, e);
         }
     }
 
@@ -290,7 +299,7 @@ internal static class HttpClientExtensions
             response.EnsureSuccessStatusCode();
         }
 
-        var (error, exception) = await ReadApiErrorResultAsync();
+        var (error, exception) = await TryReadApiErrorResultAsync(response, cancellationToken);
 
         throw response.StatusCode switch
         {
@@ -298,21 +307,5 @@ internal static class HttpClientExtensions
                 error?.Detail ?? "Unauthorized. Could not deserialize the response for more info.", exception),
             _ => new ApiException(error, response.StatusCode, exception)
         };
-
-        async Task<(ApiErrorResult?, Exception?)> ReadApiErrorResultAsync()
-        {
-            try
-            {
-                // Get defensive here because I'm not sure that `Attr` is always a string, but I believe it be so.
-#pragma warning disable CA2016
-                var result = await response.Content.ReadFromJsonAsync<ApiErrorResult>(
-                    cancellationToken: cancellationToken);
-                return (result, null);
-            }
-            catch (JsonException e)
-            {
-                return (null, e);
-            }
-        }
     }
 }
