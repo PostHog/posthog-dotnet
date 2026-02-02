@@ -80,7 +80,9 @@ internal static class HttpClientExtensions
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadAsStreamAsync(cancellationToken);
+                    using var successResponse = response;
+                    response = null; // Prevent double-disposal in outer finally
+                    var result = await successResponse.Content.ReadAsStreamAsync(cancellationToken);
                     return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
                         result,
                         cancellationToken: cancellationToken);
