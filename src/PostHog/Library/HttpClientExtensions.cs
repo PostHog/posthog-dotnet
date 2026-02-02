@@ -103,6 +103,11 @@ internal static class HttpClientExtensions
                 // Network errors are retryable with default delay, capped at maxDelay
                 retryDelay = currentDelay > maxDelay ? maxDelay : currentDelay;
             }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt <= maxRetries)
+            {
+                // HttpClient timeout (not user cancellation) - retry with backoff
+                retryDelay = currentDelay > maxDelay ? maxDelay : currentDelay;
+            }
             finally
             {
                 response?.Dispose();
@@ -119,6 +124,14 @@ internal static class HttpClientExtensions
             {
                 await Delay(timeProvider, retryDelay.Value, cancellationToken);
                 currentDelay = DoubleWithCap(currentDelay, maxDelay);
+            }
+            else
+            {
+                // Defensive guard: loop should always either retry or throw. We've already thrown
+                // above if exceptionToThrow was set, so reaching here without retryDelay indicates
+                // a logic error that could cause an infinite loop.
+                throw new InvalidOperationException(
+                    "Retry loop invariant broken: neither retry nor exception was set.");
             }
         }
     }
@@ -179,6 +192,10 @@ internal static class HttpClientExtensions
         if (retryAfter.Delta.HasValue)
         {
             delay = retryAfter.Delta.Value;
+            if (delay < TimeSpan.Zero)
+            {
+                delay = TimeSpan.Zero;
+            }
         }
         else if (retryAfter.Date.HasValue)
         {

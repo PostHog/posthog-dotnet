@@ -416,6 +416,97 @@ public class ThePostJsonWithRetryAsyncMethod
 
         Assert.Equal(1, handler.RequestCount); // Only the initial attempt
     }
+
+    [Fact]
+    public async Task ClampsNegativeRetryAfterDeltaToZero()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        using var responseWithNegativeRetryAfter = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
+        };
+        // Negative delta (malformed server response)
+        responseWithNegativeRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(-100));
+        handler.AddResponse(responseWithNegativeRetryAfter);
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 3);
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
+            BatchUrl,
+            new { api_key = "test", batch = Array.Empty<object>() },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        // Wait for first request to complete
+        await handler.WaitForRequestCountAsync(1);
+
+        // With negative delta clamped to 0, minimal time advancement triggers retry
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Status);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task RetriesOnTaskCanceledExceptionFromTimeout()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        // Simulate HttpClient timeout (throws TaskCanceledException with non-canceled token)
+        handler.AddException(new TaskCanceledException("The request timed out."));
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 3);
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
+            BatchUrl,
+            new { api_key = "test", batch = Array.Empty<object>() },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        // Wait for first request to complete before advancing time
+        await handler.WaitForRequestCountAsync(1);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Status);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public async Task DoesNotRetryOnUserCancellation()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        using var cts = new CancellationTokenSource();
+        // Cancel the token before starting
+        await cts.CancelAsync();
+        // The TaskCanceledException will be thrown with a canceled token
+        handler.AddException(new TaskCanceledException("Operation was canceled.", null, cts.Token));
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 }); // Should never be reached
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 3);
+        var timeProvider = new FakeTimeProvider();
+
+        // Should throw immediately, not retry
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            httpClient.PostJsonWithRetryAsync<ApiResult>(
+                BatchUrl,
+                new { api_key = "test", batch = Array.Empty<object>() },
+                timeProvider,
+                options,
+                cts.Token));
+
+        Assert.Equal(1, handler.RequestCount); // Only the initial attempt
+    }
+#endif
 }
 
 public class ThePostCompressedJsonAsyncMethod
