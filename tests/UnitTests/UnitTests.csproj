@@ -41,10 +41,10 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Update="Fixtures\decide-api-result-v3.json">
+      <None Update="Fixtures\flags-api-result-legacy.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-      <None Update="Fixtures\decide-api-result-v3-negated.json">
+      <None Update="Fixtures\flags-api-result-legacy-negated.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
       <None Update="Fixtures\local-evaluation-api-result.json">
@@ -56,7 +56,7 @@
       <None Update="Fixtures\user.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
-      <None Update="Fixtures\decide-api-result-v4.json">
+      <None Update="Fixtures\flags-api-result.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
     </ItemGroup>

@@ -102,8 +102,8 @@ internal sealed class PostHogApiClient : IDisposable
     /// <param name="groupProperties">Optional: What group properties are known. Used to compute flags locally, if personalApiKey is present.  Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="flagKeysToEvaluate">The set of flag keys to evaluate. If empty, this returns all flags.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>A <see cref="DecideApiResult"/>.</returns>
-    public async Task<DecideApiResult?> GetFeatureFlagsAsync(
+    /// <returns>A <see cref="FlagsApiResult"/>.</returns>
+    public async Task<FlagsApiResult?> GetFeatureFlagsAsync(
         string distinctUserId,
         Dictionary<string, object?>? personProperties,
         GroupCollection? groupProperties,
@@ -131,7 +131,7 @@ internal sealed class PostHogApiClient : IDisposable
 
         PrepareAndMutatePayload(payload);
 
-        return await _httpClient.PostJsonAsync<DecideApiResult>(
+        return await _httpClient.PostJsonAsync<FlagsApiResult>(
             endpointUrl,
             payload,
             cancellationToken);

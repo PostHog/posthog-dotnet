@@ -23,50 +23,50 @@ internal static class FakeHttpMessageHandlerExtensions
             HttpMethod.Post,
             responseBody: new { status = 1 });
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponseException(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponseException(
         this FakeHttpMessageHandler handler,
         Exception exception)
         => handler.AddResponseException(FlagsUrl, HttpMethod.Post, exception);
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
-        Func<Dictionary<string, object>, bool> decideRequestPredicate,
+        Func<Dictionary<string, object>, bool> requestPredicate,
         string responseBody)
-        => handler.AddDecideResponse(
-            decideRequestPredicate,
-            responseBody: Deserialize<DecideApiResult>(responseBody));
+        => handler.AddFlagsResponse(
+            requestPredicate,
+            responseBody: Deserialize<FlagsApiResult>(responseBody));
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
         string responseBody)
-        => handler.AddDecideResponse(_ => true, responseBody);
+        => handler.AddFlagsResponse(_ => true, responseBody);
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
-        DecideApiResult responseBody)
-        => handler.AddDecideResponse(
+        FlagsApiResult responseBody)
+        => handler.AddFlagsResponse(
             _ => true,
             responseBody: responseBody);
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
-        Func<Dictionary<string, object>, bool> decideRequestPredicate,
-        DecideApiResult responseBody)
+        Func<Dictionary<string, object>, bool> requestPredicate,
+        FlagsApiResult responseBody)
         => handler.AddResponse(
             FlagsUrl,
             HttpMethod.Post,
-            decideRequestPredicate,
+            requestPredicate,
             responseBody);
 
-    public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, Func<int, string> responseBodyFunc)
+    public static void AddRepeatedFlagsResponse(this FakeHttpMessageHandler handler, int count, Func<int, string> responseBodyFunc)
         => handler.AddRepeatedResponses(
             count,
             FlagsUrl,
             HttpMethod.Post,
             responseBodyFunc: responseBodyFunc);
 
-    public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
-        => handler.AddRepeatedDecideResponse(count, _ => responseBody);
+    public static void AddRepeatedFlagsResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
+        => handler.AddRepeatedFlagsResponse(count, _ => responseBody);
 
     static readonly Uri LocalEvaluationUrl = new("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts");
 

@@ -129,7 +129,7 @@ internal sealed class LocalEvaluator
             return (results, true);
         }
 
-        var fallbackToDecide = false;
+        var fallbackToRemote = false;
 
         foreach (var flag in LocalEvaluationApiResult.Flags)
         {
@@ -146,17 +146,17 @@ internal sealed class LocalEvaluator
             }
             catch (InconclusiveMatchException)
             {
-                // No need to log this, since it's just telling us to fall back to `/decide`
-                fallbackToDecide = true;
+                // No need to log this, since it's just telling us to fall back to the `/flags` endpoint.
+                fallbackToRemote = true;
             }
             catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
             {
-                fallbackToDecide = true;
+                fallbackToRemote = true;
                 _logger.LogErrorUnexpectedException(e);
             }
         }
 
-        return (results, fallbackToDecide);
+        return (results, fallbackToRemote);
     }
 
     public StringOrValue<bool> ComputeFlagLocally(
@@ -541,7 +541,7 @@ internal sealed class LocalEvaluator
         var value = propertyValue ?? throw new InconclusiveMatchException("The filter property value is null");
 
         // The overrideValue is the value that the user or group has set for the property. It's called "override value"
-        // because when passing it to the `/decide` endpoint, it overrides the values stored in PostHog. For local
+        // because when passing it to the `/flags` endpoint, it overrides the values stored in PostHog. For local
         // evaluation, it's a bit of a misnomer because this is the *only* value we're concerned with. I thought about
         // naming this to comparand but wanted to keep the naming consistent with the other client libraries.
         // @haacked
