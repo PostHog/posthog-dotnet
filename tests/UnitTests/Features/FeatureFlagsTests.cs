@@ -3343,7 +3343,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     {
         var container = new TestContainer();
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/decide?v=4"),
+            new Uri("https://us.i.posthog.com/flags/?v=2"),
             HttpMethod.Post,
             new HttpResponseMessage(HttpStatusCode.Unauthorized)
             {

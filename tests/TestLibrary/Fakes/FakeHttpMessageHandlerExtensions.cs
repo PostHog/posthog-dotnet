@@ -9,7 +9,7 @@ using PostHog.Json;
 /// </summary>
 internal static class FakeHttpMessageHandlerExtensions
 {
-    static readonly Uri DecideUrl = new("https://us.i.posthog.com/decide?v=4");
+    static readonly Uri FlagsUrl = new("https://us.i.posthog.com/flags/?v=2");
 
     public static FakeHttpMessageHandler.RequestHandler AddCaptureResponse(this FakeHttpMessageHandler handler) =>
         handler.AddResponse(
@@ -26,7 +26,7 @@ internal static class FakeHttpMessageHandlerExtensions
     public static FakeHttpMessageHandler.RequestHandler AddDecideResponseException(
         this FakeHttpMessageHandler handler,
         Exception exception)
-        => handler.AddResponseException(DecideUrl, HttpMethod.Post, exception);
+        => handler.AddResponseException(FlagsUrl, HttpMethod.Post, exception);
 
     public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
         this FakeHttpMessageHandler handler,
@@ -53,7 +53,7 @@ internal static class FakeHttpMessageHandlerExtensions
         Func<Dictionary<string, object>, bool> decideRequestPredicate,
         DecideApiResult responseBody)
         => handler.AddResponse(
-            DecideUrl,
+            FlagsUrl,
             HttpMethod.Post,
             decideRequestPredicate,
             responseBody);
@@ -61,7 +61,7 @@ internal static class FakeHttpMessageHandlerExtensions
     public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, Func<int, string> responseBodyFunc)
         => handler.AddRepeatedResponses(
             count,
-            DecideUrl,
+            FlagsUrl,
             HttpMethod.Post,
             responseBodyFunc: responseBodyFunc);
 

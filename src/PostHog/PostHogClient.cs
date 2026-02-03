@@ -603,7 +603,7 @@ public sealed class PostHogClient : IPostHogClient
             distinctId,
             personProperties: options?.PersonProperties,
             groups: options?.Groups,
-            fetcher: FetchDecideAsync,
+            fetcher: FetchFlagsAsync,
             cancellationToken: cancellationToken);
 
         if (result.QuotaLimited.Contains("feature_flags"))
@@ -614,9 +614,9 @@ public sealed class PostHogClient : IPostHogClient
 
         return result;
 
-        async Task<FlagsResult> FetchDecideAsync(string distId, CancellationToken ctx)
+        async Task<FlagsResult> FetchFlagsAsync(string distId, CancellationToken ctx)
         {
-            var results = await _apiClient.GetFeatureFlagsFromDecideAsync(
+            var results = await _apiClient.GetFeatureFlagsAsync(
                 distId,
                 options?.PersonProperties,
                 options?.Groups,
