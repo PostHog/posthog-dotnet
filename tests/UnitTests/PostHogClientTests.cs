@@ -131,7 +131,8 @@ public class TheIdentifyPersonAsyncMethod
             sp.AddSingleton<IOptions<PostHogOptions>>(new PostHogOptions
             {
                 ProjectApiKey = "fake-project-api-key",
-                SuperProperties = new Dictionary<string, object> { ["source"] = "repo-name" }
+                SuperProperties = new Dictionary<string, object> { ["source"] = "repo-name" },
+                EnableCompression = false // Disable for tests to avoid gzip handling in fake handler
             });
         });
         container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
@@ -261,13 +262,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "some-event",
+                           "distinct_id": "some-distinct-id",
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -284,7 +287,9 @@ public class TheCaptureMethod
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          },
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "some-event",
+                           "distinct_id": "some-distinct-id",
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -301,7 +306,9 @@ public class TheCaptureMethod
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          },
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "some-event",
+                           "distinct_id": "another-distinct-id",
                            "properties": {
                              "distinct_id": "another-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -318,7 +325,9 @@ public class TheCaptureMethod
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          },
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "some-event",
+                           "distinct_id": "some-distinct-id",
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -335,7 +344,9 @@ public class TheCaptureMethod
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          },
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "some-event",
+                           "distinct_id": "some-distinct-id",
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -352,7 +363,9 @@ public class TheCaptureMethod
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          },
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "some-event",
+                           "distinct_id": "another-distinct-id",
                            "properties": {
                              "distinct_id": "another-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -369,7 +382,9 @@ public class TheCaptureMethod
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          },
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "some-event",
+                           "distinct_id": "third-distinct-id",
                            "properties": {
                              "distinct_id": "third-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -404,13 +419,15 @@ public class TheCaptureMethod
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
 
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "custom-timestamp-event",
+                           "distinct_id": "test-user",
                            "properties": {
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
@@ -439,13 +456,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "custom-timestamp-with-props",
+                           "distinct_id": "test-user",
                            "properties": {
                              "custom_prop": "custom_value",
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
@@ -475,13 +494,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "custom-timestamp-with-groups",
+                           "distinct_id": "test-user",
                            "properties": {
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
@@ -513,13 +534,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "custom-timestamp-with-flags",
+                           "distinct_id": "test-user",
                            "properties": {
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
@@ -553,13 +576,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "custom-timestamp-full",
+                           "distinct_id": "test-user",
                            "properties": {
                              "custom_prop": "custom_value",
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
@@ -594,13 +619,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "custom-timestamp-all-params",
+                           "distinct_id": "test-user",
                            "properties": {
                              "custom_prop": "custom_value",
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
@@ -642,13 +669,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "timestamp-override",
+                           "distinct_id": "test-user",
                            "properties": {
                              "custom_prop": "custom_value",
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
@@ -717,13 +746,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = batchHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "test-event",
+                           "distinct_id": "test-distinct-id",
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -782,13 +813,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = batchHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "test-event",
+                           "distinct_id": "test-distinct-id",
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
@@ -842,13 +875,15 @@ public class TheCaptureMethod
         await client.FlushAsync();
 
         var received = batchHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                      {
                        "api_key": "fake-project-api-key",
                        "historical_migrations": false,
                        "batch": [
                          {
+                           "uuid": "00000000-0000-0000-0000-000000000000",
                            "event": "test-event",
+                           "distinct_id": "test-distinct-id",
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",

@@ -138,14 +138,16 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal(
+        JsonAssert.EqualIgnoringUuids(
             $$"""
               {
                 "api_key": "fake-project-api-key",
                 "historical_migrations": false,
                 "batch": [
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "a-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
@@ -159,7 +161,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "another-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
@@ -173,7 +177,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "another-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": false,
@@ -221,14 +227,16 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal(
+        JsonAssert.EqualIgnoringUuids(
             $$"""
               {
                 "api_key": "fake-project-api-key",
                 "historical_migrations": false,
                 "batch": [
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "a-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
@@ -242,7 +250,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "another-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
@@ -256,7 +266,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "another-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": false,
@@ -364,14 +376,16 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         await client.FlushAsync();
         var received = requestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal(
+        JsonAssert.EqualIgnoringUuids(
             $$"""
               {
                 "api_key": "fake-project-api-key",
                 "historical_migrations": false,
                 "batch": [
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "659df793-429a-4517-84ff-747dfc103e6c",
                     "properties": {
                       "$feature_flag": "complex-flag",
                       "$feature_flag_response": true,
@@ -411,14 +425,16 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal(
+        JsonAssert.EqualIgnoringUuids(
             $$"""
               {
                 "api_key": "fake-project-api-key",
                 "historical_migrations": false,
                 "batch": [
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "a-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
@@ -461,14 +477,16 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal(
+        JsonAssert.EqualIgnoringUuids(
             $$"""
               {
                 "api_key": "fake-project-api-key",
                 "historical_migrations": false,
                 "batch": [
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "a-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
@@ -584,14 +602,16 @@ public class TheIsFeatureFlagEnabledAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal(
+        JsonAssert.EqualIgnoringUuids(
             $$"""
               {
                 "api_key": "fake-project-api-key",
                 "historical_migrations": false,
                 "batch": [
                   {
+                    "uuid": "00000000-0000-0000-0000-000000000000",
                     "event": "$feature_flag_called",
+                    "distinct_id": "a-distinct-id",
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": {{expected}},
@@ -2314,13 +2334,15 @@ public class TheGetFeatureFlagAsyncMethod
         Assert.True(result.IsEnabled);
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "fake-project-api-key",
                          "historical_migrations": false,
                          "batch": [
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "a-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": true,
@@ -2361,13 +2383,15 @@ public class TheGetFeatureFlagAsyncMethod
         Assert.True(result.IsEnabled);
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "fake-project-api-key",
                          "historical_migrations": false,
                          "batch": [
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "a-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": true,
@@ -2424,13 +2448,15 @@ public class TheGetFeatureFlagAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "fake-project-api-key",
                          "historical_migrations": false,
                          "batch": [
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "a-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
@@ -2444,7 +2470,9 @@ public class TheGetFeatureFlagAsyncMethod
                              "timestamp": "2024-01-21T19:08:23\u002B00:00"
                            },
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "another-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
@@ -2458,7 +2486,9 @@ public class TheGetFeatureFlagAsyncMethod
                              "timestamp": "2024-01-21T19:08:24\u002B00:00"
                            },
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "another-distinct-id",
                              "properties": {
                                "$feature_flag": "another-flag-key",
                                "$feature_flag_response": "flag-variant-2",
@@ -2472,7 +2502,9 @@ public class TheGetFeatureFlagAsyncMethod
                              "timestamp": "2024-01-21T19:08:25\u002B00:00"
                            },
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "a-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
@@ -2497,7 +2529,8 @@ public class TheGetFeatureFlagAsyncMethod
         {
             ProjectApiKey = "test-api-key",
             FeatureFlagSentCacheSizeLimit = 20,
-            FeatureFlagSentCacheSlidingExpiration = TimeSpan.FromSeconds(3)
+            FeatureFlagSentCacheSlidingExpiration = TimeSpan.FromSeconds(3),
+            EnableCompression = false // Disable for tests to avoid gzip handling in fake handler
         }));
         var timeProvider = container.FakeTimeProvider;
         var messageHandler = container.FakeHttpMessageHandler;
@@ -2519,13 +2552,15 @@ public class TheGetFeatureFlagAsyncMethod
 
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Equal($$"""
+        JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "test-api-key",
                          "historical_migrations": false,
                          "batch": [
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "a-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
@@ -2539,7 +2574,9 @@ public class TheGetFeatureFlagAsyncMethod
                              "timestamp": "2024-01-21T19:08:23\u002B00:00"
                            },
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "another-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
@@ -2553,7 +2590,9 @@ public class TheGetFeatureFlagAsyncMethod
                              "timestamp": "2024-01-21T19:08:24\u002B00:00"
                            },
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "another-distinct-id",
                              "properties": {
                                "$feature_flag": "another-flag-key",
                                "$feature_flag_response": "flag-variant-2",
@@ -2567,7 +2606,9 @@ public class TheGetFeatureFlagAsyncMethod
                              "timestamp": "2024-01-21T19:08:25\u002B00:00"
                            },
                            {
+                             "uuid": "00000000-0000-0000-0000-000000000000",
                              "event": "$feature_flag_called",
+                             "distinct_id": "a-distinct-id",
                              "properties": {
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
