@@ -236,7 +236,7 @@ public sealed class PostHogClient : IPostHogClient
             distinctId,
             personProperties: null,
             groups: groups,
-            (userId, ctx) => DecideAsync(
+            (userId, ctx) => FetchFlagsAsync(
                 userId,
                 options: new AllFeatureFlagsOptions
                 {
@@ -357,8 +357,8 @@ public sealed class PostHogClient : IPostHogClient
         {
             try
             {
-                // Fallback to Decide
-                flagsResult = await DecideAsync(
+                // Fallback to remote evaluation via the /flags endpoint.
+                flagsResult = await FetchFlagsAsync(
                     distinctId,
                     options ?? new FeatureFlagOptions
                     {
@@ -555,13 +555,13 @@ public sealed class PostHogClient : IPostHogClient
                     await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
                 if (localEvaluator is not null)
                 {
-                    var (localEvaluationResults, fallbackToDecide) = localEvaluator.EvaluateAllFlags(
+                    var (localEvaluationResults, fallbackToRemote) = localEvaluator.EvaluateAllFlags(
                         distinctId,
                         options?.Groups,
                         options?.PersonProperties,
                         warnOnUnknownGroups: false);
 
-                    if (!fallbackToDecide || options is { OnlyEvaluateLocally: true })
+                    if (!fallbackToRemote || options is { OnlyEvaluateLocally: true })
                     {
                         return localEvaluationResults;
                     }
@@ -576,7 +576,7 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            var flagsResult = await DecideAsync(distinctId, options, cancellationToken);
+            var flagsResult = await FetchFlagsAsync(distinctId, options, cancellationToken);
             return flagsResult.Flags;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
@@ -586,14 +586,14 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
-    // Retrieves all the evaluated feature flags from the /decide endpoint.
-    async Task<FlagsResult> DecideAsync(
+    // Retrieves all the evaluated feature flags from the /flags endpoint.
+    async Task<FlagsResult> FetchFlagsAsync(
         string distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken) =>
-        await DecideAsync(_featureFlagsCache, distinctId, options, cancellationToken);
+        await FetchFlagsAsync(_featureFlagsCache, distinctId, options, cancellationToken);
 
-    async Task<FlagsResult> DecideAsync(
+    async Task<FlagsResult> FetchFlagsAsync(
         IFeatureFlagCache cache,
         string distinctId,
         AllFeatureFlagsOptions? options,
@@ -603,7 +603,7 @@ public sealed class PostHogClient : IPostHogClient
             distinctId,
             personProperties: options?.PersonProperties,
             groups: options?.Groups,
-            fetcher: FetchDecideAsync,
+            fetcher: FetchFlagsAsync,
             cancellationToken: cancellationToken);
 
         if (result.QuotaLimited.Contains("feature_flags"))
@@ -614,9 +614,9 @@ public sealed class PostHogClient : IPostHogClient
 
         return result;
 
-        async Task<FlagsResult> FetchDecideAsync(string distId, CancellationToken ctx)
+        async Task<FlagsResult> FetchFlagsAsync(string distId, CancellationToken ctx)
         {
-            var results = await _apiClient.GetFeatureFlagsFromDecideAsync(
+            var results = await _apiClient.GetFeatureFlagsAsync(
                 distId,
                 options?.PersonProperties,
                 options?.Groups,

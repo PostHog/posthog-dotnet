@@ -5,13 +5,10 @@ using PostHog.Library;
 namespace PostHog.Api;
 
 /// <summary>
-/// The union of the API Result for the <c>/decide?v=3</c> and <c>/decide?v=4</c>endpoint.
-/// Some properties are omitted because they are not necessary for server-side scenarios.
-/// When making a decide request, we have to check the response to to see which version of the API we received
-/// (For example, it's possible to make a request for v=4 to an outdated self-hosted instance and receive
-/// a v=3 response).
+/// The API result for the <c>/flags</c> endpoint. Some properties are omitted because they are not necessary
+/// for server-side scenarios.
 /// </summary>
-internal record DecideApiResult
+internal record FlagsApiResult
 {
     /// <summary>
     /// The feature flags that are enabled for the user.
@@ -49,7 +46,7 @@ internal record DecideApiResult
     public long? EvaluatedAt { get; init; }
 }
 
-// This is a transformation of the DecideApiResult to a more usable form.
+// This is a transformation of the FlagsApiResult to a more usable form.
 public record FlagsResult
 {
     /// <summary>
@@ -99,9 +96,9 @@ internal record FeatureFlagWithMetadata : FeatureFlag
     public required string Reason { get; init; }
 }
 
-internal static class DecideResultsExtensions
+internal static class FlagsApiResultExtensions
 {
-    public static FlagsResult ToFlagsResult(this DecideApiResult? results)
+    public static FlagsResult ToFlagsResult(this FlagsApiResult? results)
     {
         if (results is null)
         {
@@ -115,7 +112,7 @@ internal static class DecideResultsExtensions
             Flags = normalized.FeatureFlags is { } featureFlags
                 ? featureFlags.ToReadOnlyDictionary(
                     kvp => kvp.Key,
-                    kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, normalized))
+                    kvp => FeatureFlag.CreateFromFlagsApi(kvp.Key, kvp.Value, normalized))
                 : new Dictionary<string, FeatureFlag>(),
             ErrorsWhileComputingFlags = results.ErrorsWhileComputingFlags,
             RequestId = results.RequestId,
