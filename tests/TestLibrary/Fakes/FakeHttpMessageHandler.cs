@@ -223,7 +223,7 @@ public class FakeHttpMessageHandler : HttpMessageHandler
 
         public async Task<HttpResponseMessage> Respond(HttpRequestMessage requestMessage)
         {
-            Debug.Assert(requestMessage != null, nameof(requestMessage) + " != null");
+            ArgumentNullException.ThrowIfNull(requestMessage);
             _receivedRequests.Add(requestMessage);
             if (requestMessage.Content is not null)
             {

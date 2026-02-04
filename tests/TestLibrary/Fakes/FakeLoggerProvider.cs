@@ -78,7 +78,7 @@ public sealed class FakeLoggerProvider
             {
                 return false;
             }
-            var argDict = new Dictionary<string, object>(pairs);
+            var argDict = new Dictionary<string, object>(pairs.ToDictionary(kv => kv.Key, kv => kv.Value));
             foreach (var (expectedKey, expectedValue) in expectedParameters)
             {
                 if (!argDict.TryGetValue(expectedKey, out var actualValue)
