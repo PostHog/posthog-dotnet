@@ -108,7 +108,7 @@ public class TheGetAndCacheFlagsAsyncMethod
         {
             services.AddSingleton<IFeatureFlagCache>(new HttpContextFeatureFlagCache(httpContextAccessor));
         });
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags":{"flag-key": true, "another-flag-key": "some-value"}}
             """
@@ -137,7 +137,7 @@ public class TheGetAndCacheFlagsAsyncMethod
         {
             services.AddSingleton<IFeatureFlagCache>(new HttpContextFeatureFlagCache(httpContextAccessor));
         });
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags":{"flag-key": true, "another-flag-key": "some-value"}}
             """
@@ -160,7 +160,7 @@ public class TheGetAndCacheFlagsAsyncMethod
         {
             services.AddSingleton<IFeatureFlagCache>(new HttpContextFeatureFlagCache(httpContextAccessor));
         });
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags":{"flag-key": true, "another-flag-key": "some-value"}}
             """

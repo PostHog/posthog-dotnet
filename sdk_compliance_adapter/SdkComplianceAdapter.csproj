@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Exclude from main solution build since it's only for compliance testing -->
+    <IsPackable>false</IsPackable>
+    <!-- Relax code analysis for this test adapter -->
+    <NoWarn>CA1031;CA1812;CA1852;CA1016;CA2007;CA1513;CA1849;CA2000</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\PostHog\PostHog.csproj" />
+  </ItemGroup>
+
+</Project>

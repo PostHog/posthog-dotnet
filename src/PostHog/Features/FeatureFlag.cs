@@ -32,16 +32,16 @@ public record FeatureFlag
     public bool IsEnabled { get; init; } = true;
 
     /// <summary>
-    /// Creates a <see cref="FeatureFlag"/> instance as a result of the /decide endpoint response. Since payloads are
+    /// Creates a <see cref="FeatureFlag"/> instance from the <c>/flags</c> endpoint response. Since payloads are
     /// already calculated, we can look them up by the feature key.
     /// </summary>
     /// <param name="key">The feature flag key.</param>
     /// <param name="value">The value of the flag.</param>
-    /// <param name="apiResult">The Decide Api result.</param>
-    internal static FeatureFlag CreateFromDecide(
+    /// <param name="apiResult">The flags API result.</param>
+    internal static FeatureFlag CreateFromFlagsApi(
         string key,
         StringOrValue<bool> value,
-        DecideApiResult apiResult)
+        FlagsApiResult apiResult)
     {
         var payload = NotNull(apiResult).FeatureFlagPayloads?.GetValueOrDefault(key);
 
