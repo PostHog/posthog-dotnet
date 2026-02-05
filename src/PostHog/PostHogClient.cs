@@ -379,6 +379,7 @@ public sealed class PostHogClient : IPostHogClient
                 }
 
                 response = flagsResult.Flags.GetValueOrDefault(featureKey);
+
                 if (response is null)
                 {
                     errors.Add(FeatureFlagError.FlagMissing);

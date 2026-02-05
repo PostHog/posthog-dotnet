@@ -110,12 +110,18 @@ internal static class DecideResultsExtensions
 
         var normalized = results.NormalizeResult();
 
+        var failedKeys = normalized.Flags is { } flags
+            ? new HashSet<string>(flags.Where(kvp => kvp.Value.Failed == true).Select(kvp => kvp.Key))
+            : new HashSet<string>();
+
         return new FlagsResult
         {
             Flags = normalized.FeatureFlags is { } featureFlags
-                ? featureFlags.ToReadOnlyDictionary(
-                    kvp => kvp.Key,
-                    kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, normalized))
+                ? featureFlags
+                    .Where(kvp => !failedKeys.Contains(kvp.Key))
+                    .ToReadOnlyDictionary(
+                        kvp => kvp.Key,
+                        kvp => FeatureFlag.CreateFromDecide(kvp.Key, kvp.Value, normalized))
                 : new Dictionary<string, FeatureFlag>(),
             ErrorsWhileComputingFlags = results.ErrorsWhileComputingFlags,
             RequestId = results.RequestId,
