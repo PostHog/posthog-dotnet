@@ -244,7 +244,7 @@ public class TheCaptureMethod
         container.FakeHttpMessageHandler.AddCaptureResponse();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         // Only need three responses to cover the three events
-        container.FakeHttpMessageHandler.AddRepeatedDecideResponse(3, i =>
+        container.FakeHttpMessageHandler.AddRepeatedFlagsResponse(3, i =>
             $$"""
             {"featureFlags": {"flag1":true, "flag2":false, "flag3":"variant-{{i}}"} }
             """
@@ -505,7 +505,7 @@ public class TheCaptureMethod
         var container = new TestContainer();
         container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        container.FakeHttpMessageHandler.AddDecideResponse("""{"featureFlags": {"test-flag": true}}""");
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"test-flag": true}}""");
         var client = container.Activate<PostHogClient>();
 
         var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
@@ -584,7 +584,7 @@ public class TheCaptureMethod
         var container = new TestContainer();
         container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        container.FakeHttpMessageHandler.AddDecideResponse("""{"featureFlags": {"test-flag": true}}""");
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"test-flag": true}}""");
         var client = container.Activate<PostHogClient>();
 
         var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);

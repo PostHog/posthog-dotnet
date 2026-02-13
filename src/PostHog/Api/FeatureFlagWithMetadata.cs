@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace PostHog.Api;
 
 /// <summary>
-/// A feature flag as returned by the `/decide?v=4` endpoint.
+/// A feature flag as returned by the <c>/flags</c> endpoint.
 /// </summary>
 internal record FeatureFlagResult
 {

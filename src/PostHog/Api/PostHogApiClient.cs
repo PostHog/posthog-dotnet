@@ -95,22 +95,22 @@ internal sealed class PostHogApiClient : IDisposable
     }
 
     /// <summary>
-    /// Retrieves all the feature flags for the user by making a request to the <c>/decide</c> endpoint.
+    /// Retrieves all the feature flags for the user by making a request to the <c>/flags</c> endpoint.
     /// </summary>
     /// <param name="distinctUserId">The Id of the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="groupProperties">Optional: What group properties are known. Used to compute flags locally, if personalApiKey is present.  Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="flagKeysToEvaluate">The set of flag keys to evaluate. If empty, this returns all flags.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>A <see cref="DecideApiResult"/>.</returns>
-    public async Task<DecideApiResult?> GetFeatureFlagsFromDecideAsync(
+    /// <returns>A <see cref="FlagsApiResult"/>.</returns>
+    public async Task<FlagsApiResult?> GetFeatureFlagsAsync(
         string distinctUserId,
         Dictionary<string, object?>? personProperties,
         GroupCollection? groupProperties,
         IReadOnlyList<string>? flagKeysToEvaluate,
         CancellationToken cancellationToken)
     {
-        var endpointUrl = new Uri(HostUrl, "decide?v=4");
+        var endpointUrl = new Uri(HostUrl, "flags/?v=2");
 
         var payload = new Dictionary<string, object>
         {
@@ -131,7 +131,7 @@ internal sealed class PostHogApiClient : IDisposable
 
         PrepareAndMutatePayload(payload);
 
-        return await _httpClient.PostJsonAsync<DecideApiResult>(
+        return await _httpClient.PostJsonAsync<FlagsApiResult>(
             endpointUrl,
             payload,
             cancellationToken);

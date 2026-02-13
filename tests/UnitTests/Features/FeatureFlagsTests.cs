@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Api;
 using PostHog.Features;
+using PostHog.Library;
 using PostHog.Json;
 using PostHog.Versioning;
 using UnitTests.Fakes;
@@ -60,10 +61,10 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     public async Task ReturnsNullWhenFlagDoesNotExist()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddDecideResponse("""{"featureFlags": {}}""");
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
         var client = container.Activate<PostHogClient>();
         Assert.False(await client.IsFeatureEnabledAsync("doesnt-exist", "distinct-id"));
-        container.FakeHttpMessageHandler.AddDecideResponseException(new HttpRequestException());
+        container.FakeHttpMessageHandler.AddFlagsResponseException(new HttpRequestException());
         Assert.False(await client.IsFeatureEnabledAsync("doesnt-exist", "distinct-id"));
     }
 
@@ -71,7 +72,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     public async Task ReturnsDecideResultWhenNoPersonalApiKey()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddDecideResponse("""{"featureFlags": {"feature-flag": true}}""");
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"feature-flag": true}}""");
         var client = container.Activate<PostHogClient>();
         Assert.True(await client.IsFeatureEnabledAsync("feature-flag", "distinct-id"));
     }
@@ -196,7 +197,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedDecideResponse(4,
+        messageHandler.AddRepeatedFlagsResponse(4,
             """
             {"featureFlags": {"flag-key": true}}
             """
@@ -210,7 +211,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         await client.IsFeatureEnabledAsync("flag-key", "another-distinct-id"); // Cache hit
 
         client.ClearLocalFlagsCache();
-        messageHandler.AddDecideResponse(
+        messageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"flag-key": false}}
             """
@@ -279,7 +280,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedDecideResponse(
+        messageHandler.AddRepeatedFlagsResponse(
             count: 4,
             count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -393,7 +394,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse(
+        messageHandler.AddFlagsResponse(
             """
             {
                 "featureFlags": {"flag-key": true},
@@ -443,7 +444,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse(
+        messageHandler.AddFlagsResponse(
             """
             {
                 "featureFlags": {"flag-key": true},
@@ -550,7 +551,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         var enabled = flagValue.Value ? "true" : "false";
         var variant = flagValue.IsString ? $"\"{flagValue.StringValue}\"" : "null";
 
-        messageHandler.AddDecideResponse(
+        messageHandler.AddFlagsResponse(
             $$"""
               {
                   "flags": {
@@ -887,7 +888,7 @@ public class TheGetFeatureFlagAsyncMethod
         );
 
         // Going to fall back to decide
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"group-flag": "decide-fallback-value"}}
             """
@@ -1036,7 +1037,7 @@ public class TheGetFeatureFlagAsyncMethod
         );
 
         // will fall back on `/decide`, as all properties present for second group, but that group resolves to false
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"complex-flag": "decide-fallback-value"}}
             """
@@ -1056,7 +1057,7 @@ public class TheGetFeatureFlagAsyncMethod
                 })
         );
         // Same as above
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"complex-flag": "decide-fallback-value"}}
             """
@@ -1073,7 +1074,7 @@ public class TheGetFeatureFlagAsyncMethod
         );
 
         // this one will need to fall back
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"complex-flag": "decide-fallback-value"}}
             """
@@ -1163,7 +1164,7 @@ public class TheGetFeatureFlagAsyncMethod
             }
             """
         );
-        container.FakeHttpMessageHandler.AddRepeatedDecideResponse(
+        container.FakeHttpMessageHandler.AddRepeatedFlagsResponse(
             count: 2,
             """
             {"featureFlags": {"beta-feature": "alakazam", "beta-feature2": "alakazam2"}}
@@ -1182,7 +1183,7 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task DoesNotFallbackToDecideWhenOnlyEvaluateLocallyIsTrue()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddRepeatedDecideResponse(
+        container.FakeHttpMessageHandler.AddRepeatedFlagsResponse(
             count: 2,
             """
             {"featureFlags": {"beta-feature": "alakazam", "beta-feature2": "alakazam2"}}
@@ -1317,12 +1318,12 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task NeverReturnsNullDuringRegularEvaluation()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        var requestHandler = container.FakeHttpMessageHandler.AddDecideResponse(
+        var requestHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {}}
             """
         );
-        var secondRequestHandler = container.FakeHttpMessageHandler.AddDecideResponse(
+        var secondRequestHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {}}
             """
@@ -1367,9 +1368,9 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var firstRequestHandler =
-            container.FakeHttpMessageHandler.AddDecideResponseException(new UnauthorizedAccessException());
+            container.FakeHttpMessageHandler.AddFlagsResponseException(new UnauthorizedAccessException());
         var secondRequestHandler =
-            container.FakeHttpMessageHandler.AddDecideResponseException(new UnauthorizedAccessException());
+            container.FakeHttpMessageHandler.AddFlagsResponseException(new UnauthorizedAccessException());
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags":[]}""");
         var client = container.Activate<PostHogClient>();
 
@@ -1384,7 +1385,7 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task ExperienceContinuityFlagNotEvaluatedLocally()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"beta-feature": "decide-fallback-value"}}
             """
@@ -1692,7 +1693,7 @@ public class TheGetFeatureFlagAsyncMethod
             }
             """
         );
-        var decideHandler = container.FakeHttpMessageHandler.AddDecideResponse("{}");
+        var decideHandler = container.FakeHttpMessageHandler.AddFlagsResponse("{}");
         var client = container.Activate<PostHogClient>();
 
         Assert.False(await client.GetFeatureFlagAsync(
@@ -2148,7 +2149,7 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task BooleanFeatureFlagPayloadsFromDecide()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"person-flag": true}, "featureFlagPayloads": {"person-flag": "300"}}
             """
@@ -2240,7 +2241,7 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task CallsDecideWithFlagKeyToEvaluate()
     {
         var container = new TestContainer();
-        var handler = container.FakeHttpMessageHandler.AddDecideResponse(
+        var handler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"beta-feature": "alakazam"}}
             """
@@ -2269,7 +2270,7 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse("""{"featureFlags": {}}""");
+        messageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
         var client = container.Activate<PostHogClient>();
 
         var result = await client.GetFeatureFlagAsync("unknown-flag-key", "distinctId");
@@ -2281,7 +2282,7 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task ReturnsStringFlag()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"flag-key": "premium-experience"}}
             """
@@ -2299,7 +2300,7 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedDecideResponse(
+        messageHandler.AddRepeatedFlagsResponse(
             count: 2,
             responseBody: """{"featureFlags": {"flag-key": true}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -2342,7 +2343,7 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedDecideResponse(
+        messageHandler.AddRepeatedFlagsResponse(
             count: 2,
             responseBody: """{"featureFlags": {"flag-key": true}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -2403,7 +2404,7 @@ public class TheGetFeatureFlagAsyncMethod
         });
         var timeProvider = container.FakeTimeProvider;
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedDecideResponse(
+        messageHandler.AddRepeatedFlagsResponse(
             count: 6,
             responseBody: """{"featureFlags": {"flag-key": "flag-variant-1", "another-flag-key": "flag-variant-2"}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -2500,7 +2501,7 @@ public class TheGetFeatureFlagAsyncMethod
         }));
         var timeProvider = container.FakeTimeProvider;
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedDecideResponse(
+        messageHandler.AddRepeatedFlagsResponse(
             count: 6,
             """{"featureFlags": {"flag-key": "flag-variant-1", "another-flag-key": "flag-variant-2" } }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -2589,7 +2590,7 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedDecideResponse(
+        messageHandler.AddRepeatedFlagsResponse(
             count: 4,
             responseBodyFunc: count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
@@ -2606,7 +2607,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     public async Task RetrievesAllFlagsWithFallback()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
                 {
                    "featureFlags":{
@@ -2692,7 +2693,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var decideRequestHandler = container.FakeHttpMessageHandler.AddDecideResponse(
+        var decideRequestHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
                 {
                    "featureFlags":{
@@ -2793,7 +2794,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     public async Task RetrievesAllFlagsWithFallbackAndEmptyLocalFlags()
     {
         var container = new TestContainer(personalApiKey: "fake-person");
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"beta-feature": "variant-1", "beta-feature2": "variant-2"}}
             """
@@ -2819,7 +2820,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     public async Task RetrievesAllFlagsAndPayloadsWithFallbackAndEmptyLocalFlags()
     {
         var container = new TestContainer(personalApiKey: "fake-person");
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {
                 "featureFlags": {"beta-feature": "variant-1", "beta-feature2": "variant-2"},
@@ -2962,7 +2963,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     public async Task RetrievesAllFlagsWithFallbackButOnlyLocalEvaluationSet()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        var decideHandler = container.FakeHttpMessageHandler.AddDecideResponse(
+        var decideHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
                 {
                    "featureFlags":{
@@ -3048,7 +3049,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     public async Task RetrievesAllFlagsAndPayloadsWithFallbackButOnlyLocalEvaluationSet()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        var decideHandler = container.FakeHttpMessageHandler.AddDecideResponse(
+        var decideHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
                 {
                     "featureFlags": {"beta-feature": "variant-1", "beta-feature2": "variant-2"},
@@ -3306,7 +3307,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     public async Task ReturnsEmptyDictionaryWhenPersonalApiKeyIncorrect()
     {
         var container = new TestContainer("fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddDecideResponse(new DecideApiResult
+        container.FakeHttpMessageHandler.AddFlagsResponse(new FlagsApiResult
         {
             FeatureFlags = new Dictionary<string, StringOrValue<bool>>(),
             FeatureFlagPayloads = new Dictionary<string, string>(),
@@ -3342,7 +3343,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     {
         var container = new TestContainer();
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/decide?v=4"),
+            new Uri("https://us.i.posthog.com/flags/?v=2"),
             HttpMethod.Post,
             new HttpResponseMessage(HttpStatusCode.Unauthorized)
             {
@@ -3372,7 +3373,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         // This is for the flags to evaluate.
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             requestBody =>
                 requestBody.TryGetValue("flag_keys_to_evaluate", out var value)
                 && value is JsonElement jsonElement
@@ -3387,7 +3388,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
                 """
         );
         // This is for all results.
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             requestBody => !requestBody.ContainsKey("flag_keys_to_evaluate"),
             """
             {
@@ -3432,7 +3433,7 @@ public class TheQuotaLimitBehavior
     public async Task ReturnsEmptyDictionaryWhenDecideEndpointQuotaExceeded()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {
               "config": {
@@ -3466,7 +3467,7 @@ public class TheQuotaLimitBehavior
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         // When local evaluation is quota limited, we do not want to fallback to /decide.
-        var decideHandler = container.FakeHttpMessageHandler.AddDecideResponseException(new InvalidOperationException());
+        var decideHandler = container.FakeHttpMessageHandler.AddFlagsResponseException(new InvalidOperationException());
         container.FakeHttpMessageHandler.AddResponse(
             new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts"),
             HttpMethod.Get,
@@ -3498,7 +3499,7 @@ public class TheQuotaLimitBehavior
     public async Task ReturnsFalseWhenSingleFlagLocalEvaluationRequestQuotaExceeded()
     {
         var container = new TestContainer("fake-personal-api-key");
-        var decideHandler = container.FakeHttpMessageHandler.AddDecideResponseException(new InvalidOperationException());
+        var decideHandler = container.FakeHttpMessageHandler.AddFlagsResponseException(new InvalidOperationException());
         container.FakeHttpMessageHandler.AddResponse(
             new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts"),
             HttpMethod.Get,
@@ -3529,7 +3530,7 @@ public class TheQuotaLimitBehavior
     public async Task ReturnsFalseWhenSingleFlagDecideRequestQuotaExceeded()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {
               "config": {
@@ -3625,7 +3626,7 @@ public class TheQuotaLimitBehavior
         );
 
         // Set up decide API to return set-1 (user is in the static cohort)
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {
               "featureFlags": {
@@ -3696,7 +3697,7 @@ public class TheQuotaLimitBehavior
         );
 
         // Set up decide API to return the flag with a payload
-        container.FakeHttpMessageHandler.AddDecideResponse(
+        container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {
               "featureFlags": {
@@ -3722,5 +3723,198 @@ public class TheQuotaLimitBehavior
         Assert.NotNull(result);
         Assert.True(result.IsEnabled);
         JsonAssert.Equal("""{"from":"api","cohort":"static-999"}""", result.Payload);
+    }
+}
+
+public class FeatureFlagErrorTracking
+{
+    [Fact]
+    public async Task IncludesFlagMissingErrorWhenFlagNotInResponse()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("missing-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesErrorsWhileComputingFlagsErrorWhenErrorsWhileComputingFlagsIsTrue()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "featureFlags": {"some-flag": true},
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.True(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesQuotaLimitedErrorWhenQuotaLimitedContainsFeatureFlags()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "featureFlags": {},
+                "quotaLimited": ["feature_flags"]
+            }
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"quota_limited,flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesUnknownErrorWhenUnexpectedExceptionOccurs()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponseException(new InvalidOperationException("Unexpected error"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"unknown_error\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task JoinsMultipleErrorsWithCommas()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "featureFlags": {},
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("missing-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags,flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DoesNotIncludeErrorPropertyWhenNoErrors()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {"featureFlags": {"some-flag": true}}
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.True(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.DoesNotContain("$feature_flag_error", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesTimeoutErrorWhenRequestTimesOut()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponseException(new TaskCanceledException("Request timed out"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"timeout\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesConnectionErrorWhenNetworkFails()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponseException(new HttpRequestException("Network error"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"connection_error\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IncludesApiErrorWithStatusCodeWhenApiFails()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponseException(
+            new ApiException(null, System.Net.HttpStatusCode.InternalServerError, null));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"api_error_500\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PropagatesCancellationWhenUserCancelsRequest()
+    {
+        var container = new TestContainer();
+        var cts = new CancellationTokenSource();
+
+        // Simulate: request starts, then user cancels
+        container.FakeHttpMessageHandler.AddFlagsResponseException(
+            new TaskCanceledException("Cancelled", null, cts.Token));
+#pragma warning disable CA1849 // Call async methods when available
+        cts.Cancel();  // User's token is now cancelled
+#pragma warning restore CA1849
+
+        var client = container.Activate<PostHogClient>();
+
+        // Should throw, NOT silently return false with "timeout" error
+        await Assert.ThrowsAsync<TaskCanceledException>(() =>
+            client.GetFeatureFlagAsync("flag", "id", null, cts.Token));
     }
 }
