@@ -11,6 +11,7 @@ For documentation on the specific packages, see the README files in the respecti
 |---------|---------| -----------
 | [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) | [![NuGet version (PostHog.AspNetCore)](https://img.shields.io/nuget/v/PostHog.AspNetCore.svg?style=flat-square)](https://www.nuget.org/packages/PostHog.AspNetCore/) | For use in ASP.NET Core projects.
 | [PostHog](src/PostHog/README.md) | [![NuGet version (PostHog)](https://img.shields.io/nuget/v/PostHog.svg?style=flat-square)](https://www.nuget.org/packages/PostHog/)                                  | The core library. Over time, this will support client environments such as Unit, Xamarin, etc.
+| [PostHog.AI](src/PostHog.AI/README.md) | [![NuGet version (PostHog.AI)](https://img.shields.io/nuget/v/PostHog.AI.svg?style=flat-square)](https://www.nuget.org/packages/PostHog.AI/) | AI Observability for OpenAI and other LLM providers.
 
 > [!WARNING]  
 > These packages are currently in a pre-release stage. We're making them available publicly to solicit 
@@ -19,7 +20,7 @@ For documentation on the specific packages, see the README files in the respecti
 
 ## Platform
 
-The core [PostHog](./src/PostHog/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility. The [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) package targets `net8.0`.
+The core [PostHog](./src/PostHog/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility. The [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) package targets `net8.0`. The [PostHog.AI](src/PostHog.AI/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility.
 
 ## Building
 
