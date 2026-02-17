@@ -35,7 +35,17 @@ public class PostHogOpenAIHandler : DelegatingHandler
         }
 #endif
 
+        // Capture context eagerly before any async work that might exit the caller's scope
+        var capturedContext = PostHogAIContext.Current;
+
         var stopwatch = Stopwatch.StartNew();
+
+        // Buffer request content so ReadAsStreamAsync doesn't consume the content before base.SendAsync
+        if (request.Content != null)
+        {
+            await request.Content.LoadIntoBufferAsync();
+        }
+
         var requestJson = await ReadContentAndParseJsonAsync(
             request.Content,
             ex => _logger.LogRequestContentFailure(ex),
@@ -50,20 +60,15 @@ public class PostHogOpenAIHandler : DelegatingHandler
         catch (Exception ex)
         {
             stopwatch.Stop();
-            // Capture error event
-            _ = Task.Run(
-                () =>
-                    CaptureEventAsync(
-                        request,
-                        requestJson,
-                        null,
-                        null,
-                        stopwatch.Elapsed.TotalSeconds,
-                        DetermineEventName(request),
-                        ex,
-                        CancellationToken.None
-                    ),
-                CancellationToken.None
+            CaptureEvent(
+                capturedContext,
+                request,
+                requestJson,
+                null,
+                null,
+                stopwatch.Elapsed.TotalSeconds,
+                DetermineEventName(request),
+                ex
             );
             throw;
         }
@@ -74,6 +79,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         if (isStreaming)
         {
+            var privacyMode = capturedContext?.PrivacyMode == true;
 #if NET8_0_OR_GREATER
             var originalStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 #else
@@ -81,7 +87,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
 #endif
             var trackingStream = new TrackingStream(
                 originalStream,
-                (accumulatedResponse, usageNode) =>
+                privacyMode,
+                (accumulatedResponse, usage) =>
                 {
                     stopwatch.Stop();
                     // Construct a pseudo-response JSON object from accumulated data
@@ -91,10 +98,6 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     var choicesArray = new JsonArray();
                     responseNode["choices"] = choicesArray;
 
-                    // If we have content, create a choice.
-                    // Note: This is a simplification. In reality, we might have multiple choices/tool calls.
-                    // For valid AI Generation events, we'd ideally want to reconstruct the full structure.
-                    // But for now, we'll try to at least capture the text.
                     if (!string.IsNullOrEmpty(accumulatedResponse))
                     {
                         var choice = new JsonObject();
@@ -105,24 +108,20 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         choicesArray.Add(choice);
                     }
 
-                    if (usageNode != null)
+                    if (usage != null)
                     {
-                        responseNode["usage"] = usageNode;
+                        responseNode["usage"] = usage;
                     }
 
-                    _ = Task.Run(
-                        () =>
-                            CaptureEventAsync(
-                                request,
-                                requestJson,
-                                response,
-                                responseNode,
-                                stopwatch.Elapsed.TotalSeconds,
-                                eventName,
-                                null,
-                                CancellationToken.None
-                            ),
-                        CancellationToken.None
+                    CaptureEvent(
+                        capturedContext,
+                        request,
+                        requestJson,
+                        response,
+                        responseNode,
+                        stopwatch.Elapsed.TotalSeconds,
+                        eventName,
+                        null
                     );
                 }
             );
@@ -146,19 +145,15 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 cancellationToken
             );
 
-            _ = Task.Run(
-                () =>
-                    CaptureEventAsync(
-                        request,
-                        requestJson,
-                        response,
-                        responseJson,
-                        stopwatch.Elapsed.TotalSeconds,
-                        eventName,
-                        null,
-                        CancellationToken.None
-                    ),
-                CancellationToken.None
+            CaptureEvent(
+                capturedContext,
+                request,
+                requestJson,
+                response,
+                responseJson,
+                stopwatch.Elapsed.TotalSeconds,
+                eventName,
+                null
             );
         }
 
@@ -180,10 +175,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 try
                 {
 #if NET8_0_OR_GREATER
-                    using var stream = await content.ReadAsStreamAsync(cancellationToken);
+                    var bytes = await content.ReadAsByteArrayAsync(cancellationToken);
 #else
-                    using var stream = await content.ReadAsStreamAsync();
+                    var bytes = await content.ReadAsByteArrayAsync();
 #endif
+                    using var stream = new MemoryStream(bytes);
                     jsonNode = await JsonNode.ParseAsync(
                         stream,
                         cancellationToken: cancellationToken
@@ -220,23 +216,20 @@ public class PostHogOpenAIHandler : DelegatingHandler
         return PostHogAIFieldNames.Generation;
     }
 
-    private Task CaptureEventAsync(
+    private void CaptureEvent(
+        PostHogAIContext? context,
         HttpRequestMessage request,
         JsonNode? requestJson,
         HttpResponseMessage? response,
         JsonNode? responseJson,
         double latency,
         string eventName,
-        Exception? exception,
-        CancellationToken _
+        Exception? exception
     )
     {
         try
         {
             var eventProperties = new Dictionary<string, object>();
-
-            // Context integration - get context early so it can be used for privacy checks
-            var context = PostHogAIContext.Current;
 
             // Basic Info
             eventProperties[PostHogAIFieldNames.Provider] = "openai";
@@ -365,7 +358,6 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
                     if (usage["total_tokens"] is JsonValue totalTokens)
                     {
-                        // Optional but good to have
                         eventProperties[PostHogAIFieldNames.TotalTokens] =
                             totalTokens.GetValue<int>();
                     }
@@ -430,8 +422,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 eventProperties[PostHogAIFieldNames.Model] = model ?? "unknown";
 
             // Context integration
-            var traceId = context?.TraceId ?? Guid.NewGuid().ToString(); // Use context traceId or generate new
-            eventProperties[PostHogAIFieldNames.TraceId] = traceId; // Ensure we update the property
+            var traceId = context?.TraceId ?? Guid.NewGuid().ToString();
+            eventProperties[PostHogAIFieldNames.TraceId] = traceId;
 
             var distinctId = context?.DistinctId ?? traceId;
 
@@ -503,8 +495,6 @@ public class PostHogOpenAIHandler : DelegatingHandler
         {
             _logger.LogCaptureFailure(ex);
         }
-
-        return Task.CompletedTask;
 #pragma warning restore CA1031
     }
 
@@ -576,16 +566,20 @@ public class PostHogOpenAIHandler : DelegatingHandler
     private sealed class TrackingStream : Stream
     {
         private readonly Stream _innerStream;
-        private readonly Action<string, JsonNode?> _onComplete;
-        private readonly StringBuilder _accumulatedContent = new(capacity: 4 * 1024);
-        private readonly StringBuilder _lineBuffer = new(capacity: 512); // Buffer for incomplete lines across chunks
+        private readonly bool _privacyMode;
+        private readonly Action<string?, JsonNode?> _onComplete;
+        private readonly StringBuilder? _accumulatedContent;
+        private readonly StringBuilder _lineBuffer = new(capacity: 512);
         private JsonNode? _usage;
         private bool _completed;
 
-        public TrackingStream(Stream innerStream, Action<string, JsonNode?> onComplete)
+        public TrackingStream(Stream innerStream, bool privacyMode, Action<string?, JsonNode?> onComplete)
         {
             _innerStream = innerStream;
+            _privacyMode = privacyMode;
             _onComplete = onComplete;
+            // Only allocate the content buffer when not in privacy mode
+            _accumulatedContent = privacyMode ? null : new StringBuilder(capacity: 4 * 1024);
         }
 
         public override bool CanRead => _innerStream.CanRead;
@@ -660,21 +654,19 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 // Append chunk to line buffer
                 _lineBuffer.Append(chunk);
 
-                // Process complete SSE messages (terminated by \r\n\r\n or \n\n)
-                // Convert to string once per chunk to avoid multiple ToString() calls in the loop
-                while (_lineBuffer.Length > 0)
-                {
-                    var bufferText = _lineBuffer.ToString();
-                    if (string.IsNullOrEmpty(bufferText))
-                        break;
+                // Convert to string once per ProcessChunk call to avoid O(n²) ToString() per iteration
+                var bufferText = _lineBuffer.ToString();
+                var startIndex = 0;
 
+                while (startIndex < bufferText.Length)
+                {
                     // Look for complete SSE message (terminated by \r\n\r\n or \n\n)
-                    var messageEnd = bufferText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                    var messageEnd = bufferText.IndexOf("\r\n\r\n", startIndex, StringComparison.Ordinal);
                     var lineEndLength = 4;
 
                     if (messageEnd == -1)
                     {
-                        messageEnd = bufferText.IndexOf("\n\n", StringComparison.Ordinal);
+                        messageEnd = bufferText.IndexOf("\n\n", startIndex, StringComparison.Ordinal);
                         if (messageEnd == -1)
                         {
                             // No complete message found, keep remaining buffer
@@ -683,15 +675,20 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         lineEndLength = 2;
                     }
 
-                    // Extract complete message (including the line ending)
-                    var messageLength = messageEnd + lineEndLength;
-                    var message = bufferText.Substring(0, messageLength);
-
-                    // Remove processed message from buffer
-                    _lineBuffer.Remove(0, messageLength);
+                    // Extract complete message
+                    var messageLength = messageEnd + lineEndLength - startIndex;
+                    var message = bufferText.Substring(startIndex, messageLength);
+                    startIndex = messageEnd + lineEndLength;
 
                     // Process the complete SSE message
                     ProcessSSEMessage(message);
+                }
+
+                // Rebuild buffer with only the unparsed tail
+                _lineBuffer.Clear();
+                if (startIndex < bufferText.Length)
+                {
+                    _lineBuffer.Append(bufferText, startIndex, bufferText.Length - startIndex);
                 }
             }
             catch (Exception)
@@ -736,27 +733,32 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 var data = dataSpan.ToString();
                 try
                 {
-                    var node = JsonNode.Parse(data);
-                    if (node != null)
-                    {
-                        // Check for usage (usually in the last chunk, but can appear earlier for some models)
-                        if (node["usage"] != null && _usage == null) // Only capture first usage if multiple sent
-                        {
-                            _usage = node["usage"]?.DeepClone();
-                        }
+                    using var doc = JsonDocument.Parse(data);
+                    var root = doc.RootElement;
 
-                        // Check for delta content
+                    // Check for usage (usually in the last chunk)
+                    if (root.TryGetProperty("usage", out var usageElement) && _usage == null)
+                    {
+                        // Extract usage into a JsonNode by re-parsing the raw text
+                        _usage = JsonNode.Parse(usageElement.GetRawText());
+                    }
+
+                    // Check for delta content (skip in privacy mode)
+                    if (
+                        _accumulatedContent != null
+                        && root.TryGetProperty("choices", out var choicesElement)
+                        && choicesElement.ValueKind == JsonValueKind.Array
+                        && choicesElement.GetArrayLength() > 0
+                    )
+                    {
+                        var firstChoice = choicesElement[0];
                         if (
-                            node["choices"] is JsonArray choices
-                            && choices.Count > 0
-                            && choices[0] is JsonObject firstChoiceObject
-                            && firstChoiceObject.TryGetPropertyValue("delta", out var deltaNode)
-                            && deltaNode is JsonObject deltaObject
-                            && deltaObject.TryGetPropertyValue("content", out var contentNode)
-                            && contentNode is JsonValue contentValue
+                            firstChoice.TryGetProperty("delta", out var deltaElement)
+                            && deltaElement.TryGetProperty("content", out var contentElement)
+                            && contentElement.ValueKind == JsonValueKind.String
                         )
                         {
-                            var content = contentValue.ToString();
+                            var content = contentElement.GetString();
                             if (!string.IsNullOrEmpty(content))
                             {
                                 _accumulatedContent.Append(content);
@@ -776,7 +778,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
             if (disposing && !_completed)
             {
                 _completed = true;
-                _onComplete(_accumulatedContent.ToString(), _usage);
+                _onComplete(_accumulatedContent?.ToString(), _usage);
             }
 
             if (disposing)

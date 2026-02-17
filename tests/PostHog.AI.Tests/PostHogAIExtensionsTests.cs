@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace PostHog.AI.Tests;
 
@@ -29,9 +30,9 @@ public sealed class PostHogAIExtensionsTests
     public void AddPostHogOpenAIClientSucceedsWhenPostHogIsRegistered()
     {
         var services = new ServiceCollection();
-        // Register a mock IPostHogClient
-        services.AddSingleton<IPostHogClient>(
-            new Moq.Mock<IPostHogClient>().Object
+        // Register a substitute IPostHogClient
+        services.AddSingleton(
+            Substitute.For<IPostHogClient>()
         );
 
         // Should not throw
