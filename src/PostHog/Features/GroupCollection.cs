@@ -47,15 +47,15 @@ public class GroupCollection : ICollection<Group>
     /// <summary>
     /// Adds a <see cref="Group"/> to this collection.
     /// </summary>
-    /// <param name="group">The group to add.</param>
+    /// <param name="item">The group to add.</param>
     /// <exception cref="ArgumentNullException">Thrown if a group with this group type already exists.</exception>
-    public void Add(Group group)
+    public void Add(Group item)
     {
-        if (_groups.TryAdd(NotNull(group).GroupType, group))
+        if (_groups.TryAdd(NotNull(item).GroupType, item))
         {
             return;
         }
-        ThrowArgumentExceptionIfGroupWithGroupTypeExists(group.GroupKey);
+        ThrowArgumentExceptionIfGroupWithGroupTypeExists(item.GroupKey);
     }
 
     /// <summary>
@@ -66,9 +66,9 @@ public class GroupCollection : ICollection<Group>
     /// <summary>
     /// Determines whether this collection contains the specified group type.
     /// </summary>
-    /// <param name="group">The group.</param>
+    /// <param name="item">The group.</param>
     /// <returns><c>true</c> if a group with the same type exists. Otherwise <c>false</c>.</returns>
-    public bool Contains(Group group) => Contains(NotNull(group).GroupType);
+    public bool Contains(Group item) => Contains(NotNull(item).GroupType);
 
     /// <summary>
     /// Determines whether this collection contains the specified group type.
@@ -87,9 +87,9 @@ public class GroupCollection : ICollection<Group>
     /// <summary>
     /// Removes a group from this collection based on its group type.
     /// </summary>
-    /// <param name="group">The group to remove.</param>
+    /// <param name="item">The group to remove.</param>
     /// <returns><c>true</c> if the group was removed. <c>false</c> if the group does not exist.</returns>
-    public bool Remove(Group group) => Remove(NotNull(group).GroupType);
+    public bool Remove(Group item) => Remove(NotNull(item).GroupType);
 
     /// <summary>
     /// Removes a group from this collection based on its group type.
