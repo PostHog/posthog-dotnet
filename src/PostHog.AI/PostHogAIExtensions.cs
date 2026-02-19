@@ -1,6 +1,10 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using Microsoft.Extensions.DependencyInjection;
+#if NET8_0_OR_GREATER
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+#endif
 using OpenAI;
 
 namespace PostHog.AI;
@@ -84,4 +88,30 @@ public static class PostHogAIExtensions
 
         return builder;
     }
+
+#if NET8_0_OR_GREATER
+    /// <summary>
+    /// Adds the <see cref="PostHogChatClient"/> to the <see cref="ChatClientBuilder"/> pipeline
+    /// to capture <c>$ai_generation</c> events in PostHog.
+    /// </summary>
+    /// <param name="builder">The <see cref="ChatClientBuilder"/>.</param>
+    /// <returns>The <see cref="ChatClientBuilder"/> so that additional calls can be chained.</returns>
+    public static ChatClientBuilder UsePostHog(this ChatClientBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return builder.Use(
+            (innerClient, services) =>
+            {
+                var postHogClient = services.GetService<IPostHogClient>();
+                if (postHogClient is null)
+                {
+                    return innerClient;
+                }
+
+                var logger = services.GetRequiredService<ILogger<PostHogChatClient>>();
+                return new PostHogChatClient(innerClient, postHogClient, logger);
+            }
+        );
+    }
+#endif
 }
