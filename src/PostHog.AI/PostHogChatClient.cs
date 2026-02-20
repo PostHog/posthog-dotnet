@@ -215,19 +215,17 @@ public class PostHogChatClient : DelegatingChatClient
                 eventProperties[PostHogAIFieldNames.SessionId] = context.SessionId;
             }
 
-            if (context?.SpanId != null)
-            {
-                eventProperties[PostHogAIFieldNames.SpanId] = context.SpanId;
-            }
+            // Generate a unique span ID per generation event
+            eventProperties[PostHogAIFieldNames.SpanId] = ActivitySpanId.CreateRandom().ToString();
 
-            if (context?.SpanName != null)
-            {
-                eventProperties[PostHogAIFieldNames.SpanName] = context.SpanName;
-            }
+            // Use model as span name for individual generations
+            eventProperties[PostHogAIFieldNames.SpanName] = model ?? "chat-completion";
 
-            if (context?.ParentId != null)
+            // Context's SpanId becomes this event's parent, linking back to the scope
+            var parentId = context?.SpanId ?? context?.ParentId;
+            if (parentId != null)
             {
-                eventProperties[PostHogAIFieldNames.ParentId] = context.ParentId;
+                eventProperties[PostHogAIFieldNames.ParentId] = parentId;
             }
 
             // Merge context properties

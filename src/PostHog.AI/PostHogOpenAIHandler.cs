@@ -433,28 +433,30 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 eventProperties[PostHogAIFieldNames.SessionId] = context.SessionId;
             }
 
-            // Span ID
-            if (!eventProperties.ContainsKey(PostHogAIFieldNames.SpanId) && context?.SpanId != null)
+            // Span ID - generate unique per event
+            if (!eventProperties.ContainsKey(PostHogAIFieldNames.SpanId))
             {
-                eventProperties[PostHogAIFieldNames.SpanId] = context.SpanId;
+                eventProperties[PostHogAIFieldNames.SpanId] =
+                    ActivitySpanId.CreateRandom().ToString();
             }
 
-            // Span Name
-            if (
-                !eventProperties.ContainsKey(PostHogAIFieldNames.SpanName)
-                && context?.SpanName != null
-            )
+            // Span Name - use model
+            if (!eventProperties.ContainsKey(PostHogAIFieldNames.SpanName))
             {
-                eventProperties[PostHogAIFieldNames.SpanName] = context.SpanName;
+                var spanModel = eventProperties.TryGetValue(PostHogAIFieldNames.Model, out var sm)
+                    ? sm?.ToString()
+                    : null;
+                eventProperties[PostHogAIFieldNames.SpanName] = spanModel ?? "chat-completion";
             }
 
-            // Parent ID
-            if (
-                !eventProperties.ContainsKey(PostHogAIFieldNames.ParentId)
-                && context?.ParentId != null
-            )
+            // Parent ID - context SpanId becomes parent
+            if (!eventProperties.ContainsKey(PostHogAIFieldNames.ParentId))
             {
-                eventProperties[PostHogAIFieldNames.ParentId] = context.ParentId;
+                var parentId = context?.SpanId ?? context?.ParentId;
+                if (parentId != null)
+                {
+                    eventProperties[PostHogAIFieldNames.ParentId] = parentId;
+                }
             }
 
             // Merge context properties (this will override context properties if they exist in Properties dict)
