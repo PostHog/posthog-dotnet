@@ -218,7 +218,8 @@ public class PostHogChatClientTests
             await client.GetResponseAsync(messages);
         }
 
-        // Assert
+        // Assert — span ID should be unique (not the context's span ID),
+        // and the context's span ID should become the parent ID
         _mockPostHogClient.Verify(
             x =>
                 x.Capture(
@@ -226,7 +227,8 @@ public class PostHogChatClientTests
                     PostHogAIFieldNames.Generation,
                     It.Is<Dictionary<string, object>>(props =>
                         (string)props[PostHogAIFieldNames.TraceId] == "trace-abc"
-                        && (string)props[PostHogAIFieldNames.SpanId] == "span-xyz"
+                        && (string)props[PostHogAIFieldNames.SpanId] != "span-xyz"
+                        && (string)props[PostHogAIFieldNames.ParentId] == "span-xyz"
                         && (string)props[PostHogAIFieldNames.SessionId] == "session-456"
                     ),
                     null,
@@ -235,6 +237,68 @@ public class PostHogChatClientTests
                 ),
             Times.Once
         );
+    }
+
+    [Fact]
+    public async Task MultipleCallsInSameScopeGetUniqueSpanIds()
+    {
+        // Arrange
+        var expectedResponse = new ChatResponse(
+            [new ChatMessage(ChatRole.Assistant, "Hello!")]
+        )
+        {
+            ModelId = "gpt-4",
+        };
+
+        using var innerClient = new TestChatClient { ResponseToReturn = expectedResponse };
+
+        using var client = new PostHogChatClient(
+            innerClient,
+            _mockPostHogClient.Object,
+            _mockLogger.Object
+        );
+
+        var messages = new List<ChatMessage> { new(ChatRole.User, "Hi") };
+        var capturedSpanIds = new List<string>();
+
+        _mockPostHogClient
+            .Setup(x =>
+                x.Capture(
+                    It.IsAny<string>(),
+                    It.IsAny<string>(),
+                    It.IsAny<Dictionary<string, object>>(),
+                    It.IsAny<GroupCollection?>(),
+                    It.IsAny<bool>(),
+                    It.IsAny<DateTimeOffset?>()
+                )
+            )
+            .Callback<string, string, Dictionary<string, object>, GroupCollection?, bool, DateTimeOffset?>(
+                (_, _, props, _, _, _) =>
+                {
+                    if (props.TryGetValue(PostHogAIFieldNames.SpanId, out var spanId))
+                    {
+                        capturedSpanIds.Add((string)spanId);
+                    }
+                }
+            );
+
+        // Act — two calls within the same scope
+        using (
+            PostHogAIContext.BeginScope(
+                distinctId: "user-123",
+                traceId: "trace-abc",
+                spanId: "scope-span"
+            )
+        )
+        {
+            await client.GetResponseAsync(messages);
+            await client.GetResponseAsync(messages);
+        }
+
+        // Assert — two different span IDs, neither matching the scope span ID
+        Assert.Equal(2, capturedSpanIds.Count);
+        Assert.NotEqual(capturedSpanIds[0], capturedSpanIds[1]);
+        Assert.DoesNotContain("scope-span", capturedSpanIds);
     }
 
     [Fact]
