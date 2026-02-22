@@ -289,7 +289,7 @@ internal static class HttpClientExtensions
         CancellationToken cancellationToken)
     {
         // Stream JSON directly into gzip to avoid intermediate allocation
-        using var memoryStream = new MemoryStream();
+        using var memoryStream = new MemoryStream(4096);
         using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
         {
             await JsonSerializer.SerializeAsync(gzipStream, content, JsonSerializerHelper.Options, cancellationToken);
@@ -318,19 +318,6 @@ internal static class HttpClientExtensions
             return;
         }
 
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            // Allow 404 exception to propagate up.
-            response.EnsureSuccessStatusCode();
-        }
-
-        var (error, exception) = await TryReadApiErrorResultAsync(response, cancellationToken);
-
-        throw response.StatusCode switch
-        {
-            HttpStatusCode.Unauthorized => new UnauthorizedAccessException(
-                error?.Detail ?? "Unauthorized. Could not deserialize the response for more info.", exception),
-            _ => new ApiException(error, response.StatusCode, exception)
-        };
+        throw await CreateApiException(response, cancellationToken);
     }
 }

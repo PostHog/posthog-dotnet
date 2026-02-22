@@ -92,10 +92,8 @@ public class ThePostJsonWithRetryAsyncMethod
 
     [Theory]
     [InlineData(HttpStatusCode.BadRequest)] // 400
-    [InlineData(HttpStatusCode.Unauthorized)] // 401
     [InlineData(HttpStatusCode.Forbidden)] // 403
-    [InlineData(HttpStatusCode.NotFound)] // 404
-    public async Task DoesNotRetryOnNonRetryableStatusCode(HttpStatusCode statusCode)
+    public async Task DoesNotRetryOnNonRetryableStatusCodeAndThrowsApiException(HttpStatusCode statusCode)
     {
         var handler = new FakeRetryHttpMessageHandler();
         handler.AddResponse(statusCode, new { type = "error", detail = "Bad request" });
@@ -104,7 +102,49 @@ public class ThePostJsonWithRetryAsyncMethod
         var options = CreateOptions(maxRetries: 3);
         var timeProvider = new FakeTimeProvider();
 
-        await Assert.ThrowsAnyAsync<Exception>(() =>
+        await Assert.ThrowsAsync<ApiException>(() =>
+            httpClient.PostJsonWithRetryAsync<ApiResult>(
+                BatchUrl,
+                new { api_key = "test", batch = Array.Empty<object>() },
+                timeProvider,
+                options,
+                CancellationToken.None));
+
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task DoesNotRetryOnUnauthorizedAndThrowsUnauthorizedAccessException()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddResponse(HttpStatusCode.Unauthorized, new { type = "error", detail = "Invalid API key" });
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 }); // Should never be reached
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 3);
+        var timeProvider = new FakeTimeProvider();
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            httpClient.PostJsonWithRetryAsync<ApiResult>(
+                BatchUrl,
+                new { api_key = "test", batch = Array.Empty<object>() },
+                timeProvider,
+                options,
+                CancellationToken.None));
+
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task DoesNotRetryOnNotFoundAndThrowsHttpRequestException()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddResponse(HttpStatusCode.NotFound, new { type = "error", detail = "Not found" });
+        handler.AddResponse(HttpStatusCode.OK, new { status = 1 }); // Should never be reached
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 3);
+        var timeProvider = new FakeTimeProvider();
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
             httpClient.PostJsonWithRetryAsync<ApiResult>(
                 BatchUrl,
                 new { api_key = "test", batch = Array.Empty<object>() },
