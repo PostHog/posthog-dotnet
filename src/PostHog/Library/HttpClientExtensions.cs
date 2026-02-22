@@ -64,13 +64,12 @@ internal static class HttpClientExtensions
         while (true)
         {
             attempt++;
-            HttpResponseMessage? response = null;
             TimeSpan? retryDelay = null;
             Exception? exceptionToThrow = null;
 
             try
             {
-                response = enableCompression
+                using var response = enableCompression
                     ? await PostCompressedJsonAsync(httpClient, requestUri, content, cancellationToken)
                     : await httpClient.PostAsJsonAsync(
                         requestUri,
@@ -80,9 +79,7 @@ internal static class HttpClientExtensions
 
                 if (response.IsSuccessStatusCode)
                 {
-                    using var successResponse = response;
-                    response = null; // Prevent double-disposal in outer finally
-                    var result = await successResponse.Content.ReadAsStreamAsync(cancellationToken);
+                    var result = await response.Content.ReadAsStreamAsync(cancellationToken);
                     return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
                         result,
                         cancellationToken: cancellationToken);
@@ -109,10 +106,6 @@ internal static class HttpClientExtensions
             {
                 // HttpClient timeout (not user cancellation) - retry with backoff
                 retryDelay = currentDelay > maxDelay ? maxDelay : currentDelay;
-            }
-            finally
-            {
-                response?.Dispose();
             }
 
             // Throw outside try-catch so non-retryable errors won't be caught by retry logic
