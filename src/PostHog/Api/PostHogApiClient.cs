@@ -74,7 +74,12 @@ internal sealed class PostHogApiClient : IDisposable
             ["batch"] = events.ToReadOnlyList()
         };
 
-        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, cancellationToken)
+        return await _httpClient.PostJsonWithRetryAsync<ApiResult>(
+                   endpointUrl,
+                   payload,
+                   _timeProvider,
+                   _options.Value,
+                   cancellationToken)
                ?? new ApiResult(0);
     }
 

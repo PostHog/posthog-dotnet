@@ -22,7 +22,7 @@ public class ApiException : Exception
     }
 
     public ApiException(ApiErrorResult? error, HttpStatusCode statusCode, Exception? innerException)
-        : base(error?.Detail, innerException)
+        : base(error?.Detail ?? $"API request failed with status code {(int)statusCode} ({statusCode}).", innerException)
     {
         Code = error?.Code;
         ErrorType = error?.Type;
