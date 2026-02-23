@@ -365,22 +365,18 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     // Cache properties (may not be present in OpenAI responses, but extract if available)
                     if (usage["cache_read_input_tokens"] is JsonValue cacheReadTokens)
                     {
-                        if (cacheReadTokens.TryGetValue<int>(out var cacheReadInt))
-                            eventProperties[PostHogAIFieldNames.CacheReadInputTokens] =
-                                cacheReadInt;
-                        else
-                            eventProperties[PostHogAIFieldNames.CacheReadInputTokens] =
-                                cacheReadTokens.ToString();
+                        eventProperties[PostHogAIFieldNames.CacheReadInputTokens] =
+                            cacheReadTokens.TryGetValue<int>(out var cacheReadInt)
+                                ? cacheReadInt
+                                : cacheReadTokens.ToString();
                     }
 
                     if (usage["cache_creation_input_tokens"] is JsonValue cacheCreationTokens)
                     {
-                        if (cacheCreationTokens.TryGetValue<int>(out var cacheCreationInt))
-                            eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
-                                cacheCreationInt;
-                        else
-                            eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
-                                cacheCreationTokens.ToString();
+                        eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
+                            cacheCreationTokens.TryGetValue<int>(out var cacheCreationInt)
+                                ? cacheCreationInt
+                                : cacheCreationTokens.ToString();
                     }
                 }
 
