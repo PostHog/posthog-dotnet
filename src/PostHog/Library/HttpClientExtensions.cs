@@ -64,19 +64,38 @@ internal static class HttpClientExtensions
         while (true)
         {
             attempt++;
-            TimeSpan? retryDelay = null;
-            Exception? exceptionToThrow = null;
 
+            HttpResponseMessage response;
             try
             {
-                using var response = enableCompression
+                response = enableCompression
                     ? await PostCompressedJsonAsync(httpClient, requestUri, content, cancellationToken)
                     : await httpClient.PostAsJsonAsync(
                         requestUri,
                         content,
                         JsonSerializerHelper.Options,
                         cancellationToken);
+            }
+            catch (HttpRequestException) when (attempt <= maxRetries)
+            {
+                // Network errors are retryable with default delay, capped at maxDelay
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt <= maxRetries)
+            {
+                // HttpClient timeout (not user cancellation) - retry with backoff
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
 
+            // Response processing is outside the try-catch so that exceptions from
+            // CreateApiException (which may return HttpRequestException for 404s) won't
+            // be caught by the retry logic above.
+            using (response)
+            {
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -85,49 +104,17 @@ internal static class HttpClientExtensions
                         cancellationToken: cancellationToken);
                 }
 
-                // Check if we should retry
                 if (!ShouldRetry(response.StatusCode) || attempt > maxRetries)
                 {
-                    // Capture exception to throw after disposal - throwing inside try would be caught by retry logic
-                    exceptionToThrow = await CreateApiException(response, cancellationToken);
+                    throw await CreateApiException(response, cancellationToken);
                 }
-                else
-                {
-                    // Signal retry with Retry-After header support
-                    retryDelay = GetRetryDelay(response, currentDelay, maxDelay, timeProvider);
-                }
-            }
-            catch (HttpRequestException) when (attempt <= maxRetries)
-            {
-                // Network errors are retryable with default delay, capped at maxDelay
-                retryDelay = currentDelay > maxDelay ? maxDelay : currentDelay;
-            }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt <= maxRetries)
-            {
-                // HttpClient timeout (not user cancellation) - retry with backoff
-                retryDelay = currentDelay > maxDelay ? maxDelay : currentDelay;
+
+                await Delay(timeProvider,
+                    GetRetryDelay(response, currentDelay, maxDelay, timeProvider),
+                    cancellationToken);
             }
 
-            // Throw outside try-catch so non-retryable errors won't be caught by retry logic
-            if (exceptionToThrow != null)
-            {
-                throw exceptionToThrow;
-            }
-
-            // Retry delay and exponential backoff (single location for both code paths)
-            if (retryDelay.HasValue)
-            {
-                await Delay(timeProvider, retryDelay.Value, cancellationToken);
-                currentDelay = DoubleWithCap(currentDelay, maxDelay);
-            }
-            else
-            {
-                // Defensive guard: loop should always either retry or throw. We've already thrown
-                // above if exceptionToThrow was set, so reaching here without retryDelay indicates
-                // a logic error that could cause an infinite loop.
-                throw new InvalidOperationException(
-                    "Retry loop invariant broken: neither retry nor exception was set.");
-            }
+            currentDelay = DoubleWithCap(currentDelay, maxDelay);
         }
     }
 
@@ -210,9 +197,8 @@ internal static class HttpClientExtensions
     }
 
     /// <summary>
-    /// Creates an exception for a failed API response without throwing it.
-    /// This allows the exception to be thrown outside the try-catch block so non-retryable errors
-    /// won't be caught by retry logic.
+    /// Creates an appropriate exception for a failed API response. Returns <see cref="HttpRequestException"/>
+    /// for 404, <see cref="UnauthorizedAccessException"/> for 401, and <see cref="ApiException"/> for all others.
     /// </summary>
     static async Task<Exception> CreateApiException(
         HttpResponseMessage response,
