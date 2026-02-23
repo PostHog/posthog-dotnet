@@ -162,12 +162,8 @@ using (PostHogAIContext.BeginScope(
     parentId: null))
 {
     // All OpenAI API calls within this scope will include the context
-    var response = await openAIClient.GetChatCompletionsAsync(
-        new ChatCompletionCreateOptions
-        {
-            Model = "gpt-4",
-            Messages = { new ChatRequestUserMessage("Summarize this text") }
-        });
+    var chatClient = openAIClient.GetChatClient("gpt-4");
+    var response = await chatClient.CompleteChatAsync("Summarize this text");
 }
 // Context is automatically restored when the scope ends
 ```
@@ -191,7 +187,8 @@ using (PostHogAIContext.BeginScope(
         parentId: "span-parent")) // Link to parent
     {
         // First AI call
-        await openAIClient.GetChatCompletionsAsync(...);
+        var chatClient = openAIClient.GetChatClient("gpt-4");
+        await chatClient.CompleteChatAsync("Summarize the document");
     }
 
     // Child span 2
@@ -202,7 +199,8 @@ using (PostHogAIContext.BeginScope(
         parentId: "span-parent"))
     {
         // Second AI call
-        await openAIClient.GetChatCompletionsAsync(...);
+        var chatClient = openAIClient.GetChatClient("gpt-4");
+        await chatClient.CompleteChatAsync("Extract keywords from the document");
     }
 }
 ```
@@ -227,7 +225,8 @@ using (PostHogAIContext.BeginScope(
 {
     // Properties dictionary takes precedence over context properties
     // In this case, $ai_session_id will be "override-session"
-    await openAIClient.GetChatCompletionsAsync(...);
+    var chatClient = openAIClient.GetChatClient("gpt-4");
+    await chatClient.CompleteChatAsync("Hello");
 }
 ```
 
