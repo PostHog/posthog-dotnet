@@ -626,6 +626,100 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task SendAsyncRespectsPrivacyModeWhenStreamConsumedOutsideScope()
+    {
+        // Arrange
+        var requestBody = new
+        {
+            model = "gpt-4",
+            messages = new[] { new { role = "user", content = "Tell me a joke" } },
+            stream = true,
+        };
+
+        var sseStream = new MemoryStream();
+        using var writer = new StreamWriter(
+            sseStream,
+            new UTF8Encoding(false),
+            1024,
+            leaveOpen: true
+        );
+        await writer.WriteAsync(
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Why did\"}}]}\n\n"
+        );
+        await writer.WriteAsync(
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \" the chicken\"}}]}\n\n"
+        );
+        await writer.WriteAsync(
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \" cross output\"}}]}\n\n"
+        );
+        await writer.WriteAsync(
+            "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 5, \"total_tokens\": 15}}\n\n"
+        );
+        await writer.WriteAsync("data: [DONE]\n\n");
+        await writer.FlushAsync();
+        sseStream.Position = 0;
+
+        var streamContent = new StreamContent(sseStream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = streamContent,
+        };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        // Act - Make the request inside the scope, but consume the stream outside it.
+        // This is the critical scenario: the scope exits before the stream is consumed/disposed,
+        // so the AsyncLocal context would be lost if not captured eagerly at request time.
+        HttpResponseMessage? response = null;
+        try
+        {
+            using (PostHogAIContext.BeginScope(privacyMode: true))
+            {
+                response = await _client.PostAsync(
+                    new Uri("/v1/chat/completions", UriKind.Relative),
+                    requestContent
+                );
+
+                Assert.True(response.IsSuccessStatusCode);
+            }
+
+            // Stream consumed outside the scope — privacy mode must still apply
+            var resultStream = await response.Content.ReadAsStreamAsync();
+            using (var reader = new StreamReader(resultStream))
+            {
+                await reader.ReadToEndAsync();
+            }
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        // Assert
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    !props.ContainsKey(PostHogAIFieldNames.Input)
+                    && !props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                    && (int)props[PostHogAIFieldNames.InputTokens] == 10
+                    && (int)props[PostHogAIFieldNames.OutputTokens] == 5
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    [Fact]
     public async Task SendAsyncIncludesInputAndOutputChoicesWhenPrivacyModeIsNullSimpleMessages()
     {
         // Arrange
