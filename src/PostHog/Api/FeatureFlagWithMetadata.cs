@@ -31,6 +31,11 @@ internal record FeatureFlagResult
     /// Metadata associated with the feature flag.
     /// </summary>
     public FeatureFlagMetadata Metadata { get; init; } = null!;
+
+    /// <summary>
+    /// Whether the flag failed evaluation due to a transient error.
+    /// </summary>
+    public bool? Failed { get; init; }
 }
 
 /// <summary>

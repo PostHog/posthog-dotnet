@@ -47,7 +47,7 @@ public record FeatureFlag
 
         var featureFlag = apiResult.Flags is not null && apiResult.Flags.TryGetValue(key, out var flag)
                                                       && flag.Metadata is { Id: { } id, Version: { } version }
-                                                      && flag.Reason.Description is { } reason
+                                                      && flag.Reason?.Description is { } reason
             ? new FeatureFlagWithMetadata
             {
                 Key = flag.Key,

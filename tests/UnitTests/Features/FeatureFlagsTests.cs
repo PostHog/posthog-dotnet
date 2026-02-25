@@ -3940,6 +3940,159 @@ public class FeatureFlagErrorTracking
     }
 
     [Fact]
+    public async Task FailedFlagIsFilteredOutEvenWhenEnabled()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "my-flag": {
+                        "key": "my-flag",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": { "code": "database_error", "description": "Database unavailable" },
+                        "metadata": {"id": 1, "version": 1},
+                        "failed": true
+                    }
+                },
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("my-flag", "distinct-id");
+
+        // Even though the flag has enabled=true, failed=true means it should be filtered out
+        Assert.False(result);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags,flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OmittedFailedFieldTreatsAsFlagSuccessful()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "my-flag": {
+                        "key": "my-flag",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": { "code": "condition_match", "description": "Matched conditions set 1" },
+                        "metadata": {"id": 1, "version": 1}
+                    }
+                }
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("my-flag", "distinct-id");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task FailedVariantFlagIsFilteredOut()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "variant-flag": {
+                        "key": "variant-flag",
+                        "enabled": true,
+                        "variant": "control",
+                        "reason": { "code": "database_error", "description": "Database unavailable" },
+                        "metadata": {"id": 1, "version": 1},
+                        "failed": true
+                    }
+                },
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("variant-flag", "distinct-id");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task NullReasonDoesNotThrow()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "my-flag": {
+                        "key": "my-flag",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": null,
+                        "metadata": {"id": 1, "version": 1},
+                        "failed": false
+                    }
+                }
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("my-flag", "distinct-id");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task SuccessfulFlagsReturnedWhileFailedFlagsExcluded()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "good-flag": {
+                        "key": "good-flag",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": { "code": "condition_match", "description": "Matched conditions set 1" },
+                        "metadata": {"id": 1, "version": 1},
+                        "failed": false
+                    },
+                    "bad-flag": {
+                        "key": "bad-flag",
+                        "enabled": false,
+                        "variant": null,
+                        "reason": { "code": "database_error", "description": "Database unavailable" },
+                        "metadata": {"id": 2, "version": 1},
+                        "failed": true
+                    }
+                },
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var results = await client.GetAllFeatureFlagsAsync("distinct-id");
+
+        Assert.Single(results);
+        Assert.True(results.ContainsKey("good-flag"));
+        Assert.True(results["good-flag"].IsEnabled);
+        Assert.False(results.ContainsKey("bad-flag"));
+    }
+
+    [Fact]
     public async Task PropagatesCancellationWhenUserCancelsRequest()
     {
         var container = new TestContainer();
