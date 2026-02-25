@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#/ Usage: bin/sdk-compliance [options]
+#/ Description: Runs the SDK compliance tests using the PostHog SDK Test Harness
+#/
+#/ Options:
+#/   --no-build  Skip rebuilding the adapter image (uses cached image)
+#/   --clean     Clean up containers and network after running
+#/   --help      Show this help message
+#/
+#/ The adapter image is rebuilt by default to ensure tests run against
+#/ the current code. Docker layer caching makes this fast when unchanged.
+#/
+#/ Examples:
+#/   bin/sdk-compliance              # Build and run compliance tests
+#/   bin/sdk-compliance --no-build   # Run with cached image (faster, may be stale)
+#/   bin/sdk-compliance --clean      # Build, run, and clean up after
+
+source bin/helpers/_utils.sh
+set_source_and_root_dir
+
+show_help() {
+    grep "^#/" "$0" | cut -c4-
+}
+
+# Parse arguments - build by default
+BUILD_FLAG="--build"
+CLEAN_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-build)
+            BUILD_FLAG=""
+            shift
+            ;;
+        --clean)
+            CLEAN_FLAG="true"
+            shift
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        *)
+            error "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+echo "Running SDK compliance tests…"
+echo ""
+
+cd "$root_dir/sdk_compliance_adapter"
+
+# Run docker-compose with appropriate flags (--build by default)
+docker-compose up $BUILD_FLAG --abort-on-container-exit
+exit_code=$?
+
+# Clean up if requested
+if [ "$CLEAN_FLAG" = "true" ]; then
+    echo ""
+    echo "Cleaning up containers…"
+    docker-compose down --volumes --remove-orphans
+fi
+
+exit $exit_code
