@@ -3928,7 +3928,88 @@ public class FeatureFlagErrorTracking
         Assert.False(result);
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("flag_missing", received, StringComparison.Ordinal);
+        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags,flag_missing\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OmittedFailedFieldTreatsAsFlagSuccessful()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "my-flag": {
+                        "key": "my-flag",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": { "code": "condition_match", "description": "Matched conditions set 1" },
+                        "metadata": {"id": 1, "version": 1}
+                    }
+                }
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("my-flag", "distinct-id");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task FailedVariantFlagIsFilteredOut()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "variant-flag": {
+                        "key": "variant-flag",
+                        "enabled": true,
+                        "variant": "control",
+                        "reason": { "code": "database_error", "description": "Database unavailable" },
+                        "metadata": {"id": 1, "version": 1},
+                        "failed": true
+                    }
+                },
+                "errorsWhileComputingFlags": true
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("variant-flag", "distinct-id");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task NullReasonDoesNotThrow()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "flags": {
+                    "my-flag": {
+                        "key": "my-flag",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": null,
+                        "metadata": {"id": 1, "version": 1},
+                        "failed": false
+                    }
+                }
+            }
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("my-flag", "distinct-id");
+
+        Assert.True(result);
     }
 
     [Fact]

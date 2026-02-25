@@ -107,6 +107,7 @@ internal static class FlagsApiResultExtensions
 
         var normalized = results.NormalizeResult();
 
+        // Failed status lives on Flags (v4 format); filter the parallel FeatureFlags dict by the same keys.
         var failedKeys = normalized.Flags is { } flags
             ? new HashSet<string>(flags.Where(kvp => kvp.Value.Failed == true).Select(kvp => kvp.Key))
             : new HashSet<string>();
