@@ -331,6 +331,48 @@ public class TheDisposeAsyncMethod
     }
 
     [Fact]
+    public async Task FlushesItemWhenDisposedDuringInFlightFlush()
+    {
+        var options = new FakeOptions<PostHogOptions>(new()
+        {
+            FlushAt = 1,
+            FlushInterval = TimeSpan.FromHours(3)
+        });
+        var items = new List<int>();
+        var flushStarted = new TaskCompletionSource();
+        var flushCanProceed = new TaskCompletionSource();
+
+        Func<IEnumerable<int>, Task> handlerFunc = async batch =>
+        {
+            flushStarted.SetResult();
+            await flushCanProceed.Task;
+            items.AddRange(batch);
+        };
+
+        var batchHandler = new AsyncBatchHandler<int, object>(
+            handlerFunc, () => new object(), new FakeTimeProvider(), options);
+
+        // Enqueue triggers a flush (FlushAt = 1), which will block on flushCanProceed.
+        batchHandler.Enqueue(Task.FromResult(42));
+        await flushStarted.Task;
+
+        // Start disposal while the flush is still in progress.
+        var disposeTask = batchHandler.DisposeAsync().AsTask();
+
+        // Unblock the flush handler so it can complete.
+        flushCanProceed.SetResult();
+
+        var timeout = TimeSpan.FromSeconds(5);
+        var completed = await Task.WhenAny(disposeTask, Task.Delay(timeout));
+        if (completed != disposeTask)
+        {
+            throw new TimeoutException("DisposeAsync did not complete within 5 seconds; possible deadlock.");
+        }
+
+        Assert.Equal([42], items);
+    }
+
+    [Fact]
     public async Task HandlesExceptionsInFlushBatchAsync()
     {
         var options = new FakeOptions<PostHogOptions>(new()
