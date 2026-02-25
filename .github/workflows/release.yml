@@ -1,0 +1,232 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check-release-label:
+    name: Check for release label
+    if: |
+      github.event.pull_request.merged == true
+       && contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.check.outputs.should-release }}
+      bump-type: ${{ steps.check.outputs.bump-type }}
+    steps:
+      - name: Check release conditions
+        id: check
+        run: |
+          if ${{ contains(github.event.pull_request.labels.*.name, 'bump-major') }}; then
+            echo "bump-type=major" >> "$GITHUB_OUTPUT"
+            echo "should-release=true" >> "$GITHUB_OUTPUT"
+          elif ${{ contains(github.event.pull_request.labels.*.name, 'bump-minor') }}; then
+            echo "bump-type=minor" >> "$GITHUB_OUTPUT"
+            echo "should-release=true" >> "$GITHUB_OUTPUT"
+          elif ${{ contains(github.event.pull_request.labels.*.name, 'bump-patch') }}; then
+            echo "bump-type=patch" >> "$GITHUB_OUTPUT"
+            echo "should-release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should-release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  notify-approval-needed:
+    name: Notify Slack - Approval Needed
+    needs: check-release-label
+    if: needs.check-release-label.outputs.should-release == 'true'
+    uses: posthog/.github/.github/workflows/notify-approval-needed.yml@main
+    with:
+      slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
+      slack_user_group_id: ${{ vars.GROUP_CLIENT_LIBRARIES_SLACK_GROUP_ID }}
+    secrets:
+      slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+      posthog_project_api_key: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
+
+  release:
+    name: Bump version and release
+    needs: [check-release-label, notify-approval-needed]
+    runs-on: ubuntu-latest
+    # Use `always()` so the release proceeds even if the Slack notification fails —
+    # a Slack outage shouldn't block releases.
+    if: always() && needs.check-release-label.outputs.should-release == 'true'
+    environment: Release
+    permissions:
+      contents: write
+      actions: write
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      DOTNET_NOLOGO: true
+      DOTNET_VERSION: "9.0.102"
+    steps:
+      - name: Notify Slack - Approved
+        if: needs.notify-approval-needed.outputs.slack_ts != ''
+        uses: posthog/.github/.github/actions/slack-thread-reply@main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: "✅ Release approved! Version bump in progress..."
+          emoji_reaction: "white_check_mark"
+
+      - name: Get GitHub App token
+        id: releaser
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GH_APP_POSTHOG_DOTNET_RELEASER_APP_ID }}
+          private-key: ${{ secrets.GH_APP_POSTHOG_DOTNET_RELEASER_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.releaser.outputs.token }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Calculate new version
+        id: version
+        run: |
+          current=$(grep -o '<Version>[^<]*' Directory.Build.props | head -n 1 | sed 's/<Version>//')
+          IFS='.' read -r major minor patch <<< "$current"
+          patch=$(echo "$patch" | cut -d- -f1)
+          case "${{ needs.check-release-label.outputs.bump-type }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          new_version="$major.$minor.$patch"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "new=$new_version" >> "$GITHUB_OUTPUT"
+          echo "Bumping $current → $new_version"
+
+      - name: Update version
+        run: |
+          sed -i "s|<Version>${{ steps.version.outputs.current }}</Version>|<Version>${{ steps.version.outputs.new }}</Version>|" Directory.Build.props
+
+      - name: Build
+        run: dotnet build --configuration Release
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build
+
+      - name: Commit version bump
+        id: commit-version-bump
+        env:
+          GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
+        run: |
+          git add Directory.Build.props src/PostHog/Generated/VersionConstants.cs
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Bump version to ${{ steps.version.outputs.new }}"
+            git push origin main
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag and GitHub Release
+        if: steps.commit-version-bump.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.releaser.outputs.token }}
+        run: |
+          version="${{ steps.version.outputs.new }}"
+          git tag -a "v$version" -m "v$version"
+          git push origin "v$version"
+          gh release create "v$version" --generate-notes
+
+      - name: Send failure event to PostHog
+        if: failure()
+        uses: PostHog/posthog-github-action@v0.1
+        with:
+          posthog-token: "${{ secrets.POSTHOG_PROJECT_API_KEY }}"
+          event: "posthog-dotnet-github-release-workflow-failure"
+          properties: >-
+            {
+              "commitSha": "${{ github.sha }}",
+              "jobStatus": "${{ job.status }}",
+              "ref": "${{ github.ref }}",
+              "version": "v${{ steps.version.outputs.new }}"
+            }
+
+      - name: Notify Slack - Failed
+        if: failure() && needs.notify-approval-needed.outputs.slack_ts != ''
+        uses: posthog/.github/.github/actions/slack-thread-reply@main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: "❌ Failed to release `posthog-dotnet@v${{ steps.version.outputs.new }}`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+          emoji_reaction: "x"
+
+  notify-rejected:
+    name: Notify Slack - Rejected
+    needs: [release, notify-approval-needed]
+    runs-on: ubuntu-latest
+    if: always() && (needs.release.result == 'failure' || needs.release.result == 'skipped') && needs.notify-approval-needed.outputs.slack_ts != ''
+    steps:
+      - name: Check for rejection
+        id: check-rejection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RESPONSE=$(gh api /repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/approvals)
+          REJECTED=$(echo "$RESPONSE" | jq '[.[] | select(.state == "rejected")] | length')
+          if [ "$REJECTED" -gt 0 ]; then
+            echo "was_rejected=true" >> "$GITHUB_OUTPUT"
+            COMMENT=$(echo "$RESPONSE" | jq -r '.[] | select(.state == "rejected") | .comment // empty' | head -1)
+            if [ -n "$COMMENT" ]; then
+              {
+                echo 'message<<EOF'
+                echo "🚫 Release was rejected: $COMMENT"
+                echo 'EOF'
+              } >> "$GITHUB_OUTPUT"
+            else
+              echo "message=🚫 Release was rejected." >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "was_rejected=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Slack - Rejected
+        if: steps.check-rejection.outputs.was_rejected == 'true'
+        continue-on-error: true
+        uses: posthog/.github/.github/actions/slack-thread-reply@main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: '${{ steps.check-rejection.outputs.message }}'
+          emoji_reaction: 'no_entry_sign'
+
+  notify-released:
+    name: Notify Slack - Released
+    needs: [notify-approval-needed, release]
+    runs-on: ubuntu-latest
+    if: always() && needs.release.result == 'success' && needs.notify-approval-needed.outputs.slack_ts != ''
+    steps:
+      - name: Notify Slack - Released
+        uses: posthog/.github/.github/actions/slack-thread-reply@main
+        with:
+          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
+          slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
+          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
+          message: "🚀 posthog-dotnet released successfully!"
+          emoji_reaction: "rocket"
