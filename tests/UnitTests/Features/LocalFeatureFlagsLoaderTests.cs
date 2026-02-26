@@ -83,5 +83,32 @@ public class TheDisposeAsyncMethod
         {
             throw new TimeoutException("DisposeAsync did not complete within 5 seconds; possible deadlock.");
         }
+
+        // Surface any exception thrown during disposal.
+        await disposeTask;
+    }
+
+    [Fact]
+    public async Task DoesNotDisposeTwice()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvaluationResponse);
+
+        var client = container.Activate<PostHogClient>();
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+
+        await Task.WhenAll(
+            client.DisposeAsync().AsTask(),
+            client.DisposeAsync().AsTask());
+    }
+
+    [Fact]
+    public async Task CompletesGracefullyWhenPollingNeverStarted()
+    {
+        var container = new TestContainer();
+        var client = container.Activate<PostHogClient>();
+
+        // Dispose without ever calling LoadFeatureFlagsAsync.
+        await client.DisposeAsync();
     }
 }

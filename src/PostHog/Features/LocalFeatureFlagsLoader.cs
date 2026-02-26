@@ -24,7 +24,7 @@ internal sealed class LocalFeatureFlagsLoader(
 {
     volatile int _started;
     volatile int _disposed;
-    Task? _pollingTask;
+    volatile Task? _pollingTask;
     LocalEvaluator? _localEvaluator;
     volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
