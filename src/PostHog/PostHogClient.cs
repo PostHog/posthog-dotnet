@@ -681,7 +681,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public void Dispose() => DisposeAsync().AsTask().Wait();
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     /// Clears the local flags cache.
@@ -691,11 +691,18 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        // Stop the polling and wait for it.
-        await _asyncBatchHandler.DisposeAsync();
-        _apiClient.Dispose();
-        _featureFlagCalledEventCache.Dispose();
-        _featureFlagsLoader.Dispose();
+        // Stop background tasks first, while the API client is still alive.
+        // The polling task in _featureFlagsLoader may call the API client during shutdown.
+        try
+        {
+            await _asyncBatchHandler.DisposeAsync();
+            await _featureFlagsLoader.DisposeAsync();
+        }
+        finally
+        {
+            _apiClient.Dispose();
+            _featureFlagCalledEventCache.Dispose();
+        }
     }
 
 

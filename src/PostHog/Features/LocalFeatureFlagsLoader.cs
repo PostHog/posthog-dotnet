@@ -20,9 +20,11 @@ internal sealed class LocalFeatureFlagsLoader(
     IOptions<PostHogOptions> options,
     ITaskScheduler taskScheduler,
     TimeProvider timeProvider,
-    ILoggerFactory loggerFactory) : IDisposable
+    ILoggerFactory loggerFactory) : IDisposable, IAsyncDisposable
 {
     volatile int _started;
+    volatile int _disposed;
+    volatile Task? _pollingTask;
     LocalEvaluator? _localEvaluator;
     volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
@@ -37,7 +39,7 @@ internal sealed class LocalFeatureFlagsLoader(
         {
             return;
         }
-        taskScheduler.Run(() => PollForFeatureFlagsAsync(_cancellationTokenSource.Token));
+        _pollingTask = taskScheduler.Run(() => PollForFeatureFlagsAsync(_cancellationTokenSource.Token));
     }
 
     /// <summary>
@@ -143,10 +145,27 @@ internal sealed class LocalFeatureFlagsLoader(
 
     public bool IsLoaded => _localEvaluator is not null;
 
-    public void Dispose()
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    public async ValueTask DisposeAsync()
     {
-        _cancellationTokenSource.Dispose();
-        _timer.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
+        // Cancel the token so the polling loop exits, then wait for it to finish
+        // (either by completing normally or via cancellation) before disposing resources.
+        try
+        {
+            await _cancellationTokenSource.CancelAsync();
+            await (_pollingTask ?? Task.CompletedTask);
+        }
+        finally
+        {
+            _timer.Dispose();
+            _cancellationTokenSource.Dispose();
+        }
     }
 
     public void Clear()
