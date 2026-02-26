@@ -249,13 +249,18 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
         // Cancel the token so both background loops exit, then wait for them to finish.
         // This ensures any in-flight flush completes and _flushing returns to 0 before
         // we attempt the final flush below.
-        await _cancellationTokenSource.CancelAsync();
-        await Task.WhenAll(_timerTask, _flushSignalTask);
-
-        _timer.Dispose();
-        _flushSignal.Dispose();
-        _cancellationTokenSource.Dispose();
-        _channel.Writer.Complete();
+        try
+        {
+            await _cancellationTokenSource.CancelAsync();
+            await Task.WhenAll(_timerTask, _flushSignalTask);
+        }
+        finally
+        {
+            _timer.Dispose();
+            _flushSignal.Dispose();
+            _cancellationTokenSource.Dispose();
+            _channel.Writer.Complete();
+        }
         try
         {
             _logger.LogTraceFlushCalledInDispose(Count);

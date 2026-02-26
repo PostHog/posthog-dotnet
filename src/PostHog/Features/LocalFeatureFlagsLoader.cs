@@ -156,11 +156,16 @@ internal sealed class LocalFeatureFlagsLoader(
 
         // Cancel the token so the polling loop exits, then wait for it to finish
         // (either by completing normally or via cancellation) before disposing resources.
-        await _cancellationTokenSource.CancelAsync();
-        await (_pollingTask ?? Task.CompletedTask);
-
-        _timer.Dispose();
-        _cancellationTokenSource.Dispose();
+        try
+        {
+            await _cancellationTokenSource.CancelAsync();
+            await (_pollingTask ?? Task.CompletedTask);
+        }
+        finally
+        {
+            _timer.Dispose();
+            _cancellationTokenSource.Dispose();
+        }
     }
 
     public void Clear()

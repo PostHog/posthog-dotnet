@@ -693,10 +693,16 @@ public sealed class PostHogClient : IPostHogClient
     {
         // Stop background tasks first, while the API client is still alive.
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
-        await _asyncBatchHandler.DisposeAsync();
-        await _featureFlagsLoader.DisposeAsync();
-        _apiClient.Dispose();
-        _featureFlagCalledEventCache.Dispose();
+        try
+        {
+            await _asyncBatchHandler.DisposeAsync();
+            await _featureFlagsLoader.DisposeAsync();
+        }
+        finally
+        {
+            _apiClient.Dispose();
+            _featureFlagCalledEventCache.Dispose();
+        }
     }
 
 
