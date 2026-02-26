@@ -49,7 +49,7 @@ public record Group
     /// <param name="properties"></param>
     public Group(IReadOnlyDictionary<string, object?> properties)
     {
-        Properties = new Dictionary<string, object?>(properties);
+        Properties = properties.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
 
     /// <summary>
