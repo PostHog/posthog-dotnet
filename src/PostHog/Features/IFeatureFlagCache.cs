@@ -36,6 +36,10 @@ public interface IFeatureFlagCache
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The set of feature flags.</returns>
     [Obsolete("Use GetAndCacheFlagsAsync overload that accepts personProperties and groups to ensure correct cache keys. This method will be removed in a future version.")]
+    // netstandard2.0 does not support default interface methods (DIM), so the default
+    // implementations below are conditionally compiled. All concrete implementations
+    // (FeatureFlagCacheBase, NullFeatureFlagCache, HttpContextFeatureFlagCache) provide
+    // explicit implementations of every method, so the DIM bodies are never invoked at runtime.
 #if !NETSTANDARD2_0
     async
 #endif

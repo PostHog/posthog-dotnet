@@ -11,6 +11,11 @@ internal static class StringPolyfills
 
     public static string Replace(this string source, string oldValue, string? newValue, StringComparison comparisonType)
     {
+        if (string.IsNullOrEmpty(oldValue))
+        {
+            throw new ArgumentException("String cannot be of zero length.", nameof(oldValue));
+        }
+
         if (comparisonType == StringComparison.Ordinal)
         {
             return source.Replace(oldValue, newValue ?? string.Empty);
