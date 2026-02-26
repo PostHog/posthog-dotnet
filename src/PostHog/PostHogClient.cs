@@ -681,7 +681,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public void Dispose() => DisposeAsync().AsTask().Wait();
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     /// Clears the local flags cache.

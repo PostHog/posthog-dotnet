@@ -145,7 +145,7 @@ internal sealed class LocalFeatureFlagsLoader(
 
     public bool IsLoaded => _localEvaluator is not null;
 
-    public void Dispose() => DisposeAsync().AsTask().Wait();
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     public async ValueTask DisposeAsync()
     {
@@ -154,8 +154,8 @@ internal sealed class LocalFeatureFlagsLoader(
             return;
         }
 
-        // Cancel the token so the polling loop exits, then wait for it to finish.
-        // This ensures any in-flight API call completes before we dispose resources.
+        // Cancel the token so the polling loop exits, then wait for it to finish
+        // (either by completing normally or via cancellation) before disposing resources.
         await _cancellationTokenSource.CancelAsync();
         await (_pollingTask ?? Task.CompletedTask);
 
