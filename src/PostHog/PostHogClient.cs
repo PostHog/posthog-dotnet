@@ -691,11 +691,12 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        // Stop the polling and wait for it.
+        // Stop background tasks first, while the API client is still alive.
+        // The polling task in _featureFlagsLoader may call the API client during shutdown.
         await _asyncBatchHandler.DisposeAsync();
+        await _featureFlagsLoader.DisposeAsync();
         _apiClient.Dispose();
         _featureFlagCalledEventCache.Dispose();
-        _featureFlagsLoader.Dispose();
     }
 
 
