@@ -36,10 +36,18 @@ public interface IFeatureFlagCache
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The set of feature flags.</returns>
     [Obsolete("Use GetAndCacheFlagsAsync overload that accepts personProperties and groups to ensure correct cache keys. This method will be removed in a future version.")]
-    async Task<FlagsResult> GetAndCacheFlagsAsync(
+    // netstandard2.0 does not support default interface methods (DIM), so the default
+    // implementations below are conditionally compiled. All concrete implementations
+    // (FeatureFlagCacheBase, NullFeatureFlagCache, HttpContextFeatureFlagCache) provide
+    // explicit implementations of every method, so the DIM bodies are never invoked at runtime.
+#if !NETSTANDARD2_0
+    async
+#endif
+    Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
         CancellationToken cancellationToken)
+#if !NETSTANDARD2_0
     {
         return new FlagsResult
         {
@@ -56,6 +64,9 @@ public interface IFeatureFlagCache
             )
         };
     }
+#else
+    ;
+#endif
 
     /// <summary>
     /// Attempts to retrieve the flags API result. If the feature flags are not in the cache, then
@@ -71,17 +82,24 @@ public interface IFeatureFlagCache
     /// <param name="fetcher">The feature flag fetcher.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The set of feature flags.</returns>
-    async Task<FlagsResult> GetAndCacheFlagsAsync(
+#if !NETSTANDARD2_0
+    async
+#endif
+    Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
         IReadOnlyDictionary<string, object?>? personProperties,
         GroupCollection? groups,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
         CancellationToken cancellationToken)
+#if !NETSTANDARD2_0
     {
         // Default implementation: no caching to avoid incorrect cache keys
         // Implementations should override this to provide proper caching
         return await NotNull(fetcher)(distinctId, cancellationToken);
     }
+#else
+    ;
+#endif
 }
 
 /// <summary>
