@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using PostHog.Api;
 using PostHog.Library;
 using static PostHog.Library.Ensure;
+using static PostHog.Library.SemanticVersion;
 
 namespace PostHog.Json;
 
@@ -253,6 +254,107 @@ public class PropertyFilterValue
     public static bool operator <(PropertyFilterValue? left, object? right) => NotNull(left).CompareTo(right) < 0;
     public static bool operator >=(PropertyFilterValue left, object? right) => NotNull(left).CompareTo(right) >= 0;
     public static bool operator <=(PropertyFilterValue left, object? right) => NotNull(left).CompareTo(right) <= 0;
+
+    /// <summary>
+    /// Compares the override value as a semantic version against this filter value.
+    /// </summary>
+    /// <param name="overrideValue">The version value from person/group properties.</param>
+    /// <returns>A comparison result: negative if override &lt; filter, zero if equal, positive if override &gt; filter.</returns>
+    /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
+    public int CompareSemver(object? overrideValue)
+    {
+        var overrideVersionString = overrideValue?.ToString();
+
+        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
+        {
+            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
+        }
+
+        if (!SemanticVersion.TryParse(StringValue, out var filterVersion))
+        {
+            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
+        }
+
+        return overrideVersion.Value.CompareTo(filterVersion.Value);
+    }
+
+    /// <summary>
+    /// Checks if the override value is within the tilde range specified by this filter value.
+    /// ~X.Y.Z means >=X.Y.Z and &lt;X.Y+1.0
+    /// </summary>
+    /// <param name="overrideValue">The version value from person/group properties.</param>
+    /// <returns><c>true</c> if the override version is within the tilde range.</returns>
+    /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
+    public bool IsSemverTildeMatch(object? overrideValue)
+    {
+        var overrideVersionString = overrideValue?.ToString();
+
+        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
+        {
+            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
+        }
+
+        if (!SemanticVersion.TryParse(StringValue, out var filterVersion))
+        {
+            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
+        }
+
+        var (lower, upper) = filterVersion.Value.GetTildeBounds();
+        return overrideVersion.Value.IsInRange(lower, upper);
+    }
+
+    /// <summary>
+    /// Checks if the override value is within the caret range specified by this filter value.
+    /// ^X.Y.Z is compatible-with per semver spec:
+    /// - ^1.2.3 means >=1.2.3 &lt;2.0.0 (major > 0)
+    /// - ^0.2.3 means >=0.2.3 &lt;0.3.0 (major = 0, minor > 0)
+    /// - ^0.0.3 means >=0.0.3 &lt;0.0.4 (major = 0, minor = 0)
+    /// </summary>
+    /// <param name="overrideValue">The version value from person/group properties.</param>
+    /// <returns><c>true</c> if the override version is within the caret range.</returns>
+    /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
+    public bool IsSemverCaretMatch(object? overrideValue)
+    {
+        var overrideVersionString = overrideValue?.ToString();
+
+        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
+        {
+            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
+        }
+
+        if (!SemanticVersion.TryParse(StringValue, out var filterVersion))
+        {
+            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
+        }
+
+        var (lower, upper) = filterVersion.Value.GetCaretBounds();
+        return overrideVersion.Value.IsInRange(lower, upper);
+    }
+
+    /// <summary>
+    /// Checks if the override value matches the wildcard pattern specified by this filter value.
+    /// "X.*" or "X" means >=X.0.0 &lt;X+1.0.0
+    /// "X.Y.*" means >=X.Y.0 &lt;X.Y+1.0
+    /// </summary>
+    /// <param name="overrideValue">The version value from person/group properties.</param>
+    /// <returns><c>true</c> if the override version matches the wildcard pattern.</returns>
+    /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed.</exception>
+    public bool IsSemverWildcardMatch(object? overrideValue)
+    {
+        var overrideVersionString = overrideValue?.ToString();
+
+        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
+        {
+            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
+        }
+
+        if (!TryParseWildcard(StringValue, out var lower, out var upper))
+        {
+            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a wildcard pattern");
+        }
+
+        return overrideVersion.Value.IsInRange(lower.Value, upper.Value);
+    }
 
     public override string ToString()
     {
