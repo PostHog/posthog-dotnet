@@ -403,3 +403,8 @@ build/
 postgres-docker/*
 samples/HogTied.Web/app.db-shm
 samples/HogTied.Web/app.db-wal
+
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local

@@ -74,7 +74,12 @@ internal sealed class PostHogApiClient : IDisposable
             ["batch"] = events.ToReadOnlyList()
         };
 
-        return await _httpClient.PostJsonAsync<ApiResult>(endpointUrl, payload, cancellationToken)
+        return await _httpClient.PostJsonWithRetryAsync<ApiResult>(
+                   endpointUrl,
+                   payload,
+                   _timeProvider,
+                   _options.Value,
+                   cancellationToken)
                ?? new ApiResult(0);
     }
 
@@ -95,22 +100,22 @@ internal sealed class PostHogApiClient : IDisposable
     }
 
     /// <summary>
-    /// Retrieves all the feature flags for the user by making a request to the <c>/decide</c> endpoint.
+    /// Retrieves all the feature flags for the user by making a request to the <c>/flags</c> endpoint.
     /// </summary>
     /// <param name="distinctUserId">The Id of the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="groupProperties">Optional: What group properties are known. Used to compute flags locally, if personalApiKey is present.  Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="flagKeysToEvaluate">The set of flag keys to evaluate. If empty, this returns all flags.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>A <see cref="DecideApiResult"/>.</returns>
-    public async Task<DecideApiResult?> GetFeatureFlagsFromDecideAsync(
+    /// <returns>A <see cref="FlagsApiResult"/>.</returns>
+    public async Task<FlagsApiResult?> GetFeatureFlagsAsync(
         string distinctUserId,
         Dictionary<string, object?>? personProperties,
         GroupCollection? groupProperties,
         IReadOnlyList<string>? flagKeysToEvaluate,
         CancellationToken cancellationToken)
     {
-        var endpointUrl = new Uri(HostUrl, "decide?v=4");
+        var endpointUrl = new Uri(HostUrl, "flags/?v=2");
 
         var payload = new Dictionary<string, object>
         {
@@ -131,7 +136,7 @@ internal sealed class PostHogApiClient : IDisposable
 
         PrepareAndMutatePayload(payload);
 
-        return await _httpClient.PostJsonAsync<DecideApiResult>(
+        return await _httpClient.PostJsonAsync<FlagsApiResult>(
             endpointUrl,
             payload,
             cancellationToken);
@@ -142,10 +147,13 @@ internal sealed class PostHogApiClient : IDisposable
     /// <c>/api/feature_flag/local_evaluation</c> endpoint. This requires that a Personal API Key is set in
     /// <see cref="PostHogOptions"/>.
     /// </summary>
+    /// <param name="etag">Optional ETag from a previous request for conditional fetching.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>A <see cref="LocalEvaluationApiResult"/> containing all the feature flags.</returns>
+    /// <returns>A <see cref="LocalEvaluationResponse"/> containing the feature flags and ETag.</returns>
     /// <exception cref="ApiException">Thrown when the API returns a <c>quota_limited</c> error.</exception>
-    public async Task<LocalEvaluationApiResult?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
+    public async Task<LocalEvaluationResponse> GetFeatureFlagsForLocalEvaluationAsync(
+        string? etag,
+        CancellationToken cancellationToken)
     {
         var uriBuilder = new UriBuilder(new Uri(HostUrl, "/api/feature_flag/local_evaluation"))
         {
@@ -153,8 +161,9 @@ internal sealed class PostHogApiClient : IDisposable
         };
         try
         {
-            return await GetAuthenticatedResponseAsync<LocalEvaluationApiResult>(
+            return await GetAuthenticatedResponseWithETagAsync<LocalEvaluationApiResult>(
                 uriBuilder.Uri.PathAndQuery,
+                etag,
                 cancellationToken);
         }
         catch (ApiException e) when (e.ErrorType is "quota_limited")
@@ -165,7 +174,7 @@ internal sealed class PostHogApiClient : IDisposable
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
             _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
-            return null;
+            return LocalEvaluationResponse.Failure();
         }
     }
 
@@ -206,6 +215,50 @@ internal sealed class PostHogApiClient : IDisposable
         return await response.Content.ReadFromJsonAsync<T>(
             JsonSerializerHelper.Options,
             cancellationToken);
+    }
+
+    async Task<LocalEvaluationResponse> GetAuthenticatedResponseWithETagAsync<T>(
+        string relativeUrl,
+        string? etag,
+        CancellationToken cancellationToken)
+        where T : LocalEvaluationApiResult
+    {
+        var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
+        var personalApiKey = options.PersonalApiKey
+                             ?? throw new InvalidOperationException(
+                                 "This API requires that a Personal API Key is set.");
+
+        var endpointUrl = new Uri(HostUrl, relativeUrl);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, endpointUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue(scheme: "Bearer", personalApiKey);
+
+        // Add If-None-Match header for conditional request if we have an ETag
+        if (!string.IsNullOrEmpty(etag))
+        {
+            request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(etag));
+        }
+
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+
+        // Get ETag from response (may be present even on 304)
+        var responseETag = response.Headers.ETag?.Tag;
+
+        // Handle 304 Not Modified - flags haven't changed
+        if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
+        {
+            _logger.LogDebugFlagsNotModified();
+            // Preserve the original ETag if the server didn't return one
+            return LocalEvaluationResponse.NotModified(responseETag ?? etag);
+        }
+
+        await response.EnsureSuccessfulApiCall(cancellationToken);
+
+        var result = await response.Content.ReadFromJsonAsync<T>(
+            JsonSerializerHelper.Options,
+            cancellationToken);
+
+        return LocalEvaluationResponse.Success(result, responseETag);
     }
 
     void PrepareAndMutatePayload(Dictionary<string, object> payload)
@@ -260,4 +313,10 @@ internal static partial class PostHogApiClientLoggerExtensions
     public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(
         this ILogger<PostHogApiClient> logger,
         Exception exception);
+
+    [LoggerMessage(
+        EventId = 1003,
+        Level = LogLevel.Debug,
+        Message = "[FEATURE FLAGS] Flags not modified (304), using cached data")]
+    public static partial void LogDebugFlagsNotModified(this ILogger<PostHogApiClient> logger);
 }

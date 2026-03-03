@@ -172,12 +172,22 @@ public sealed class PostHogClient : IPostHogClient
         _logger.LogWarnCaptureFailed(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
         return false;
 
-        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context) =>
-            sendFeatureFlags
-                ? AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent)
-                : _featureFlagsLoader.IsLoaded && eventName != "$feature_flag_called"
-                    ? AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent)
-                    : Task.FromResult(capturedEvent);
+        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context)
+        {
+            if (!sendFeatureFlags)
+            {
+                return Task.FromResult(capturedEvent);
+            }
+
+            // Prefer local evaluation when available
+            if (_featureFlagsLoader.IsLoaded)
+            {
+                return AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent);
+            }
+
+            // Otherwise we fall back to remote /flags call
+            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent);
+        }
     }
 
     /// <inheritdoc/>
@@ -226,7 +236,7 @@ public sealed class PostHogClient : IPostHogClient
             distinctId,
             personProperties: null,
             groups: groups,
-            (userId, ctx) => DecideAsync(
+            (userId, ctx) => FetchFlagsAsync(
                 userId,
                 options: new AllFeatureFlagsOptions
                 {
@@ -333,12 +343,22 @@ public sealed class PostHogClient : IPostHogClient
         var flagWasLocallyEvaluated = response is not null;
         string? requestId = null;
         long? evaluatedAt = null;
+        var errors = new List<string>();
+        FlagsResult? flagsResult = null;
+
+        void HandleRemoteError(Exception ex, string errorType)
+        {
+            _logger.LogErrorUnableToGetRemotely(ex, featureKey);
+            errors.Add(errorType);
+            response = new FeatureFlag { Key = featureKey, IsEnabled = false };
+        }
+
         if (!flagWasLocallyEvaluated && options is not { OnlyEvaluateLocally: true })
         {
             try
             {
-                // Fallback to Decide
-                var flagsResult = await DecideAsync(
+                // Fallback to remote evaluation via the /flags endpoint.
+                flagsResult = await FetchFlagsAsync(
                     distinctId,
                     options ?? new FeatureFlagOptions
                     {
@@ -347,16 +367,45 @@ public sealed class PostHogClient : IPostHogClient
                     cancellationToken);
                 requestId = flagsResult.RequestId;
                 evaluatedAt = flagsResult.EvaluatedAt;
-                response = flagsResult.Flags.GetValueOrDefault(featureKey) ?? new FeatureFlag
+
+                if (flagsResult.ErrorsWhileComputingFlags)
                 {
-                    Key = featureKey,
-                    IsEnabled = false
-                };
+                    errors.Add(FeatureFlagError.ErrorsWhileComputingFlags);
+                }
+
+                if (flagsResult.QuotaLimited.Contains("feature_flags"))
+                {
+                    errors.Add(FeatureFlagError.QuotaLimited);
+                }
+
+                response = flagsResult.Flags.GetValueOrDefault(featureKey);
+                if (response is null)
+                {
+                    errors.Add(FeatureFlagError.FlagMissing);
+                    response = new FeatureFlag
+                    {
+                        Key = featureKey,
+                        IsEnabled = false
+                    };
+                }
+
                 _logger.LogDebugSuccessRemotely(featureKey, response);
             }
-            catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+            catch (TaskCanceledException e) when (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogErrorUnableToGetRemotely(e, featureKey);
+                HandleRemoteError(e, FeatureFlagError.Timeout);
+            }
+            catch (HttpRequestException e)
+            {
+                HandleRemoteError(e, FeatureFlagError.ConnectionError);
+            }
+            catch (ApiException e)
+            {
+                HandleRemoteError(e, FeatureFlagError.ApiError((int)e.Status));
+            }
+            catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+            {
+                HandleRemoteError(e, FeatureFlagError.UnknownError);
             }
         }
 
@@ -374,7 +423,8 @@ public sealed class PostHogClient : IPostHogClient
                     response,
                     requestId,
                     evaluatedAt,
-                    options.Groups));
+                    options.Groups,
+                    errors));
         }
 
         if (_featureFlagCalledEventCache.Count >= _options.Value.FeatureFlagSentCacheSizeLimit)
@@ -444,7 +494,8 @@ public sealed class PostHogClient : IPostHogClient
         FeatureFlag? flag,
         string? requestId,
         long? evaluatedAt,
-        GroupCollection? groupProperties)
+        GroupCollection? groupProperties,
+        List<string> errors)
     {
         cacheEntry.SetSize(1); // Each entry has a size of 1
         cacheEntry.SetPriority(CacheItemPriority.Low);
@@ -474,6 +525,11 @@ public sealed class PostHogClient : IPostHogClient
             properties["$feature_flag_evaluated_at"] = evaluatedAt;
         }
 
+        if (errors.Count > 0)
+        {
+            properties["$feature_flag_error"] = string.Join(",", errors);
+        }
+
         Capture(
             distinctId,
             eventName: "$feature_flag_called",
@@ -499,13 +555,13 @@ public sealed class PostHogClient : IPostHogClient
                     await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
                 if (localEvaluator is not null)
                 {
-                    var (localEvaluationResults, fallbackToDecide) = localEvaluator.EvaluateAllFlags(
+                    var (localEvaluationResults, fallbackToRemote) = localEvaluator.EvaluateAllFlags(
                         distinctId,
                         options?.Groups,
                         options?.PersonProperties,
                         warnOnUnknownGroups: false);
 
-                    if (!fallbackToDecide || options is { OnlyEvaluateLocally: true })
+                    if (!fallbackToRemote || options is { OnlyEvaluateLocally: true })
                     {
                         return localEvaluationResults;
                     }
@@ -520,7 +576,7 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            var flagsResult = await DecideAsync(distinctId, options, cancellationToken);
+            var flagsResult = await FetchFlagsAsync(distinctId, options, cancellationToken);
             return flagsResult.Flags;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
@@ -530,14 +586,14 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
-    // Retrieves all the evaluated feature flags from the /decide endpoint.
-    async Task<FlagsResult> DecideAsync(
+    // Retrieves all the evaluated feature flags from the /flags endpoint.
+    async Task<FlagsResult> FetchFlagsAsync(
         string distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken) =>
-        await DecideAsync(_featureFlagsCache, distinctId, options, cancellationToken);
+        await FetchFlagsAsync(_featureFlagsCache, distinctId, options, cancellationToken);
 
-    async Task<FlagsResult> DecideAsync(
+    async Task<FlagsResult> FetchFlagsAsync(
         IFeatureFlagCache cache,
         string distinctId,
         AllFeatureFlagsOptions? options,
@@ -547,20 +603,20 @@ public sealed class PostHogClient : IPostHogClient
             distinctId,
             personProperties: options?.PersonProperties,
             groups: options?.Groups,
-            fetcher: FetchDecideAsync,
+            fetcher: FetchFlagsAsync,
             cancellationToken: cancellationToken);
 
         if (result.QuotaLimited.Contains("feature_flags"))
         {
             _logger.LogWarningQuotaExceeded();
-            return new FlagsResult();
+            return new FlagsResult { QuotaLimited = result.QuotaLimited };
         }
 
         return result;
 
-        async Task<FlagsResult> FetchDecideAsync(string distId, CancellationToken ctx)
+        async Task<FlagsResult> FetchFlagsAsync(string distId, CancellationToken ctx)
         {
-            var results = await _apiClient.GetFeatureFlagsFromDecideAsync(
+            var results = await _apiClient.GetFeatureFlagsAsync(
                 distId,
                 options?.PersonProperties,
                 options?.Groups,
@@ -583,11 +639,8 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            // Clear existing cache to force a reload
-            _featureFlagsLoader.Clear();
-
-            // Load fresh feature flags
-            await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+            // Refresh feature flags (ETag will be used for conditional requests to minimize bandwidth)
+            await _featureFlagsLoader.RefreshAsync(cancellationToken);
 
             // Determine polling status for logging
             var pollingStatus = _featureFlagsLoader.IsLoaded ? "active" : "inactive";
@@ -628,7 +681,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public void Dispose() => DisposeAsync().AsTask().Wait();
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     /// Clears the local flags cache.
@@ -638,11 +691,18 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        // Stop the polling and wait for it.
-        await _asyncBatchHandler.DisposeAsync();
-        _apiClient.Dispose();
-        _featureFlagCalledEventCache.Dispose();
-        _featureFlagsLoader.Dispose();
+        // Stop background tasks first, while the API client is still alive.
+        // The polling task in _featureFlagsLoader may call the API client during shutdown.
+        try
+        {
+            await _asyncBatchHandler.DisposeAsync();
+            await _featureFlagsLoader.DisposeAsync();
+        }
+        finally
+        {
+            _apiClient.Dispose();
+            _featureFlagCalledEventCache.Dispose();
+        }
     }
 
 

@@ -224,8 +224,9 @@ public class FakeHttpMessageHandler : HttpMessageHandler
         public async Task<HttpResponseMessage> Respond(HttpRequestMessage requestMessage)
         {
             Debug.Assert(requestMessage != null, nameof(requestMessage) + " != null");
-            _receivedRequests.Add(requestMessage);
-            if (requestMessage.Content is not null)
+            // Null-forgiving: Debug.Assert ensures non-null, but ns2.0 lacks [DoesNotReturnIf] annotation
+            _receivedRequests.Add(requestMessage!);
+            if (requestMessage!.Content is not null)
             {
                 _receivedBodiesJson.Add(await requestMessage.Content.ReadAsStringAsync());
             }

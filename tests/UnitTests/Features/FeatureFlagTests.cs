@@ -55,12 +55,12 @@ public class TheEqualsMethod
     }
 }
 
-public class TheCreateFromDecideMethod
+public class TheCreateFromFlagsApiMethod
 {
     [Fact]
     public void CanCreateFromApiResult()
     {
-        var apiResult = new DecideApiResult
+        var apiResult = new FlagsApiResult
         {
             FeatureFlags = new Dictionary<string, StringOrValue<bool>>
             {
@@ -72,7 +72,7 @@ public class TheCreateFromDecideMethod
             }
         };
 
-        var flag = FeatureFlag.CreateFromDecide("some-key", true, apiResult);
+        var flag = FeatureFlag.CreateFromFlagsApi("some-key", true, apiResult);
 
         Assert.Equal("some-key", flag.Key);
         Assert.True(flag.IsEnabled);

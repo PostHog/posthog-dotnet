@@ -11,6 +11,7 @@ For documentation on the specific packages, see the README files in the respecti
 |---------|---------| -----------
 | [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) | [![NuGet version (PostHog.AspNetCore)](https://img.shields.io/nuget/v/PostHog.AspNetCore.svg?style=flat-square)](https://www.nuget.org/packages/PostHog.AspNetCore/) | For use in ASP.NET Core projects.
 | [PostHog](src/PostHog/README.md) | [![NuGet version (PostHog)](https://img.shields.io/nuget/v/PostHog.svg?style=flat-square)](https://www.nuget.org/packages/PostHog/)                                  | The core library. Over time, this will support client environments such as Unit, Xamarin, etc.
+| [PostHog.AI](src/PostHog.AI/README.md) | [![NuGet version (PostHog.AI)](https://img.shields.io/nuget/v/PostHog.AI.svg?style=flat-square)](https://www.nuget.org/packages/PostHog.AI/) | AI Observability for OpenAI and other LLM providers.
 
 > [!WARNING]  
 > These packages are currently in a pre-release stage. We're making them available publicly to solicit 
@@ -19,7 +20,7 @@ For documentation on the specific packages, see the README files in the respecti
 
 ## Platform
 
-The core [PostHog](./src/PostHog/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility. The [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) package targets `net8.0`.
+The core [PostHog](./src/PostHog/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility. The [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) package targets `net8.0`. The [PostHog.AI](src/PostHog.AI/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility.
 
 ## Building
 
@@ -72,47 +73,30 @@ This testing approach ensures broad compatibility without requiring users to ins
 
 ## Publishing Releases
 
-To create a release, use the `bin/release` script which automates the version bumping and release preparation process.
+Releases are driven by PR labels. When a PR with the right labels is merged to `main`, a GitHub Actions workflow handles version bumping, tagging, creating a GitHub Release (with auto-generated notes), and publishing to NuGet.
 
 ### Release Process
 
-1. **Prepare the release**: Run the release script with the type of version bump you want:
+1. Add the `release` label and exactly one of `bump-patch`, `bump-minor`, or `bump-major` to your PR
+2. Merge the PR to `main`
+3. Approve the release in the GitHub Environment gate (the workflow pauses for maintainer approval)
+4. The workflow bumps the version in `Directory.Build.props`, commits to `main`, creates a git tag, and creates a GitHub Release
+5. The GitHub Release triggers the [`main.yaml`](.github/workflows/main.yaml) workflow, which builds and publishes the packages to NuGet
 
-   ```bash
-   # For a patch release (1.0.6 -> 1.0.7)
-   ./bin/release patch
-   
-   # For a minor release (1.0.6 -> 1.1.0)
-   ./bin/release minor
-   
-   # For a major release (1.0.6 -> 2.0.0)
-   ./bin/release major
-   ```
+### Manual Fallback
 
-   This script will:
-   - Calculate the new version based on the current version in [`Directory.Build.props`](Directory.Build.props)
-   - Create a new release branch (`release-{version}`)
-   - Update the version in `Directory.Build.props`
-   - Build and test the solution
-   - Commit the version change and generated files
-   - Create and push the git tag
+If you need to perform an emergency release bypassing the automated workflow, the `bin/release-local` script is available:
 
-2. **Create a Pull Request**: Push the release branch and create a PR to merge it into `main`:
+```bash
+# For a patch release (1.0.6 -> 1.0.7)
+./bin/release-local patch
 
-   ```bash
-   git push origin release-{version}
-   ```
+# For a minor release (1.0.6 -> 1.1.0)
+./bin/release-local minor
 
-   Then create a pull request on GitHub to merge the release branch into `main`.
-
-3. **Create GitHub Release**: Once the PR is merged, go to GitHub to [Draft a new Release](https://github.com/Posthog/posthog-dotnet/releases/new), select the tag that was already created, and click "Auto-generate release notes". Edit the notes as needed and publish the release.
-
-When you create the Release, the [`main.yml`](.github/workflows/main.yml) workflow builds and publishes the package to NuGet.
-
-> [!IMPORTANT]
-> When creating a release, it's important to create and publish it in one go. If you save a draft of the release and
-> then later publish it, the workflow will not run. If you find yourself in that position, you can [manually trigger the workflow run](https://github.com/PostHog/posthog-dotnet/actions/workflows/main.yaml)
-> and select the tag to publish.
+# For a major release (1.0.6 -> 2.0.0)
+./bin/release-local major
+```
 
 ## Installation
 

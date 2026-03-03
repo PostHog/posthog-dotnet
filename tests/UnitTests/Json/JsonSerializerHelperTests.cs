@@ -21,11 +21,11 @@ public class TheSerializeToCamelCaseJsonMethod
 public class TheDeserializeFromCamelCaseJsonMethod
 {
     [Fact]
-    public async Task CanDeserializeJsonToDecideApiResult()
+    public async Task CanDeserializeLegacyJsonToFlagsApiResult()
     {
-        var json = await File.ReadAllTextAsync("./Fixtures/decide-api-result-v3.json");
+        var json = await File.ReadAllTextAsync("./Fixtures/flags-api-result-legacy.json");
 
-        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<FlagsApiResult>(json);
 
         Assert.NotNull(result);
         Assert.Equal(new Dictionary<string, StringOrValue<bool>>()
@@ -43,11 +43,11 @@ public class TheDeserializeFromCamelCaseJsonMethod
     }
 
     [Fact]
-    public async Task CanDeserializeJsonToDecideApiV4Result()
+    public async Task CanDeserializeJsonToFlagsApiResult()
     {
-        var json = await File.ReadAllTextAsync("./Fixtures/decide-api-result-v4.json");
+        var json = await File.ReadAllTextAsync("./Fixtures/flags-api-result.json");
 
-        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<FlagsApiResult>(json);
 
         Assert.NotNull(result);
         Assert.Equal(
@@ -95,11 +95,11 @@ public class TheDeserializeFromCamelCaseJsonMethod
     }
 
     [Fact]
-    public async Task CanDeserializeNegatedJsonToDecideApiResult()
+    public async Task CanDeserializeNegatedJsonToFlagsApiResult()
     {
-        var json = await File.ReadAllTextAsync("./Fixtures/decide-api-result-v3-negated.json");
+        var json = await File.ReadAllTextAsync("./Fixtures/flags-api-result-legacy-negated.json");
 
-        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<DecideApiResult>(json);
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<FlagsApiResult>(json);
 
         Assert.NotNull(result);
         Assert.NotNull(result.FeatureFlagPayloads);

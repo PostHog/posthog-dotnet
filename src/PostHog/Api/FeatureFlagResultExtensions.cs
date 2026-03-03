@@ -3,15 +3,15 @@ using PostHog.Library;
 
 namespace PostHog.Api;
 
-internal static class DecideApiResultExtensions
+internal static class FlagsApiResultNormalizer
 {
     /// <summary>
-    /// Returns a new DecideApiResult with all the feature flag collections populated. If we get a v4 response,
-    /// we populate <see cref="DecideApiResult.FeatureFlags"/> and <see cref="DecideApiResult.FeatureFlagPayloads"/>.
-    /// If we get a v3 response, we populate <see cref="DecideApiResult.Flags"/> as best as we can.
+    /// Returns a new <see cref="FlagsApiResult"/> with all the feature flag collections populated. If the response
+    /// uses the <see cref="FlagsApiResult.Flags"/> property, we populate <see cref="FlagsApiResult.FeatureFlags"/>
+    /// and <see cref="FlagsApiResult.FeatureFlagPayloads"/>. If the response uses <see cref="FlagsApiResult.FeatureFlags"/>,
+    /// we populate <see cref="FlagsApiResult.Flags"/> as best as we can.
     /// </summary>
-    /// <returns></returns>
-    public static DecideApiResult NormalizeResult(this DecideApiResult result)
+    public static FlagsApiResult NormalizeResult(this FlagsApiResult result)
     {
         return result switch
         {
@@ -29,19 +29,19 @@ internal static class DecideApiResultExtensions
             {
                 Flags = featureFlags.ToReadOnlyDictionary(
                     kvp => kvp.Key,
-                    kvp => FeatureFlagResultExtensions.FromV3(
+                    kvp => FeatureFlagResultExtensions.FromLegacy(
                         kvp.Key,
                         kvp.Value,
                         result.FeatureFlagPayloads?.GetValueOrDefault(kvp.Key)))
             },
-            _ => new DecideApiResult()
+            _ => new FlagsApiResult()
         };
     }
 }
 
 internal static class FeatureFlagResultExtensions
 {
-    internal static FeatureFlagResult FromV3(
+    internal static FeatureFlagResult FromLegacy(
         string key,
         StringOrValue<bool> value,
         string? payload)

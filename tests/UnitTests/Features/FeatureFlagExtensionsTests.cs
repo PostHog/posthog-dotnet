@@ -14,7 +14,7 @@ public class TheIsFeatureEnabledAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse(
+        messageHandler.AddFlagsResponse(
             $$"""
             {"featureFlags": {"flag-key": {{enabled.ToString().ToLowerInvariant()}} } }
             """
@@ -32,7 +32,7 @@ public class TheIsFeatureEnabledAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse(
+        messageHandler.AddFlagsResponse(
             """
             {"featureFlags":{"flag-key": "premium-experience"}}
             """
@@ -49,7 +49,7 @@ public class TheIsFeatureEnabledAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddDecideResponse(
+        messageHandler.AddFlagsResponse(
             """
             {"featureFlags":{"flag-key": "premium-experience"}}
             """

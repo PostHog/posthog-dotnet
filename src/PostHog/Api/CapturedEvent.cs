@@ -22,7 +22,9 @@ public class CapturedEvent
         Dictionary<string, object>? properties,
         DateTimeOffset timestamp)
     {
+        Uuid = Guid.NewGuid().ToString();
         EventName = eventName;
+        DistinctId = distinctId;
         Timestamp = timestamp;
 
         Properties = properties ?? new Dictionary<string, object>();
@@ -35,10 +37,22 @@ public class CapturedEvent
     }
 
     /// <summary>
+    /// The unique identifier for this event. Used for deduplication.
+    /// </summary>
+    [JsonPropertyName("uuid")]
+    public string Uuid { get; }
+
+    /// <summary>
     /// The event name.
     /// </summary>
     [JsonPropertyName("event")]
     public string EventName { get; }
+
+    /// <summary>
+    /// The distinct ID of the user.
+    /// </summary>
+    [JsonPropertyName("distinct_id")]
+    public string DistinctId { get; }
 
     /// <summary>
     /// The properties to send with the event.

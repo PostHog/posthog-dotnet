@@ -43,6 +43,8 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
     readonly PeriodicTimer _timer;
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly SemaphoreSlim _flushSignal = new(0); // Used to signal when a flush is needed
+    readonly Task _timerTask;
+    readonly Task _flushSignalTask;
     volatile int _disposed;
     volatile int _flushing;
 
@@ -63,8 +65,8 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
             FullMode = BoundedChannelFullMode.DropOldest
         });
         _timer = new PeriodicTimer(options.Value.FlushInterval, timeProvider);
-        taskScheduler.Run(() => HandleTimer(_cancellationTokenSource.Token));
-        taskScheduler.Run(() => HandleFlushSignal(_cancellationTokenSource.Token));
+        _timerTask = taskScheduler.Run(() => HandleTimer(_cancellationTokenSource.Token));
+        _flushSignalTask = taskScheduler.Run(() => HandleFlushSignal(_cancellationTokenSource.Token));
     }
 
     public AsyncBatchHandler(
@@ -231,7 +233,7 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
 
     public void Dispose()
     {
-        DisposeAsync().AsTask().Wait();
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     public async ValueTask DisposeAsync()
@@ -244,17 +246,25 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
 
         _logger.LogInfoDisposeAsyncCalled();
 
-        // Ensures that both the HandleFlushSignal and HandleTimer throw
-        // OperationCancelledException which is handled gracefully.
-        await _cancellationTokenSource.CancelAsync();
-        _cancellationTokenSource.Dispose();
-        _timer.Dispose();
-        _flushSignal.Dispose();
-        _channel.Writer.Complete();
+        // Cancel the token so both background loops exit, then wait for them to finish.
+        // This ensures any in-flight flush completes and _flushing returns to 0 before
+        // we attempt the final flush below.
+        try
+        {
+            await _cancellationTokenSource.CancelAsync();
+            await Task.WhenAll(_timerTask, _flushSignalTask);
+        }
+        finally
+        {
+            _timer.Dispose();
+            _flushSignal.Dispose();
+            _cancellationTokenSource.Dispose();
+            _channel.Writer.Complete();
+        }
         try
         {
             _logger.LogTraceFlushCalledInDispose(Count);
-            // Flush the last remaining items.
+            // Flush any remaining items that weren't picked up by the background tasks.
             await FlushBatchesAsync();
         }
 #pragma warning disable CA1031 // Do not catch general exception types

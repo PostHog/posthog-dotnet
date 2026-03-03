@@ -1,14 +1,14 @@
 using PostHog.Api;
 using PostHog.Json;
 
-namespace DecideApiResultTests;
+namespace FlagsApiResultTests;
 
 public class TheNormalizeResultMethod
 {
     [Fact]
     public void HandlesV3Response()
     {
-        var decideApiResult = new DecideApiResult
+        var flagsApiResult = new FlagsApiResult
         {
             FeatureFlags = new Dictionary<string, StringOrValue<bool>>
             {
@@ -27,7 +27,7 @@ public class TheNormalizeResultMethod
             RequestId = "request-id"
         };
 
-        var result = decideApiResult.NormalizeResult();
+        var result = flagsApiResult.NormalizeResult();
 
         Assert.NotNull(result);
 
@@ -115,7 +115,7 @@ public class TheNormalizeResultMethod
     [Fact]
     public void HandlesV4Response()
     {
-        var decideApiResult = new DecideApiResult
+        var flagsApiResult = new FlagsApiResult
         {
             Flags = new Dictionary<string, FeatureFlagResult>
             {
@@ -201,7 +201,7 @@ public class TheNormalizeResultMethod
             RequestId = "request-id"
         };
 
-        var result = decideApiResult.NormalizeResult();
+        var result = flagsApiResult.NormalizeResult();
 
         Assert.NotNull(result);
 

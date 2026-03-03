@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
@@ -7,7 +9,7 @@ using PostHog.Json;
 /// </summary>
 internal static class FakeHttpMessageHandlerExtensions
 {
-    static readonly Uri DecideUrl = new("https://us.i.posthog.com/decide?v=4");
+    static readonly Uri FlagsUrl = new("https://us.i.posthog.com/flags/?v=2");
 
     public static FakeHttpMessageHandler.RequestHandler AddCaptureResponse(this FakeHttpMessageHandler handler) =>
         handler.AddResponse(
@@ -21,50 +23,52 @@ internal static class FakeHttpMessageHandlerExtensions
             HttpMethod.Post,
             responseBody: new { status = 1 });
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponseException(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponseException(
         this FakeHttpMessageHandler handler,
         Exception exception)
-        => handler.AddResponseException(DecideUrl, HttpMethod.Post, exception);
+        => handler.AddResponseException(FlagsUrl, HttpMethod.Post, exception);
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
-        Func<Dictionary<string, object>, bool> decideRequestPredicate,
+        Func<Dictionary<string, object>, bool> requestPredicate,
         string responseBody)
-        => handler.AddDecideResponse(
-            decideRequestPredicate,
-            responseBody: Deserialize<DecideApiResult>(responseBody));
+        => handler.AddFlagsResponse(
+            requestPredicate,
+            responseBody: Deserialize<FlagsApiResult>(responseBody));
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
         string responseBody)
-        => handler.AddDecideResponse(_ => true, responseBody);
+        => handler.AddFlagsResponse(_ => true, responseBody);
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
-        DecideApiResult responseBody)
-        => handler.AddDecideResponse(
+        FlagsApiResult responseBody)
+        => handler.AddFlagsResponse(
             _ => true,
             responseBody: responseBody);
 
-    public static FakeHttpMessageHandler.RequestHandler AddDecideResponse(
+    public static FakeHttpMessageHandler.RequestHandler AddFlagsResponse(
         this FakeHttpMessageHandler handler,
-        Func<Dictionary<string, object>, bool> decideRequestPredicate,
-        DecideApiResult responseBody)
+        Func<Dictionary<string, object>, bool> requestPredicate,
+        FlagsApiResult responseBody)
         => handler.AddResponse(
-            DecideUrl,
+            FlagsUrl,
             HttpMethod.Post,
-            decideRequestPredicate,
+            requestPredicate,
             responseBody);
 
-    public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, Func<int, string> responseBodyFunc)
+    public static void AddRepeatedFlagsResponse(this FakeHttpMessageHandler handler, int count, Func<int, string> responseBodyFunc)
         => handler.AddRepeatedResponses(
             count,
-            DecideUrl,
+            FlagsUrl,
             HttpMethod.Post,
             responseBodyFunc: responseBodyFunc);
 
-    public static void AddRepeatedDecideResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
-        => handler.AddRepeatedDecideResponse(count, _ => responseBody);
+    public static void AddRepeatedFlagsResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
+        => handler.AddRepeatedFlagsResponse(count, _ => responseBody);
+
+    static readonly Uri LocalEvaluationUrl = new("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts");
 
     public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
         this FakeHttpMessageHandler handler,
@@ -75,10 +79,69 @@ internal static class FakeHttpMessageHandlerExtensions
         this FakeHttpMessageHandler handler,
         LocalEvaluationApiResult responseBody) =>
         handler.AddResponse(
-            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts"),
+            LocalEvaluationUrl,
             HttpMethod.Get,
             responseBody: responseBody);
 
+    /// <summary>
+    /// Adds a local evaluation response with an ETag header.
+    /// </summary>
+    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponseWithETag(
+        this FakeHttpMessageHandler handler,
+        string responseBody,
+        string etag)
+    {
+#pragma warning disable CA2000 // HttpResponseMessage is disposed by the handler
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
+        };
+#pragma warning restore CA2000
+        response.Headers.ETag = new EntityTagHeaderValue(etag);
+
+        return handler.AddResponse(LocalEvaluationUrl, HttpMethod.Get, response);
+    }
+
+    /// <summary>
+    /// Adds a 304 Not Modified response for local evaluation.
+    /// </summary>
+    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationNotModifiedResponse(
+        this FakeHttpMessageHandler handler,
+        string? etag = null)
+    {
+#pragma warning disable CA2000 // HttpResponseMessage is disposed by the handler
+        var response = new HttpResponseMessage(HttpStatusCode.NotModified);
+#pragma warning restore CA2000
+        if (etag is not null)
+        {
+            response.Headers.ETag = new EntityTagHeaderValue(etag);
+        }
+
+        return handler.AddResponse(LocalEvaluationUrl, HttpMethod.Get, response);
+    }
+
+    /// <summary>
+    /// Adds a quota_limited error response for local evaluation.
+    /// </summary>
+    public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationQuotaLimitedResponse(
+        this FakeHttpMessageHandler handler)
+    {
+        const string quotaLimitedBody = """
+            {
+                "type": "quota_limited",
+                "detail": "You have exceeded your feature flag request quota",
+                "code": "payment_required"
+            }
+            """;
+#pragma warning disable CA2000 // HttpResponseMessage is disposed by the handler
+        var response = new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+        {
+            Content = new StringContent(quotaLimitedBody, System.Text.Encoding.UTF8, "application/json")
+        };
+#pragma warning restore CA2000
+
+        return handler.AddResponse(LocalEvaluationUrl, HttpMethod.Get, response);
+    }
 
     public static FakeHttpMessageHandler.RequestHandler AddRemoteConfigResponse(
         this FakeHttpMessageHandler handler,

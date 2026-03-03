@@ -124,7 +124,7 @@ internal class ExceptionPropertiesBuilder
                 continue;
             }
 
-            var sourceContext = BuildSourceCodeContext(fileName, lineNumber, columnNumber,
+            var sourceContext = BuildSourceCodeContext(fileName!, lineNumber, columnNumber,
                 DEFAULT_MAX_LINES, DEFAULT_MAX_LENGTH);
 
             frameDetails["pre_context"] = sourceContext.PreContext ?? [];
