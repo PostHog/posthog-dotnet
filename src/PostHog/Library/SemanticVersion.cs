@@ -58,7 +58,8 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         }
 
         // Strip leading/trailing whitespace
-        var trimmed = value.Trim();
+        // value is guaranteed non-null here since IsNullOrWhiteSpace returned false
+        var trimmed = value!.Trim();
 
         // Strip 'v' or 'V' prefix
         if (trimmed.Length > 0 && (trimmed[0] == 'v' || trimmed[0] == 'V'))
@@ -72,8 +73,10 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         }
 
         // Strip pre-release and build metadata (split on '-' or '+', take first part)
-        var hyphenIndex = trimmed.IndexOf('-', StringComparison.Ordinal);
-        var plusIndex = trimmed.IndexOf('+', StringComparison.Ordinal);
+#pragma warning disable CA1865 // Use char overload - but CA1307 requires StringComparison
+        var hyphenIndex = trimmed.IndexOf("-", StringComparison.Ordinal);
+        var plusIndex = trimmed.IndexOf("+", StringComparison.Ordinal);
+#pragma warning restore CA1865
 
         var metadataIndex = -1;
         if (hyphenIndex >= 0 && plusIndex >= 0)
@@ -218,7 +221,8 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
             return false;
         }
 
-        var trimmed = pattern.Trim();
+        // pattern is guaranteed non-null here since IsNullOrWhiteSpace returned false
+        var trimmed = pattern!.Trim();
 
         // Strip 'v' or 'V' prefix
         if (trimmed.Length > 0 && (trimmed[0] == 'v' || trimmed[0] == 'V'))
