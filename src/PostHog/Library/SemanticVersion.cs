@@ -72,26 +72,24 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
             return false;
         }
 
-        // Strip pre-release and build metadata (split on '-' or '+', take first part)
-#pragma warning disable CA1865 // Use char overload - but CA1307 requires StringComparison
-        var hyphenIndex = trimmed.IndexOf("-", StringComparison.Ordinal);
-        var plusIndex = trimmed.IndexOf("+", StringComparison.Ordinal);
-#pragma warning restore CA1865
-
+        // Strip pre-release and build metadata
+        // For '-', only treat as separator if it follows a digit (e.g., "1.2.3-alpha")
+        // This avoids stripping negative signs (e.g., "1.-2.3" should fail, not become "1.")
+        // For '+', always treat as build metadata separator
         var metadataIndex = -1;
-        if (hyphenIndex >= 0 && plusIndex >= 0)
+        for (var i = 0; i < trimmed.Length; i++)
         {
-            metadataIndex = Math.Min(hyphenIndex, plusIndex);
+            if (trimmed[i] == '+')
+            {
+                metadataIndex = i;
+                break;
+            }
+            if (trimmed[i] == '-' && i > 0 && char.IsDigit(trimmed[i - 1]))
+            {
+                metadataIndex = i;
+                break;
+            }
         }
-        else if (hyphenIndex >= 0)
-        {
-            metadataIndex = hyphenIndex;
-        }
-        else if (plusIndex >= 0)
-        {
-            metadataIndex = plusIndex;
-        }
-
         if (metadataIndex >= 0)
         {
             trimmed = trimmed[..metadataIndex];
@@ -127,6 +125,12 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         // Parse patch (optional, defaults to 0)
         var patch = 0;
         if (parts.Length > 2 && !string.IsNullOrEmpty(parts[2]) && !int.TryParse(parts[2], out patch))
+        {
+            return false;
+        }
+
+        // Reject negative version components
+        if (major < 0 || minor < 0 || patch < 0)
         {
             return false;
         }
@@ -246,16 +250,10 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         // Parse based on the pattern structure
         if (parts.Length == 1)
         {
-            // Could be "X" or "X.*" pattern without the dot
-            // Actually "1" is valid and means "1.*"
+            // "X" pattern - treat as "X.*"
+            // Bare wildcards like "*" and non-numeric values are invalid
             if (!int.TryParse(parts[0], out var major))
             {
-                // Check if it's a wildcard itself
-                if (parts[0] == "*")
-                {
-                    // "*" alone is invalid for our purposes
-                    return false;
-                }
                 return false;
             }
 

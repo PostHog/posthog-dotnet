@@ -136,6 +136,9 @@ public class TheTryParseMethod
     [InlineData("not-a-version")]
     [InlineData("..")]
     [InlineData("...")]
+    [InlineData("1.-2.3")]    // Negative minor
+    [InlineData("-1.2.3")]    // Negative major
+    [InlineData("1.2.-3")]    // Negative patch
     public void ReturnsFalseForInvalidInput(string? input)
     {
         var result = SemanticVersion.TryParse(input, out var version);

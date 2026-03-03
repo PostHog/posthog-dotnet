@@ -255,6 +255,25 @@ public class PropertyFilterValue
     public static bool operator >=(PropertyFilterValue left, object? right) => NotNull(left).CompareTo(right) >= 0;
     public static bool operator <=(PropertyFilterValue left, object? right) => NotNull(left).CompareTo(right) <= 0;
 
+    static SemanticVersion ParseOverrideSemver(object? overrideValue)
+    {
+        var overrideVersionString = overrideValue?.ToString();
+        if (!SemanticVersion.TryParse(overrideVersionString, out var version))
+        {
+            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
+        }
+        return version.Value;
+    }
+
+    SemanticVersion ParseFilterSemver()
+    {
+        if (!SemanticVersion.TryParse(StringValue, out var version))
+        {
+            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
+        }
+        return version.Value;
+    }
+
     /// <summary>
     /// Compares the override value as a semantic version against this filter value.
     /// </summary>
@@ -263,19 +282,9 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
     public int CompareSemver(object? overrideValue)
     {
-        var overrideVersionString = overrideValue?.ToString();
-
-        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
-        {
-            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
-        }
-
-        if (!SemanticVersion.TryParse(StringValue, out var filterVersion))
-        {
-            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
-        }
-
-        return overrideVersion.Value.CompareTo(filterVersion.Value);
+        var overrideVersion = ParseOverrideSemver(overrideValue);
+        var filterVersion = ParseFilterSemver();
+        return overrideVersion.CompareTo(filterVersion);
     }
 
     /// <summary>
@@ -287,20 +296,10 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
     public bool IsSemverTildeMatch(object? overrideValue)
     {
-        var overrideVersionString = overrideValue?.ToString();
-
-        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
-        {
-            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
-        }
-
-        if (!SemanticVersion.TryParse(StringValue, out var filterVersion))
-        {
-            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
-        }
-
-        var (lower, upper) = filterVersion.Value.GetTildeBounds();
-        return overrideVersion.Value.IsInRange(lower, upper);
+        var overrideVersion = ParseOverrideSemver(overrideValue);
+        var filterVersion = ParseFilterSemver();
+        var (lower, upper) = filterVersion.GetTildeBounds();
+        return overrideVersion.IsInRange(lower, upper);
     }
 
     /// <summary>
@@ -315,20 +314,10 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
     public bool IsSemverCaretMatch(object? overrideValue)
     {
-        var overrideVersionString = overrideValue?.ToString();
-
-        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
-        {
-            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
-        }
-
-        if (!SemanticVersion.TryParse(StringValue, out var filterVersion))
-        {
-            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
-        }
-
-        var (lower, upper) = filterVersion.Value.GetCaretBounds();
-        return overrideVersion.Value.IsInRange(lower, upper);
+        var overrideVersion = ParseOverrideSemver(overrideValue);
+        var filterVersion = ParseFilterSemver();
+        var (lower, upper) = filterVersion.GetCaretBounds();
+        return overrideVersion.IsInRange(lower, upper);
     }
 
     /// <summary>
@@ -341,19 +330,14 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed.</exception>
     public bool IsSemverWildcardMatch(object? overrideValue)
     {
-        var overrideVersionString = overrideValue?.ToString();
-
-        if (!SemanticVersion.TryParse(overrideVersionString, out var overrideVersion))
-        {
-            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
-        }
+        var overrideVersion = ParseOverrideSemver(overrideValue);
 
         if (!TryParseWildcard(StringValue, out var lower, out var upper))
         {
             throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a wildcard pattern");
         }
 
-        return overrideVersion.Value.IsInRange(lower.Value, upper.Value);
+        return overrideVersion.IsInRange(lower.Value, upper.Value);
     }
 
     public override string ToString()
