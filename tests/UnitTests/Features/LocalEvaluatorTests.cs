@@ -1640,6 +1640,647 @@ public class TheFlagDependencyEvaluationMethod
     }
 }
 
+public class TheSemverOperators
+{
+    static LocalEvaluationApiResult CreateFlags(string key, IReadOnlyList<PropertyFilter> properties)
+    {
+        return new LocalEvaluationApiResult
+        {
+            Flags = [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = $"{key}-feature-flag",
+                    Key = key,
+                    Filters = new FeatureFlagFilters {
+                        Groups = [
+                            new FeatureFlagGroup
+                            {
+                                Properties = properties
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+    }
+
+    [Theory]
+    // Basic equality tests
+    [InlineData("1.2.3", ComparisonOperator.SemverEquals, "1.2.3", true)]
+    [InlineData("1.2.3", ComparisonOperator.SemverEquals, "1.2.4", false)]
+    [InlineData("1.2.3", ComparisonOperator.SemverEquals, "1.2.2", false)]
+    [InlineData("v1.2.3", ComparisonOperator.SemverEquals, "1.2.3", true)]
+    [InlineData("1.2.3-alpha", ComparisonOperator.SemverEquals, "1.2.3", true)] // Pre-release stripped
+    [InlineData("1.2.3", ComparisonOperator.SemverEquals, "1.2.3-beta", true)]  // Pre-release stripped
+    public void HandlesSemverEqualsOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Not equal tests
+    [InlineData("1.2.3", ComparisonOperator.SemverNotEquals, "1.2.3", false)]
+    [InlineData("1.2.3", ComparisonOperator.SemverNotEquals, "1.2.4", true)]
+    [InlineData("1.2.3", ComparisonOperator.SemverNotEquals, "1.2.2", true)]
+    [InlineData("2.0.0", ComparisonOperator.SemverNotEquals, "1.0.0", true)]
+    public void HandlesSemverNotEqualsOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Greater than tests
+    [InlineData("1.2.4", ComparisonOperator.SemverGreaterThan, "1.2.3", true)]
+    [InlineData("1.2.3", ComparisonOperator.SemverGreaterThan, "1.2.3", false)]
+    [InlineData("1.2.2", ComparisonOperator.SemverGreaterThan, "1.2.3", false)]
+    [InlineData("2.0.0", ComparisonOperator.SemverGreaterThan, "1.9.9", true)]
+    [InlineData("1.3.0", ComparisonOperator.SemverGreaterThan, "1.2.99", true)]
+    public void HandlesSemverGreaterThanOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Greater than or equal tests
+    [InlineData("1.2.4", ComparisonOperator.SemverGreaterThanOrEquals, "1.2.3", true)]
+    [InlineData("1.2.3", ComparisonOperator.SemverGreaterThanOrEquals, "1.2.3", true)]
+    [InlineData("1.2.2", ComparisonOperator.SemverGreaterThanOrEquals, "1.2.3", false)]
+    public void HandlesSemverGreaterThanOrEqualsOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Less than tests
+    [InlineData("1.2.2", ComparisonOperator.SemverLessThan, "1.2.3", true)]
+    [InlineData("1.2.3", ComparisonOperator.SemverLessThan, "1.2.3", false)]
+    [InlineData("1.2.4", ComparisonOperator.SemverLessThan, "1.2.3", false)]
+    [InlineData("1.9.9", ComparisonOperator.SemverLessThan, "2.0.0", true)]
+    public void HandlesSemverLessThanOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Less than or equal tests
+    [InlineData("1.2.2", ComparisonOperator.SemverLessThanOrEquals, "1.2.3", true)]
+    [InlineData("1.2.3", ComparisonOperator.SemverLessThanOrEquals, "1.2.3", true)]
+    [InlineData("1.2.4", ComparisonOperator.SemverLessThanOrEquals, "1.2.3", false)]
+    public void HandlesSemverLessThanOrEqualsOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Tilde operator tests: ~X.Y.Z means >=X.Y.Z and <X.Y+1.0
+    [InlineData("1.2.3", ComparisonOperator.SemverTilde, "1.2.3", true)]  // At lower bound
+    [InlineData("1.2.4", ComparisonOperator.SemverTilde, "1.2.3", true)]  // Within range
+    [InlineData("1.2.99", ComparisonOperator.SemverTilde, "1.2.3", true)] // Still in range
+    [InlineData("1.3.0", ComparisonOperator.SemverTilde, "1.2.3", false)] // At upper bound (exclusive)
+    [InlineData("1.2.2", ComparisonOperator.SemverTilde, "1.2.3", false)] // Below range
+    [InlineData("2.0.0", ComparisonOperator.SemverTilde, "1.2.3", false)] // Above range
+    public void HandlesSemverTildeOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Caret operator tests for major > 0: ^X.Y.Z means >=X.Y.Z and <X+1.0.0
+    [InlineData("1.2.3", ComparisonOperator.SemverCaret, "1.2.3", true)]  // At lower bound
+    [InlineData("1.2.4", ComparisonOperator.SemverCaret, "1.2.3", true)]  // Within range
+    [InlineData("1.9.9", ComparisonOperator.SemverCaret, "1.2.3", true)]  // Within range
+    [InlineData("2.0.0", ComparisonOperator.SemverCaret, "1.2.3", false)] // At upper bound (exclusive)
+    [InlineData("1.2.2", ComparisonOperator.SemverCaret, "1.2.3", false)] // Below range
+    [InlineData("3.0.0", ComparisonOperator.SemverCaret, "1.2.3", false)] // Above range
+    public void HandlesSemverCaretOperatorWithMajorGreaterThanZero(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Caret operator tests for major = 0, minor > 0: ^0.Y.Z means >=0.Y.Z and <0.Y+1.0
+    [InlineData("0.2.3", ComparisonOperator.SemverCaret, "0.2.3", true)]  // At lower bound
+    [InlineData("0.2.4", ComparisonOperator.SemverCaret, "0.2.3", true)]  // Within range
+    [InlineData("0.2.99", ComparisonOperator.SemverCaret, "0.2.3", true)] // Within range
+    [InlineData("0.3.0", ComparisonOperator.SemverCaret, "0.2.3", false)] // At upper bound (exclusive)
+    [InlineData("0.2.2", ComparisonOperator.SemverCaret, "0.2.3", false)] // Below range
+    [InlineData("1.0.0", ComparisonOperator.SemverCaret, "0.2.3", false)] // Above range
+    public void HandlesSemverCaretOperatorWithMajorZeroMinorGreaterThanZero(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Caret operator tests for major = 0, minor = 0: ^0.0.Z means >=0.0.Z and <0.0.Z+1
+    [InlineData("0.0.3", ComparisonOperator.SemverCaret, "0.0.3", true)]  // At lower bound
+    [InlineData("0.0.4", ComparisonOperator.SemverCaret, "0.0.3", false)] // At upper bound (exclusive)
+    [InlineData("0.0.2", ComparisonOperator.SemverCaret, "0.0.3", false)] // Below range
+    [InlineData("0.1.0", ComparisonOperator.SemverCaret, "0.0.3", false)] // Above range
+    public void HandlesSemverCaretOperatorWithMajorAndMinorZero(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Wildcard operator tests: "X.*" means >=X.0.0 and <X+1.0.0
+    [InlineData("1.0.0", ComparisonOperator.SemverWildcard, "1.*", true)]
+    [InlineData("1.5.3", ComparisonOperator.SemverWildcard, "1.*", true)]
+    [InlineData("1.99.99", ComparisonOperator.SemverWildcard, "1.*", true)]
+    [InlineData("2.0.0", ComparisonOperator.SemverWildcard, "1.*", false)]
+    [InlineData("0.9.9", ComparisonOperator.SemverWildcard, "1.*", false)]
+    public void HandlesSemverWildcardMajorOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Wildcard operator tests: "X.Y.*" means >=X.Y.0 and <X.Y+1.0
+    [InlineData("1.2.0", ComparisonOperator.SemverWildcard, "1.2.*", true)]
+    [InlineData("1.2.99", ComparisonOperator.SemverWildcard, "1.2.*", true)]
+    [InlineData("1.3.0", ComparisonOperator.SemverWildcard, "1.2.*", false)]
+    [InlineData("1.1.99", ComparisonOperator.SemverWildcard, "1.2.*", false)]
+    public void HandlesSemverWildcardMinorOperator(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Special version parsing tests
+    [InlineData("v1.2.3", ComparisonOperator.SemverEquals, "1.2.3", true)]     // v-prefix
+    [InlineData("1.2.3", ComparisonOperator.SemverEquals, "v1.2.3", true)]     // v-prefix in filter
+    [InlineData("1.2.3-alpha", ComparisonOperator.SemverEquals, "1.2.3", true)] // Pre-release stripped
+    [InlineData("1.2.3+build", ComparisonOperator.SemverEquals, "1.2.3", true)] // Build metadata stripped
+    [InlineData("  1.2.3  ", ComparisonOperator.SemverEquals, "1.2.3", true)]   // Whitespace stripped
+    [InlineData("01.02.03", ComparisonOperator.SemverEquals, "1.2.3", true)]    // Leading zeros
+    [InlineData("1.2", ComparisonOperator.SemverEquals, "1.2.0", true)]         // Partial version
+    [InlineData("1", ComparisonOperator.SemverEquals, "1.0.0", true)]           // Partial version
+    [InlineData("1.2.3.4", ComparisonOperator.SemverEquals, "1.2.3", true)]     // Extra parts ignored
+    public void HandlesSpecialVersionFormats(string overrideValue, ComparisonOperator comparison, string filterValue, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    // Invalid version in property value - should throw InconclusiveMatchException
+    [InlineData("not-a-version", ComparisonOperator.SemverEquals)]
+    [InlineData("", ComparisonOperator.SemverEquals)]
+    [InlineData("abc.def.ghi", ComparisonOperator.SemverEquals)]
+    [InlineData(".1.2.3", ComparisonOperator.SemverEquals)]
+    [InlineData("not-a-version", ComparisonOperator.SemverGreaterThan)]
+    [InlineData("", ComparisonOperator.SemverGreaterThan)]
+    public void ThrowsInconclusiveMatchExceptionForInvalidOverrideVersion(string overrideValue, ComparisonOperator comparison)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue("1.2.3"),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() =>
+            localEvaluator.EvaluateFeatureFlag(
+                key: "version",
+                distinctId: "distinct-id",
+                personProperties: properties));
+    }
+
+    [Theory]
+    // Invalid version in filter value - should throw InconclusiveMatchException
+    [InlineData("not-a-version")]
+    [InlineData("")]
+    [InlineData("abc.def.ghi")]
+    [InlineData(".1.2.3")]
+    public void ThrowsInconclusiveMatchExceptionForInvalidFilterVersion(string filterValue)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = ComparisonOperator.SemverEquals
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = "1.2.3"
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() =>
+            localEvaluator.EvaluateFeatureFlag(
+                key: "version",
+                distinctId: "distinct-id",
+                personProperties: properties));
+    }
+
+    [Theory]
+    // Invalid wildcard patterns - should throw InconclusiveMatchException
+    [InlineData("*")]
+    [InlineData("1.2.3")]  // Not a wildcard pattern
+    [InlineData("abc.*")]
+    public void ThrowsInconclusiveMatchExceptionForInvalidWildcardPattern(string filterValue)
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue(filterValue),
+                    Operator = ComparisonOperator.SemverWildcard
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = "1.2.3"
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() =>
+            localEvaluator.EvaluateFeatureFlag(
+                key: "version",
+                distinctId: "distinct-id",
+                personProperties: properties));
+    }
+
+    [Fact]
+    public void ReturnsFalseWhenPropertyValueIsNull()
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue("1.2.3"),
+                    Operator = ComparisonOperator.SemverEquals
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["app_version"] = null
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "version",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        // Null values return false before reaching operator logic
+        Assert.False(result.Value);
+    }
+
+    [Fact]
+    public void ThrowsInconclusiveMatchExceptionWhenPropertyKeyMissing()
+    {
+        var flags = CreateFlags(
+            key: "version",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "app_version",
+                    Value = new PropertyFilterValue("1.2.3"),
+                    Operator = ComparisonOperator.SemverEquals
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["other_property"] = "1.2.3"
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() =>
+            localEvaluator.EvaluateFeatureFlag(
+                key: "version",
+                distinctId: "distinct-id",
+                personProperties: properties));
+    }
+}
+
 public class TheMatchesDependencyValueMethod
 {
     [Theory]

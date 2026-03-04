@@ -584,6 +584,15 @@ internal sealed class LocalEvaluator
             ComparisonOperator.IsSet => true, // We already checked to see that the key exists.
             ComparisonOperator.IsDateBefore => value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
             ComparisonOperator.IsDateAfter => !value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
+            ComparisonOperator.SemverEquals => value.CompareSemver(overrideValue) == 0,
+            ComparisonOperator.SemverNotEquals => value.CompareSemver(overrideValue) != 0,
+            ComparisonOperator.SemverGreaterThan => value.CompareSemver(overrideValue) > 0,
+            ComparisonOperator.SemverGreaterThanOrEquals => value.CompareSemver(overrideValue) >= 0,
+            ComparisonOperator.SemverLessThan => value.CompareSemver(overrideValue) < 0,
+            ComparisonOperator.SemverLessThanOrEquals => value.CompareSemver(overrideValue) <= 0,
+            ComparisonOperator.SemverTilde => value.IsSemverTildeMatch(overrideValue),
+            ComparisonOperator.SemverCaret => value.IsSemverCaretMatch(overrideValue),
+            ComparisonOperator.SemverWildcard => value.IsSemverWildcardMatch(overrideValue),
             null => true, // If no operator is specified, just return true.
             _ => throw new InconclusiveMatchException($"Unknown operator: {propertyFilter.Operator}")
         };

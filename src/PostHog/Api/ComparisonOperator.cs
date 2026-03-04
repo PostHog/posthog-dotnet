@@ -103,5 +103,59 @@ public enum ComparisonOperator
     /// Matches if the flag condition evaluates to the specified value.
     /// </summary>
     [JsonStringEnumMemberName("flag_evaluates_to")]
-    FlagEvaluatesTo
+    FlagEvaluatesTo,
+
+    /// <summary>
+    /// Matches if the version exactly equals the filter version.
+    /// </summary>
+    [JsonStringEnumMemberName("semver_eq")]
+    SemverEquals,
+
+    /// <summary>
+    /// Matches if the version does not equal the filter version.
+    /// </summary>
+    [JsonStringEnumMemberName("semver_neq")]
+    SemverNotEquals,
+
+    /// <summary>
+    /// Matches if the version is greater than the filter version.
+    /// </summary>
+    [JsonStringEnumMemberName("semver_gt")]
+    SemverGreaterThan,
+
+    /// <summary>
+    /// Matches if the version is greater than or equal to the filter version.
+    /// </summary>
+    [JsonStringEnumMemberName("semver_gte")]
+    SemverGreaterThanOrEquals,
+
+    /// <summary>
+    /// Matches if the version is less than the filter version.
+    /// </summary>
+    [JsonStringEnumMemberName("semver_lt")]
+    SemverLessThan,
+
+    /// <summary>
+    /// Matches if the version is less than or equal to the filter version.
+    /// </summary>
+    [JsonStringEnumMemberName("semver_lte")]
+    SemverLessThanOrEquals,
+
+    /// <summary>
+    /// Matches if the version is within the tilde range (~X.Y.Z means >=X.Y.Z and &lt;X.Y+1.0).
+    /// </summary>
+    [JsonStringEnumMemberName("semver_tilde")]
+    SemverTilde,
+
+    /// <summary>
+    /// Matches if the version is within the caret range (^X.Y.Z is compatible-with per semver spec).
+    /// </summary>
+    [JsonStringEnumMemberName("semver_caret")]
+    SemverCaret,
+
+    /// <summary>
+    /// Matches if the version matches the wildcard pattern (e.g., "1.2.*" means >=1.2.0 and &lt;1.3.0).
+    /// </summary>
+    [JsonStringEnumMemberName("semver_wildcard")]
+    SemverWildcard
 }
