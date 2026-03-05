@@ -83,21 +83,6 @@ Releases are driven by PR labels. When a PR with the right labels is merged to `
 4. The workflow bumps the version in `Directory.Build.props`, commits to `main`, creates a git tag, and creates a GitHub Release
 5. The GitHub Release triggers the [`main.yaml`](.github/workflows/main.yaml) workflow, which builds and publishes the packages to NuGet
 
-### Manual Fallback
-
-If you need to perform an emergency release bypassing the automated workflow, the `bin/release-local` script is available:
-
-```bash
-# For a patch release (1.0.6 -> 1.0.7)
-./bin/release-local patch
-
-# For a minor release (1.0.6 -> 1.1.0)
-./bin/release-local minor
-
-# For a major release (1.0.6 -> 2.0.0)
-./bin/release-local major
-```
-
 ## Installation
 
 For ASP.NET Core projects, install the `PostHog.AspNetCore` package:
