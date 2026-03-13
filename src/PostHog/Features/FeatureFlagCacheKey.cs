@@ -21,12 +21,20 @@ internal static class FeatureFlagCacheKey
     public static string Generate(
         string distinctId,
         IReadOnlyDictionary<string, object?>? personProperties,
-        GroupCollection? groups)
+        GroupCollection? groups,
+        string? deviceId = null)
     {
         Ensure.NotNull(distinctId);
 
         var builder = new StringBuilder();
         builder.Append(distinctId);
+
+        if (deviceId is not null)
+        {
+            builder.Append('|');
+            builder.Append("d:");
+            builder.Append(deviceId);
+        }
 
         if (personProperties is { Count: > 0 })
         {

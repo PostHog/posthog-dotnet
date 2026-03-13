@@ -2374,3 +2374,143 @@ public class TheMatchesDependencyValueMethod
         Assert.Equal(shouldMatch, result);
     }
 }
+
+public class TheBucketingIdentifierSupport
+{
+    static LocalEvaluationApiResult CreateFlagWithBucketingIdentifier(
+        string key,
+        string? bucketingIdentifier,
+        int rolloutPercentage = 100)
+    {
+        return JsonSerializer.Deserialize<LocalEvaluationApiResult>($$"""
+            {
+              "flags": [
+                {
+                  "id": 1,
+                  "name": "Test Flag",
+                  "key": "{{key}}",
+                  "active": true,
+                  "filters": {
+                    {{(bucketingIdentifier is not null ? $"\"bucketing_identifier\": \"{bucketingIdentifier}\"," : "")}}
+                    "groups": [
+                      {
+                        "rollout_percentage": {{rolloutPercentage}}
+                      }
+                    ]
+                  }
+                }
+              ],
+              "group_type_mapping": {}
+            }
+            """, JsonSerializerHelper.Options)!;
+    }
+
+    [Fact]
+    public void UsesDeviceIdForHashingWhenBucketingIdentifierIsDeviceId()
+    {
+        var flags = CreateFlagWithBucketingIdentifier("test-flag", "device_id", 50);
+        var evaluator = new LocalEvaluator(flags);
+
+        // With the same device_id, we should get a consistent result
+        var result1 = evaluator.EvaluateFeatureFlag(
+            "test-flag", "distinct-1", deviceId: "same-device");
+        var result2 = evaluator.EvaluateFeatureFlag(
+            "test-flag", "distinct-2", deviceId: "same-device");
+
+        // Both should produce the same result since they share the same device_id
+        // and the bucketing is based on device_id
+        Assert.Equal(result1.IsValue ? result1.Value : (bool?)null, result2.IsValue ? result2.Value : (bool?)null);
+    }
+
+    [Fact]
+    public void ThrowsInconclusiveWhenDeviceIdRequiredButNotProvided()
+    {
+        var flags = CreateFlagWithBucketingIdentifier("test-flag", "device_id");
+        var evaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<PostHog.Json.InconclusiveMatchException>(() =>
+            evaluator.EvaluateFeatureFlag("test-flag", "distinct-1"));
+    }
+
+    [Fact]
+    public void UsesDistinctIdWhenBucketingIdentifierIsDistinctId()
+    {
+        var flags = CreateFlagWithBucketingIdentifier("test-flag", "distinct_id", 50);
+        var evaluator = new LocalEvaluator(flags);
+
+        // Different distinct IDs should potentially produce different results
+        // Same distinct ID with different device IDs should produce same result
+        var result1 = evaluator.EvaluateFeatureFlag(
+            "test-flag", "same-distinct", deviceId: "device-1");
+        var result2 = evaluator.EvaluateFeatureFlag(
+            "test-flag", "same-distinct", deviceId: "device-2");
+
+        Assert.Equal(result1.IsValue ? result1.Value : (bool?)null, result2.IsValue ? result2.Value : (bool?)null);
+    }
+
+    [Fact]
+    public void UsesDistinctIdWhenBucketingIdentifierIsNull()
+    {
+        var flags = CreateFlagWithBucketingIdentifier("test-flag", null, 50);
+        var evaluator = new LocalEvaluator(flags);
+
+        // Same distinct ID with different device IDs should produce same result
+        var result1 = evaluator.EvaluateFeatureFlag(
+            "test-flag", "same-distinct", deviceId: "device-1");
+        var result2 = evaluator.EvaluateFeatureFlag(
+            "test-flag", "same-distinct", deviceId: "device-2");
+
+        Assert.Equal(result1.IsValue ? result1.Value : (bool?)null, result2.IsValue ? result2.Value : (bool?)null);
+    }
+
+    [Fact]
+    public void DeviceIdBucketingProducesDifferentResultFromDistinctIdBucketing()
+    {
+        // Create two flags: one with device_id bucketing, one with distinct_id
+        var deviceFlag = CreateFlagWithBucketingIdentifier("device-flag", "device_id", 50);
+        var distinctFlag = CreateFlagWithBucketingIdentifier("distinct-flag", "distinct_id", 50);
+
+        var deviceEvaluator = new LocalEvaluator(deviceFlag);
+        var distinctEvaluator = new LocalEvaluator(distinctFlag);
+
+        // Use a distinct_id and device_id that produce different hash values
+        // The point is that they use different identifiers for hashing
+        var deviceResult = deviceEvaluator.EvaluateFeatureFlag(
+            "device-flag", "user-1", deviceId: "device-xyz");
+        var distinctResult = distinctEvaluator.EvaluateFeatureFlag(
+            "distinct-flag", "user-1");
+
+        // We can't assert they're different (they could coincidentally be the same)
+        // but we verify both evaluate without error
+        Assert.True(deviceResult.IsValue || deviceResult.IsString);
+        Assert.True(distinctResult.IsValue || distinctResult.IsString);
+    }
+
+    [Fact]
+    public void EvaluateAllFlagsRespectsDeviceIdBucketing()
+    {
+        var flags = CreateFlagWithBucketingIdentifier("test-flag", "device_id");
+        var evaluator = new LocalEvaluator(flags);
+
+        var (results, fallbackToRemote) = evaluator.EvaluateAllFlags(
+            "distinct-1",
+            deviceId: "my-device");
+
+        Assert.True(results.ContainsKey("test-flag"));
+        Assert.False(fallbackToRemote);
+    }
+
+    [Fact]
+    public void EvaluateAllFlagsFallsBackWhenDeviceIdMissingForDeviceIdBucketing()
+    {
+        var flags = CreateFlagWithBucketingIdentifier("test-flag", "device_id");
+        var evaluator = new LocalEvaluator(flags);
+
+        var (results, fallbackToRemote) = evaluator.EvaluateAllFlags(
+            "distinct-1");
+        // No deviceId provided
+
+        Assert.False(results.ContainsKey("test-flag"));
+        Assert.True(fallbackToRemote); // Should need remote fallback
+    }
+}

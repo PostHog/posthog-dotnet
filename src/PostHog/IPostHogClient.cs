@@ -45,13 +45,15 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="personPropertiesToSetOnce">User properties to set only once (ex: Sign up date). If a property already exists, then the
     /// value in this dictionary is ignored.
     /// </param>
+    /// <param name="deviceId">Optional: The device identifier. When provided, added as <c>$device_id</c> to the set properties.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     Task<ApiResult> IdentifyAsync(
         string distinctId,
         Dictionary<string, object>? personPropertiesToSet,
         Dictionary<string, object>? personPropertiesToSetOnce,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? deviceId = null);
 
     /// <summary>
     /// Sets a groups properties, which allows asking questions like "Who are the most active companies"
@@ -94,6 +96,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time.</param>
+    /// <param name="deviceId">Optional: The device identifier. When provided, added as <c>$device_id</c> property on the event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     bool Capture(
         string distinctId,
@@ -101,7 +104,8 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
-        DateTimeOffset? timestamp = null);
+        DateTimeOffset? timestamp = null,
+        string? deviceId = null);
 
     /// <summary>
     /// Capture an exception as an event.
@@ -112,6 +116,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time</param>
+    /// <param name="deviceId">Optional: The device identifier. When provided, added as <c>$device_id</c> property on the event.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     bool CaptureException(
         Exception exception,
@@ -119,7 +124,8 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
-        DateTimeOffset? timestamp = null);
+        DateTimeOffset? timestamp = null,
+        string? deviceId = null);
 
     /// <summary>
     /// Determines whether a feature is enabled for the specified user.

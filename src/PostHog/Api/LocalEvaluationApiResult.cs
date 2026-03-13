@@ -146,6 +146,13 @@ internal record FeatureFlagFilters
     public int? AggregationGroupTypeIndex { get; init; }
 
     /// <summary>
+    /// The identifier used for bucketing (hashing) when evaluating this flag.
+    /// Values: <c>"distinct_id"</c> (default), <c>"device_id"</c>, or <c>null</c> (fallback to distinct_id).
+    /// </summary>
+    [JsonPropertyName("bucketing_identifier")]
+    public string? BucketingIdentifier { get; init; }
+
+    /// <summary>
     /// Compares this instance to another <see cref="FeatureFlagFilters"/> for equality.
     /// </summary>
     /// <remarks>
@@ -168,14 +175,15 @@ internal record FeatureFlagFilters
         return Groups.ListsAreEqual(other.Groups)
                && Payloads.DictionariesAreEqual(other.Payloads)
                && Multivariate == other.Multivariate
-               && AggregationGroupTypeIndex == other.AggregationGroupTypeIndex;
+               && AggregationGroupTypeIndex == other.AggregationGroupTypeIndex
+               && BucketingIdentifier == other.BucketingIdentifier;
     }
 
     /// <summary>
     /// Serves as the default hash function.
     /// </summary>
     /// <returns>A hash code for the current object.</returns>
-    public override int GetHashCode() => HashCode.Combine(Groups, Payloads, Multivariate, AggregationGroupTypeIndex);
+    public override int GetHashCode() => HashCode.Combine(Groups, Payloads, Multivariate, AggregationGroupTypeIndex, BucketingIdentifier);
 }
 
 /// <summary>

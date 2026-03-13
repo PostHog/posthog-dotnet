@@ -100,7 +100,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         GroupCollection? groups = null,
         Dictionary<string, object?>? personProperties = null,
-        bool warnOnUnknownGroups = true)
+        bool warnOnUnknownGroups = true,
+        string? deviceId = null)
     {
         var flagToEvaluate = LocalEvaluationApiResult.Flags.SingleOrDefault(f => f.Key == key);
         if (flagToEvaluate is null)
@@ -113,14 +114,16 @@ internal sealed class LocalEvaluator
             distinctId,
             groups: groups ?? [],
             personProperties ?? [],
-            warnOnUnknownGroups);
+            warnOnUnknownGroups,
+            deviceId);
     }
 
     public (IReadOnlyDictionary<string, FeatureFlag>, bool) EvaluateAllFlags(
         string distinctId,
         GroupCollection? groups = null,
         Dictionary<string, object?>? personProperties = null,
-        bool warnOnUnknownGroups = true)
+        bool warnOnUnknownGroups = true,
+        string? deviceId = null)
     {
         Dictionary<string, FeatureFlag> results = new();
 
@@ -140,7 +143,8 @@ internal sealed class LocalEvaluator
                     distinctId,
                     groups ?? [],
                     personProperties ?? [],
-                    warnOnUnknownGroups);
+                    warnOnUnknownGroups,
+                    deviceId);
 
                 results[flag.Key] = FeatureFlag.CreateFromLocalEvaluation(flag.Key, flagValue, flag);
             }
@@ -164,7 +168,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         GroupCollection groups,
         Dictionary<string, object?> personProperties,
-        bool warnOnUnknownGroups = true)
+        bool warnOnUnknownGroups = true,
+        string? deviceId = null)
     {
         return ComputeFlagLocallyWithCache(
             flag,
@@ -172,7 +177,8 @@ internal sealed class LocalEvaluator
             groups,
             personProperties,
             new Dictionary<string, StringOrValue<bool>>(),
-            warnOnUnknownGroups);
+            warnOnUnknownGroups,
+            deviceId);
     }
 
     StringOrValue<bool> ComputeFlagLocallyWithCache(
@@ -181,7 +187,8 @@ internal sealed class LocalEvaluator
         GroupCollection groups,
         Dictionary<string, object?> personProperties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        bool warnOnUnknownGroups = true)
+        bool warnOnUnknownGroups = true,
+        string? deviceId = null)
     {
         // Check if we've already evaluated this flag to avoid infinite recursion
         if (evaluationCache.TryGetValue(flag.Key, out var cachedResult))
@@ -201,19 +208,23 @@ internal sealed class LocalEvaluator
             return result;
         }
 
-
         var filters = flag.Filters;
         var aggregationGroupIndex = filters?.AggregationGroupTypeIndex;
 
         StringOrValue<bool> flagResult;
         if (!aggregationGroupIndex.HasValue)
         {
+            // Resolve the bucketing identifier for non-group flags
+            var bucketingId = ResolveBucketingId(flag, distinctId, deviceId);
+
             flagResult = MatchFeatureFlagProperties(
                 flag,
                 distinctId,
+                bucketingId,
                 personProperties,
                 evaluationCache,
-                groups);
+                groups,
+                deviceId);
         }
         else
         {
@@ -226,12 +237,17 @@ internal sealed class LocalEvaluator
 
             if (groups.TryGetGroup(groupType, out var group))
             {
+                // For group flags, bucket by group key by default
+                var bucketingId = ResolveBucketingId(flag, group.GroupKey, deviceId);
+
                 flagResult = MatchFeatureFlagProperties(
                     flag,
                     group.GroupKey,
+                    bucketingId,
                     group.Properties,
                     evaluationCache,
-                    groups);
+                    groups,
+                    deviceId);
             }
             else
             {
@@ -253,12 +269,30 @@ internal sealed class LocalEvaluator
         return flagResult;
     }
 
+    static string ResolveBucketingId(LocalFeatureFlag flag, string defaultId, string? deviceId)
+    {
+        var bucketingIdentifier = flag.Filters?.BucketingIdentifier;
+        if (string.Equals(bucketingIdentifier, "device_id", StringComparison.Ordinal))
+        {
+            if (deviceId is null)
+            {
+                throw new InconclusiveMatchException(
+                    $"Flag \"{flag.Key}\" requires device_id for bucketing but none was provided");
+            }
+            return deviceId;
+        }
+        // Default: use the provided default (distinctId for person flags, groupKey for group flags)
+        return defaultId;
+    }
+
     StringOrValue<bool> MatchFeatureFlagProperties(
         LocalFeatureFlag flag,
         string distinctId,
+        string bucketingId,
         Dictionary<string, object?>? properties, /* person or group properties */
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups = null)
+        GroupCollection? groups = null,
+        string? deviceId = null)
     {
         var filters = flag.Filters;
         var flagConditions = filters?.Groups ?? [];
@@ -271,7 +305,7 @@ internal sealed class LocalEvaluator
             {
                 // if any one condition resolves to True, we can short circuit and return
                 // the matching variant
-                if (!IsConditionMatch(flag, distinctId, condition, properties, evaluationCache, groups))
+                if (!IsConditionMatch(flag, distinctId, bucketingId, condition, properties, evaluationCache, groups, deviceId))
                 {
                     continue;
                 }
@@ -280,7 +314,7 @@ internal sealed class LocalEvaluator
                 var variant = variantOverride is not null
                               && flagVariants.Select(v => v.Key).Contains(variantOverride)
                     ? variantOverride
-                    : GetMatchingVariant(flag, distinctId);
+                    : GetMatchingVariant(flag, bucketingId);
 
                 return variant is not null
                     ? new StringOrValue<bool>(variant)
@@ -312,10 +346,12 @@ internal sealed class LocalEvaluator
     bool IsConditionMatch(
         LocalFeatureFlag flag,
         string distinctId,
+        string bucketingId,
         FeatureFlagGroup condition,
         Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups = null)
+        GroupCollection? groups = null,
+        string? deviceId = null)
     {
         var rolloutPercentage = condition.RolloutPercentage;
         if (condition.Properties is not null)
@@ -323,7 +359,7 @@ internal sealed class LocalEvaluator
             if (condition.Properties.Select(property => property.Type switch
                 {
                     FilterType.Cohort => MatchCohort(property, distinctId, properties),
-                    FilterType.Flag => MatchFlagDependencyFilter(property, distinctId, properties, evaluationCache, groups),
+                    FilterType.Flag => MatchFlagDependencyFilter(property, distinctId, properties, evaluationCache, groups, deviceId),
                     _ => MatchProperty(property, distinctId, properties)
                 }).Any(isMatch => !isMatch))
             {
@@ -336,7 +372,7 @@ internal sealed class LocalEvaluator
             return true;
         }
 
-        var hashValue = Hash(flag.Key, distinctId);
+        var hashValue = Hash(flag.Key, bucketingId);
         return !(hashValue > rolloutPercentage / 100.0);
     }
 
@@ -612,7 +648,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups = null)
+        GroupCollection? groups = null,
+        string? deviceId = null)
     {
         Debug.Assert(propertyFilter.Type == FilterType.Flag);
 
@@ -620,7 +657,7 @@ internal sealed class LocalEvaluator
         var (flagKey, propertyValue) = ValidateFlagDependencyFilter(propertyFilter);
 
         // Evaluate all dependencies in the chain and return the value of the last one
-        EvaluateDependencyChain(propertyFilter.DependencyChain!, distinctId, properties, evaluationCache, groups);
+        EvaluateDependencyChain(propertyFilter.DependencyChain!, distinctId, properties, evaluationCache, groups, deviceId);
 
         // Get the evaluated value for this flag
         var immediateDependencyValue = evaluationCache.TryGetValue(flagKey, out var keyForFlagDependencyFilter)
@@ -667,7 +704,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups)
+        GroupCollection? groups,
+        string? deviceId = null)
     {
         // Evaluate all dependencies in the chain order and cache the results.
         foreach (var depFlagKey in dependencyChain)
@@ -677,7 +715,7 @@ internal sealed class LocalEvaluator
                 continue;
             }
 
-            evaluationCache[depFlagKey] = EvaluateSingleDependency(depFlagKey, distinctId, properties, evaluationCache, groups);
+            evaluationCache[depFlagKey] = EvaluateSingleDependency(depFlagKey, distinctId, properties, evaluationCache, groups, deviceId);
         }
     }
 
@@ -687,7 +725,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups)
+        GroupCollection? groups,
+        string? deviceId = null)
     {
         // Need to evaluate this dependency first
         if (!_localFeatureFlags.TryGetValue(depFlagKey, out var depFlag))
@@ -710,7 +749,8 @@ internal sealed class LocalEvaluator
                 groups ?? [],
                 properties ?? new Dictionary<string, object?>(),
                 evaluationCache,
-                false);
+                false,
+                deviceId);
             return depResult;
         }
         catch (InconclusiveMatchException e)

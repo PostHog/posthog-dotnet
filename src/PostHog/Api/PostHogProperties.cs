@@ -9,4 +9,5 @@ public static class PostHogProperties
     public const string Os = "$os";
     public const string Framework = "$framework";
     public const string Architecture = "$arch";
+    public const string DeviceId = "$device_id";
 }

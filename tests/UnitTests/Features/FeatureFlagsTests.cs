@@ -4112,3 +4112,274 @@ public class FeatureFlagErrorTracking
             client.GetFeatureFlagAsync("flag", "id", null, cts.Token));
     }
 }
+
+public class TheDeviceIdSupport
+{
+    const string LocalEvalFlagWithDeviceIdBucketing = """
+        {
+          "flags": [
+            {
+              "id": 1,
+              "name": "Device ID Flag",
+              "key": "device-id-flag",
+              "active": true,
+              "filters": {
+                "bucketing_identifier": "device_id",
+                "groups": [
+                  {
+                    "rollout_percentage": 100
+                  }
+                ]
+              }
+            }
+          ],
+          "group_type_mapping": {}
+        }
+        """;
+
+    const string LocalEvalFlagWithDistinctIdBucketing = """
+        {
+          "flags": [
+            {
+              "id": 2,
+              "name": "Distinct ID Flag",
+              "key": "distinct-id-flag",
+              "active": true,
+              "filters": {
+                "bucketing_identifier": "distinct_id",
+                "groups": [
+                  {
+                    "rollout_percentage": 100
+                  }
+                ]
+              }
+            }
+          ],
+          "group_type_mapping": {}
+        }
+        """;
+
+    const string LocalEvalFlagWithNullBucketing = """
+        {
+          "flags": [
+            {
+              "id": 3,
+              "name": "Null Bucketing Flag",
+              "key": "null-bucketing-flag",
+              "active": true,
+              "filters": {
+                "groups": [
+                  {
+                    "rollout_percentage": 100
+                  }
+                ]
+              }
+            }
+          ],
+          "group_type_mapping": {}
+        }
+        """;
+
+    [Fact]
+    public async Task LocalEvaluationUsesDeviceIdForBucketingWhenConfigured()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvalFlagWithDeviceIdBucketing);
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync(
+            featureKey: "device-id-flag",
+            distinctId: "some-distinct-id",
+            options: new FeatureFlagOptions
+            {
+                DeviceId = "my-device-id"
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsEnabled);
+    }
+
+    [Fact]
+    public async Task LocalEvaluationThrowsInconclusiveWhenDeviceIdRequiredButNotProvided()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvalFlagWithDeviceIdBucketing);
+        // Add a fallback flags response for remote evaluation
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"device-id-flag": false}}""");
+        var client = container.Activate<PostHogClient>();
+
+        // Without DeviceId, local eval should fail and fall back to remote
+        var result = await client.GetFeatureFlagAsync(
+            featureKey: "device-id-flag",
+            distinctId: "some-distinct-id",
+            options: new FeatureFlagOptions
+            {
+                // DeviceId not set
+            },
+            CancellationToken.None);
+
+        // Should have fallen back to remote evaluation
+        Assert.NotNull(result);
+        Assert.False(result.IsEnabled);
+    }
+
+    [Fact]
+    public async Task LocalEvaluationUsesDistinctIdWhenBucketingIdentifierIsDistinctId()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvalFlagWithDistinctIdBucketing);
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync(
+            featureKey: "distinct-id-flag",
+            distinctId: "some-distinct-id",
+            options: new FeatureFlagOptions
+            {
+                DeviceId = "my-device-id" // Provided but should be ignored
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsEnabled);
+    }
+
+    [Fact]
+    public async Task LocalEvaluationUsesDistinctIdWhenBucketingIdentifierIsNull()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvalFlagWithNullBucketing);
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync(
+            featureKey: "null-bucketing-flag",
+            distinctId: "some-distinct-id",
+            options: new FeatureFlagOptions(),
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsEnabled);
+    }
+
+    [Fact]
+    public async Task RemoteEvaluationSendsDeviceIdInPayload()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"remote-flag": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.GetFeatureFlagAsync(
+            featureKey: "remote-flag",
+            distinctId: "some-distinct-id",
+            options: new FeatureFlagOptions
+            {
+                DeviceId = "my-device-123"
+            },
+            CancellationToken.None);
+
+        var received = flagsHandler.GetReceivedRequestBody(indented: false);
+        Assert.Contains("\"device_id\":\"my-device-123\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RemoteEvaluationOmitsDeviceIdWhenNotProvided()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"remote-flag": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.GetFeatureFlagAsync(
+            featureKey: "remote-flag",
+            distinctId: "some-distinct-id",
+            options: null,
+            CancellationToken.None);
+
+        var received = flagsHandler.GetReceivedRequestBody(indented: false);
+        Assert.DoesNotContain("device_id", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CaptureIncludesDeviceIdPropertyWhenProvided()
+    {
+        var container = new TestContainer();
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        client.Capture(
+            distinctId: "user-123",
+            eventName: "test-event",
+            properties: null,
+            groups: null,
+            sendFeatureFlags: false,
+            timestamp: null,
+            deviceId: "device-abc");
+
+        await client.FlushAsync();
+        var received = batchHandler.GetReceivedRequestBody(indented: false);
+        Assert.Contains("\"$device_id\":\"device-abc\"", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CaptureOmitsDeviceIdPropertyWhenNotProvided()
+    {
+        var container = new TestContainer();
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        client.Capture(
+            distinctId: "user-123",
+            eventName: "test-event",
+            properties: null,
+            groups: null,
+            sendFeatureFlags: false);
+
+        await client.FlushAsync();
+        var received = batchHandler.GetReceivedRequestBody(indented: false);
+        Assert.DoesNotContain("$device_id", received, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetAllFeatureFlagsUsesDeviceIdForLocalEvaluation()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvalFlagWithDeviceIdBucketing);
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync(
+            distinctId: "some-distinct-id",
+            options: new AllFeatureFlagsOptions
+            {
+                DeviceId = "my-device-id",
+                OnlyEvaluateLocally = true
+            },
+            CancellationToken.None);
+
+        Assert.True(result.ContainsKey("device-id-flag"));
+        Assert.True(result["device-id-flag"].IsEnabled);
+    }
+
+    [Fact]
+    public async Task GetAllFeatureFlagsFallsBackWhenDeviceIdMissing()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvalFlagWithDeviceIdBucketing);
+        // Remote fallback
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"device-id-flag": "remote-value"}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetAllFeatureFlagsAsync(
+            distinctId: "some-distinct-id",
+            options: new AllFeatureFlagsOptions
+            {
+                // No DeviceId - should fall back to remote
+            },
+            CancellationToken.None);
+
+        Assert.True(result.ContainsKey("device-id-flag"));
+        Assert.Equal("remote-value", (string)result["device-id-flag"]);
+    }
+}

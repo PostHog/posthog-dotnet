@@ -49,4 +49,9 @@ public class AllFeatureFlagsOptions
     /// The set of flag keys to evaluate in this request. If not specified, all flags are evaluated.
     /// </summary>
     public IReadOnlyList<string> FlagKeysToEvaluate { get; init; } = [];
+
+    /// <summary>
+    /// The device identifier used for bucketing when a feature flag's <c>bucketing_identifier</c> is <c>"device_id"</c>.
+    /// </summary>
+    public string? DeviceId { get; init; }
 }

@@ -110,12 +110,21 @@ public sealed class PostHogClient : IPostHogClient
         string distinctId,
         Dictionary<string, object>? personPropertiesToSet,
         Dictionary<string, object>? personPropertiesToSetOnce,
-        CancellationToken cancellationToken)
-        => await _apiClient.IdentifyAsync(
+        CancellationToken cancellationToken,
+        string? deviceId = null)
+    {
+        if (deviceId is not null)
+        {
+            personPropertiesToSet ??= new Dictionary<string, object>();
+            personPropertiesToSet[PostHogProperties.DeviceId] = deviceId;
+        }
+
+        return await _apiClient.IdentifyAsync(
             distinctId,
             personPropertiesToSet,
             personPropertiesToSetOnce,
             cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task<ApiResult> GroupIdentifyAsync(
@@ -141,12 +150,19 @@ public sealed class PostHogClient : IPostHogClient
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
-        DateTimeOffset? timestamp = null)
+        DateTimeOffset? timestamp = null,
+        string? deviceId = null)
     {
         // If custom timestamp provided, add it to properties
         if (timestamp.HasValue)
         {
             properties = AddTimestampToProperties(properties, timestamp.Value);
+        }
+
+        if (deviceId is not null)
+        {
+            properties ??= new Dictionary<string, object>();
+            properties[PostHogProperties.DeviceId] = deviceId;
         }
 
         var capturedEvent = new CapturedEvent(
@@ -182,11 +198,11 @@ public sealed class PostHogClient : IPostHogClient
             // Prefer local evaluation when available
             if (_featureFlagsLoader.IsLoaded)
             {
-                return AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent);
+                return AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent, deviceId);
             }
 
             // Otherwise we fall back to remote /flags call
-            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent);
+            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent, deviceId);
         }
     }
 
@@ -197,7 +213,8 @@ public sealed class PostHogClient : IPostHogClient
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
-        DateTimeOffset? timestamp = null)
+        DateTimeOffset? timestamp = null,
+        string? deviceId = null)
     {
         if (exception == null)
         {
@@ -213,7 +230,7 @@ public sealed class PostHogClient : IPostHogClient
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectApiKey}/person/{distinctId}";
             properties = ExceptionPropertiesBuilder.Build(properties, exception);
 
-            return Capture(distinctId, "$exception", properties, groups, sendFeatureFlags, timestamp);
+            return Capture(distinctId, "$exception", properties, groups, sendFeatureFlags, timestamp, deviceId);
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception e)
@@ -230,7 +247,8 @@ public sealed class PostHogClient : IPostHogClient
         IFeatureFlagCache featureFlagCache,
         string distinctId,
         GroupCollection? groups,
-        CapturedEvent capturedEvent)
+        CapturedEvent capturedEvent,
+        string? deviceId = null)
     {
         var result = await featureFlagCache.GetAndCacheFlagsAsync(
             distinctId,
@@ -240,7 +258,8 @@ public sealed class PostHogClient : IPostHogClient
                 userId,
                 options: new AllFeatureFlagsOptions
                 {
-                    Groups = groups
+                    Groups = groups,
+                    DeviceId = deviceId
                 },
                 ctx),
             CancellationToken.None);
@@ -251,14 +270,16 @@ public sealed class PostHogClient : IPostHogClient
     async Task<CapturedEvent> AddLocalFeatureFlagDataAsync(
         string distinctId,
         GroupCollection? groups,
-        CapturedEvent capturedEvent)
+        CapturedEvent capturedEvent,
+        string? deviceId = null)
     {
         var flags = await GetAllFeatureFlagsAsync(
             distinctId,
             options: new AllFeatureFlagsOptions
             {
                 Groups = groups,
-                OnlyEvaluateLocally = true
+                OnlyEvaluateLocally = true,
+                DeviceId = deviceId
             },
             CancellationToken.None);
 
@@ -322,7 +343,8 @@ public sealed class PostHogClient : IPostHogClient
                     localFeatureFlag,
                     distinctId,
                     options?.Groups ?? [],
-                    options?.PersonProperties ?? []);
+                    options?.PersonProperties ?? [],
+                    deviceId: options?.DeviceId);
                 response = FeatureFlag.CreateFromLocalEvaluation(featureKey, value, localFeatureFlag);
                 _logger.LogDebugSuccessLocally(featureKey, response);
             }
@@ -559,7 +581,8 @@ public sealed class PostHogClient : IPostHogClient
                         distinctId,
                         options?.Groups,
                         options?.PersonProperties,
-                        warnOnUnknownGroups: false);
+                        warnOnUnknownGroups: false,
+                        deviceId: options?.DeviceId);
 
                     if (!fallbackToRemote || options is { OnlyEvaluateLocally: true })
                     {
@@ -621,7 +644,8 @@ public sealed class PostHogClient : IPostHogClient
                 options?.PersonProperties,
                 options?.Groups,
                 options?.FlagKeysToEvaluate,
-                ctx);
+                ctx,
+                options?.DeviceId);
             return results.ToFlagsResult();
         }
     }

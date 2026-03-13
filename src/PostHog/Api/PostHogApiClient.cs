@@ -113,7 +113,8 @@ internal sealed class PostHogApiClient : IDisposable
         Dictionary<string, object?>? personProperties,
         GroupCollection? groupProperties,
         IReadOnlyList<string>? flagKeysToEvaluate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? deviceId = null)
     {
         var endpointUrl = new Uri(HostUrl, "flags/?v=2");
 
@@ -121,6 +122,11 @@ internal sealed class PostHogApiClient : IDisposable
         {
             ["distinct_id"] = distinctUserId
         };
+
+        if (deviceId is not null)
+        {
+            payload["device_id"] = deviceId;
+        }
 
         if (personProperties is { Count: > 0 })
         {
