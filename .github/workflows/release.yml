@@ -91,11 +91,6 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.releaser.outputs.token }}
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -127,30 +122,34 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build
 
-      - name: Commit version bump
-        id: commit-version-bump
-        env:
-          GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
+      - name: Check for changes
+        id: check-changes
         run: |
-          git add Directory.Build.props src/PostHog/Generated/VersionConstants.cs
-          if git diff --staged --quiet; then
+          if git diff --quiet Directory.Build.props src/PostHog/Generated/VersionConstants.cs; then
             echo "No changes to commit"
-            echo "committed=false" >> "$GITHUB_OUTPUT"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "Bump version to ${{ steps.version.outputs.new }}"
-            git push origin main
-            echo "committed=true" >> "$GITHUB_OUTPUT"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create tag and GitHub Release
-        if: steps.commit-version-bump.outputs.committed == 'true'
+      - name: Commit version bump
+        if: steps.check-changes.outputs.has_changes == 'true'
+        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde
+        with:
+          commit_message: "Bump version to ${{ steps.version.outputs.new }}"
+          repo: ${{ github.repository }}
+          branch: main
+          file_pattern: "Directory.Build.props src/PostHog/Generated/VersionConstants.cs"
+        env:
+          GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
+
+      - name: Create GitHub Release
+        if: steps.check-changes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ steps.releaser.outputs.token }}
         run: |
           version="${{ steps.version.outputs.new }}"
-          git tag -a "v$version" -m "v$version"
-          git push origin "v$version"
-          gh release create "v$version" --generate-notes
+          gh release create "v$version" --target main --generate-notes
 
       - name: Send failure event to PostHog
         if: failure()
