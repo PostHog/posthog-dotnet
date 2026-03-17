@@ -113,8 +113,11 @@ jobs:
           echo "Bumping $current → $new_version"
 
       - name: Update version
+        env:
+          CURRENT_VERSION: ${{ steps.version.outputs.current }}
+          NEW_VERSION: ${{ steps.version.outputs.new }}
         run: |
-          sed -i "s|<Version>${{ steps.version.outputs.current }}</Version>|<Version>${{ steps.version.outputs.new }}</Version>|" Directory.Build.props
+          sed -i "s|<Version>${CURRENT_VERSION}</Version>|<Version>${NEW_VERSION}</Version>|" Directory.Build.props
 
       - name: Build
         run: dotnet build --configuration Release
@@ -134,7 +137,7 @@ jobs:
 
       - name: Commit version bump
         if: steps.check-changes.outputs.has_changes == 'true'
-        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde
+        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
         with:
           commit_message: "Bump version to ${{ steps.version.outputs.new }}"
           repo: ${{ github.repository }}
@@ -147,9 +150,9 @@ jobs:
         if: steps.check-changes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ steps.releaser.outputs.token }}
+          VERSION: ${{ steps.version.outputs.new }}
         run: |
-          version="${{ steps.version.outputs.new }}"
-          gh release create "v$version" --target main --generate-notes
+          gh release create "v$VERSION" --target main --generate-notes
 
       - name: Send failure event to PostHog
         if: failure()
