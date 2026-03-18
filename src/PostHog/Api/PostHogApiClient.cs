@@ -123,15 +123,20 @@ internal sealed class PostHogApiClient : IDisposable
             ["distinct_id"] = distinctUserId
         };
 
+        // Build person_properties with required identifiers injected.
+        // The server expects distinct_id and $device_id inside person_properties.
+        var effectivePersonProperties = personProperties is not null
+            ? new Dictionary<string, object?>(personProperties)
+            : new Dictionary<string, object?>();
+
+        effectivePersonProperties[PostHogProperties.DistinctId] = distinctUserId;
+
         if (deviceId is not null)
         {
-            payload["device_id"] = deviceId;
+            effectivePersonProperties[PostHogProperties.DeviceId] = deviceId;
         }
 
-        if (personProperties is { Count: > 0 })
-        {
-            payload["person_properties"] = personProperties;
-        }
+        payload["person_properties"] = effectivePersonProperties;
 
         if (flagKeysToEvaluate is { Count: > 0 })
         {

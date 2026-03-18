@@ -2277,6 +2277,9 @@ public class TheGetFeatureFlagAsyncMethod
             """
             {
               "distinct_id": "some-distinct-id",
+              "person_properties": {
+                "distinct_id": "some-distinct-id"
+              },
               "flag_keys_to_evaluate": [
                 "beta-feature"
               ],
@@ -4280,7 +4283,9 @@ public class TheDeviceIdSupport
             CancellationToken.None);
 
         var received = flagsHandler.GetReceivedRequestBody(indented: false);
-        Assert.Contains("\"device_id\":\"my-device-123\"", received, StringComparison.Ordinal);
+        // device_id should be sent inside person_properties as $device_id, not as a top-level field
+        Assert.Contains("\"$device_id\":\"my-device-123\"", received, StringComparison.Ordinal);
+        Assert.Contains("\"person_properties\":", received, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -237,13 +237,12 @@ internal sealed class LocalEvaluator
 
             if (groups.TryGetGroup(groupType, out var group))
             {
-                // For group flags, bucket by group key by default
-                var bucketingId = ResolveBucketingId(flag, group.GroupKey, deviceId);
-
+                // For group flags, always bucket by group key — ignore bucketing_identifier.
+                // Even if bucketing_identifier is "device_id", group flags use the group key.
                 flagResult = MatchFeatureFlagProperties(
                     flag,
                     group.GroupKey,
-                    bucketingId,
+                    group.GroupKey,
                     group.Properties,
                     evaluationCache,
                     groups,
