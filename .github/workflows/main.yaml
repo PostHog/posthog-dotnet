@@ -61,7 +61,7 @@ jobs:
 
       - name: Collect Test Results
         if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@d61b558e8df85cb60d09ca3e5b09653b4477cea7 # v1
         with:
           name: "xUnit Tests"
           path: "tests/*/TestResults/test-results.trx"
@@ -124,7 +124,7 @@ jobs:
 
       # Get a short-lived NuGet API key
       - name: NuGet login
-        uses: NuGet/login@v1
+        uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1.1.0
         id: login
         with:
           user: PostHog-Engineering
@@ -134,4 +134,6 @@ jobs:
       # If you retry a failed workflow, already published packages will be skipped without error.
       - name: Publish NuGet package
         shell: bash
-        run: find . -type f -name "*.nupkg" -exec dotnet nuget push {} --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate \;
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: find . -type f -name "*.nupkg" -exec dotnet nuget push {} --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate \;
