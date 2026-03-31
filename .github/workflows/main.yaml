@@ -37,7 +37,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore NuGet Packages
-        run: dotnet restore
+        run: dotnet restore --locked-mode
         shell: bash
 
       # This not only builds the solution, but also creates the NuGet packages
@@ -90,7 +90,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore NuGet Packages
-        run: dotnet restore
+        run: dotnet restore --locked-mode
         shell: bash
 
       - name: Set up dotnet-format problem matcher
