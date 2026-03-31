@@ -3,11 +3,14 @@ WORKDIR /app
 
 # Copy the solution and project files
 COPY Directory.Build.props ./
+COPY Directory.Packages.props ./
 COPY src/PostHog/PostHog.csproj src/PostHog/
+COPY src/PostHog/packages.lock.json src/PostHog/
 COPY sdk_compliance_adapter/SdkComplianceAdapter.csproj sdk_compliance_adapter/
+COPY sdk_compliance_adapter/packages.lock.json sdk_compliance_adapter/
 
-# Restore dependencies
-RUN dotnet restore sdk_compliance_adapter/SdkComplianceAdapter.csproj
+# Restore dependencies using lock file
+RUN dotnet restore sdk_compliance_adapter/SdkComplianceAdapter.csproj --locked-mode
 
 # Copy source code
 COPY src/PostHog/ src/PostHog/
