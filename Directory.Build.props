@@ -17,6 +17,8 @@
         <BaseIntermediateOutputPath>$(RepoObjPath)$(MSBuildProjectName)\</BaseIntermediateOutputPath>
         <BaseOutputPath Condition=" '$(BaseOutputPath)' == '' ">$(RepoBinPath)$(MSBuildProjectName)\</BaseOutputPath>
         <EnablePackageValidation>true</EnablePackageValidation>
+        <!-- Generate and use NuGet lock files to pin transitive dependencies -->
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         <PackageOutputPath>$(RepoBuildPath)packages\$(Configuration)\</PackageOutputPath>
         <Company>PostHog, Inc.</Company>
         <Copyright>Copyright © 2025</Copyright>

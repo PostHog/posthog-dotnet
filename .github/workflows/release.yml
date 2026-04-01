@@ -119,8 +119,11 @@ jobs:
         run: |
           sed -i "s|<Version>${CURRENT_VERSION}</Version>|<Version>${NEW_VERSION}</Version>|" Directory.Build.props
 
+      - name: Restore NuGet Packages
+        run: dotnet restore --locked-mode
+
       - name: Build
-        run: dotnet build --configuration Release
+        run: dotnet build --configuration Release --no-restore
 
       - name: Test
         run: dotnet test --configuration Release --no-build

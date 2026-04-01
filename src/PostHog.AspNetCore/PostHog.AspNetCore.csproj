@@ -8,7 +8,7 @@
 
     <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
-        <PackageReference Include="Microsoft.FeatureManagement" Version="4.0.0" />
+        <PackageReference Include="Microsoft.FeatureManagement" />
     </ItemGroup>
 
     <ItemGroup>
