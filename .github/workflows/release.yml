@@ -4,6 +4,16 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: Version bump to apply
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: read
@@ -16,8 +26,10 @@ jobs:
   check-release-label:
     name: Check for release label
     if: |
-      github.event.pull_request.merged == true
-       && contains(github.event.pull_request.labels.*.name, 'release')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.merged == true &&
+       contains(github.event.pull_request.labels.*.name, 'release'))
     runs-on: ubuntu-latest
     outputs:
       should-release: ${{ steps.check.outputs.should-release }}
@@ -26,7 +38,11 @@ jobs:
       - name: Check release conditions
         id: check
         run: |
-          if ${{ contains(github.event.pull_request.labels.*.name, 'bump-major') }}; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "bump-type=${{ inputs.bump_type }}" >> "$GITHUB_OUTPUT"
+            echo "should-release=true" >> "$GITHUB_OUTPUT"
+            echo "Manual release requested with bump type '${{ inputs.bump_type }}'"
+          elif ${{ contains(github.event.pull_request.labels.*.name, 'bump-major') }}; then
             echo "bump-type=major" >> "$GITHUB_OUTPUT"
             echo "should-release=true" >> "$GITHUB_OUTPUT"
           elif ${{ contains(github.event.pull_request.labels.*.name, 'bump-minor') }}; then
