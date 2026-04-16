@@ -85,14 +85,14 @@ jobs:
           private-key: ${{ secrets.GH_APP_POSTHOG_DOTNET_RELEASER_PRIVATE_KEY }}
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
           token: ${{ steps.releaser.outputs.token }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
