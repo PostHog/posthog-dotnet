@@ -22,56 +22,13 @@ For documentation on the specific packages, see the README files in the respecti
 
 The core [PostHog](./src/PostHog/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility. The [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) package targets `net8.0`. The [PostHog.AI](src/PostHog.AI/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility.
 
-## Building
+## Contributing
 
-To build the solution, run the following commands in the root of the repository:
-
-```bash
-$ dotnet restore
-$ dotnet build
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build, sample, and test instructions.
 
 ## Docs
 
 More detailed docs for using this library can be found at [PostHog Docs for the .NET Client SDK](https://posthog.com/docs/libraries/dotnet).
-
-## Samples
-
-Sample projects are located in the `samples` directory.
-
-To run the samples, you'll need to set your PostHog project API key. From the repository root you can run:
-
-```bash
-bin/user-secrets set PostHog:ProjectApiKey YOUR_API_KEY
-```
-
-The main ASP.NET Core sample app can be run with the following command:
-
-```bash
-$ bin/start
-```
-
-You can also run it from your favorite IDE or editor.
-
-## Testing
-
-To run the tests, run the following command in the root of the repository:
-
-```bash
-$ dotnet test
-```
-
-### Test Target Frameworks
-
-The test projects target both `net8.0` and `netcoreapp3.1`. While .NET Core 3.1 reached end-of-life in December 2022, we continue to test against it because:
-
-- It was the first runtime to fully support .NET Standard 2.1
-- It serves as our minimum test baseline to ensure the `netstandard2.1` library works correctly on older runtimes
-- It helps catch compatibility issues that might not surface on newer runtimes
-
-This testing approach ensures broad compatibility without requiring users to install legacy runtimes in production.
-
-For release instructions, see [RELEASING.md](RELEASING.md).
 
 ## Installation
 
