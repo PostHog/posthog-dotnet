@@ -4,11 +4,13 @@ Thanks for your interest in improving the PostHog .NET SDK.
 
 ## Building
 
-From the repository root, restore dependencies and build the solution:
+From the repository root, use the same restore, formatting, build, and test flow that CI runs:
 
 ```bash
-dotnet restore
-dotnet build
+dotnet restore --locked-mode
+bin/fmt --check
+dotnet build --configuration Release --no-restore --nologo
+dotnet test --configuration Release --no-build --nologo
 ```
 
 ## Running samples
@@ -30,14 +32,6 @@ bin/start
 You can also run the samples from your preferred IDE or editor.
 
 ## Testing
-
-Run the test suite from the repository root:
-
-```bash
-dotnet test
-```
-
-### Test target frameworks
 
 The test projects target both `net8.0` and `netcoreapp3.1`. While .NET Core 3.1 reached end-of-life in December 2022, we continue to test against it because:
 
