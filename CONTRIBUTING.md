@@ -50,3 +50,5 @@ This testing approach ensures broad compatibility without requiring users to ins
 ## Pull requests
 
 Please follow existing conventions and include tests for your change when practical.
+
+For release instructions, see [RELEASING.md](RELEASING.md).
