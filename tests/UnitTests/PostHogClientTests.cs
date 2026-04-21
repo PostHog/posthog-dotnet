@@ -1467,6 +1467,31 @@ public class TheLoadFeatureFlagsAsyncMethod
     }
 
     [Fact]
+    public void DefaultsHostUrlWhenConfiguredHostIsNullOrInvalid()
+    {
+        var nullHostContainer = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options => options.HostUrl = null!);
+        });
+
+        _ = nullHostContainer.Activate<PostHogClient>();
+
+        var nullHostOptions = ((IOptions<PostHogOptions>)((IServiceProvider)nullHostContainer).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Equal(new Uri("https://us.i.posthog.com"), nullHostOptions.HostUrl);
+
+        var invalidHostContainer = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options =>
+                options.HostUrl = new Uri(" \n\t ", UriKind.RelativeOrAbsolute));
+        });
+
+        _ = invalidHostContainer.Activate<PostHogClient>();
+
+        var invalidHostOptions = ((IOptions<PostHogOptions>)((IServiceProvider)invalidHostContainer).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Equal(new Uri("https://us.i.posthog.com"), invalidHostOptions.HostUrl);
+    }
+
+    [Fact]
     public async Task LogsDebugWhenFlagsLoadedSuccessfully()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");

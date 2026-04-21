@@ -92,6 +92,7 @@ public sealed class PostHogClient : IPostHogClient
     {
         options.ProjectApiKey = options.ProjectApiKey?.Trim();
         options.PersonalApiKey = options.PersonalApiKey.NullIfEmpty();
+        options.HostUrl = options.HostUrl.NormalizeHostUrl();
 
         if (string.IsNullOrEmpty(options.ProjectApiKey))
         {
