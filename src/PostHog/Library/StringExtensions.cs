@@ -13,7 +13,12 @@ internal static class StringExtensions
     /// <returns>The trimmed string, or <c>null</c> if the input is null, empty, or whitespace-only.</returns>
     public static string? NullIfEmpty(this string? value)
     {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value!.Trim();
     }
 
     /// <summary>
