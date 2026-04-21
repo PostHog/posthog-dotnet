@@ -91,9 +91,7 @@ public sealed class PostHogClient : IPostHogClient
     static void NormalizeOptions(PostHogOptions options, ILogger<PostHogClient> logger)
     {
         options.ProjectApiKey = options.ProjectApiKey?.Trim();
-        options.PersonalApiKey = string.IsNullOrWhiteSpace(options.PersonalApiKey)
-            ? null
-            : options.PersonalApiKey.Trim();
+        options.PersonalApiKey = options.PersonalApiKey.NullIfEmpty();
 
         if (string.IsNullOrEmpty(options.ProjectApiKey))
         {
