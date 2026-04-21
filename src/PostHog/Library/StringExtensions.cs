@@ -7,6 +7,17 @@ namespace PostHog.Library;
 internal static class StringExtensions
 {
     /// <summary>
+    /// Trims <paramref name="value"/> and returns <c>null</c> when the result is empty.
+    /// </summary>
+    /// <param name="value">The string to normalize.</param>
+    /// <returns>The trimmed string, or <c>null</c> if the input is null, empty, or whitespace-only.</returns>
+    public static string? NullIfEmpty(this string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+
+    /// <summary>
     /// Truncates <paramref name="value"/> so its UTF-8 byte length is at most <paramref name="maxLength"/>.
     /// Appends <paramref name="truncationSymbol"/> if truncation occurs. Respects UTF-8 code point boundaries, but it can split graphemes.
     /// </summary>
