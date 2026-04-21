@@ -3354,7 +3354,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
             FeatureFlagPayloads = new Dictionary<string, string>(),
         });
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts"),
+            FakeHttpMessageHandlerExtensions.LocalEvaluationUrl,
             HttpMethod.Get,
             new HttpResponseMessage(HttpStatusCode.Unauthorized)
             {
@@ -3510,7 +3510,7 @@ public class TheQuotaLimitBehavior
         // When local evaluation is quota limited, we do not want to fallback to /decide.
         var decideHandler = container.FakeHttpMessageHandler.AddFlagsResponseException(new InvalidOperationException());
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts"),
+            FakeHttpMessageHandlerExtensions.LocalEvaluationUrl,
             HttpMethod.Get,
             new HttpResponseMessage(HttpStatusCode.PaymentRequired)
             {
@@ -3542,7 +3542,7 @@ public class TheQuotaLimitBehavior
         var container = new TestContainer("fake-personal-api-key");
         var decideHandler = container.FakeHttpMessageHandler.AddFlagsResponseException(new InvalidOperationException());
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts"),
+            FakeHttpMessageHandlerExtensions.LocalEvaluationUrl,
             HttpMethod.Get,
             new HttpResponseMessage(HttpStatusCode.PaymentRequired)
             {

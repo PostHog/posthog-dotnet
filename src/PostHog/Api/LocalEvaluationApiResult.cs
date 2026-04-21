@@ -5,7 +5,7 @@ using PostHog.Library;
 namespace PostHog.Api;
 
 /// <summary>
-/// The API Payload from the <c>/api/feature_flag/local_evaluation</c> endpoint used to evaluate feature flags
+/// The API Payload from the <c>/flags/definitions</c> endpoint used to evaluate feature flags
 /// locally.
 /// </summary>
 internal record LocalEvaluationApiResult

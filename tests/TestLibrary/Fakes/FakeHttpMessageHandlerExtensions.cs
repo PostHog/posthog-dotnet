@@ -68,7 +68,7 @@ internal static class FakeHttpMessageHandlerExtensions
     public static void AddRepeatedFlagsResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
         => handler.AddRepeatedFlagsResponse(count, _ => responseBody);
 
-    static readonly Uri LocalEvaluationUrl = new("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts");
+    internal static readonly Uri LocalEvaluationUrl = new("https://us.i.posthog.com/flags/definitions?token=fake-project-api-key&send_cohorts");
 
     public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
         this FakeHttpMessageHandler handler,

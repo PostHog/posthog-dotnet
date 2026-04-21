@@ -29,8 +29,7 @@ public class TheDisposeAsyncMethod
         }
         """;
 
-    static readonly Uri LocalEvaluationUrl =
-        new("https://us.i.posthog.com/api/feature_flag/local_evaluation?token=fake-project-api-key&send_cohorts");
+    static readonly Uri LocalEvaluationUrl = FakeHttpMessageHandlerExtensions.LocalEvaluationUrl;
 
     [Fact]
     public async Task CompletesGracefullyDuringInFlightPoll()

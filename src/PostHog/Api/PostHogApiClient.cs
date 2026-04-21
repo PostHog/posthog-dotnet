@@ -144,7 +144,7 @@ internal sealed class PostHogApiClient : IDisposable
 
     /// <summary>
     /// Retrieves all the feature flags for the project by making a request to the
-    /// <c>/api/feature_flag/local_evaluation</c> endpoint. This requires that a Personal API Key is set in
+    /// <c>/flags/definitions</c> endpoint. This requires that a Personal API Key is set in
     /// <see cref="PostHogOptions"/>.
     /// </summary>
     /// <param name="etag">Optional ETag from a previous request for conditional fetching.</param>
@@ -155,7 +155,7 @@ internal sealed class PostHogApiClient : IDisposable
         string? etag,
         CancellationToken cancellationToken)
     {
-        var uriBuilder = new UriBuilder(new Uri(HostUrl, "/api/feature_flag/local_evaluation"))
+        var uriBuilder = new UriBuilder(new Uri(HostUrl, "/flags/definitions"))
         {
             Query = $"token={Uri.EscapeDataString(ProjectApiKey)}&send_cohorts"
         };
