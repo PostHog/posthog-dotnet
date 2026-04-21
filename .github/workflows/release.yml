@@ -4,6 +4,16 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: Version bump to apply
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: read
@@ -16,8 +26,10 @@ jobs:
   check-release-label:
     name: Check for release label
     if: |
-      github.event.pull_request.merged == true
-       && contains(github.event.pull_request.labels.*.name, 'release')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.merged == true &&
+       contains(github.event.pull_request.labels.*.name, 'release'))
     runs-on: ubuntu-latest
     outputs:
       should-release: ${{ steps.check.outputs.should-release }}
@@ -25,14 +37,24 @@ jobs:
     steps:
       - name: Check release conditions
         id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          HAS_BUMP_MAJOR: ${{ contains(github.event.pull_request.labels.*.name, 'bump-major') }}
+          HAS_BUMP_MINOR: ${{ contains(github.event.pull_request.labels.*.name, 'bump-minor') }}
+          HAS_BUMP_PATCH: ${{ contains(github.event.pull_request.labels.*.name, 'bump-patch') }}
         run: |
-          if ${{ contains(github.event.pull_request.labels.*.name, 'bump-major') }}; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "bump-type=$BUMP_TYPE" >> "$GITHUB_OUTPUT"
+            echo "should-release=true" >> "$GITHUB_OUTPUT"
+            echo "Manual release requested with bump type '$BUMP_TYPE'"
+          elif [ "$HAS_BUMP_MAJOR" = "true" ]; then
             echo "bump-type=major" >> "$GITHUB_OUTPUT"
             echo "should-release=true" >> "$GITHUB_OUTPUT"
-          elif ${{ contains(github.event.pull_request.labels.*.name, 'bump-minor') }}; then
+          elif [ "$HAS_BUMP_MINOR" = "true" ]; then
             echo "bump-type=minor" >> "$GITHUB_OUTPUT"
             echo "should-release=true" >> "$GITHUB_OUTPUT"
-          elif ${{ contains(github.event.pull_request.labels.*.name, 'bump-patch') }}; then
+          elif [ "$HAS_BUMP_PATCH" = "true" ]; then
             echo "bump-type=patch" >> "$GITHUB_OUTPUT"
             echo "should-release=true" >> "$GITHUB_OUTPUT"
           else
@@ -79,20 +101,20 @@ jobs:
 
       - name: Get GitHub App token
         id: releaser
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.GH_APP_POSTHOG_DOTNET_RELEASER_APP_ID }}
+          client-id: ${{ secrets.GH_APP_POSTHOG_DOTNET_RELEASER_APP_ID }}
           private-key: ${{ secrets.GH_APP_POSTHOG_DOTNET_RELEASER_PRIVATE_KEY }}
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
           token: ${{ steps.releaser.outputs.token }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -155,7 +177,7 @@ jobs:
           GH_TOKEN: ${{ steps.releaser.outputs.token }}
           VERSION: ${{ steps.version.outputs.new }}
         run: |
-          gh release create "v$VERSION" --target main --generate-notes
+          gh release create "$VERSION" --target main --generate-notes
 
       - name: Send failure event to PostHog
         if: failure()
@@ -168,7 +190,7 @@ jobs:
               "commitSha": "${{ github.sha }}",
               "jobStatus": "${{ job.status }}",
               "ref": "${{ github.ref }}",
-              "version": "v${{ steps.version.outputs.new }}"
+              "version": "${{ steps.version.outputs.new }}"
             }
 
       - name: Notify Slack - Failed
@@ -178,7 +200,7 @@ jobs:
           slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
           slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
           thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-          message: "❌ Failed to release `posthog-dotnet@v${{ steps.version.outputs.new }}`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+          message: "❌ Failed to release `posthog-dotnet@${{ steps.version.outputs.new }}`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
           emoji_reaction: "x"
 
   notify-rejected:
@@ -191,8 +213,10 @@ jobs:
         id: check-rejection
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+          GITHUB_RUN_ID_VALUE: ${{ github.run_id }}
         run: |
-          RESPONSE=$(gh api /repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/approvals)
+          RESPONSE=$(gh api "/repos/$GITHUB_REPOSITORY_NAME/actions/runs/$GITHUB_RUN_ID_VALUE/approvals")
           REJECTED=$(echo "$RESPONSE" | jq '[.[] | select(.state == "rejected")] | length')
           if [ "$REJECTED" -gt 0 ]; then
             echo "was_rejected=true" >> "$GITHUB_OUTPUT"

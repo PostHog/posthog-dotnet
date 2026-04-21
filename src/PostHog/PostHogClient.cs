@@ -50,6 +50,9 @@ public sealed class PostHogClient : IPostHogClient
         _taskScheduler = taskScheduler ?? new TaskRunTaskScheduler();
         _timeProvider = timeProvider ?? TimeProvider.System;
         loggerFactory ??= NullLoggerFactory.Instance;
+        _logger = loggerFactory.CreateLogger<PostHogClient>();
+
+        NormalizeOptions(_options.Value, _logger);
 
         _apiClient = new PostHogApiClient(
             httpClientFactory.CreateClient(nameof(PostHogClient)),
@@ -82,8 +85,19 @@ public sealed class PostHogClient : IPostHogClient
             CompactionPercentage = options.Value.FeatureFlagSentCacheCompactionPercentage
         });
 
-        _logger = loggerFactory.CreateLogger<PostHogClient>();
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
+    }
+
+    static void NormalizeOptions(PostHogOptions options, ILogger<PostHogClient> logger)
+    {
+        options.ProjectApiKey = options.ProjectApiKey?.Trim();
+        options.PersonalApiKey = options.PersonalApiKey.NullIfEmpty();
+        options.HostUrl = options.HostUrl.NormalizeHostUrl();
+
+        if (string.IsNullOrEmpty(options.ProjectApiKey))
+        {
+            logger.LogErrorProjectApiKeyBlankAfterTrim();
+        }
     }
 
     /// <summary>
@@ -811,24 +825,30 @@ internal static partial class PostHogClientLoggerExtensions
 
     [LoggerMessage(
         EventId = 14,
+        Level = LogLevel.Error,
+        Message = "ProjectApiKey is empty after trimming whitespace; check your project API key")]
+    public static partial void LogErrorProjectApiKeyBlankAfterTrim(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 15,
         Level = LogLevel.Information,
         Message = "[FEATURE FLAGS] Loading feature flags for local evaluation")]
     public static partial void LogInfoLoadFeatureFlags(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 15,
+        EventId = 16,
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] You have to specify a personal_api_key to use feature flags.")]
     public static partial void LogWarningPersonalApiKeyRequired(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 16,
+        EventId = 17,
         Level = LogLevel.Debug,
         Message = "[FEATURE FLAGS] Feature flags loaded successfully, polling {PollingStatus}")]
     public static partial void LogDebugFeatureFlagsLoaded(this ILogger<PostHogClient> logger, string pollingStatus);
 
     [LoggerMessage(
-        EventId = 17,
+        EventId = 18,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Failed to load feature flags")]
     public static partial void LogErrorFailedToLoadFeatureFlags(this ILogger<PostHogClient> logger, Exception exception);

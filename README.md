@@ -22,66 +22,13 @@ For documentation on the specific packages, see the README files in the respecti
 
 The core [PostHog](./src/PostHog/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility. The [PostHog.AspNetCore](src/PostHog.AspNetCore/README.md) package targets `net8.0`. The [PostHog.AI](src/PostHog.AI/README.md) package targets `netstandard2.1` and `net8.0` for broad compatibility.
 
-## Building
+## Contributing
 
-To build the solution, run the following commands in the root of the repository:
-
-```bash
-$ dotnet restore
-$ dotnet build
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build, sample, and test instructions.
 
 ## Docs
 
 More detailed docs for using this library can be found at [PostHog Docs for the .NET Client SDK](https://posthog.com/docs/libraries/dotnet).
-
-## Samples
-
-Sample projects are located in the `samples` directory.
-
-To run the samples, you'll need to set your PostHog project API key. From the repository root you can run:
-
-```bash
-bin/user-secrets set PostHog:ProjectApiKey YOUR_API_KEY
-```
-
-The main ASP.NET Core sample app can be run with the following command:
-
-```bash
-$ bin/start
-```
-
-You can also run it from your favorite IDE or editor.
-
-## Testing
-
-To run the tests, run the following command in the root of the repository:
-
-```bash
-$ dotnet test
-```
-
-### Test Target Frameworks
-
-The test projects target both `net8.0` and `netcoreapp3.1`. While .NET Core 3.1 reached end-of-life in December 2022, we continue to test against it because:
-
-- It was the first runtime to fully support .NET Standard 2.1
-- It serves as our minimum test baseline to ensure the `netstandard2.1` library works correctly on older runtimes
-- It helps catch compatibility issues that might not surface on newer runtimes
-
-This testing approach ensures broad compatibility without requiring users to install legacy runtimes in production.
-
-## Publishing Releases
-
-Releases are driven by PR labels. When a PR with the right labels is merged to `main`, a GitHub Actions workflow handles version bumping, tagging, creating a GitHub Release (with auto-generated notes), and publishing to NuGet.
-
-### Release Process
-
-1. Add the `release` label and exactly one of `bump-patch`, `bump-minor`, or `bump-major` to your PR
-2. Merge the PR to `main`
-3. Approve the release in the GitHub Environment gate (the workflow pauses for maintainer approval)
-4. The workflow bumps the version in `Directory.Build.props`, commits to `main`, creates a git tag, and creates a GitHub Release
-5. The GitHub Release triggers the [`main.yaml`](.github/workflows/main.yaml) workflow, which builds and publishes the packages to NuGet
 
 ## Installation
 

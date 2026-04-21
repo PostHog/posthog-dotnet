@@ -1439,6 +1439,59 @@ public class TheLoadFeatureFlagsAsyncMethod
     }
 
     [Fact]
+    public async Task LogsWarningWhenPersonalApiKeyIsBlankAfterTrimmingWhitespace()
+    {
+        var container = new TestContainer(personalApiKey: " \n\t ");
+        var client = container.Activate<PostHogClient>();
+
+        await client.LoadFeatureFlagsAsync();
+
+        var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
+        Assert.Contains(warningLogs, log =>
+            log.Message?.Contains("You have to specify a personal_api_key to use feature flags", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void LogsErrorWhenProjectApiKeyIsBlankAfterTrimmingWhitespace()
+    {
+        var container = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options => options.ProjectApiKey = " \n\t ");
+        });
+
+        _ = container.Activate<PostHogClient>();
+
+        var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
+        Assert.Contains(errorLogs, log =>
+            log.Message?.Contains("ProjectApiKey is empty after trimming whitespace", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void DefaultsHostUrlWhenConfiguredHostIsNullOrInvalid()
+    {
+        var nullHostContainer = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options => options.HostUrl = null!);
+        });
+
+        _ = nullHostContainer.Activate<PostHogClient>();
+
+        var nullHostOptions = ((IOptions<PostHogOptions>)((IServiceProvider)nullHostContainer).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Equal(new Uri("https://us.i.posthog.com"), nullHostOptions.HostUrl);
+
+        var invalidHostContainer = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options =>
+                options.HostUrl = new Uri(" \n\t ", UriKind.RelativeOrAbsolute));
+        });
+
+        _ = invalidHostContainer.Activate<PostHogClient>();
+
+        var invalidHostOptions = ((IOptions<PostHogOptions>)((IServiceProvider)invalidHostContainer).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Equal(new Uri("https://us.i.posthog.com"), invalidHostOptions.HostUrl);
+    }
+
+    [Fact]
     public async Task LogsDebugWhenFlagsLoadedSuccessfully()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");

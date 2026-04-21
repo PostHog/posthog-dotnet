@@ -50,7 +50,7 @@ internal sealed class LocalFeatureFlagsLoader(
     /// <exception cref="ApiException">Thrown when the API returns a <c>quota_limited</c> error.</exception>
     public async ValueTask<LocalEvaluator?> GetFeatureFlagsForLocalEvaluationAsync(CancellationToken cancellationToken)
     {
-        if (options.Value.PersonalApiKey is null)
+        if (string.IsNullOrWhiteSpace(options.Value.PersonalApiKey))
         {
             // Local evaluation is not enabled since it requires a personal api key.
             return null;
@@ -70,7 +70,7 @@ internal sealed class LocalFeatureFlagsLoader(
     /// <returns>The local evaluator with the feature flags.</returns>
     public async ValueTask<LocalEvaluator?> RefreshAsync(CancellationToken cancellationToken)
     {
-        if (options.Value.PersonalApiKey is null)
+        if (string.IsNullOrWhiteSpace(options.Value.PersonalApiKey))
         {
             return null;
         }
