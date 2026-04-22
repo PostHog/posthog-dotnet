@@ -90,13 +90,18 @@ public sealed class PostHogClient : IPostHogClient
 
     static void NormalizeOptions(PostHogOptions options, ILogger<PostHogClient> logger)
     {
+        if (options.HasLegacyProjectApiKey)
+        {
+            logger.LogWarningProjectApiKeyDeprecated();
+        }
+
         options.ProjectToken = options.ProjectToken?.Trim();
         options.PersonalApiKey = options.PersonalApiKey.NullIfEmpty();
         options.HostUrl = options.HostUrl.NormalizeHostUrl();
 
         if (string.IsNullOrEmpty(options.ProjectToken))
         {
-            logger.LogErrorProjectTokenBlankAfterTrim();
+            logger.LogErrorProjectTokenRequired();
         }
     }
 
@@ -825,24 +830,30 @@ internal static partial class PostHogClientLoggerExtensions
 
     [LoggerMessage(
         EventId = 14,
-        Level = LogLevel.Error,
-        Message = "ProjectToken is empty after trimming whitespace; check your project token")]
-    public static partial void LogErrorProjectTokenBlankAfterTrim(this ILogger<PostHogClient> logger);
+        Level = LogLevel.Warning,
+        Message = "ProjectApiKey is deprecated and will be removed in the next major version. Use ProjectToken instead.")]
+    public static partial void LogWarningProjectApiKeyDeprecated(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
         EventId = 15,
+        Level = LogLevel.Error,
+        Message = "Either ProjectToken or ProjectApiKey must be provided.")]
+    public static partial void LogErrorProjectTokenRequired(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 16,
         Level = LogLevel.Information,
         Message = "[FEATURE FLAGS] Loading feature flags for local evaluation")]
     public static partial void LogInfoLoadFeatureFlags(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 16,
+        EventId = 17,
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] You have to specify a personal_api_key to use feature flags.")]
     public static partial void LogWarningPersonalApiKeyRequired(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 17,
+        EventId = 18,
         Level = LogLevel.Debug,
         Message = "[FEATURE FLAGS] Feature flags loaded successfully, polling {PollingStatus}")]
     public static partial void LogDebugFeatureFlagsLoaded(this ILogger<PostHogClient> logger, string pollingStatus);
@@ -854,13 +865,13 @@ internal static partial class PostHogClientLoggerExtensions
     public static partial void LogErrorFailedToLoadFeatureFlags(this ILogger<PostHogClient> logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 18,
+        EventId = 19,
         Level = LogLevel.Error,
         Message = "CaptureException called with null exception")]
     public static partial void LogErrorCaptureExceptionNull(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 19,
+        EventId = 20,
         Level = LogLevel.Error,
         Message = "CaptureException failed with an exception")]
     public static partial void LogErrorCaptureExceptionFailed(this ILogger<PostHogClient> logger, Exception exception);

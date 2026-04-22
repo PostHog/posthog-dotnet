@@ -24,10 +24,12 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
         set => _projectToken = value;
     }
 
+    internal bool HasLegacyProjectApiKey => _projectApiKey is not null;
+
     /// <summary>
     /// Obsolete alias for <see cref="ProjectToken"/>.
     /// </summary>
-    [Obsolete("Use ProjectToken instead.")]
+    [Obsolete("Use ProjectToken instead. This will be removed in the next major version.")]
     public string? ProjectApiKey
     {
         get => _projectToken ?? _projectApiKey;

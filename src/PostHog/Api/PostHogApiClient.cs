@@ -54,7 +54,7 @@ internal sealed class PostHogApiClient : IDisposable
     Uri HostUrl => _options.Value.HostUrl;
 
     string ProjectToken => _options.Value.ProjectToken
-                            ?? throw new InvalidOperationException("The Project Token is not configured.");
+                            ?? throw new InvalidOperationException("Either ProjectToken or ProjectApiKey must be provided.");
 
     /// <summary>
     /// Capture an event with optional properties

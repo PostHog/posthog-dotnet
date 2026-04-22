@@ -1452,7 +1452,24 @@ public class TheLoadFeatureFlagsAsyncMethod
     }
 
     [Fact]
-    public void LogsErrorWhenProjectTokenIsBlankAfterTrimmingWhitespace()
+    public void LogsWarningWhenProjectApiKeyIsUsed()
+    {
+        var container = new TestContainer(services =>
+        {
+#pragma warning disable CS0618
+            services.Configure<PostHogOptions>(options => options.ProjectApiKey = "fake-project-api-key");
+#pragma warning restore CS0618
+        });
+
+        _ = container.Activate<PostHogClient>();
+
+        var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
+        Assert.Contains(warningLogs, log =>
+            log.Message?.Contains("ProjectApiKey is deprecated", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void LogsErrorWhenProjectTokenIsMissing()
     {
         var container = new TestContainer(services =>
         {
@@ -1463,7 +1480,7 @@ public class TheLoadFeatureFlagsAsyncMethod
 
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
         Assert.Contains(errorLogs, log =>
-            log.Message?.Contains("ProjectToken is empty after trimming whitespace", StringComparison.Ordinal) == true);
+            log.Message?.Contains("Either ProjectToken or ProjectApiKey must be provided", StringComparison.Ordinal) == true);
     }
 
     [Fact]
