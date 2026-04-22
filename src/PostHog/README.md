@@ -22,6 +22,6 @@ To use this package, you need to create an instance of `PostHogClient` and call 
 ```csharp
 using PostHog;
 
-var client = new PostHogClient(new PostHogOptions { ProjectApiKey = "YOUR_PROJECT_API_KEY" });
+var client = new PostHogClient(new PostHogOptions { ProjectToken = "YOUR_PROJECT_TOKEN" });
 client.Capture("user-123", "Test Event");
 ```

@@ -36,7 +36,7 @@ app.MapPost("/init", async (InitRequest request) =>
 
     var options = new PostHogOptions
     {
-        ProjectApiKey = request.ApiKey,
+        ProjectToken = request.ApiKey,
         HostUrl = new Uri(request.Host),
         FlushAt = state.FlushAt,
         FlushInterval = TimeSpan.FromMilliseconds(state.FlushIntervalMs),

@@ -29,19 +29,19 @@
         }
     </div>
     <div>
-        @if (!Model.ProjectApiKeyIsSet) {
+        @if (!Model.ProjectTokenIsSet) {
             <div class="alert alert-warning mt-3" role="alert">
-                The project API key is not set.
+                The project token is not set.
                 You can use the following command to set the key in the root of
                 this project:
                 <br />
-                <code>script/user-secrets set PostHog:ProjectApiKey your-api-key</code>
+                <code>script/user-secrets set PostHog:ProjectToken your-project-token</code>
             </div>
         }
         else {
             <div class="alert alert-info mt-3" role="alert">
                 <strong>
-                    The Project API Key <code>@Model.PostHogOptions.ProjectApiKey</code> is set pointing to
+                    The Project Token <code>@Model.PostHogOptions.ProjectToken</code> is set pointing to
                     <code>@Model.PostHogOptions.HostUrl!</code>
                     <br />We're ready to go!
                 </strong>

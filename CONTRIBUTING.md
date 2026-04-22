@@ -17,10 +17,10 @@ dotnet test --configuration Release --no-build --nologo
 
 Sample projects live in the `samples` directory.
 
-To run the samples, set your PostHog project API key from the repository root:
+To run the samples, set your PostHog project token from the repository root:
 
 ```bash
-bin/user-secrets set PostHog:ProjectApiKey YOUR_API_KEY
+bin/user-secrets set PostHog:ProjectToken YOUR_PROJECT_TOKEN
 ```
 
 The main ASP.NET Core sample app can then be started with:

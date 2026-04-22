@@ -21,7 +21,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     [BindProperty]
     public string? FakeUserId { get; set; } = "12345";
 
-    public bool ProjectApiKeyIsSet { get; private set; }
+    public bool ProjectTokenIsSet { get; private set; }
 
     public bool PersonalApiKeyIsSet { get; private set; }
 
@@ -64,7 +64,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
 
     public async Task OnGetAsync()
     {
-        ProjectApiKeyIsSet = options.Value.ProjectApiKey is not (null or []);
+        ProjectTokenIsSet = options.Value.ProjectToken is not (null or []);
         PersonalApiKeyIsSet = options.Value.PersonalApiKey is not (null or []);
 
         // Check if the user is authenticated and get their user id.
@@ -75,7 +75,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
         // Parse custom person properties if provided
         ParsePersonProperties();
 
-        if (ProjectApiKeyIsSet && UserId is not null)
+        if (ProjectTokenIsSet && UserId is not null)
         {
             // Identify the current user if they're authenticated.
             if (User.Identity?.IsAuthenticated == true)
@@ -157,7 +157,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     public async Task<IActionResult> OnPostAsync()
     {
         await OnGetAsync();
-        if (!ProjectApiKeyIsSet || UserId is null)
+        if (!ProjectTokenIsSet || UserId is null)
         {
             return RedirectToPage();
         }
@@ -182,7 +182,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     public async Task<IActionResult> OnPostCaptureExceptionAsync()
     {
         await OnGetAsync();
-        if (!ProjectApiKeyIsSet || UserId is null)
+        if (!ProjectTokenIsSet || UserId is null)
         {
             return RedirectToPage();
         }
@@ -203,7 +203,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     public async Task<IActionResult> OnPostIdentifyGroupAsync()
     {
         await OnGetAsync();
-        if (!ProjectApiKeyIsSet || UserId is null)
+        if (!ProjectTokenIsSet || UserId is null)
         {
             return RedirectToPage();
         }

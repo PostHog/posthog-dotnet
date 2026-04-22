@@ -25,7 +25,7 @@ public class TheAddPostHogMethod
         configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["PostHog:PersonalApiKey"] = "fake-secret",
-            ["PostHog:ProjectApiKey"] = "fake-not-so-secret",
+            ["PostHog:ProjectToken"] = "fake-not-so-secret",
             ["PostHog:HostUrl"] = "https://test-host.com",
             ["PostHog:FeatureFlagPollInterval"] = "00:00:10",
         });
@@ -36,11 +36,34 @@ public class TheAddPostHogMethod
         Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
         Assert.Equal("fake-secret", options.PersonalApiKey);
-        Assert.Equal("fake-not-so-secret", options.ProjectApiKey);
+        Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
     }
 
+
+    [Fact]
+    public void ReadsLegacyProjectApiKeyFromPostHogConfigurationSection()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Host.UseDefaultServiceProvider((_, options) =>
+        {
+            options.ValidateScopes = true;
+            options.ValidateOnBuild = true;
+        });
+        var services = builder.Services;
+        var configuration = builder.Configuration;
+        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["PostHog:ProjectApiKey"] = "fake-not-so-secret",
+        });
+
+        builder.AddPostHog();
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
+        Assert.Equal("fake-not-so-secret", options.ProjectToken);
+    }
 
     [Fact]
     async Task CanConfigureServices()
@@ -56,7 +79,7 @@ public class TheAddPostHogMethod
         configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["PostHogLocal:PersonalApiKey"] = "fake-secret",
-            ["PostHogLocal:ProjectApiKey"] = "fake-not-so-secret",
+            ["PostHogLocal:ProjectToken"] = "fake-not-so-secret",
             ["PostHogLocal:HostUrl"] = "https://local-test-host.com",
             ["PostHogLocal:FeatureFlagPollInterval"] = "00:00:20",
         });
@@ -76,7 +99,7 @@ public class TheAddPostHogMethod
         Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
         Assert.Equal("fake-secret", options.PersonalApiKey);
-        Assert.Equal("fake-not-so-secret", options.ProjectApiKey);
+        Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://local-test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(20), options.FeatureFlagPollInterval);
         // Confirm the HttpClient has the message handler.

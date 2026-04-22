@@ -43,7 +43,7 @@ public class TheAddPostHogMethod
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["PostHogTest:PersonalApiKey"] = "fake-secret-personal-api-key",
-                ["PostHogTest:ProjectApiKey"] = "fake-public-project-api-key",
+                ["PostHogTest:ProjectToken"] = "fake-public-project-api-key",
                 ["PostHogTest:HostUrl"] = "https://test-host/",
                 ["PostHogTest:FeatureFlagPollInterval"] = "00:00:10",
                 ["PostHogTest:FlushAt"] = "10",
@@ -67,7 +67,7 @@ public class TheAddPostHogMethod
 
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
 
-        Assert.Equal("fake-public-project-api-key", options.ProjectApiKey);
+        Assert.Equal("fake-public-project-api-key", options.ProjectToken);
         Assert.Equal("fake-secret-personal-api-key", options.PersonalApiKey);
         Assert.Equal(new Uri("https://test-host/"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
@@ -86,6 +86,53 @@ public class TheAddPostHogMethod
     }
 
     [Fact]
+    public void CanReadLegacyProjectApiKeyConfiguration()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PostHogTest:ProjectApiKey"] = "fake-public-project-api-key",
+            })
+            .Build();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddPostHog(options =>
+        {
+            options.UseConfigurationSection(configuration.GetSection("PostHogTest"));
+        });
+
+        var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
+
+        Assert.Equal("fake-public-project-api-key", options.ProjectToken);
+    }
+
+    [Fact]
+    public void ProjectApiKeyAliasMirrorsProjectToken()
+    {
+        var options = new PostHogOptions
+        {
+            ProjectToken = "fake-public-project-token"
+        };
+
+#pragma warning disable CS0618
+        Assert.Equal("fake-public-project-token", options.ProjectApiKey);
+
+        options = new PostHogOptions
+        {
+            ProjectApiKey = "fake-public-project-api-key"
+        };
+#pragma warning restore CS0618
+
+        Assert.Equal("fake-public-project-api-key", options.ProjectToken);
+    }
+
+    [Fact]
     public void AllowsOverridingConfiguration()
     {
         var services = new ServiceCollection();
@@ -93,7 +140,7 @@ public class TheAddPostHogMethod
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["PostHogTest:PersonalApiKey"] = "fake-secret-personal-api-key",
-                ["PostHogTest:ProjectApiKey"] = "fake-public-project-api-key",
+                ["PostHogTest:ProjectToken"] = "fake-public-project-api-key",
                 ["PostHogTest:HostUrl"] = "https://test-host/",
                 ["PostHogTest:FeatureFlagPollInterval"] = "00:00:10",
                 ["PostHogTest:FlushAt"] = "10",
@@ -125,7 +172,7 @@ public class TheAddPostHogMethod
 
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
 
-        Assert.Equal("fake-public-project-api-key", options.ProjectApiKey);
+        Assert.Equal("fake-public-project-api-key", options.ProjectToken);
         Assert.Equal("fake-secret-personal-api-key", options.PersonalApiKey);
         Assert.Equal(new Uri("https://test-host/"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);

@@ -18,7 +18,7 @@ public class PostHogPageViewFilter(IOptions<PostHogOptions> options, IPostHogCli
 
     public async Task OnPageHandlerExecutionAsync(PageHandlerExecutingContext context, PageHandlerExecutionDelegate next)
     {
-        if (_options.ProjectApiKey is not null)
+        if (_options.ProjectToken is not null)
         {
             var user = context.HttpContext.User;
             var distinctId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;

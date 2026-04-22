@@ -130,7 +130,7 @@ public class TheIdentifyPersonAsyncMethod
         {
             sp.AddSingleton<IOptions<PostHogOptions>>(new PostHogOptions
             {
-                ProjectApiKey = "fake-project-api-key",
+                ProjectToken = "fake-project-api-key",
                 SuperProperties = new Dictionary<string, object> { ["source"] = "repo-name" },
                 EnableCompression = false // Disable for tests to avoid gzip handling in fake handler
             });
@@ -1452,18 +1452,18 @@ public class TheLoadFeatureFlagsAsyncMethod
     }
 
     [Fact]
-    public void LogsErrorWhenProjectApiKeyIsBlankAfterTrimmingWhitespace()
+    public void LogsErrorWhenProjectTokenIsBlankAfterTrimmingWhitespace()
     {
         var container = new TestContainer(services =>
         {
-            services.Configure<PostHogOptions>(options => options.ProjectApiKey = " \n\t ");
+            services.Configure<PostHogOptions>(options => options.ProjectToken = " \n\t ");
         });
 
         _ = container.Activate<PostHogClient>();
 
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
         Assert.Contains(errorLogs, log =>
-            log.Message?.Contains("ProjectApiKey is empty after trimming whitespace", StringComparison.Ordinal) == true);
+            log.Message?.Contains("ProjectToken is empty after trimming whitespace", StringComparison.Ordinal) == true);
     }
 
     [Fact]

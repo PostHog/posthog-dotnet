@@ -23,7 +23,7 @@ public class ThePostJsonWithRetryAsyncMethod
         TimeSpan? maxRetryDelay = null,
         bool enableCompression = false) => new()
         {
-            ProjectApiKey = "test-api-key",
+            ProjectToken = "test-api-key",
             MaxRetries = maxRetries,
             InitialRetryDelay = initialRetryDelay ?? TimeSpan.FromMilliseconds(1),
             MaxRetryDelay = maxRetryDelay ?? TimeSpan.FromSeconds(30),
@@ -577,7 +577,7 @@ public class ThePostCompressedJsonAsyncMethod
         using var httpClient = new HttpClient(handler);
         var options = new PostHogOptions
         {
-            ProjectApiKey = "test-api-key",
+            ProjectToken = "test-api-key",
             EnableCompression = true
         };
         var timeProvider = new FakeTimeProvider();
@@ -623,7 +623,7 @@ public class ThePostCompressedJsonAsyncMethod
         using var httpClient = new HttpClient(handler);
         var options = new PostHogOptions
         {
-            ProjectApiKey = "test-api-key",
+            ProjectToken = "test-api-key",
             EnableCompression = false
         };
         var timeProvider = new FakeTimeProvider();

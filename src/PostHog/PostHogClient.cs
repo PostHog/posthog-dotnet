@@ -90,13 +90,13 @@ public sealed class PostHogClient : IPostHogClient
 
     static void NormalizeOptions(PostHogOptions options, ILogger<PostHogClient> logger)
     {
-        options.ProjectApiKey = options.ProjectApiKey?.Trim();
+        options.ProjectToken = options.ProjectToken?.Trim();
         options.PersonalApiKey = options.PersonalApiKey.NullIfEmpty();
         options.HostUrl = options.HostUrl.NormalizeHostUrl();
 
-        if (string.IsNullOrEmpty(options.ProjectApiKey))
+        if (string.IsNullOrEmpty(options.ProjectToken))
         {
-            logger.LogErrorProjectApiKeyBlankAfterTrim();
+            logger.LogErrorProjectTokenBlankAfterTrim();
         }
     }
 
@@ -224,7 +224,7 @@ public sealed class PostHogClient : IPostHogClient
         {
             var host = _options.Value.HostUrl.ToString().TrimEnd('/').Replace(".i.", ".", StringComparison.Ordinal);
             properties ??= [];
-            properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectApiKey}/person/{distinctId}";
+            properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{distinctId}";
             properties = ExceptionPropertiesBuilder.Build(properties, exception);
 
             return Capture(distinctId, "$exception", properties, groups, sendFeatureFlags, timestamp);
@@ -826,8 +826,8 @@ internal static partial class PostHogClientLoggerExtensions
     [LoggerMessage(
         EventId = 14,
         Level = LogLevel.Error,
-        Message = "ProjectApiKey is empty after trimming whitespace; check your project API key")]
-    public static partial void LogErrorProjectApiKeyBlankAfterTrim(this ILogger<PostHogClient> logger);
+        Message = "ProjectToken is empty after trimming whitespace; check your project token")]
+    public static partial void LogErrorProjectTokenBlankAfterTrim(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
         EventId = 15,
