@@ -69,6 +69,7 @@ internal sealed class PostHogApiClient : IDisposable
 
         var payload = new Dictionary<string, object>
         {
+            // PostHog's ingestion API still expects the project token under the wire name `api_key`.
             ["api_key"] = ProjectToken,
             ["historical_migrations"] = false,
             ["batch"] = events.ToReadOnlyList()
@@ -157,6 +158,7 @@ internal sealed class PostHogApiClient : IDisposable
     {
         var uriBuilder = new UriBuilder(new Uri(HostUrl, "/flags/definitions"))
         {
+            // PostHog's feature flag API still expects the project token in the `token` query parameter.
             Query = $"token={Uri.EscapeDataString(ProjectToken)}&send_cohorts"
         };
         try
@@ -188,6 +190,7 @@ internal sealed class PostHogApiClient : IDisposable
     {
         var uriBuilder = new UriBuilder(new Uri(HostUrl, $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"))
         {
+            // PostHog's remote config API still expects the project token in the `token` query parameter.
             Query = $"token={Uri.EscapeDataString(ProjectToken)}"
         };
 
@@ -263,6 +266,7 @@ internal sealed class PostHogApiClient : IDisposable
 
     void PrepareAndMutatePayload(Dictionary<string, object> payload)
     {
+        // PostHog's decide API still expects the project token under the wire name `api_key`.
         payload["api_key"] = ProjectToken;
 
         var properties = payload.GetOrAdd<string, Dictionary<string, object>>("properties");
