@@ -93,7 +93,7 @@ public class TheGetRemoteConfigPayloadAsyncMethod
     }
 
     [Fact]
-    public async Task IncludesProjectTokenTokenInRemoteConfigUrl()
+    public async Task IncludesProjectTokenInRemoteConfigUrl()
     {
         var container = new TestContainer("fake-personal-api-key");
 
