@@ -33,7 +33,7 @@ var endpoint = Environment.GetEnvironmentVariable("POSTHOG_HOST") ?? "https://us
 // Check credentials
 if (string.IsNullOrEmpty(projectToken))
 {
-    Console.WriteLine("❌ Missing POSTHOG_PROJECT_TOKEN or POSTHOG_PROJECT_API_KEY!");
+    Console.WriteLine("❌ Missing either POSTHOG_PROJECT_TOKEN or POSTHOG_PROJECT_API_KEY!");
     Console.WriteLine("   Please set the environment variable or copy .env.example to .env");
     Console.WriteLine();
     Console.Write("Enter your PostHog project token (starts with phc_): ");
