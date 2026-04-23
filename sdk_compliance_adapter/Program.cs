@@ -36,7 +36,7 @@ app.MapPost("/init", async (InitRequest request) =>
 
     var options = new PostHogOptions
     {
-        ProjectApiKey = request.ApiKey,
+        ProjectToken = request.ApiKey,
         HostUrl = new Uri(request.Host),
         FlushAt = state.FlushAt,
         FlushInterval = TimeSpan.FromMilliseconds(state.FlushIntervalMs),
@@ -154,6 +154,7 @@ record HealthResponse(
 );
 
 record InitRequest(
+    // The SDK compliance protocol still uses the wire name `api_key` for the PostHog project token.
     [property: JsonPropertyName("api_key")] string ApiKey,
     [property: JsonPropertyName("host")] string Host,
     [property: JsonPropertyName("flush_at")] int? FlushAt = null,

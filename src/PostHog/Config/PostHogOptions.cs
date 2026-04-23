@@ -7,13 +7,34 @@ namespace PostHog;
 /// </summary>
 public sealed class PostHogOptions : IOptions<PostHogOptions>
 {
+    string? _projectToken;
+    string? _projectApiKey;
+
     /// <summary>
-    /// The project API key that identifies which project this client works with.
+    /// The PostHog project token that identifies which project this client works with.
     /// </summary>
     /// <remarks>
-    /// You can find this https://us.posthog.com/project/{YOUR_PROJECT_ID}/settings/project
+    /// You can find this at https://us.posthog.com/settings/project-details#variables
+    ///
+    /// This field was formerly named <see cref="ProjectApiKey"/>.
     /// </remarks>
-    public string? ProjectApiKey { get; set; }
+    public string? ProjectToken
+    {
+        get => _projectToken ?? _projectApiKey;
+        set => _projectToken = value;
+    }
+
+    internal bool HasLegacyProjectApiKey => _projectApiKey is not null;
+
+    /// <summary>
+    /// Obsolete alias for <see cref="ProjectToken"/>.
+    /// </summary>
+    [Obsolete("Use ProjectToken instead. This will be removed in the next major version.")]
+    public string? ProjectApiKey
+    {
+        get => _projectToken ?? _projectApiKey;
+        set => _projectApiKey = value;
+    }
 
     /// <summary>
     /// Optional personal API key for local feature flag evaluation.

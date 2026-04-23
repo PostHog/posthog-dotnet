@@ -28,7 +28,7 @@ var builder = Host.CreateApplicationBuilder(args);
 // 1. Configure PostHog
 builder.Services.AddPostHog(options =>
 {
-    options.ProjectApiKey = "YOUR_PROJECT_API_KEY";
+    options.ProjectToken = "YOUR_PROJECT_TOKEN";
     options.HostUrl = new Uri("https://us.i.posthog.com"); // or eu.i.posthog.com
 });
 

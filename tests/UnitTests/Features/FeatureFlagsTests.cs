@@ -2421,7 +2421,7 @@ public class TheGetFeatureFlagAsyncMethod
         {
             sp.Configure<PostHogOptions>(options =>
             {
-                options.ProjectApiKey = "fake-project-api-key";
+                options.ProjectToken = "fake-project-api-key";
                 options.FeatureFlagSentCacheSizeLimit = 2;
                 options.FeatureFlagSentCacheCompactionPercentage = .5; // 50%, or 1 item.
             });
@@ -2527,7 +2527,7 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer(sp => sp.AddSingleton<IOptions<PostHogOptions>>(new PostHogOptions
         {
-            ProjectApiKey = "test-api-key",
+            ProjectToken = "test-api-key",
             FeatureFlagSentCacheSizeLimit = 20,
             FeatureFlagSentCacheSlidingExpiration = TimeSpan.FromSeconds(3),
             EnableCompression = false // Disable for tests to avoid gzip handling in fake handler
@@ -3291,7 +3291,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
         {
             services.Configure<PostHogOptions>(options =>
             {
-                options.ProjectApiKey = "fake-project-api-key";
+                options.ProjectToken = "fake-project-api-key";
                 options.PersonalApiKey = "fake-personal-api-key";
                 options.FeatureFlagPollInterval = TimeSpan.FromSeconds(30);
             });
@@ -3380,7 +3380,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
     }
 
     [Fact]
-    public async Task ReturnsEmptyDictionaryWhenProjectApiKeyIncorrect()
+    public async Task ReturnsEmptyDictionaryWhenProjectTokenIncorrect()
     {
         var container = new TestContainer();
         container.FakeHttpMessageHandler.AddResponse(

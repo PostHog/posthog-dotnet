@@ -53,8 +53,8 @@ internal sealed class PostHogApiClient : IDisposable
 
     Uri HostUrl => _options.Value.HostUrl;
 
-    string ProjectApiKey => _options.Value.ProjectApiKey
-                            ?? throw new InvalidOperationException("The Project API Key is not configured.");
+    string ProjectToken => _options.Value.ProjectToken
+                            ?? throw new InvalidOperationException("Either ProjectToken or ProjectApiKey must be provided.");
 
     /// <summary>
     /// Capture an event with optional properties
@@ -69,7 +69,8 @@ internal sealed class PostHogApiClient : IDisposable
 
         var payload = new Dictionary<string, object>
         {
-            ["api_key"] = ProjectApiKey,
+            // PostHog's ingestion API still expects the project token under the wire name `api_key`.
+            ["api_key"] = ProjectToken,
             ["historical_migrations"] = false,
             ["batch"] = events.ToReadOnlyList()
         };
@@ -157,7 +158,8 @@ internal sealed class PostHogApiClient : IDisposable
     {
         var uriBuilder = new UriBuilder(new Uri(HostUrl, "/flags/definitions"))
         {
-            Query = $"token={Uri.EscapeDataString(ProjectApiKey)}&send_cohorts"
+            // PostHog's feature flag API still expects the project token in the `token` query parameter.
+            Query = $"token={Uri.EscapeDataString(ProjectToken)}&send_cohorts"
         };
         try
         {
@@ -188,7 +190,8 @@ internal sealed class PostHogApiClient : IDisposable
     {
         var uriBuilder = new UriBuilder(new Uri(HostUrl, $"/api/projects/@current/feature_flags/{Uri.EscapeDataString(key)}/remote_config"))
         {
-            Query = $"token={Uri.EscapeDataString(ProjectApiKey)}"
+            // PostHog's remote config API still expects the project token in the `token` query parameter.
+            Query = $"token={Uri.EscapeDataString(ProjectToken)}"
         };
 
         return await GetAuthenticatedResponseAsync<JsonDocument>(
@@ -263,7 +266,8 @@ internal sealed class PostHogApiClient : IDisposable
 
     void PrepareAndMutatePayload(Dictionary<string, object> payload)
     {
-        payload["api_key"] = ProjectApiKey;
+        // PostHog's decide API still expects the project token under the wire name `api_key`.
+        payload["api_key"] = ProjectToken;
 
         var properties = payload.GetOrAdd<string, Dictionary<string, object>>("properties");
 

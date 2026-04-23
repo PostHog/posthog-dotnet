@@ -25,23 +25,24 @@ var envPaths = new[]
 DotEnv.Load(options: new DotEnvOptions(envFilePaths: envPaths, ignoreExceptions: true));
 
 // Get configuration from environment variables
-var projectApiKey = Environment.GetEnvironmentVariable("POSTHOG_PROJECT_API_KEY");
+var projectToken = Environment.GetEnvironmentVariable("POSTHOG_PROJECT_TOKEN")
+                   ?? Environment.GetEnvironmentVariable("POSTHOG_PROJECT_API_KEY");
 var personalApiKey = Environment.GetEnvironmentVariable("POSTHOG_PERSONAL_API_KEY");
 var endpoint = Environment.GetEnvironmentVariable("POSTHOG_HOST") ?? "https://us.i.posthog.com";
 
 // Check credentials
-if (string.IsNullOrEmpty(projectApiKey))
+if (string.IsNullOrEmpty(projectToken))
 {
-    Console.WriteLine("❌ Missing POSTHOG_PROJECT_API_KEY!");
+    Console.WriteLine("❌ Missing either POSTHOG_PROJECT_TOKEN or POSTHOG_PROJECT_API_KEY!");
     Console.WriteLine("   Please set the environment variable or copy .env.example to .env");
     Console.WriteLine();
-    Console.Write("Enter your PostHog project API key (starts with phc_): ");
-    projectApiKey = Console.ReadLine()?.Trim();
+    Console.Write("Enter your PostHog project token (starts with phc_): ");
+    projectToken = Console.ReadLine()?.Trim();
 }
 
-if (string.IsNullOrEmpty(projectApiKey))
+if (string.IsNullOrEmpty(projectToken))
 {
-    Console.WriteLine("❌ Project API key is required. Exiting.");
+    Console.WriteLine("❌ Project token is required. Exiting.");
     return 1;
 }
 
@@ -55,7 +56,7 @@ if (endpointUri.Scheme != "https" && !endpointUri.IsLoopback)
 }
 
 Console.WriteLine("✅ PostHog credentials loaded successfully!");
-Console.WriteLine($"   Project API Key: ✅ Configured");
+Console.WriteLine($"   Project Token: ✅ Configured");
 Console.WriteLine($"   Personal API Key: {(string.IsNullOrEmpty(personalApiKey) ? "❌ Not set (local evaluation disabled)" : "✅ Configured")}");
 Console.WriteLine($"   Endpoint: {endpoint}");
 Console.WriteLine();
@@ -63,7 +64,7 @@ Console.WriteLine();
 // Create PostHog options
 var options = new PostHogOptions
 {
-    ProjectApiKey = projectApiKey,
+    ProjectToken = projectToken,
     PersonalApiKey = personalApiKey,
     HostUrl = new Uri(endpoint),
     FlushAt = 1, // Flush immediately for demo purposes

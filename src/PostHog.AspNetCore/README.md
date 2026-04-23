@@ -25,10 +25,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddPostHog();
 ```
 
-Set your project API key using user secrets:
+Set your project token using user secrets:
 
 ```bash
-$ dotnet user-secrets set PostHog:ProjectApiKey YOUR_API_KEY
+$ dotnet user-secrets set PostHog:ProjectToken YOUR_PROJECT_TOKEN
 ```
 
 In most cases, that's all you need to configure!
