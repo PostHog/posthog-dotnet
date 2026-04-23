@@ -99,7 +99,7 @@ public class TheGetRemoteConfigPayloadAsyncMethod
 
         // Use the AddResponse method to verify the URL includes the token parameter
         container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/api/projects/@current/feature_flags/test-flag/remote_config?token=fake-project-api-key"),
+            new Uri("https://us.i.posthog.com/api/projects/@current/feature_flags/test-flag/remote_config?token=fake-project-token"),
             HttpMethod.Get,
             responseBody: """{"test": "payload"}"""
         );

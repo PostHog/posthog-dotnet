@@ -141,7 +141,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         JsonAssert.EqualIgnoringUuids(
             $$"""
               {
-                "api_key": "fake-project-api-key",
+                "api_key": "fake-project-token",
                 "historical_migrations": false,
                 "batch": [
                   {
@@ -230,7 +230,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         JsonAssert.EqualIgnoringUuids(
             $$"""
               {
-                "api_key": "fake-project-api-key",
+                "api_key": "fake-project-token",
                 "historical_migrations": false,
                 "batch": [
                   {
@@ -379,7 +379,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         JsonAssert.EqualIgnoringUuids(
             $$"""
               {
-                "api_key": "fake-project-api-key",
+                "api_key": "fake-project-token",
                 "historical_migrations": false,
                 "batch": [
                   {
@@ -428,7 +428,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         JsonAssert.EqualIgnoringUuids(
             $$"""
               {
-                "api_key": "fake-project-api-key",
+                "api_key": "fake-project-token",
                 "historical_migrations": false,
                 "batch": [
                   {
@@ -480,7 +480,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         JsonAssert.EqualIgnoringUuids(
             $$"""
               {
-                "api_key": "fake-project-api-key",
+                "api_key": "fake-project-token",
                 "historical_migrations": false,
                 "batch": [
                   {
@@ -605,7 +605,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         JsonAssert.EqualIgnoringUuids(
             $$"""
               {
-                "api_key": "fake-project-api-key",
+                "api_key": "fake-project-token",
                 "historical_migrations": false,
                 "batch": [
                   {
@@ -2336,7 +2336,7 @@ public class TheGetFeatureFlagAsyncMethod
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                        {
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "historical_migrations": false,
                          "batch": [
                            {
@@ -2385,7 +2385,7 @@ public class TheGetFeatureFlagAsyncMethod
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                        {
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "historical_migrations": false,
                          "batch": [
                            {
@@ -2421,7 +2421,7 @@ public class TheGetFeatureFlagAsyncMethod
         {
             sp.Configure<PostHogOptions>(options =>
             {
-                options.ProjectToken = "fake-project-api-key";
+                options.ProjectToken = "fake-project-token";
                 options.FeatureFlagSentCacheSizeLimit = 2;
                 options.FeatureFlagSentCacheCompactionPercentage = .5; // 50%, or 1 item.
             });
@@ -2450,7 +2450,7 @@ public class TheGetFeatureFlagAsyncMethod
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                        {
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "historical_migrations": false,
                          "batch": [
                            {
@@ -3291,7 +3291,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
         {
             services.Configure<PostHogOptions>(options =>
             {
-                options.ProjectToken = "fake-project-api-key";
+                options.ProjectToken = "fake-project-token";
                 options.PersonalApiKey = "fake-personal-api-key";
                 options.FeatureFlagPollInterval = TimeSpan.FromSeconds(30);
             });

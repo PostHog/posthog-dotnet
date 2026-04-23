@@ -43,7 +43,7 @@ public class TheIdentifyPersonAsyncMethod
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
@@ -73,7 +73,7 @@ public class TheIdentifyPersonAsyncMethod
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": false
                          },
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
@@ -117,7 +117,7 @@ public class TheIdentifyPersonAsyncMethod
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
@@ -130,7 +130,7 @@ public class TheIdentifyPersonAsyncMethod
         {
             sp.AddSingleton<IOptions<PostHogOptions>>(new PostHogOptions
             {
-                ProjectToken = "fake-project-api-key",
+                ProjectToken = "fake-project-token",
                 SuperProperties = new Dictionary<string, object> { ["source"] = "repo-name" },
                 EnableCompression = false // Disable for tests to avoid gzip handling in fake handler
             });
@@ -156,7 +156,7 @@ public class TheIdentifyPersonAsyncMethod
                            "$geoip_disable": true,
                            "source": "repo-name"
                          },
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
@@ -194,7 +194,7 @@ public class TheIdentifyGroupAsyncMethod
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
@@ -229,7 +229,7 @@ public class TheIdentifyGroupAsyncMethod
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
-                         "api_key": "fake-project-api-key",
+                         "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
@@ -264,7 +264,7 @@ public class TheCaptureMethod
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -421,7 +421,7 @@ public class TheCaptureMethod
 
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -458,7 +458,7 @@ public class TheCaptureMethod
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -496,7 +496,7 @@ public class TheCaptureMethod
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -536,7 +536,7 @@ public class TheCaptureMethod
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -578,7 +578,7 @@ public class TheCaptureMethod
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -621,7 +621,7 @@ public class TheCaptureMethod
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -671,7 +671,7 @@ public class TheCaptureMethod
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -748,7 +748,7 @@ public class TheCaptureMethod
         var received = batchHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -815,7 +815,7 @@ public class TheCaptureMethod
         var received = batchHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -877,7 +877,7 @@ public class TheCaptureMethod
         var received = batchHandler.GetReceivedRequestBody(indented: true);
         JsonAssert.EqualIgnoringUuids($$"""
                      {
-                       "api_key": "fake-project-api-key",
+                       "api_key": "fake-project-token",
                        "historical_migrations": false,
                        "batch": [
                          {
@@ -1457,7 +1457,7 @@ public class TheLoadFeatureFlagsAsyncMethod
         var container = new TestContainer(services =>
         {
 #pragma warning disable CS0618
-            services.Configure<PostHogOptions>(options => options.ProjectApiKey = "fake-project-api-key");
+            services.Configure<PostHogOptions>(options => options.ProjectApiKey = "fake-project-token");
 #pragma warning restore CS0618
         });
 

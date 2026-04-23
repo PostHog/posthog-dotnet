@@ -7,7 +7,7 @@ public static class Examples
 {
     internal static readonly PostHogClient PostHog = new(new PostHogOptions
     {
-        ProjectToken = "<ph_project_api_key>",
+        ProjectToken = "<ph_project_token>",
         HostUrl = new Uri("<ph_client_api_host>"),
         PersonalApiKey = Environment.GetEnvironmentVariable("PostHog__PersonalApiKey"),
     });
@@ -16,7 +16,7 @@ public static class Examples
     {
         await using var posthog = new PostHogClient(new PostHogOptions
         {
-            ProjectToken = "<ph_project_api_key>"
+            ProjectToken = "<ph_project_token>"
         });
         posthog.Capture("distinct_id_of_the_user", "user_signed_up");
         posthog.Capture(

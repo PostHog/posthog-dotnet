@@ -68,7 +68,7 @@ internal static class FakeHttpMessageHandlerExtensions
     public static void AddRepeatedFlagsResponse(this FakeHttpMessageHandler handler, int count, string responseBody)
         => handler.AddRepeatedFlagsResponse(count, _ => responseBody);
 
-    internal static readonly Uri LocalEvaluationUrl = new("https://us.i.posthog.com/flags/definitions?token=fake-project-api-key&send_cohorts");
+    internal static readonly Uri LocalEvaluationUrl = new("https://us.i.posthog.com/flags/definitions?token=fake-project-token&send_cohorts");
 
     public static FakeHttpMessageHandler.RequestHandler AddLocalEvaluationResponse(
         this FakeHttpMessageHandler handler,
@@ -148,7 +148,7 @@ internal static class FakeHttpMessageHandlerExtensions
         string key,
         string responseBody) =>
         handler.AddResponse(
-            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config?token=fake-project-api-key"),
+            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config?token=fake-project-token"),
             HttpMethod.Get,
             responseBody: responseBody);
 
@@ -157,7 +157,7 @@ internal static class FakeHttpMessageHandlerExtensions
         string key,
         string responseBody) =>
         handler.AddResponse(
-            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config?token=fake-project-api-key"),
+            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config?token=fake-project-token"),
             HttpMethod.Get,
             responseBody: responseBody);
 
