@@ -41,7 +41,7 @@ public sealed class TestContainer : IServiceProvider
     {
         services.Configure<PostHogOptions>(options =>
         {
-            options.ProjectToken = "fake-project-api-key";
+            options.ProjectToken = "fake-project-token";
             options.PersonalApiKey = personalApiKey;
         });
     })
@@ -73,7 +73,7 @@ public sealed class TestContainer : IServiceProvider
     {
         services.Configure<PostHogOptions>(options =>
         {
-            options.ProjectToken = "fake-project-api-key";
+            options.ProjectToken = "fake-project-token";
             options.EnableCompression = false; // Disable compression for tests to avoid gzip handling in fake handler
         });
         services.AddSingleton<ITestOutputHelper>(ConsoleTestOutputHelper);

@@ -43,7 +43,7 @@ public class TheAddPostHogMethod
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["PostHogTest:PersonalApiKey"] = "fake-secret-personal-api-key",
-                ["PostHogTest:ProjectToken"] = "fake-public-project-api-key",
+                ["PostHogTest:ProjectToken"] = "fake-public-project-token",
                 ["PostHogTest:HostUrl"] = "https://test-host/",
                 ["PostHogTest:FeatureFlagPollInterval"] = "00:00:10",
                 ["PostHogTest:FlushAt"] = "10",
@@ -67,7 +67,7 @@ public class TheAddPostHogMethod
 
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
 
-        Assert.Equal("fake-public-project-api-key", options.ProjectToken);
+        Assert.Equal("fake-public-project-token", options.ProjectToken);
         Assert.Equal("fake-secret-personal-api-key", options.PersonalApiKey);
         Assert.Equal(new Uri("https://test-host/"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
@@ -140,7 +140,7 @@ public class TheAddPostHogMethod
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["PostHogTest:PersonalApiKey"] = "fake-secret-personal-api-key",
-                ["PostHogTest:ProjectToken"] = "fake-public-project-api-key",
+                ["PostHogTest:ProjectToken"] = "fake-public-project-token",
                 ["PostHogTest:HostUrl"] = "https://test-host/",
                 ["PostHogTest:FeatureFlagPollInterval"] = "00:00:10",
                 ["PostHogTest:FlushAt"] = "10",
@@ -172,7 +172,7 @@ public class TheAddPostHogMethod
 
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
 
-        Assert.Equal("fake-public-project-api-key", options.ProjectToken);
+        Assert.Equal("fake-public-project-token", options.ProjectToken);
         Assert.Equal("fake-secret-personal-api-key", options.PersonalApiKey);
         Assert.Equal(new Uri("https://test-host/"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
