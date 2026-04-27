@@ -68,6 +68,15 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public TimeSpan FeatureFlagSentCacheSlidingExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// When <c>true</c> (default), the SDK emits warning logs from the
+    /// <see cref="Features.FeatureFlagEvaluations"/> snapshot helpers — specifically when
+    /// <see cref="Features.FeatureFlagEvaluations.OnlyAccessed"/> is called before any flags have been accessed,
+    /// or when <see cref="Features.FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable{string})"/>
+    /// is given keys that are not present in the snapshot. Set to <c>false</c> to silence these warnings.
+    /// </summary>
+    public bool FeatureFlagsLogWarnings { get; set; } = true;
+
+    /// <summary>
     /// The maximum number of messages to send in a batch. (Default: 100)
     /// </summary>
     /// <remarks>

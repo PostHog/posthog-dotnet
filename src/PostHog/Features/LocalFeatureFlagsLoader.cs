@@ -26,6 +26,7 @@ internal sealed class LocalFeatureFlagsLoader(
     volatile int _disposed;
     volatile Task? _pollingTask;
     LocalEvaluator? _localEvaluator;
+    long _flagDefinitionsLoadedAtMs; // Unix milliseconds; 0 means not yet loaded.
     volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
@@ -112,6 +113,7 @@ internal sealed class LocalFeatureFlagsLoader(
 
         var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
+        Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
         return localEvaluator;
     }
 
@@ -145,6 +147,19 @@ internal sealed class LocalFeatureFlagsLoader(
 
     public bool IsLoaded => _localEvaluator is not null;
 
+    /// <summary>
+    /// The Unix-millisecond timestamp at which the local flag definitions were last successfully loaded,
+    /// or <c>null</c> if they have not yet been loaded.
+    /// </summary>
+    public long? FlagDefinitionsLoadedAt
+    {
+        get
+        {
+            var value = Interlocked.Read(ref _flagDefinitionsLoadedAtMs);
+            return value == 0 ? null : value;
+        }
+    }
+
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     public async ValueTask DisposeAsync()
@@ -172,6 +187,7 @@ internal sealed class LocalFeatureFlagsLoader(
     {
         Interlocked.Exchange(ref _localEvaluator, null);
         Interlocked.Exchange(ref _etag, null);
+        Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, 0);
     }
 }
 

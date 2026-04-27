@@ -229,6 +229,40 @@ public static class FeatureFlagExtensions
     }
 
     /// <summary>
+    /// Evaluates all feature flags for the user and returns a <see cref="FeatureFlagEvaluations"/> snapshot.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
+        this IPostHogClient client,
+        string distinctId)
+        => NotNull(client).EvaluateFlagsAsync(distinctId, options: null, CancellationToken.None);
+
+    /// <summary>
+    /// Evaluates all feature flags for the user and returns a <see cref="FeatureFlagEvaluations"/> snapshot.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
+        this IPostHogClient client,
+        string distinctId,
+        CancellationToken cancellationToken)
+        => NotNull(client).EvaluateFlagsAsync(distinctId, options: null, cancellationToken);
+
+    /// <summary>
+    /// Evaluates all feature flags for the user and returns a <see cref="FeatureFlagEvaluations"/> snapshot.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="options">Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes the underlying <c>/flags</c> request body.</param>
+    public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
+        this IPostHogClient client,
+        string distinctId,
+        AllFeatureFlagsOptions options)
+        => NotNull(client).EvaluateFlagsAsync(distinctId, options, CancellationToken.None);
+
+    /// <summary>
     /// Loads (or reloads) feature flag definitions for local evaluation.
     /// </summary>
     /// <remarks>
