@@ -104,6 +104,27 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         DateTimeOffset? timestamp = null);
 
     /// <summary>
+    /// Captures an event and attaches feature flag properties from a previously-evaluated snapshot.
+    /// Prefer this over <c>sendFeatureFlags: true</c> when you have already called
+    /// <see cref="EvaluateFlagsAsync"/>; it avoids a second <c>/flags</c> request and guarantees the
+    /// event reflects the same flag values the caller branched on.
+    /// </summary>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
+    /// <param name="flags">A snapshot of feature flag evaluations. When non-null, <c>$feature/&lt;key&gt;</c> and <c>$active_feature_flags</c> are attached from the snapshot — no <c>/flags</c> call is made.</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    bool Capture(
+        string distinctId,
+        string eventName,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        FeatureFlagEvaluations? flags,
+        DateTimeOffset? timestamp = null);
+
+    /// <summary>
     /// Capture an exception as an event.
     /// </summary>
     /// <param name="exception">The exception to capture.</param>
@@ -119,6 +140,24 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
+        DateTimeOffset? timestamp = null);
+
+    /// <summary>
+    /// Capture an exception as an event, attaching feature flag properties from a snapshot.
+    /// </summary>
+    /// <param name="exception">The exception to capture.</param>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <param name="groups">Optional: Context of what groups are related to this event.</param>
+    /// <param name="flags">A snapshot of feature flag evaluations. When non-null, <c>$feature/&lt;key&gt;</c> and <c>$active_feature_flags</c> are attached from the snapshot — no <c>/flags</c> call is made.</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred.</param>
+    /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    bool CaptureException(
+        Exception exception,
+        string distinctId,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null);
 
     /// <summary>
@@ -169,6 +208,27 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// A dictionary containing all the feature flags. The key is the feature flag key and the value is the feature flag.
     /// </returns>
     Task<IReadOnlyDictionary<string, FeatureFlag>> GetAllFeatureFlagsAsync(
+        string distinctId,
+        AllFeatureFlagsOptions? options,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Evaluates all feature flags for the given user and returns a <see cref="FeatureFlagEvaluations"/>
+    /// snapshot. The snapshot can be used for branching (<c>IsEnabled</c>, <c>GetFlag</c>) and
+    /// forwarded to <c>Capture(..., flags: snapshot, ...)</c> to attach flag properties to events
+    /// without a second <c>/flags</c> request. <c>$feature_flag_called</c> events are fired lazily
+    /// on first access of each flag, deduplicated against the SDK's per-distinct-id cache.
+    /// </summary>
+    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="options">
+    /// Optional: Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/>
+    /// scopes the underlying <c>/flags</c> request body — distinct from
+    /// <see cref="FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable{string})"/>, which
+    /// filters in memory.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A snapshot of feature flag evaluations.</returns>
+    Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         string distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken);
