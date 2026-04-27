@@ -103,18 +103,23 @@ public class TheEvaluateFlagsAsyncMethod
 
 public class TheSnapshotAccessMethods
 {
-    [Fact]
-    public async Task IsEnabledReturnsFalseForUnknownKey()
+    [Theory]
+    [InlineData("IsEnabled")]
+    [InlineData("GetFlag")]
+    public async Task UnknownKeyReturnsFalsyValue(string accessor)
     {
         var snapshot = await EvaluateAsync("""{"featureFlags": {"known": true}}""");
-        Assert.False(snapshot.IsEnabled("unknown"));
-    }
-
-    [Fact]
-    public async Task GetFlagReturnsNullForUnknownKey()
-    {
-        var snapshot = await EvaluateAsync("""{"featureFlags": {"known": true}}""");
-        Assert.Null(snapshot.GetFlag("unknown"));
+        switch (accessor)
+        {
+            case "IsEnabled":
+                Assert.False(snapshot.IsEnabled("unknown"));
+                break;
+            case "GetFlag":
+                Assert.Null(snapshot.GetFlag("unknown"));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(accessor), accessor, "Unknown accessor");
+        }
     }
 
     [Fact]
@@ -326,7 +331,21 @@ public class TheCaptureWithFlagsSnapshotMethod
         Assert.Contains("\"$feature/flag-a\":true", body, StringComparison.Ordinal);
         Assert.Contains("\"$feature/flag-b\":false", body, StringComparison.Ordinal);
         Assert.Contains("\"$feature/flag-c\":\"variant-x\"", body, StringComparison.Ordinal);
-        Assert.Contains("\"$active_feature_flags\":[\"flag-a\",\"flag-c\"]", body, StringComparison.Ordinal);
+
+        // Parse and assert order-independently — Dictionary iteration order is preserved in
+        // practice but is not a language guarantee.
+        using var doc = JsonDocument.Parse(body);
+        var properties = doc.RootElement
+            .GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        var activeFeatureFlags = properties.GetProperty("$active_feature_flags")
+            .EnumerateArray()
+            .Select(e => e.GetString() ?? string.Empty)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(new[] { "flag-a", "flag-c" }, activeFeatureFlags);
     }
 
     [Fact]

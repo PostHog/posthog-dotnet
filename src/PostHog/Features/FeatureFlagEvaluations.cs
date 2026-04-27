@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using static PostHog.Library.Ensure;
 
@@ -15,7 +16,10 @@ public sealed class FeatureFlagEvaluations
 {
     readonly IFeatureFlagEvaluationsHost _host;
     readonly IReadOnlyDictionary<string, EvaluatedFlagRecord> _records;
-    readonly HashSet<string> _accessed;
+    // Tracks which flags have been read via IsEnabled / GetFlag. Used as a set; the byte value is unused.
+    // ConcurrentDictionary because the snapshot is a public type with no documented thread-safety
+    // constraint, so callers may read it from parallel branches.
+    readonly ConcurrentDictionary<string, byte> _accessed;
     readonly GroupCollection? _groups;
     readonly IReadOnlyCollection<string> _errors;
 
@@ -28,7 +32,7 @@ public sealed class FeatureFlagEvaluations
         long? flagDefinitionsLoadedAt,
         GroupCollection? groups,
         IReadOnlyCollection<string>? errors,
-        HashSet<string>? accessed = null)
+        ConcurrentDictionary<string, byte>? accessed = null)
     {
         _host = NotNull(host);
         DistinctId = distinctId ?? string.Empty;
@@ -38,7 +42,7 @@ public sealed class FeatureFlagEvaluations
         FlagDefinitionsLoadedAt = flagDefinitionsLoadedAt;
         _groups = groups;
         _errors = errors ?? Array.Empty<string>();
-        _accessed = accessed ?? new HashSet<string>(StringComparer.Ordinal);
+        _accessed = accessed ?? new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -110,7 +114,7 @@ public sealed class FeatureFlagEvaluations
     /// </summary>
     public FeatureFlagEvaluations OnlyAccessed()
     {
-        if (_accessed.Count == 0)
+        if (_accessed.IsEmpty)
         {
             _host.LogFilterWarning(
                 "FeatureFlagEvaluations.OnlyAccessed() was called before any flags were accessed; " +
@@ -119,7 +123,7 @@ public sealed class FeatureFlagEvaluations
         }
 
         var filtered = new Dictionary<string, EvaluatedFlagRecord>(StringComparer.Ordinal);
-        foreach (var key in _accessed)
+        foreach (var key in _accessed.Keys)
         {
             if (_records.TryGetValue(key, out var record))
             {
@@ -189,7 +193,7 @@ public sealed class FeatureFlagEvaluations
     EvaluatedFlagRecord? RecordAccess(string key)
     {
         var keyChecked = NotNull(key);
-        _accessed.Add(keyChecked);
+        _accessed.TryAdd(keyChecked, 0);
 
         if (string.IsNullOrEmpty(DistinctId))
         {
@@ -223,5 +227,5 @@ public sealed class FeatureFlagEvaluations
             FlagDefinitionsLoadedAt,
             _groups,
             _errors,
-            accessed: new HashSet<string>(_accessed, StringComparer.Ordinal));
+            accessed: new ConcurrentDictionary<string, byte>(_accessed, StringComparer.Ordinal));
 }

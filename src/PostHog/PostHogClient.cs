@@ -826,7 +826,9 @@ public sealed class PostHogClient : IPostHogClient
         {
             int? id = null;
             int? version = null;
-            string? reason = locallyEvaluated ? "Evaluated locally" : null;
+            // Reason for locally-evaluated flags is hardcoded to "Evaluated locally" inside
+            // BuildFeatureFlagCalledProperties, so leave the record's Reason null here.
+            string? reason = null;
             if (flag is FeatureFlagWithMetadata withMetadata)
             {
                 id = withMetadata.Id;
