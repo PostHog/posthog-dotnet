@@ -262,6 +262,7 @@ internal sealed class LocalEvaluator
     {
         var filters = flag.Filters;
         var flagConditions = filters?.Groups ?? [];
+        var flagAggregation = filters?.AggregationGroupTypeIndex;
         var isInconclusive = false;
         var flagVariants = filters?.Multivariate?.Variants ?? [];
 
@@ -269,9 +270,36 @@ internal sealed class LocalEvaluator
         {
             try
             {
+                // Per-condition aggregation overrides only when the condition explicitly
+                // sets its own AggregationGroupTypeIndex (mixed targeting). When absent,
+                // fall back to the flag-level aggregation so existing pure person and
+                // pure group flags keep their original behavior.
+                var conditionAggregation = condition.AggregationGroupTypeIndex ?? flagAggregation;
+
+                var effectiveProperties = properties;
+                var effectiveBucketingId = distinctId;
+
+                // Mixed-override path: condition-level aggregation differs from flag-level.
+                // This assumes flag-level aggregation is null for mixed flags.
+                if (conditionAggregation != flagAggregation)
+                {
+                    if (conditionAggregation.HasValue)
+                    {
+                        if (!_groupTypeMapping.TryGetValue(conditionAggregation.Value, out var groupType)
+                            || groups is null
+                            || !groups.TryGetGroup(groupType, out var group))
+                        {
+                            // Skip this condition: group type unknown or not passed in.
+                            continue;
+                        }
+                        effectiveProperties = group.Properties;
+                        effectiveBucketingId = group.GroupKey;
+                    }
+                }
+
                 // if any one condition resolves to True, we can short circuit and return
                 // the matching variant
-                if (!IsConditionMatch(flag, distinctId, condition, properties, evaluationCache, groups))
+                if (!IsConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups))
                 {
                     continue;
                 }
@@ -280,7 +308,7 @@ internal sealed class LocalEvaluator
                 var variant = variantOverride is not null
                               && flagVariants.Select(v => v.Key).Contains(variantOverride)
                     ? variantOverride
-                    : GetMatchingVariant(flag, distinctId);
+                    : GetMatchingVariant(flag, effectiveBucketingId);
 
                 return variant is not null
                     ? new StringOrValue<bool>(variant)
