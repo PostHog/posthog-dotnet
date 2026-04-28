@@ -99,6 +99,61 @@ public class TheEvaluateFlagsAsyncMethod
         Assert.True(snapshot.IsEnabled("flag-a"));
         Assert.Empty(flagsHandler.ReceivedRequests);
     }
+
+    [Fact]
+    public async Task MixedLocalAndRemoteEvaluationMergesRecordsAndTagsSourceCorrectly()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        // Local-only flag resolves locally; needs-remote requires a property the local pass doesn't have
+        // and falls back to the remote /flags response.
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "local-only", "active": true, "rollout_percentage": 100,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}},
+                {"id": 2, "key": "needs-remote", "active": true, "rollout_percentage": 100,
+                 "filters": {"groups": [{"properties": [{"key": "country", "type": "person", "value": "US", "operator": "exact"}],
+                                          "rollout_percentage": 100}]}}
+            ]}
+            """);
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"needs-remote": "variant-x", "remote-only": true}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+
+        Assert.True(snapshot.IsEnabled("local-only"));
+        Assert.Equal("variant-x", snapshot.GetFlag("needs-remote")?.VariantKey);
+        Assert.True(snapshot.IsEnabled("remote-only"));
+
+        await client.FlushAsync();
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var byFlag = doc.RootElement.GetProperty("batch").EnumerateArray()
+            .ToDictionary(
+                e => e.GetProperty("properties").GetProperty("$feature_flag").GetString() ?? string.Empty,
+                e => e.GetProperty("properties").GetProperty("locally_evaluated").GetBoolean());
+        Assert.True(byFlag["local-only"]);
+        Assert.False(byFlag["needs-remote"]);
+        Assert.False(byFlag["remote-only"]);
+    }
+
+    [Fact]
+    public async Task UnknownKeyAccessAppendsFlagMissingErrorOnFeatureFlagCalled()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"known": true}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        snapshot.IsEnabled("does-not-exist");
+
+        await client.FlushAsync();
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var props = doc.RootElement.GetProperty("batch").EnumerateArray().Single().GetProperty("properties");
+        Assert.Equal("flag_missing", props.GetProperty("$feature_flag_error").GetString());
+    }
 }
 
 public class TheSnapshotAccessMethods
@@ -382,5 +437,32 @@ public class TheCaptureWithFlagsSnapshotMethod
         var body = batchHandler.GetReceivedRequestBody(indented: false);
         var matches = System.Text.RegularExpressions.Regex.Matches(body, "\\$feature_flag_called");
         Assert.Single(matches);
+    }
+
+    [Fact]
+    public async Task CaptureExceptionAttachesFeatureFlagsFromSnapshot()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"flag-a": true, "flag-b": "variant-x"}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        client.CaptureException(
+            new InvalidOperationException("boom"),
+            "user-1",
+            properties: null,
+            groups: null,
+            flags: snapshot);
+
+        await client.FlushAsync();
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var exceptionEvent = doc.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single(e => e.GetProperty("event").GetString() == "$exception");
+        var props = exceptionEvent.GetProperty("properties");
+        Assert.True(props.GetProperty("$feature/flag-a").GetBoolean());
+        Assert.Equal("variant-x", props.GetProperty("$feature/flag-b").GetString());
     }
 }

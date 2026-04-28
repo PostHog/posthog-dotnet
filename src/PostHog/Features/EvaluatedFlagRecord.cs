@@ -11,7 +11,8 @@ internal sealed record EvaluatedFlagRecord
 
     /// <summary>
     /// The underlying <see cref="FeatureFlag"/> as exposed to callers via
-    /// <see cref="FeatureFlagEvaluations.GetFlag"/>.
+    /// <see cref="FeatureFlagEvaluations.GetFlag"/>. May be a <c>FeatureFlagWithMetadata</c>; the
+    /// id/version/reason fields are read off it directly inside the property-building helper.
     /// </summary>
     public required FeatureFlag Flag { get; init; }
 
@@ -28,8 +29,10 @@ internal sealed record EvaluatedFlagRecord
     /// </summary>
     public required string CacheKeyValue { get; init; }
 
-    public int? Id { get; init; }
-    public int? Version { get; init; }
-    public string? Reason { get; init; }
+    /// <summary>
+    /// Whether the flag was resolved by the local poller. Drives <c>locally_evaluated=true</c>,
+    /// <c>$feature_flag_reason="Evaluated locally"</c>, and <c>$feature_flag_definitions_loaded_at</c>
+    /// on the emitted <c>$feature_flag_called</c> event.
+    /// </summary>
     public bool LocallyEvaluated { get; init; }
 }

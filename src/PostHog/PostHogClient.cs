@@ -350,14 +350,18 @@ public sealed class PostHogClient : IPostHogClient
         CapturedEvent capturedEvent,
         FeatureFlagEvaluations flags)
     {
+        // Single-pass: per-flag $feature/<key> property + $active_feature_flags collection in one
+        // enumeration of the records dictionary. Runs per captured event, so worth keeping tight.
+        var active = new List<string>(flags.Records.Count);
         foreach (var (key, record) in flags.Records)
         {
             capturedEvent.Properties[$"$feature/{key}"] = record.Flag.ToResponseObject();
+            if (record.Enabled)
+            {
+                active.Add(key);
+            }
         }
-        capturedEvent.Properties["$active_feature_flags"] = flags.Records
-            .Where(kvp => kvp.Value.Enabled)
-            .Select(kvp => kvp.Key)
-            .ToArray();
+        capturedEvent.Properties["$active_feature_flags"] = active.ToArray();
         return capturedEvent;
     }
 
@@ -659,7 +663,7 @@ public sealed class PostHogClient : IPostHogClient
 
         public EvaluationsHost(PostHogClient client) => _client = client;
 
-        public void TryCaptureFeatureFlagCalledEventIfNeeded(
+        public void CaptureFeatureFlagCalled(
             string distinctId,
             string featureKey,
             EvaluatedFlagRecord? record,
@@ -688,21 +692,6 @@ public sealed class PostHogClient : IPostHogClient
                 snapshotErrors,
                 locallyEvaluated: record?.LocallyEvaluated ?? false,
                 flagDefinitionsLoadedAt: record?.LocallyEvaluated == true ? flagDefinitionsLoadedAt : null);
-
-            // For locally-evaluated flags from a snapshot we still want id/version/reason metadata
-            // when it is present on the record (the snapshot may carry the full FeatureFlagWithMetadata).
-            if (record is { Id: { } id })
-            {
-                properties["$feature_flag_id"] = id;
-            }
-            if (record is { Version: { } version })
-            {
-                properties["$feature_flag_version"] = version;
-            }
-            if (record is { Reason: { } reason } && !record.LocallyEvaluated)
-            {
-                properties["$feature_flag_reason"] = reason;
-            }
 
             _client.TryCaptureDedupedFeatureFlagCalledEvent(
                 distinctId,
@@ -773,8 +762,12 @@ public sealed class PostHogClient : IPostHogClient
             }
             catch (ApiException e) when (e.ErrorType is "quota_limited")
             {
+                // Quota-limited at the local-evaluation endpoint: keep whatever local records we
+                // computed before the failure, surface the error on $feature_flag_called, and skip
+                // the remote pass. Matches the behavior of remote-pass quota_limited below.
                 _logger.LogWarningQuotaExceeded(e);
-                return FeatureFlagEvaluations.Empty(_evaluationsHost, distinctId);
+                errors.Add(FeatureFlagError.QuotaLimited);
+                fallbackToRemote = false;
             }
         }
 
@@ -799,6 +792,10 @@ public sealed class PostHogClient : IPostHogClient
 
                 foreach (var (key, flag) in flagsResult.Flags)
                 {
+                    // Local-wins merge: keep the locally-evaluated record (which carries
+                    // locally_evaluated=true and $feature_flag_definitions_loaded_at) and only fill
+                    // in keys the local pass couldn't resolve. Differs from GetAllFeatureFlagsAsync,
+                    // which discards local results entirely on remote fallback.
                     if (!records.ContainsKey(key))
                     {
                         records[key] = ToRecord(key, flag, locallyEvaluated: false);
@@ -823,34 +820,14 @@ public sealed class PostHogClient : IPostHogClient
             errors);
 
         static EvaluatedFlagRecord ToRecord(string key, FeatureFlag flag, bool locallyEvaluated)
-        {
-            int? id = null;
-            int? version = null;
-            // Reason for locally-evaluated flags is hardcoded to "Evaluated locally" inside
-            // BuildFeatureFlagCalledProperties, so leave the record's Reason null here.
-            string? reason = null;
-            if (flag is FeatureFlagWithMetadata withMetadata)
-            {
-                id = withMetadata.Id;
-                version = withMetadata.Version;
-                if (!locallyEvaluated)
-                {
-                    reason = withMetadata.Reason;
-                }
-            }
-
-            return new EvaluatedFlagRecord
+            => new()
             {
                 Key = key,
                 Flag = flag,
                 Enabled = flag.IsEnabled,
                 CacheKeyValue = (string)flag,
-                Id = id,
-                Version = version,
-                Reason = reason,
                 LocallyEvaluated = locallyEvaluated,
             };
-        }
     }
 
     /// <inheritdoc/>

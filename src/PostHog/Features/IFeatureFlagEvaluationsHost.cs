@@ -11,7 +11,7 @@ internal interface IFeatureFlagEvaluationsHost
     /// Fires a <c>$feature_flag_called</c> event for the given access, deduplicated against the
     /// per-distinct-id cache that the legacy single-flag path also writes to.
     /// </summary>
-    void TryCaptureFeatureFlagCalledEventIfNeeded(
+    void CaptureFeatureFlagCalled(
         string distinctId,
         string featureKey,
         EvaluatedFlagRecord? record,

@@ -122,7 +122,11 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
-        DateTimeOffset? timestamp = null);
+        DateTimeOffset? timestamp = null)
+#if !NETSTANDARD2_0
+        => Capture(distinctId, eventName, properties, groups, sendFeatureFlags: false, timestamp)
+#endif
+        ;
 
     /// <summary>
     /// Capture an exception as an event.
@@ -158,7 +162,11 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
-        DateTimeOffset? timestamp = null);
+        DateTimeOffset? timestamp = null)
+#if !NETSTANDARD2_0
+        => CaptureException(exception, distinctId, properties, groups, sendFeatureFlags: false, timestamp)
+#endif
+        ;
 
     /// <summary>
     /// Determines whether a feature is enabled for the specified user.
@@ -228,10 +236,21 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// </param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>A snapshot of feature flag evaluations.</returns>
+    /// <remarks>
+    /// <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes the underlying <c>/flags</c>
+    /// request body. <see cref="FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable{string})"/>
+    /// filters an already-evaluated snapshot in memory. Use <c>FlagKeysToEvaluate</c> to reduce
+    /// network and server work; use <c>Only(...)</c> to scope an existing snapshot for capture.
+    /// </remarks>
     Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         string distinctId,
         AllFeatureFlagsOptions? options,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken)
+#if !NETSTANDARD2_0
+        => throw new NotSupportedException(
+            "EvaluateFlagsAsync requires PostHogClient. Custom IPostHogClient implementers must override this member.")
+#endif
+        ;
 
     /// <summary>
     /// Loads (or reloads) feature flag definitions for local evaluation.

@@ -15,7 +15,7 @@ namespace PostHog.Features;
 public sealed class FeatureFlagEvaluations
 {
     readonly IFeatureFlagEvaluationsHost _host;
-    readonly IReadOnlyDictionary<string, EvaluatedFlagRecord> _records;
+    readonly Dictionary<string, EvaluatedFlagRecord> _records;
     // Tracks which flags have been read via IsEnabled / GetFlag. Used as a set; the byte value is unused.
     // ConcurrentDictionary because the snapshot is a public type with no documented thread-safety
     // constraint, so callers may read it from parallel branches.
@@ -26,7 +26,7 @@ public sealed class FeatureFlagEvaluations
     internal FeatureFlagEvaluations(
         IFeatureFlagEvaluationsHost host,
         string distinctId,
-        IReadOnlyDictionary<string, EvaluatedFlagRecord> records,
+        Dictionary<string, EvaluatedFlagRecord> records,
         string? requestId,
         long? evaluatedAt,
         long? flagDefinitionsLoadedAt,
@@ -72,7 +72,7 @@ public sealed class FeatureFlagEvaluations
     /// <summary>
     /// The set of flag keys present in this snapshot.
     /// </summary>
-    public IReadOnlyCollection<string> Keys => (IReadOnlyCollection<string>)_records.Keys;
+    public IReadOnlyCollection<string> Keys => _records.Keys;
 
     /// <summary>
     /// Returns <c>true</c> when the named flag is present in the snapshot and enabled. Records
@@ -108,10 +108,16 @@ public sealed class FeatureFlagEvaluations
 
     /// <summary>
     /// Returns a new snapshot containing only the flags that have been accessed via
-    /// <see cref="IsEnabled"/> or <see cref="GetFlag"/>. If no flags have been accessed yet,
-    /// logs a warning and returns a snapshot containing all flags so callers do not silently
-    /// drop exposure data.
+    /// <see cref="IsEnabled"/> or <see cref="GetFlag"/>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Fallback behavior:</b> if no flags have been accessed yet, this method logs a warning and
+    /// returns a snapshot containing <i>all</i> flags. This avoids silently dropping exposure data
+    /// when callers wire up <c>OnlyAccessed()</c> before any branching logic runs. Set
+    /// <see cref="PostHogOptions.FeatureFlagsLogWarnings"/> to <c>false</c> to suppress the warning.
+    /// </para>
+    /// </remarks>
     public FeatureFlagEvaluations OnlyAccessed()
     {
         if (_accessed.IsEmpty)
@@ -141,7 +147,7 @@ public sealed class FeatureFlagEvaluations
     public FeatureFlagEvaluations Only(IEnumerable<string> keys)
     {
         var filtered = new Dictionary<string, EvaluatedFlagRecord>(StringComparer.Ordinal);
-        var missing = new List<string>();
+        List<string>? missing = null;
         foreach (var key in NotNull(keys))
         {
             if (_records.TryGetValue(key, out var record))
@@ -150,11 +156,11 @@ public sealed class FeatureFlagEvaluations
             }
             else
             {
-                missing.Add(key);
+                (missing ??= new List<string>()).Add(key);
             }
         }
 
-        if (missing.Count > 0)
+        if (missing is { Count: > 0 })
         {
             _host.LogFilterWarning(
                 "FeatureFlagEvaluations.Only(...) requested keys that are not in the snapshot and will be dropped: " +
@@ -172,7 +178,7 @@ public sealed class FeatureFlagEvaluations
     /// The internal per-flag records. Used by <see cref="PostHogClient"/>'s capture path to attach
     /// <c>$feature/&lt;key&gt;</c> properties.
     /// </summary>
-    internal IReadOnlyDictionary<string, EvaluatedFlagRecord> Records => _records;
+    internal Dictionary<string, EvaluatedFlagRecord> Records => _records;
 
     /// <summary>
     /// Constructs an empty snapshot with no flags and no events. Used as the safety fallback when
@@ -193,18 +199,19 @@ public sealed class FeatureFlagEvaluations
     EvaluatedFlagRecord? RecordAccess(string key)
     {
         var keyChecked = NotNull(key);
-        _accessed.TryAdd(keyChecked, 0);
-
-        if (string.IsNullOrEmpty(DistinctId))
-        {
-            // Empty-distinct-id snapshots are a safety fallback. Do not emit $feature_flag_called
-            // events with an empty distinct id, since they would pollute analytics.
-            return _records.TryGetValue(keyChecked, out var emptyRecord) ? emptyRecord : null;
-        }
+        var firstAccess = _accessed.TryAdd(keyChecked, 0);
 
         _records.TryGetValue(keyChecked, out var record);
 
-        _host.TryCaptureFeatureFlagCalledEventIfNeeded(
+        if (!firstAccess || string.IsNullOrEmpty(DistinctId))
+        {
+            // Repeat access in this snapshot, or the empty-distinct-id safety fallback: skip the
+            // dedup-cache lookup and property allocation. Cross-snapshot dedup is still handled by
+            // the per-distinct-id MemoryCache when the host runs.
+            return record;
+        }
+
+        _host.CaptureFeatureFlagCalled(
             distinctId: DistinctId,
             featureKey: keyChecked,
             record: record,
@@ -217,7 +224,7 @@ public sealed class FeatureFlagEvaluations
         return record;
     }
 
-    FeatureFlagEvaluations CloneWith(IReadOnlyDictionary<string, EvaluatedFlagRecord> records)
+    FeatureFlagEvaluations CloneWith(Dictionary<string, EvaluatedFlagRecord> records)
         => new(
             _host,
             DistinctId,
