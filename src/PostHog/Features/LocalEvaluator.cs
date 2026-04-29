@@ -279,8 +279,9 @@ internal sealed class LocalEvaluator
                 var effectiveProperties = properties;
                 var effectiveBucketingId = distinctId;
 
-                // Mixed-override path: condition-level aggregation differs from flag-level.
-                // This assumes flag-level aggregation is null for mixed flags.
+                // The condition explicitly sets its own aggregation, different from the
+                // flag level. Re-resolve properties and bucketing id from the condition's
+                // group so this condition evaluates against that group.
                 if (conditionAggregation != flagAggregation)
                 {
                     if (conditionAggregation.HasValue)

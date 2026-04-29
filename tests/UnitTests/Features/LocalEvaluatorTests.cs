@@ -908,11 +908,17 @@ public class TheMixedTargetingEvaluation
         Assert.Equal(false, result);
     }
 
-    [Fact]
-    public void RolloutUsesGroupKeyForGroupConditionsUnderMixedFlags()
+    // Group keys whose hash against `Hash("rollout-flag", <key>)` straddles the 50% bucket,
+    // and a distinct_id whose hash is also outside the bucket. If the matcher regressed to
+    // bucketing on distinct_id, both assertions below would yield false and the in-bucket
+    // assertion would fail.
+    [Theory]
+    [InlineData("company-7", true)]   // hash ~0.118 → in bucket at 50%
+    [InlineData("company-2", false)]  // hash ~0.803 → out of bucket at 50%
+    public void RolloutUsesGroupKeyForGroupConditionsUnderMixedFlags(string groupKey, bool expected)
     {
-        // Mixed flag with a single group condition at 100% rollout — passing the group
-        // must resolve locally, proving the matcher hashes on the group key path.
+        const string flagKey = "rollout-flag";
+        const string distinctId = "user-0"; // Hash("rollout-flag", "user-0") ~0.788 (out at 50%)
         var flags = new LocalEvaluationApiResult
         {
             Flags = [
@@ -921,7 +927,7 @@ public class TheMixedTargetingEvaluation
                     Id = 3,
                     TeamId = 1,
                     Name = "Rollout Flag",
-                    Key = "rollout-flag",
+                    Key = flagKey,
                     Active = true,
                     Filters = new FeatureFlagFilters
                     {
@@ -931,7 +937,7 @@ public class TheMixedTargetingEvaluation
                             {
                                 AggregationGroupTypeIndex = 0,
                                 Properties = [],
-                                RolloutPercentage = 100
+                                RolloutPercentage = 50
                             }
                         ]
                     }
@@ -942,15 +948,15 @@ public class TheMixedTargetingEvaluation
         var localEvaluator = new LocalEvaluator(flags);
         var groups = new GroupCollection
         {
-            new Group("company", "acme")
+            new Group("company", groupKey)
         };
 
         var result = localEvaluator.EvaluateFeatureFlag(
-            key: "rollout-flag",
-            distinctId: "any-distinct-id",
+            key: flagKey,
+            distinctId: distinctId,
             groups: groups);
 
-        Assert.Equal(true, result);
+        Assert.Equal(expected, result);
     }
 }
 
