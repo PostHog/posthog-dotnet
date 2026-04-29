@@ -1,5 +1,5 @@
 #pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
-﻿using PostHog;
+using PostHog;
 using PostHog.Features;
 using UnitTests.Fakes;
 
