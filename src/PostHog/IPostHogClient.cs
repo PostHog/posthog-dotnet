@@ -95,6 +95,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     bool Capture(
         string distinctId,
         string eventName,
@@ -124,7 +125,9 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null)
 #if !NETSTANDARD2_0
+#pragma warning disable CS0618 // Default delegates to the legacy overload; concrete PostHogClient overrides this with a snapshot-aware path.
         => Capture(distinctId, eventName, properties, groups, sendFeatureFlags: false, timestamp)
+#pragma warning restore CS0618
 #endif
         ;
 
@@ -138,6 +141,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     bool CaptureException(
         Exception exception,
         string distinctId,
@@ -164,7 +168,9 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null)
 #if !NETSTANDARD2_0
+#pragma warning disable CS0618 // Default delegates to the legacy overload; concrete PostHogClient overrides this with a snapshot-aware path.
         => CaptureException(exception, distinctId, properties, groups, sendFeatureFlags: false, timestamp)
+#pragma warning restore CS0618
 #endif
         ;
 
@@ -178,6 +184,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     Task<bool> IsFeatureEnabledAsync(
         string featureKey,
         string distinctId,
@@ -192,6 +199,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
         string distinctId,

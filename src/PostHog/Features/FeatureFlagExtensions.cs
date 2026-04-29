@@ -20,14 +20,17 @@ public static class FeatureFlagExtensions
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature does not
     /// exist.
     /// </returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         CancellationToken cancellationToken)
+#pragma warning disable CS0618
         => NotNull(client).IsFeatureEnabledAsync(featureKey,
             distinctId,
             options: null, cancellationToken: cancellationToken);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Determines whether a feature is enabled for the specified user.
@@ -38,13 +41,16 @@ public static class FeatureFlagExtensions
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId)
+#pragma warning disable CS0618
         => NotNull(client).IsFeatureEnabledAsync(featureKey,
             distinctId,
             options: null, cancellationToken: CancellationToken.None);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Determines whether a feature is enabled for the specified user.
@@ -56,14 +62,17 @@ public static class FeatureFlagExtensions
     /// <returns>
     /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
     /// </returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static Task<bool> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options)
+#pragma warning disable CS0618
         => NotNull(client).IsFeatureEnabledAsync(featureKey,
             distinctId,
             options, cancellationToken: CancellationToken.None);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -74,17 +83,20 @@ public static class FeatureFlagExtensions
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<bool?> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         Dictionary<string, object?> personProperties,
         CancellationToken cancellationToken)
+#pragma warning disable CS0618
         => await NotNull(client).IsFeatureEnabledAsync(
             featureKey,
             distinctId,
             new FeatureFlagOptions { PersonProperties = new Dictionary<string, object?>(personProperties) },
             cancellationToken);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -94,16 +106,19 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<bool?> IsFeatureEnabledAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         Dictionary<string, object?> personProperties)
+#pragma warning disable CS0618
         => await NotNull(client).IsFeatureEnabledAsync(
             featureKey,
             distinctId,
             personProperties,
             CancellationToken.None);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -113,14 +128,17 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         CancellationToken cancellationToken)
+#pragma warning disable CS0618
         => await NotNull(client).GetFeatureFlagAsync(featureKey,
             distinctId,
             options: null, cancellationToken: cancellationToken);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -129,15 +147,18 @@ public static class FeatureFlagExtensions
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId)
+#pragma warning disable CS0618
         => await NotNull(client).GetFeatureFlagAsync(
             featureKey,
             distinctId,
             options: null,
             cancellationToken: CancellationToken.None);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -147,14 +168,17 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         FeatureFlagOptions options)
+#pragma warning disable CS0618
         => await NotNull(client).GetFeatureFlagAsync(featureKey,
             distinctId,
             options, cancellationToken: CancellationToken.None);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -165,17 +189,20 @@ public static class FeatureFlagExtensions
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         Dictionary<string, object?> personProperties,
         CancellationToken cancellationToken)
+#pragma warning disable CS0618
         => await NotNull(client).GetFeatureFlagAsync(
             featureKey,
             distinctId,
             new FeatureFlagOptions { PersonProperties = new Dictionary<string, object?>(personProperties) },
             cancellationToken);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag.
@@ -185,16 +212,19 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
         string featureKey,
         string distinctId,
         Dictionary<string, object?> personProperties)
+#pragma warning disable CS0618
         => await NotNull(client).GetFeatureFlagAsync(
             featureKey,
             distinctId,
             personProperties,
             CancellationToken.None);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves all the feature flags.

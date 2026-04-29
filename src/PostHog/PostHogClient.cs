@@ -166,6 +166,7 @@ public sealed class PostHogClient : IPostHogClient
         => CaptureCore(distinctId, eventName, properties, groups, sendFeatureFlags: false, flags, timestamp);
 
     /// <inheritdoc/>
+    [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     public bool Capture(
         string distinctId,
         string eventName,
@@ -238,6 +239,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
+    [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     public bool CaptureException(
         Exception exception,
         string distinctId,
@@ -366,22 +368,26 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     public async Task<bool> IsFeatureEnabledAsync(
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options,
         CancellationToken cancellationToken)
     {
+#pragma warning disable CS0618 // Internal call into the deprecated path; see method docstring for the preferred API.
         var result = await GetFeatureFlagAsync(
             featureKey,
             distinctId,
             options,
             cancellationToken);
+#pragma warning restore CS0618
 
         return result is { IsEnabled: true };
     }
 
     /// <inheritdoc/>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     public async Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
         string distinctId,

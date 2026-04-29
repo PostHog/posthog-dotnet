@@ -427,7 +427,10 @@ public class TheCaptureWithFlagsSnapshotMethod
         var client = container.Activate<PostHogClient>();
 
         // Legacy path fires $feature_flag_called for ("user-1", "flag-a", true).
+        // The legacy single-flag method is deprecated but still must dedup against the snapshot path.
+#pragma warning disable CS0618
         Assert.True(await client.IsFeatureEnabledAsync("flag-a", "user-1"));
+#pragma warning restore CS0618
 
         // Snapshot path accesses the same flag — should hit the existing cache and NOT fire again.
         var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
