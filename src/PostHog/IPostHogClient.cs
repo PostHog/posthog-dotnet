@@ -126,7 +126,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         DateTimeOffset? timestamp = null)
 #if !NETSTANDARD2_0
 #pragma warning disable CS0618 // Default delegates to the legacy overload; concrete PostHogClient overrides this with a snapshot-aware path.
-        => Capture(distinctId, eventName, properties, groups, sendFeatureFlags: false, timestamp)
+        => Capture(distinctId, eventName, properties, groups, sendFeatureFlags: false, timestamp: timestamp)
 #pragma warning restore CS0618
 #endif
         ;
@@ -169,7 +169,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
         DateTimeOffset? timestamp = null)
 #if !NETSTANDARD2_0
 #pragma warning disable CS0618 // Default delegates to the legacy overload; concrete PostHogClient overrides this with a snapshot-aware path.
-        => CaptureException(exception, distinctId, properties, groups, sendFeatureFlags: false, timestamp)
+        => CaptureException(exception, distinctId, properties, groups, sendFeatureFlags: false, timestamp: timestamp)
 #pragma warning restore CS0618
 #endif
         ;

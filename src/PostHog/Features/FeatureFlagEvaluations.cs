@@ -176,9 +176,10 @@ public sealed class FeatureFlagEvaluations
 
     /// <summary>
     /// The internal per-flag records. Used by <see cref="PostHogClient"/>'s capture path to attach
-    /// <c>$feature/&lt;key&gt;</c> properties.
+    /// <c>$feature/&lt;key&gt;</c> properties. Exposed as <see cref="IReadOnlyDictionary{TKey,TValue}"/>
+    /// so the caller cannot mutate the snapshot's underlying state.
     /// </summary>
-    internal Dictionary<string, EvaluatedFlagRecord> Records => _records;
+    internal IReadOnlyDictionary<string, EvaluatedFlagRecord> Records => _records;
 
     /// <summary>
     /// Constructs an empty snapshot with no flags and no events. Used as the safety fallback when

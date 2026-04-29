@@ -163,7 +163,7 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null)
-        => CaptureCore(distinctId, eventName, properties, groups, sendFeatureFlags: false, flags, timestamp);
+        => CaptureCore(distinctId, eventName, properties, groups, sendFeatureFlags: false, flags: flags, timestamp: timestamp);
 
     /// <inheritdoc/>
     [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
@@ -174,7 +174,7 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
-        => CaptureCore(distinctId, eventName, properties, groups, sendFeatureFlags, flags: null, timestamp);
+        => CaptureCore(distinctId, eventName, properties, groups, sendFeatureFlags, flags: null, timestamp: timestamp);
 
     bool CaptureCore(
         string distinctId,
@@ -247,7 +247,7 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
-        => CaptureExceptionCore(exception, distinctId, properties, groups, sendFeatureFlags, flags: null, timestamp);
+        => CaptureExceptionCore(exception, distinctId, properties, groups, sendFeatureFlags, flags: null, timestamp: timestamp);
 
     /// <inheritdoc/>
     public bool CaptureException(
@@ -257,7 +257,7 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null)
-        => CaptureExceptionCore(exception, distinctId, properties, groups, sendFeatureFlags: false, flags, timestamp);
+        => CaptureExceptionCore(exception, distinctId, properties, groups, sendFeatureFlags: false, flags: flags, timestamp: timestamp);
 
     bool CaptureExceptionCore(
         Exception exception,
@@ -768,9 +768,10 @@ public sealed class PostHogClient : IPostHogClient
             }
             catch (ApiException e) when (e.ErrorType is "quota_limited")
             {
-                // Quota-limited at the local-evaluation endpoint: keep whatever local records we
-                // computed before the failure, surface the error on $feature_flag_called, and skip
-                // the remote pass. Matches the behavior of remote-pass quota_limited below.
+                // Quota-limited from the local-evaluation endpoint. In practice this fires from
+                // GetFeatureFlagsForLocalEvaluationAsync — the first call in the try, before any
+                // flag has been evaluated — so `records` is empty here. We surface the error on
+                // $feature_flag_called and skip the remote pass to mirror the remote-pass behavior.
                 _logger.LogWarningQuotaExceeded(e);
                 errors.Add(FeatureFlagError.QuotaLimited);
                 fallbackToRemote = false;
@@ -808,7 +809,9 @@ public sealed class PostHogClient : IPostHogClient
                     }
                 }
             }
-            catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+            catch (Exception e) when (e is not ArgumentException
+                                       and not NullReferenceException
+                                       and not OperationCanceledException)
             {
                 _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
                 errors.Add(FeatureFlagError.UnknownError);
