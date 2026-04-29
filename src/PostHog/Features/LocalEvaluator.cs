@@ -282,20 +282,20 @@ internal sealed class LocalEvaluator
                 // The condition explicitly sets its own aggregation, different from the
                 // flag level. Re-resolve properties and bucketing id from the condition's
                 // group so this condition evaluates against that group.
+                // conditionAggregation is non-null here: if it were null and flagAggregation
+                // were also null they'd be equal, and the only way conditionAggregation can
+                // be null at all (after the ?? above) is that case.
                 if (conditionAggregation != flagAggregation)
                 {
-                    if (conditionAggregation.HasValue)
+                    if (!_groupTypeMapping.TryGetValue(conditionAggregation!.Value, out var groupType)
+                        || groups is null
+                        || !groups.TryGetGroup(groupType, out var group))
                     {
-                        if (!_groupTypeMapping.TryGetValue(conditionAggregation.Value, out var groupType)
-                            || groups is null
-                            || !groups.TryGetGroup(groupType, out var group))
-                        {
-                            // Skip this condition: group type unknown or not passed in.
-                            continue;
-                        }
-                        effectiveProperties = group.Properties;
-                        effectiveBucketingId = group.GroupKey;
+                        // Skip this condition: group type unknown or not passed in.
+                        continue;
                     }
+                    effectiveProperties = group.Properties;
+                    effectiveBucketingId = group.GroupKey;
                 }
 
                 // if any one condition resolves to True, we can short circuit and return

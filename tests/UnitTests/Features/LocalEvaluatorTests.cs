@@ -843,56 +843,43 @@ public class TheMixedTargetingEvaluation
         };
     }
 
-    [Fact]
-    public void PersonConditionMatchesWhenNoGroupsPassed()
+    public static IEnumerable<object?[]> MixedFlagCases =>
+    [
+        // person condition matches when no groups passed
+        ["user-1", null, new Dictionary<string, object?> { ["email"] = "test@example.com" }, true],
+        // group condition matches when group props match
+        [
+            "user-2",
+            new GroupCollection { new Group("company", "acme", new Dictionary<string, object?> { ["plan"] = "enterprise" }) },
+            new Dictionary<string, object?> { ["email"] = "nope@example.com" },
+            true
+        ],
+        // no match when both person and group fail
+        [
+            "user-3",
+            new GroupCollection { new Group("company", "acme", new Dictionary<string, object?> { ["plan"] = "free" }) },
+            new Dictionary<string, object?> { ["email"] = "nope@example.com" },
+            false
+        ],
+    ];
+
+    [Theory]
+    [MemberData(nameof(MixedFlagCases))]
+    public void EvaluatesMixedFlagAcrossPersonAndGroupConditions(
+        string distinctId,
+        GroupCollection? groups,
+        Dictionary<string, object?>? personProperties,
+        bool expected)
     {
         var localEvaluator = new LocalEvaluator(CreateMixedFlag());
-        var personProperties = new Dictionary<string, object?> { ["email"] = "test@example.com" };
 
         var result = localEvaluator.EvaluateFeatureFlag(
             key: "mixed-flag",
-            distinctId: "user-1",
-            personProperties: personProperties);
-
-        Assert.Equal(true, result);
-    }
-
-    [Fact]
-    public void GroupConditionMatchesWhenGroupPropsMatch()
-    {
-        var localEvaluator = new LocalEvaluator(CreateMixedFlag());
-        var groups = new GroupCollection
-        {
-            new Group("company", "acme", new Dictionary<string, object?> { ["plan"] = "enterprise" })
-        };
-        var personProperties = new Dictionary<string, object?> { ["email"] = "nope@example.com" };
-
-        var result = localEvaluator.EvaluateFeatureFlag(
-            key: "mixed-flag",
-            distinctId: "user-2",
+            distinctId: distinctId,
             groups: groups,
             personProperties: personProperties);
 
-        Assert.Equal(true, result);
-    }
-
-    [Fact]
-    public void NoMatchWhenBothPersonAndGroupFail()
-    {
-        var localEvaluator = new LocalEvaluator(CreateMixedFlag());
-        var groups = new GroupCollection
-        {
-            new Group("company", "acme", new Dictionary<string, object?> { ["plan"] = "free" })
-        };
-        var personProperties = new Dictionary<string, object?> { ["email"] = "nope@example.com" };
-
-        var result = localEvaluator.EvaluateFeatureFlag(
-            key: "mixed-flag",
-            distinctId: "user-3",
-            groups: groups,
-            personProperties: personProperties);
-
-        Assert.Equal(false, result);
+        Assert.Equal(expected, result);
     }
 
     [Fact]
