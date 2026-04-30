@@ -200,6 +200,14 @@ internal record FeatureFlagGroup
     public int? RolloutPercentage { get; init; } = 100;
 
     /// <summary>
+    /// Optional per-condition aggregation override used by mixed-targeting flags.
+    /// When set, this condition targets the specified group type instead of the
+    /// flag-level aggregation. Null means person targeting under a mixed flag.
+    /// </summary>
+    [JsonPropertyName("aggregation_group_type_index")]
+    public int? AggregationGroupTypeIndex { get; init; }
+
+    /// <summary>
     /// Compares this instance to another <see cref="FeatureFlagGroup"/> for equality.
     /// </summary>
     /// <param name="other">The other <see cref="FeatureFlagGroup"/> to compare with.</param>
@@ -219,14 +227,15 @@ internal record FeatureFlagGroup
         return ((Properties is null && other.Properties is null)
                 || (Properties is not null && other.Properties is not null && Properties.SequenceEqual(other.Properties)))
                && Variant == other.Variant
-               && RolloutPercentage == other.RolloutPercentage;
+               && RolloutPercentage == other.RolloutPercentage
+               && AggregationGroupTypeIndex == other.AggregationGroupTypeIndex;
     }
 
     /// <summary>
     /// Serves as the default hash function.
     /// </summary>
     /// <returns>A hash code for the current object.</returns>
-    public override int GetHashCode() => HashCode.Combine(Properties, Variant, RolloutPercentage);
+    public override int GetHashCode() => HashCode.Combine(Properties, Variant, RolloutPercentage, AggregationGroupTypeIndex);
 }
 
 /// <summary>

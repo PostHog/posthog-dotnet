@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using PostHog;
 using PostHog.Api;
 using PostHog.Features;
 using PostHog.Json;
@@ -745,6 +746,204 @@ public class TheEvaluateFeatureFlagMethod
                 distinctId: "some-distinct-id",
                 personProperties: properties);
         });
+    }
+}
+
+public class TheMixedTargetingEvaluation
+{
+    static LocalEvaluationApiResult CreateMixedFlag()
+    {
+        return new LocalEvaluationApiResult
+        {
+            Flags = [
+                new LocalFeatureFlag
+                {
+                    Id = 1,
+                    TeamId = 1,
+                    Name = "Mixed Flag",
+                    Key = "mixed-flag",
+                    Active = true,
+                    Filters = new FeatureFlagFilters
+                    {
+                        AggregationGroupTypeIndex = null,
+                        Groups = [
+                            new FeatureFlagGroup
+                            {
+                                AggregationGroupTypeIndex = 0,
+                                Properties = [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Group,
+                                        Key = "plan",
+                                        Value = new PropertyFilterValue("enterprise"),
+                                        Operator = ComparisonOperator.Exact,
+                                        GroupTypeIndex = 0
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            new FeatureFlagGroup
+                            {
+                                AggregationGroupTypeIndex = null,
+                                Properties = [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("test@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string> { { "0", "company" } }
+        };
+    }
+
+    static LocalEvaluationApiResult CreateOnlyGroupFlag()
+    {
+        return new LocalEvaluationApiResult
+        {
+            Flags = [
+                new LocalFeatureFlag
+                {
+                    Id = 2,
+                    TeamId = 1,
+                    Name = "Only Group Flag",
+                    Key = "only-group-flag",
+                    Active = true,
+                    Filters = new FeatureFlagFilters
+                    {
+                        AggregationGroupTypeIndex = null,
+                        Groups = [
+                            new FeatureFlagGroup
+                            {
+                                AggregationGroupTypeIndex = 0,
+                                Properties = [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Group,
+                                        Key = "plan",
+                                        Value = new PropertyFilterValue("enterprise"),
+                                        Operator = ComparisonOperator.Exact,
+                                        GroupTypeIndex = 0
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string> { { "0", "company" } }
+        };
+    }
+
+    public static IEnumerable<object?[]> MixedFlagCases =>
+    [
+        // person condition matches when no groups passed
+        ["user-1", null, new Dictionary<string, object?> { ["email"] = "test@example.com" }, true],
+        // group condition matches when group props match
+        [
+            "user-2",
+            new GroupCollection { new Group("company", "acme", new Dictionary<string, object?> { ["plan"] = "enterprise" }) },
+            new Dictionary<string, object?> { ["email"] = "nope@example.com" },
+            true
+        ],
+        // no match when both person and group fail
+        [
+            "user-3",
+            new GroupCollection { new Group("company", "acme", new Dictionary<string, object?> { ["plan"] = "free" }) },
+            new Dictionary<string, object?> { ["email"] = "nope@example.com" },
+            false
+        ],
+    ];
+
+    [Theory]
+    [MemberData(nameof(MixedFlagCases))]
+    public void EvaluatesMixedFlagAcrossPersonAndGroupConditions(
+        string distinctId,
+        GroupCollection? groups,
+        Dictionary<string, object?>? personProperties,
+        bool expected)
+    {
+        var localEvaluator = new LocalEvaluator(CreateMixedFlag());
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "mixed-flag",
+            distinctId: distinctId,
+            groups: groups,
+            personProperties: personProperties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void OnlyGroupConditionWithNoGroupsPassedReturnsFalseWithoutThrowing()
+    {
+        var localEvaluator = new LocalEvaluator(CreateOnlyGroupFlag());
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "only-group-flag",
+            distinctId: "user-1");
+
+        // Group condition skips (no groups passed); no inconclusive raised.
+        Assert.Equal(false, result);
+    }
+
+    // Group keys whose hash against `Hash("rollout-flag", <key>)` straddles the 50% bucket,
+    // and a distinct_id whose hash is also outside the bucket. If the matcher regressed to
+    // bucketing on distinct_id, both assertions below would yield false and the in-bucket
+    // assertion would fail.
+    [Theory]
+    [InlineData("company-7", true)]   // hash ~0.118 → in bucket at 50%
+    [InlineData("company-2", false)]  // hash ~0.803 → out of bucket at 50%
+    public void RolloutUsesGroupKeyForGroupConditionsUnderMixedFlags(string groupKey, bool expected)
+    {
+        const string flagKey = "rollout-flag";
+        const string distinctId = "user-0"; // Hash("rollout-flag", "user-0") ~0.788 (out at 50%)
+        var flags = new LocalEvaluationApiResult
+        {
+            Flags = [
+                new LocalFeatureFlag
+                {
+                    Id = 3,
+                    TeamId = 1,
+                    Name = "Rollout Flag",
+                    Key = flagKey,
+                    Active = true,
+                    Filters = new FeatureFlagFilters
+                    {
+                        AggregationGroupTypeIndex = null,
+                        Groups = [
+                            new FeatureFlagGroup
+                            {
+                                AggregationGroupTypeIndex = 0,
+                                Properties = [],
+                                RolloutPercentage = 50
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string> { { "0", "company" } }
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+        var groups = new GroupCollection
+        {
+            new Group("company", groupKey)
+        };
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: flagKey,
+            distinctId: distinctId,
+            groups: groups);
+
+        Assert.Equal(expected, result);
     }
 }
 
