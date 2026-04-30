@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using PostHog.Library;
 
 namespace PostHog;
 
@@ -26,6 +27,14 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
 
     internal bool HasLegacyProjectApiKey => _projectApiKey is not null;
 
+    internal void Normalize()
+    {
+        _projectToken = _projectToken.NullIfEmpty();
+        _projectApiKey = _projectApiKey.NullIfEmpty();
+        PersonalApiKey = PersonalApiKey.NullIfEmpty();
+        HostUrl = HostUrl.NormalizeHostUrl();
+    }
+
     /// <summary>
     /// Obsolete alias for <see cref="ProjectToken"/>.
     /// </summary>
@@ -48,6 +57,11 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// In other cases, use an appropriate secrets manager, configuration provider, or environment variable.
     /// </remarks>
     public string? PersonalApiKey { get; set; }
+
+    /// <summary>
+    /// Whether this client is disabled and should no-op instead of sending data to PostHog. (Default: false)
+    /// </summary>
+    public bool Disabled { get; set; }
 
     /// <summary>
     /// PostHog API host, usually 'https://us.i.posthog.com' (default) or 'https://eu.i.posthog.com'

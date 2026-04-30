@@ -22,10 +22,15 @@ public sealed class PostHogClient : IPostHogClient
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
     readonly MemoryCache _featureFlagCalledEventCache;
+    static readonly ApiResult NoOpApiResult = new(0);
+    static readonly Task<ApiResult> NoOpApiResultTask = Task.FromResult(NoOpApiResult);
+    static readonly IReadOnlyDictionary<string, FeatureFlag> EmptyFeatureFlags = new Dictionary<string, FeatureFlag>(0);
+
     readonly TimeProvider _timeProvider;
     readonly IOptions<PostHogOptions> _options;
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
+    readonly bool _isDisabled;
 
     /// <summary>
     /// Constructs a <see cref="PostHogClient"/>. This is the main class used to interact with PostHog.
@@ -52,7 +57,8 @@ public sealed class PostHogClient : IPostHogClient
         loggerFactory ??= NullLoggerFactory.Instance;
         _logger = loggerFactory.CreateLogger<PostHogClient>();
 
-        NormalizeOptions(_options.Value, _logger);
+        var projectTokenMissing = NormalizeOptions(_options.Value, _logger);
+        _isDisabled = _options.Value.Disabled || projectTokenMissing;
 
         _apiClient = new PostHogApiClient(
             httpClientFactory.CreateClient(nameof(PostHogClient)),
@@ -88,21 +94,49 @@ public sealed class PostHogClient : IPostHogClient
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
     }
 
-    static void NormalizeOptions(PostHogOptions options, ILogger<PostHogClient> logger)
+    static bool NormalizeOptions(PostHogOptions options, ILogger<PostHogClient> logger)
     {
         if (options.HasLegacyProjectApiKey)
         {
             logger.LogWarningProjectApiKeyDeprecated();
         }
 
-        options.ProjectToken = options.ProjectToken?.Trim();
-        options.PersonalApiKey = options.PersonalApiKey.NullIfEmpty();
-        options.HostUrl = options.HostUrl.NormalizeHostUrl();
+        options.Normalize();
 
-        if (string.IsNullOrEmpty(options.ProjectToken))
+        var projectTokenMissing = options.ProjectToken is null;
+        if (projectTokenMissing)
         {
             logger.LogErrorProjectTokenRequired();
         }
+        return projectTokenMissing;
+    }
+
+    bool CheckDisabledAndLog(string methodName)
+    {
+        if (!_isDisabled)
+        {
+            return false;
+        }
+
+        _logger.LogWarningClientDisabled(methodName);
+        return true;
+    }
+
+    // A personal_api_key is only required for feature flag calls when callers explicitly request
+    // local-only evaluation. Without it we cannot download local flag definitions, and the
+    // local-only option means we must not fall back to remote /flags evaluation.
+    bool RequiresMissingPersonalApiKey(AllFeatureFlagsOptions? options, string methodName)
+        => options is { OnlyEvaluateLocally: true } && CheckPersonalApiKeyMissingAndLog(methodName);
+
+    bool CheckPersonalApiKeyMissingAndLog(string methodName)
+    {
+        if (_options.Value.PersonalApiKey is not null)
+        {
+            return false;
+        }
+
+        _logger.LogWarningPersonalApiKeyMissing(methodName);
+        return true;
     }
 
     /// <summary>
@@ -122,7 +156,14 @@ public sealed class PostHogClient : IPostHogClient
         string previousId,
         string newId,
         CancellationToken cancellationToken)
-        => await _apiClient.AliasAsync(previousId, newId, cancellationToken);
+    {
+        if (CheckDisabledAndLog(nameof(AliasAsync)))
+        {
+            return NoOpApiResult;
+        }
+
+        return await _apiClient.AliasAsync(previousId, newId, cancellationToken);
+    }
 
     /// <inheritdoc/>
     public async Task<ApiResult> IdentifyAsync(
@@ -130,11 +171,18 @@ public sealed class PostHogClient : IPostHogClient
         Dictionary<string, object>? personPropertiesToSet,
         Dictionary<string, object>? personPropertiesToSetOnce,
         CancellationToken cancellationToken)
-        => await _apiClient.IdentifyAsync(
+    {
+        if (CheckDisabledAndLog(nameof(IdentifyAsync)))
+        {
+            return NoOpApiResult;
+        }
+
+        return await _apiClient.IdentifyAsync(
             distinctId,
             personPropertiesToSet,
             personPropertiesToSetOnce,
             cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task<ApiResult> GroupIdentifyAsync(
@@ -142,7 +190,14 @@ public sealed class PostHogClient : IPostHogClient
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-    => _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken);
+    {
+        if (CheckDisabledAndLog(nameof(GroupIdentifyAsync)))
+        {
+            return NoOpApiResultTask;
+        }
+
+        return _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken);
+    }
 
     /// <inheritdoc/>
     public Task<ApiResult> GroupIdentifyAsync(
@@ -151,7 +206,14 @@ public sealed class PostHogClient : IPostHogClient
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-    => _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken, distinctId);
+    {
+        if (CheckDisabledAndLog(nameof(GroupIdentifyAsync)))
+        {
+            return NoOpApiResultTask;
+        }
+
+        return _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken, distinctId);
+    }
 
     /// <inheritdoc/>
     public bool Capture(
@@ -162,6 +224,11 @@ public sealed class PostHogClient : IPostHogClient
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
     {
+        if (CheckDisabledAndLog(nameof(Capture)))
+        {
+            return false;
+        }
+
         // If custom timestamp provided, add it to properties
         if (timestamp.HasValue)
         {
@@ -218,6 +285,11 @@ public sealed class PostHogClient : IPostHogClient
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
     {
+        if (CheckDisabledAndLog(nameof(CaptureException)))
+        {
+            return false;
+        }
+
         if (exception == null)
         {
             _logger.LogErrorCaptureExceptionNull();
@@ -305,6 +377,16 @@ public sealed class PostHogClient : IPostHogClient
         FeatureFlagOptions? options,
         CancellationToken cancellationToken)
     {
+        if (CheckDisabledAndLog(nameof(IsFeatureEnabledAsync)))
+        {
+            return false;
+        }
+
+        if (RequiresMissingPersonalApiKey(options, nameof(IsFeatureEnabledAsync)))
+        {
+            return false;
+        }
+
         var result = await GetFeatureFlagAsync(
             featureKey,
             distinctId,
@@ -321,6 +403,16 @@ public sealed class PostHogClient : IPostHogClient
         FeatureFlagOptions? options,
         CancellationToken cancellationToken)
     {
+        if (CheckDisabledAndLog(nameof(GetFeatureFlagAsync)))
+        {
+            return null;
+        }
+
+        if (RequiresMissingPersonalApiKey(options, nameof(GetFeatureFlagAsync)))
+        {
+            return null;
+        }
+
         LocalEvaluator? localEvaluator;
         try
         {
@@ -461,9 +553,13 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken)
     {
-        if (_options.Value.PersonalApiKey is null)
+        if (CheckDisabledAndLog(nameof(GetRemoteConfigPayloadAsync)))
         {
-            _logger.LogWarningPersonalApiKeyRequiredForRemoteConfigPayload();
+            return null;
+        }
+
+        if (CheckPersonalApiKeyMissingAndLog(nameof(GetRemoteConfigPayloadAsync)))
+        {
             return null;
         }
 
@@ -565,6 +661,16 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
+        if (CheckDisabledAndLog(nameof(GetAllFeatureFlagsAsync)))
+        {
+            return EmptyFeatureFlags;
+        }
+
+        if (RequiresMissingPersonalApiKey(options, nameof(GetAllFeatureFlagsAsync)))
+        {
+            return EmptyFeatureFlags;
+        }
+
         if (_options.Value.PersonalApiKey is not null)
         {
             // Attempt to load local feature flags.
@@ -589,7 +695,7 @@ public sealed class PostHogClient : IPostHogClient
             catch (ApiException e) when (e.ErrorType is "quota_limited")
             {
                 _logger.LogWarningQuotaExceeded(e);
-                return new Dictionary<string, FeatureFlag>();
+                return EmptyFeatureFlags;
             }
         }
 
@@ -601,7 +707,7 @@ public sealed class PostHogClient : IPostHogClient
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
             _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
-            return new Dictionary<string, FeatureFlag>();
+            return EmptyFeatureFlags;
         }
     }
 
@@ -650,9 +756,13 @@ public sealed class PostHogClient : IPostHogClient
     {
         _logger.LogInfoLoadFeatureFlags();
 
-        if (_options.Value.PersonalApiKey is null)
+        if (CheckDisabledAndLog(nameof(LoadFeatureFlagsAsync)))
         {
-            _logger.LogWarningPersonalApiKeyRequired();
+            return;
+        }
+
+        if (CheckPersonalApiKeyMissingAndLog(nameof(LoadFeatureFlagsAsync)))
+        {
             return;
         }
 
@@ -678,7 +788,15 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public async Task FlushAsync() => await _asyncBatchHandler.FlushAsync();
+    public async Task FlushAsync()
+    {
+        if (CheckDisabledAndLog(nameof(FlushAsync)))
+        {
+            return;
+        }
+
+        await _asyncBatchHandler.FlushAsync();
+    }
 
     /// <inheritdoc/>
     public string Version => VersionConstants.Version;
@@ -688,6 +806,11 @@ public sealed class PostHogClient : IPostHogClient
     [Obsolete("This method is for internal use only and may go away soon.")]
     internal async Task<LocalEvaluator?> GetLocalEvaluatorAsync(CancellationToken cancellationToken)
     {
+        if (CheckDisabledAndLog(nameof(GetLocalEvaluatorAsync)))
+        {
+            return null;
+        }
+
         try
         {
             return await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
@@ -705,7 +828,15 @@ public sealed class PostHogClient : IPostHogClient
     /// <summary>
     /// Clears the local flags cache.
     /// </summary>
-    public void ClearLocalFlagsCache() => _featureFlagsLoader.Clear();
+    public void ClearLocalFlagsCache()
+    {
+        if (CheckDisabledAndLog(nameof(ClearLocalFlagsCache)))
+        {
+            return;
+        }
+
+        _featureFlagsLoader.Clear();
+    }
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
@@ -798,12 +929,6 @@ internal static partial class PostHogClientLoggerExtensions
 
     [LoggerMessage(
         EventId = 9,
-        Level = LogLevel.Warning,
-        Message = "[FEATURE FLAGS] You have to specify a personal_api_key to fetch remote config payloads.")]
-    public static partial void LogWarningPersonalApiKeyRequiredForRemoteConfigPayload(this ILogger<PostHogClient> logger);
-
-    [LoggerMessage(
-        EventId = 10,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Error while fetching remote config payload.")]
     public static partial void LogErrorUnableToGetRemoteConfigPayload(
@@ -811,68 +936,74 @@ internal static partial class PostHogClientLoggerExtensions
         Exception exception);
 
     [LoggerMessage(
-        EventId = 11,
+        EventId = 10,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Unable to get feature flags and payloads")]
     public static partial void LogErrorUnableToGetFeatureFlagsAndPayloads(this ILogger<PostHogClient> logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 12,
+        EventId = 11,
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts")]
     public static partial void LogWarningQuotaExceeded(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 13,
+        EventId = 12,
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts")]
     public static partial void LogWarningQuotaExceeded(this ILogger<PostHogClient> logger, Exception e);
 
     [LoggerMessage(
-        EventId = 14,
+        EventId = 13,
         Level = LogLevel.Warning,
         Message = "ProjectApiKey is deprecated and will be removed in the next major version. Use ProjectToken instead.")]
     public static partial void LogWarningProjectApiKeyDeprecated(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 15,
+        EventId = 14,
         Level = LogLevel.Error,
         Message = "Either ProjectToken or ProjectApiKey must be provided.")]
     public static partial void LogErrorProjectTokenRequired(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 16,
+        EventId = 15,
         Level = LogLevel.Information,
         Message = "[FEATURE FLAGS] Loading feature flags for local evaluation")]
     public static partial void LogInfoLoadFeatureFlags(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 17,
-        Level = LogLevel.Warning,
-        Message = "[FEATURE FLAGS] You have to specify a personal_api_key to use feature flags.")]
-    public static partial void LogWarningPersonalApiKeyRequired(this ILogger<PostHogClient> logger);
-
-    [LoggerMessage(
-        EventId = 18,
+        EventId = 16,
         Level = LogLevel.Debug,
         Message = "[FEATURE FLAGS] Feature flags loaded successfully, polling {PollingStatus}")]
     public static partial void LogDebugFeatureFlagsLoaded(this ILogger<PostHogClient> logger, string pollingStatus);
 
     [LoggerMessage(
-        EventId = 18,
+        EventId = 17,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Failed to load feature flags")]
     public static partial void LogErrorFailedToLoadFeatureFlags(this ILogger<PostHogClient> logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 19,
+        EventId = 18,
         Level = LogLevel.Error,
         Message = "CaptureException called with null exception")]
     public static partial void LogErrorCaptureExceptionNull(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 20,
+        EventId = 19,
         Level = LogLevel.Error,
         Message = "CaptureException failed with an exception")]
     public static partial void LogErrorCaptureExceptionFailed(this ILogger<PostHogClient> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 20,
+        Level = LogLevel.Warning,
+        Message = "PostHog SDK is disabled; {MethodName} is a no-op.")]
+    public static partial void LogWarningClientDisabled(this ILogger<PostHogClient> logger, string methodName);
+
+    [LoggerMessage(
+        EventId = 21,
+        Level = LogLevel.Warning,
+        Message = "PostHog personal_api_key is not configured; {MethodName} is a no-op.")]
+    public static partial void LogWarningPersonalApiKeyMissing(this ILogger<PostHogClient> logger, string methodName);
 }
