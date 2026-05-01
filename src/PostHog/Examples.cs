@@ -1,3 +1,7 @@
+// Examples intentionally still demonstrate the legacy single-flag APIs alongside the new
+// EvaluateFlagsAsync surface. Updating these to the snapshot pattern is tracked separately.
+#pragma warning disable CS0618 // Type or member is obsolete
+
 namespace PostHog;
 
 /// <summary>

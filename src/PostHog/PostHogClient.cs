@@ -26,6 +26,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly IOptions<PostHogOptions> _options;
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
+    readonly IFeatureFlagEvaluationsHost _evaluationsHost;
 
     /// <summary>
     /// Constructs a <see cref="PostHogClient"/>. This is the main class used to interact with PostHog.
@@ -85,6 +86,7 @@ public sealed class PostHogClient : IPostHogClient
             CompactionPercentage = options.Value.FeatureFlagSentCacheCompactionPercentage
         });
 
+        _evaluationsHost = new EvaluationsHost(this);
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
     }
 
@@ -159,8 +161,29 @@ public sealed class PostHogClient : IPostHogClient
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
+        FeatureFlagEvaluations? flags,
+        DateTimeOffset? timestamp = null)
+        => CaptureCore(distinctId, eventName, properties, groups, sendFeatureFlags: false, flags: flags, timestamp: timestamp);
+
+    /// <inheritdoc/>
+    [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
+    public bool Capture(
+        string distinctId,
+        string eventName,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
+        => CaptureCore(distinctId, eventName, properties, groups, sendFeatureFlags, flags: null, timestamp: timestamp);
+
+    bool CaptureCore(
+        string distinctId,
+        string eventName,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        bool sendFeatureFlags,
+        FeatureFlagEvaluations? flags,
+        DateTimeOffset? timestamp)
     {
         // If custom timestamp provided, add it to properties
         if (timestamp.HasValue)
@@ -193,6 +216,12 @@ public sealed class PostHogClient : IPostHogClient
 
         Task<CapturedEvent> BatchTask(CapturedEventBatchContext context)
         {
+            if (flags is not null)
+            {
+                AddFeatureFlagsToCapturedEvent(capturedEvent, flags);
+                return Task.FromResult(capturedEvent);
+            }
+
             if (!sendFeatureFlags)
             {
                 return Task.FromResult(capturedEvent);
@@ -210,6 +239,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
+    [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     public bool CaptureException(
         Exception exception,
         string distinctId,
@@ -217,6 +247,26 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
+        => CaptureExceptionCore(exception, distinctId, properties, groups, sendFeatureFlags, flags: null, timestamp: timestamp);
+
+    /// <inheritdoc/>
+    public bool CaptureException(
+        Exception exception,
+        string distinctId,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        FeatureFlagEvaluations? flags,
+        DateTimeOffset? timestamp = null)
+        => CaptureExceptionCore(exception, distinctId, properties, groups, sendFeatureFlags: false, flags: flags, timestamp: timestamp);
+
+    bool CaptureExceptionCore(
+        Exception exception,
+        string distinctId,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        bool sendFeatureFlags,
+        FeatureFlagEvaluations? flags,
+        DateTimeOffset? timestamp)
     {
         if (exception == null)
         {
@@ -232,7 +282,7 @@ public sealed class PostHogClient : IPostHogClient
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{distinctId}";
             properties = ExceptionPropertiesBuilder.Build(properties, exception);
 
-            return Capture(distinctId, "$exception", properties, groups, sendFeatureFlags, timestamp);
+            return CaptureCore(distinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception e)
@@ -298,23 +348,46 @@ public sealed class PostHogClient : IPostHogClient
         return capturedEvent;
     }
 
+    static CapturedEvent AddFeatureFlagsToCapturedEvent(
+        CapturedEvent capturedEvent,
+        FeatureFlagEvaluations flags)
+    {
+        // Single-pass: per-flag $feature/<key> property + $active_feature_flags collection in one
+        // enumeration of the records dictionary. Runs per captured event, so worth keeping tight.
+        var active = new List<string>(flags.Records.Count);
+        foreach (var (key, record) in flags.Records)
+        {
+            capturedEvent.Properties[$"$feature/{key}"] = record.Flag.ToResponseObject();
+            if (record.Enabled)
+            {
+                active.Add(key);
+            }
+        }
+        capturedEvent.Properties["$active_feature_flags"] = active.ToArray();
+        return capturedEvent;
+    }
+
     /// <inheritdoc/>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     public async Task<bool> IsFeatureEnabledAsync(
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options,
         CancellationToken cancellationToken)
     {
+#pragma warning disable CS0618 // Internal call into the deprecated path; see method docstring for the preferred API.
         var result = await GetFeatureFlagAsync(
             featureKey,
             distinctId,
             options,
             cancellationToken);
+#pragma warning restore CS0618
 
         return result is { IsEnabled: true };
     }
 
     /// <inheritdoc/>
+    [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     public async Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
         string distinctId,
@@ -432,26 +505,23 @@ public sealed class PostHogClient : IPostHogClient
 
         if (options.SendFeatureFlagEvents)
         {
-            _featureFlagCalledEventCache.GetOrCreate(
-                key: (distinctId, featureKey, (string)response),
-                // This is only called if the key doesn't exist in the cache.
-                factory: cacheEntry => CaptureFeatureFlagCalledEvent(
-                    distinctId,
-                    featureKey,
-                    cacheEntry,
-                    response,
-                    requestId,
-                    evaluatedAt,
-                    options.Groups,
-                    errors));
-        }
+            var properties = BuildFeatureFlagCalledProperties(
+                featureKey,
+                response,
+                requestId,
+                evaluatedAt,
+                errors,
+                locallyEvaluated: flagWasLocallyEvaluated,
+                flagDefinitionsLoadedAt: flagWasLocallyEvaluated
+                    ? _featureFlagsLoader.FlagDefinitionsLoadedAt
+                    : null);
 
-        if (_featureFlagCalledEventCache.Count >= _options.Value.FeatureFlagSentCacheSizeLimit)
-        {
-            // We need to fire and forget the compaction because it can be expensive.
-            _taskScheduler.Run(
-                () => _featureFlagCalledEventCache.Compact(
-                    _options.Value.FeatureFlagSentCacheCompactionPercentage),
+            TryCaptureDedupedFeatureFlagCalledEvent(
+                distinctId,
+                featureKey,
+                cacheKeyValue: (string)response,
+                properties,
+                options.Groups,
                 cancellationToken);
         }
 
@@ -506,28 +576,31 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
-    bool CaptureFeatureFlagCalledEvent(
-        string distinctId,
+    static Dictionary<string, object> BuildFeatureFlagCalledProperties(
         string featureKey,
-        ICacheEntry cacheEntry,
         FeatureFlag? flag,
         string? requestId,
         long? evaluatedAt,
-        GroupCollection? groupProperties,
-        List<string> errors)
+        List<string> errors,
+        bool locallyEvaluated,
+        long? flagDefinitionsLoadedAt)
     {
-        cacheEntry.SetSize(1); // Each entry has a size of 1
-        cacheEntry.SetPriority(CacheItemPriority.Low);
-        cacheEntry.SetSlidingExpiration(_options.Value.FeatureFlagSentCacheSlidingExpiration);
-
         var properties = new Dictionary<string, object>
         {
             ["$feature_flag"] = featureKey,
             ["$feature_flag_response"] = flag.ToResponseObject(),
-            ["locally_evaluated"] = false,
+            ["locally_evaluated"] = locallyEvaluated,
             [$"$feature/{featureKey}"] = flag.ToResponseObject()
         };
-        if (flag is FeatureFlagWithMetadata featureFlag)
+        if (locallyEvaluated)
+        {
+            properties["$feature_flag_reason"] = "Evaluated locally";
+            if (flagDefinitionsLoadedAt is not null)
+            {
+                properties["$feature_flag_definitions_loaded_at"] = flagDefinitionsLoadedAt;
+            }
+        }
+        else if (flag is FeatureFlagWithMetadata featureFlag)
         {
             properties["$feature_flag_id"] = featureFlag.Id;
             properties["$feature_flag_version"] = featureFlag.Version;
@@ -549,14 +622,221 @@ public sealed class PostHogClient : IPostHogClient
             properties["$feature_flag_error"] = string.Join(",", errors);
         }
 
-        Capture(
-            distinctId,
-            eventName: "$feature_flag_called",
-            properties: properties,
-            groups: groupProperties,
-            sendFeatureFlags: false);
+        return properties;
+    }
 
-        return true;
+    void TryCaptureDedupedFeatureFlagCalledEvent(
+        string distinctId,
+        string featureKey,
+        string cacheKeyValue,
+        Dictionary<string, object> properties,
+        GroupCollection? groups,
+        CancellationToken cancellationToken)
+    {
+        _featureFlagCalledEventCache.GetOrCreate(
+            key: (distinctId, featureKey, cacheKeyValue),
+            // This factory only runs when the (distinct id, key, value) tuple is not yet cached.
+            factory: cacheEntry =>
+            {
+                cacheEntry.SetSize(1);
+                cacheEntry.SetPriority(CacheItemPriority.Low);
+                cacheEntry.SetSlidingExpiration(_options.Value.FeatureFlagSentCacheSlidingExpiration);
+
+                CaptureCore(
+                    distinctId,
+                    eventName: "$feature_flag_called",
+                    properties: properties,
+                    groups: groups,
+                    sendFeatureFlags: false,
+                    flags: null,
+                    timestamp: null);
+                return true;
+            });
+
+        if (_featureFlagCalledEventCache.Count >= _options.Value.FeatureFlagSentCacheSizeLimit)
+        {
+            // Fire-and-forget the compaction because it can be expensive.
+            _taskScheduler.Run(
+                () => _featureFlagCalledEventCache.Compact(
+                    _options.Value.FeatureFlagSentCacheCompactionPercentage),
+                cancellationToken);
+        }
+    }
+
+    sealed class EvaluationsHost : IFeatureFlagEvaluationsHost
+    {
+        readonly PostHogClient _client;
+
+        public EvaluationsHost(PostHogClient client) => _client = client;
+
+        public void CaptureFeatureFlagCalled(
+            string distinctId,
+            string featureKey,
+            EvaluatedFlagRecord? record,
+            GroupCollection? groups,
+            string? requestId,
+            long? evaluatedAt,
+            long? flagDefinitionsLoadedAt,
+            IReadOnlyCollection<string> errors)
+        {
+            // Mirror the legacy path's "missing flag" handling: append the FlagMissing error
+            // and use a synthetic disabled FeatureFlag so the response shape is consistent.
+            var snapshotErrors = new List<string>(errors);
+            if (record is null)
+            {
+                snapshotErrors.Add(FeatureFlagError.FlagMissing);
+            }
+
+            var flag = record?.Flag ?? new FeatureFlag { Key = featureKey, IsEnabled = false };
+            var cacheKeyValue = record?.CacheKeyValue ?? (string)flag;
+
+            var properties = BuildFeatureFlagCalledProperties(
+                featureKey,
+                flag,
+                requestId,
+                evaluatedAt,
+                snapshotErrors,
+                locallyEvaluated: record?.LocallyEvaluated ?? false,
+                flagDefinitionsLoadedAt: record?.LocallyEvaluated == true ? flagDefinitionsLoadedAt : null);
+
+            _client.TryCaptureDedupedFeatureFlagCalledEvent(
+                distinctId,
+                featureKey,
+                cacheKeyValue,
+                properties,
+                groups,
+                CancellationToken.None);
+        }
+
+        public void LogFilterWarning(string message)
+        {
+            if (!_client._options.Value.FeatureFlagsLogWarnings)
+            {
+                return;
+            }
+            _client._logger.LogWarningFeatureFlagFilter(message);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
+        string distinctId,
+        AllFeatureFlagsOptions? options,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(distinctId))
+        {
+            // Empty distinct id is a safety fallback. Returning an empty snapshot avoids leaking
+            // events with empty distinct ids when the caller forgot to resolve one.
+            return FeatureFlagEvaluations.Empty(_evaluationsHost, distinctId ?? string.Empty);
+        }
+
+        var records = new Dictionary<string, EvaluatedFlagRecord>(StringComparer.Ordinal);
+        var errors = new List<string>();
+        string? requestId = null;
+        long? evaluatedAt = null;
+        long? flagDefinitionsLoadedAt = null;
+
+        // 1. Local pass.
+        var fallbackToRemote = true;
+        if (_options.Value.PersonalApiKey is not null)
+        {
+            try
+            {
+                var localEvaluator =
+                    await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
+                if (localEvaluator is not null)
+                {
+                    var (locallyEvaluated, needsRemote) = localEvaluator.EvaluateAllFlags(
+                        distinctId,
+                        options?.Groups,
+                        options?.PersonProperties,
+                        warnOnUnknownGroups: false);
+
+                    foreach (var (key, flag) in locallyEvaluated)
+                    {
+                        records[key] = ToRecord(key, flag, locallyEvaluated: true);
+                    }
+
+                    if (locallyEvaluated.Count > 0)
+                    {
+                        flagDefinitionsLoadedAt = _featureFlagsLoader.FlagDefinitionsLoadedAt;
+                    }
+
+                    fallbackToRemote = needsRemote && options is not { OnlyEvaluateLocally: true };
+                }
+            }
+            catch (ApiException e) when (e.ErrorType is "quota_limited")
+            {
+                // Quota-limited from the local-evaluation endpoint. In practice this fires from
+                // GetFeatureFlagsForLocalEvaluationAsync — the first call in the try, before any
+                // flag has been evaluated — so `records` is empty here. We surface the error on
+                // $feature_flag_called and skip the remote pass to mirror the remote-pass behavior.
+                _logger.LogWarningQuotaExceeded(e);
+                errors.Add(FeatureFlagError.QuotaLimited);
+                fallbackToRemote = false;
+            }
+        }
+
+        // 2. Remote pass — only if we still need it.
+        if (fallbackToRemote && options is not { OnlyEvaluateLocally: true })
+        {
+            try
+            {
+                var flagsResult = await FetchFlagsAsync(distinctId, options, cancellationToken);
+                requestId = flagsResult.RequestId;
+                evaluatedAt = flagsResult.EvaluatedAt;
+
+                if (flagsResult.ErrorsWhileComputingFlags)
+                {
+                    errors.Add(FeatureFlagError.ErrorsWhileComputingFlags);
+                }
+
+                if (flagsResult.QuotaLimited.Contains("feature_flags"))
+                {
+                    errors.Add(FeatureFlagError.QuotaLimited);
+                }
+
+                foreach (var (key, flag) in flagsResult.Flags)
+                {
+                    // Local-wins merge: keep the locally-evaluated record (which carries
+                    // locally_evaluated=true and $feature_flag_definitions_loaded_at) and only fill
+                    // in keys the local pass couldn't resolve. Differs from GetAllFeatureFlagsAsync,
+                    // which discards local results entirely on remote fallback.
+                    if (!records.ContainsKey(key))
+                    {
+                        records[key] = ToRecord(key, flag, locallyEvaluated: false);
+                    }
+                }
+            }
+            catch (Exception e) when (e is not ArgumentException
+                                       and not NullReferenceException
+                                       and not OperationCanceledException)
+            {
+                _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
+                errors.Add(FeatureFlagError.UnknownError);
+            }
+        }
+
+        return new FeatureFlagEvaluations(
+            _evaluationsHost,
+            distinctId,
+            records,
+            requestId,
+            evaluatedAt,
+            flagDefinitionsLoadedAt,
+            options?.Groups,
+            errors);
+
+        static EvaluatedFlagRecord ToRecord(string key, FeatureFlag flag, bool locallyEvaluated)
+            => new()
+            {
+                Key = key,
+                Flag = flag,
+                Enabled = flag.IsEnabled,
+                CacheKeyValue = (string)flag,
+                LocallyEvaluated = locallyEvaluated,
+            };
     }
 
     /// <inheritdoc/>
@@ -859,20 +1139,26 @@ internal static partial class PostHogClientLoggerExtensions
     public static partial void LogDebugFeatureFlagsLoaded(this ILogger<PostHogClient> logger, string pollingStatus);
 
     [LoggerMessage(
-        EventId = 18,
+        EventId = 19,
         Level = LogLevel.Error,
         Message = "[FEATURE FLAGS] Failed to load feature flags")]
     public static partial void LogErrorFailedToLoadFeatureFlags(this ILogger<PostHogClient> logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 19,
+        EventId = 20,
         Level = LogLevel.Error,
         Message = "CaptureException called with null exception")]
     public static partial void LogErrorCaptureExceptionNull(this ILogger<PostHogClient> logger);
 
     [LoggerMessage(
-        EventId = 20,
+        EventId = 21,
         Level = LogLevel.Error,
         Message = "CaptureException failed with an exception")]
     public static partial void LogErrorCaptureExceptionFailed(this ILogger<PostHogClient> logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 22,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] {Message}")]
+    public static partial void LogWarningFeatureFlagFilter(this ILogger<PostHogClient> logger, string message);
 }

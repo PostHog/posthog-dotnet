@@ -476,7 +476,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     groups.Add(kvp.Key, kvp.Value?.ToString() ?? string.Empty);
                 }
             }
-            // Create captured event
+            // Create captured event.
+            // TODO: migrate to Capture(..., flags: null, ...) once tests are updated.
+#pragma warning disable CS0618
             _postHogClient.Capture(
                 distinctId,
                 eventName,
@@ -485,6 +487,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 false, // sendFeatureFlags
                 DateTimeOffset.UtcNow
             );
+#pragma warning restore CS0618
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception ex)

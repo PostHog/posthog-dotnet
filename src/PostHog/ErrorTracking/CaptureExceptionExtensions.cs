@@ -25,7 +25,7 @@ public static class CaptureExceptionExtensions
             distinctId,
             properties: null,
             groups: null,
-            sendFeatureFlags: false);
+            flags: null);
 
     /// <summary>
     /// Captures an exception event with feature flags.
@@ -35,17 +35,20 @@ public static class CaptureExceptionExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer CaptureException(..., flags: snapshot) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
     public static bool CaptureException(
         this IPostHogClient client,
         Exception exception,
         string distinctId,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).CaptureException(
             exception,
             distinctId,
             properties: null,
             groups: null,
             sendFeatureFlags: sendFeatureFlags);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures an exception event with additional properties.
@@ -65,7 +68,7 @@ public static class CaptureExceptionExtensions
             distinctId,
             properties,
             groups: null,
-            sendFeatureFlags: false);
+            flags: null);
 
     /// <summary>
     /// Captures an exception event with a custom timestamp.
@@ -85,7 +88,7 @@ public static class CaptureExceptionExtensions
             distinctId,
             properties: null,
             groups: null,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -108,7 +111,7 @@ public static class CaptureExceptionExtensions
             distinctId,
             properties,
             groups: null,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -131,7 +134,7 @@ public static class CaptureExceptionExtensions
             distinctId,
             properties: null,
             groups,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -156,7 +159,7 @@ public static class CaptureExceptionExtensions
             distinctId,
             properties,
             groups,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -168,12 +171,14 @@ public static class CaptureExceptionExtensions
     /// <param name="timestamp">The timestamp when the event occurred.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer CaptureException(..., flags: snapshot, timestamp: timestamp) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
     public static bool CaptureException(
         this IPostHogClient client,
         Exception exception,
         string distinctId,
         DateTimeOffset timestamp,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).CaptureException(
             exception,
             distinctId,
@@ -181,6 +186,7 @@ public static class CaptureExceptionExtensions
             groups: null,
             sendFeatureFlags: sendFeatureFlags,
             timestamp: timestamp);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures an exception event with a custom timestamp, properties, groups, and feature flags.
@@ -193,6 +199,7 @@ public static class CaptureExceptionExtensions
     /// <param name="groups">Optional: A set of groups to send with the event. The groups are identified by their group_type and group_key.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
     public static bool CaptureException(
         this IPostHogClient client,
         Exception exception,
@@ -201,6 +208,7 @@ public static class CaptureExceptionExtensions
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).CaptureException(
             exception,
             distinctId,
@@ -208,4 +216,5 @@ public static class CaptureExceptionExtensions
             groups,
             sendFeatureFlags,
             timestamp);
+#pragma warning restore CS0618
 }

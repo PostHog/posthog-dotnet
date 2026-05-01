@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
 // PostHog .NET SDK Console Example
 //
 // This demonstrates basic PostHog SDK usage including:
