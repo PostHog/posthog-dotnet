@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -151,8 +152,10 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
-                      "locally_evaluated": false,
+                      "locally_evaluated": true,
                       "$feature/flag-key": true,
+                      "$feature_flag_reason": "Evaluated locally",
+                      "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
@@ -167,8 +170,10 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
-                      "locally_evaluated": false,
+                      "locally_evaluated": true,
                       "$feature/flag-key": true,
+                      "$feature_flag_reason": "Evaluated locally",
+                      "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
@@ -183,8 +188,10 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "properties": {
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": false,
-                      "locally_evaluated": false,
+                      "locally_evaluated": true,
                       "$feature/flag-key": false,
+                      "$feature_flag_reason": "Evaluated locally",
+                      "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
@@ -389,8 +396,10 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                     "properties": {
                       "$feature_flag": "complex-flag",
                       "$feature_flag_response": true,
-                      "locally_evaluated": false,
+                      "locally_evaluated": true,
                       "$feature/complex-flag": true,
+                      "$feature_flag_reason": "Evaluated locally",
+                      "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "659df793-429a-4517-84ff-747dfc103e6c",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{VersionConstants.Version}}",

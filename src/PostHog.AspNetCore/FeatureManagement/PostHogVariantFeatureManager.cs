@@ -85,7 +85,10 @@ public class PostHogVariantFeatureManager(
             ? (postHogTargetingContext.PersonProperties, GroupsAndProperties: postHogTargetingContext.GroupCollection)
             : (null, null);
 
-        // Call PostHog's API to check if the feature is enabled for this user
+        // Call PostHog's API to check if the feature is enabled for this user.
+        // TODO: migrate to EvaluateFlagsAsync + snapshot per request to align with the SDK's
+        // Phase 1 RFC; the feature manager API is per-flag so the change isn't trivial.
+#pragma warning disable CS0618
         return await posthog.GetFeatureFlagAsync(
             featureKey: feature,
             distinctId: context.UserId,
@@ -96,6 +99,7 @@ public class PostHogVariantFeatureManager(
             },
             cancellationToken
         );
+#pragma warning restore CS0618
     }
 }
 
