@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Options;
 using PostHog;

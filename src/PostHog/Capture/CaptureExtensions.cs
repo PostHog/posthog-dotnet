@@ -25,7 +25,7 @@ public static class CaptureExtensions
             eventName,
             properties: null,
             groups: null,
-            sendFeatureFlags: false);
+            flags: null);
 
     /// <summary>
     /// Captures an event.
@@ -35,17 +35,20 @@ public static class CaptureExtensions
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer Capture(..., flags: snapshot) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
     public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).Capture(
             distinctId,
             eventName,
             properties: null,
             groups: null,
             sendFeatureFlags: sendFeatureFlags);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures an event with additional properties to add to the event.
@@ -65,7 +68,7 @@ public static class CaptureExtensions
             eventName,
             properties,
             groups: null,
-            sendFeatureFlags: false);
+            flags: null);
 
     /// <summary>
     /// Captures an event with a custom timestamp.
@@ -85,7 +88,7 @@ public static class CaptureExtensions
             eventName,
             properties: null,
             groups: null,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -108,7 +111,7 @@ public static class CaptureExtensions
             eventName,
             properties: properties,
             groups: null,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -131,7 +134,7 @@ public static class CaptureExtensions
             eventName,
             properties: null,
             groups: groups,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -156,7 +159,7 @@ public static class CaptureExtensions
             eventName,
             properties: properties,
             groups: groups,
-            sendFeatureFlags: false,
+            flags: null,
             timestamp: timestamp);
 
     /// <summary>
@@ -168,12 +171,14 @@ public static class CaptureExtensions
     /// <param name="timestamp">The timestamp when the event occurred.</param>
     /// <param name="sendFeatureFlags">If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer Capture(..., flags: snapshot, timestamp: timestamp) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
     public static bool Capture(
         this IPostHogClient client,
         string distinctId,
         string eventName,
         DateTimeOffset timestamp,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).Capture(
             distinctId,
             eventName,
@@ -181,6 +186,7 @@ public static class CaptureExtensions
             groups: null,
             sendFeatureFlags: sendFeatureFlags,
             timestamp: timestamp);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures an event with a custom timestamp, properties, groups, and feature flags.
@@ -193,6 +199,7 @@ public static class CaptureExtensions
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
     public static bool Capture(
         this IPostHogClient client,
         string distinctId,
@@ -201,6 +208,7 @@ public static class CaptureExtensions
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).Capture(
             distinctId,
             eventName,
@@ -208,6 +216,7 @@ public static class CaptureExtensions
             groups: groups,
             sendFeatureFlags: sendFeatureFlags,
             timestamp: timestamp);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures an event with properties to set on the user.
@@ -263,7 +272,7 @@ public static class CaptureExtensions
             eventName,
             properties,
             groups: null,
-            sendFeatureFlags: false);
+            flags: null);
     }
 
     /// <summary>
@@ -284,7 +293,7 @@ public static class CaptureExtensions
             eventName,
             properties: null,
             groups: groups,
-            sendFeatureFlags: false);
+            flags: null);
 
     /// <summary>
     /// Captures a Page View ($pageview) event.
@@ -315,12 +324,14 @@ public static class CaptureExtensions
     /// <param name="properties">Additional context to save with the event.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer CapturePageView(distinctId, pagePath, properties) and forward a FeatureFlagEvaluations snapshot via Capture(..., flags: snapshot, ...) when needed. This overload will be removed in a future major version.", error: false)]
     public static bool CapturePageView(
         this IPostHogClient client,
         string distinctId,
         string pagePath,
         Dictionary<string, object>? properties,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).CaptureSpecialEvent(
             distinctId,
             eventName: "$pageview",
@@ -328,6 +339,7 @@ public static class CaptureExtensions
             eventPropertyValue: pagePath,
             properties,
             sendFeatureFlags);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures a Page View ($pageview) event.
@@ -347,11 +359,15 @@ public static class CaptureExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="pagePath">The URL or path of the page to capture.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    [Obsolete("Prefer CapturePageView(distinctId, pagePath) and forward a FeatureFlagEvaluations snapshot via Capture(..., flags: snapshot, ...) when needed. This overload will be removed in a future major version.", error: false)]
     public static bool CapturePageView(
         this IPostHogClient client,
         string distinctId,
         string pagePath,
-        bool sendFeatureFlags) => NotNull(client).CapturePageView(distinctId, pagePath, properties: null, sendFeatureFlags);
+        bool sendFeatureFlags)
+#pragma warning disable CS0618
+        => NotNull(client).CapturePageView(distinctId, pagePath, properties: null, sendFeatureFlags);
+#pragma warning restore CS0618
 
 
     /// <summary>
@@ -383,12 +399,14 @@ public static class CaptureExtensions
     /// <param name="properties">Additional context to save with the event.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    [Obsolete("Prefer CaptureScreenView(distinctId, screenName, properties) and forward a FeatureFlagEvaluations snapshot via Capture(..., flags: snapshot, ...) when needed. This overload will be removed in a future major version.", error: false)]
     public static bool CaptureScreenView(
         this IPostHogClient client,
         string distinctId,
         string screenName,
         Dictionary<string, object>? properties,
         bool sendFeatureFlags)
+#pragma warning disable CS0618
         => NotNull(client).CaptureSpecialEvent(
             distinctId,
             eventName: "$screen",
@@ -396,6 +414,7 @@ public static class CaptureExtensions
             eventPropertyValue: screenName,
             properties,
             sendFeatureFlags);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures a Screen View ($screen) event.
@@ -459,7 +478,7 @@ public static class CaptureExtensions
             properties[$"survey_response_{i}"] = surveyResponses[i];
         }
 
-        return NotNull(client).Capture(distinctId, "survey sent", properties, groups: null, sendFeatureFlags: false);
+        return NotNull(client).Capture(distinctId, "survey sent", properties, groups: null, flags: null);
     }
 
     /// <summary>
@@ -518,6 +537,12 @@ public static class CaptureExtensions
     {
         properties ??= new Dictionary<string, object>();
         properties[eventPropertyName] = eventPropertyValue;
+        if (!sendFeatureFlags)
+        {
+            return NotNull(client).Capture(distinctId, eventName, properties, groups: null, flags: null);
+        }
+#pragma warning disable CS0618
         return NotNull(client).Capture(distinctId, eventName, properties, null, sendFeatureFlags);
+#pragma warning restore CS0618
     }
 }

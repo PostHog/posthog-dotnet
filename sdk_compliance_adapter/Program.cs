@@ -86,7 +86,7 @@ app.MapPost("/capture", (CaptureRequest request) =>
         request.Event,
         request.Properties,
         groups: null,
-        sendFeatureFlags: false,
+        flags: null,
         timestamp: timestamp
     );
 

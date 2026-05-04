@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
@@ -1436,9 +1437,12 @@ public class TheDisabledClient
         var captured = client.Capture("distinct-id", "some-event");
         var capturedException = client.CaptureException(new InvalidOperationException("boom"), "distinct-id");
         await client.FlushAsync();
+#pragma warning disable CS0618
         var isFeatureEnabled = await client.IsFeatureEnabledAsync("flag-key", "distinct-id");
         var featureFlag = await client.GetFeatureFlagAsync("flag-key", "distinct-id", null, CancellationToken.None);
+#pragma warning restore CS0618
         var remoteConfigPayload = await client.GetRemoteConfigPayloadAsync("config-key", CancellationToken.None);
+        var flagEvaluations = await client.EvaluateFlagsAsync("distinct-id", null, CancellationToken.None);
         var allFlags = await client.GetAllFeatureFlagsAsync("distinct-id", null, CancellationToken.None);
         await client.LoadFeatureFlagsAsync();
 
@@ -1451,6 +1455,7 @@ public class TheDisabledClient
         Assert.False(isFeatureEnabled);
         Assert.Null(featureFlag);
         Assert.Null(remoteConfigPayload);
+        Assert.Empty(flagEvaluations.Keys);
         Assert.Empty(allFlags);
         Assert.Empty(captureHandler.ReceivedRequests);
         Assert.Empty(batchHandler.ReceivedRequests);
@@ -1465,6 +1470,7 @@ public class TheDisabledClient
         AssertDisabledLog(container, nameof(PostHogClient.IsFeatureEnabledAsync));
         AssertDisabledLog(container, nameof(PostHogClient.GetFeatureFlagAsync));
         AssertDisabledLog(container, nameof(PostHogClient.GetRemoteConfigPayloadAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.EvaluateFlagsAsync));
         AssertDisabledLog(container, nameof(PostHogClient.GetAllFeatureFlagsAsync));
         AssertDisabledLog(container, nameof(PostHogClient.LoadFeatureFlagsAsync));
         AssertProjectTokenRequiredLog(container);
@@ -1519,7 +1525,9 @@ public class TheDisabledClient
         var identifyResult = await client.IdentifyAsync("distinct-id");
         var captured = client.Capture("distinct-id", "some-event");
         await client.FlushAsync();
+#pragma warning disable CS0618
         var isFeatureEnabled = await client.IsFeatureEnabledAsync("flag-key", "distinct-id");
+#pragma warning restore CS0618
         var allFlags = await client.GetAllFeatureFlagsAsync("distinct-id", null, CancellationToken.None);
         await client.LoadFeatureFlagsAsync();
 
@@ -1566,14 +1574,18 @@ public class ThePersonalApiKeyProtectedMethods
         var client = container.Activate<PostHogClient>();
 
         var onlyEvaluateLocally = new FeatureFlagOptions { OnlyEvaluateLocally = true };
+#pragma warning disable CS0618
         var isFeatureEnabled = await client.IsFeatureEnabledAsync("flag-key", "distinct-id", onlyEvaluateLocally, CancellationToken.None);
         var featureFlag = await client.GetFeatureFlagAsync("flag-key", "distinct-id", onlyEvaluateLocally, CancellationToken.None);
+#pragma warning restore CS0618
+        var flagEvaluations = await client.EvaluateFlagsAsync("distinct-id", onlyEvaluateLocally, CancellationToken.None);
         var allFlags = await client.GetAllFeatureFlagsAsync("distinct-id", onlyEvaluateLocally, CancellationToken.None);
         var remoteConfigPayload = await client.GetRemoteConfigPayloadAsync("config-key", CancellationToken.None);
         await client.LoadFeatureFlagsAsync();
 
         Assert.False(isFeatureEnabled);
         Assert.Null(featureFlag);
+        Assert.Empty(flagEvaluations.Keys);
         Assert.Empty(allFlags);
         Assert.Null(remoteConfigPayload);
         Assert.Empty(flagsHandler.ReceivedRequests);
@@ -1581,6 +1593,7 @@ public class ThePersonalApiKeyProtectedMethods
         Assert.Empty(remoteConfigHandler.ReceivedRequests);
         AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.IsFeatureEnabledAsync));
         AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.GetFeatureFlagAsync));
+        AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.EvaluateFlagsAsync));
         AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.GetAllFeatureFlagsAsync));
         AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.GetRemoteConfigPayloadAsync));
         AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.LoadFeatureFlagsAsync));
