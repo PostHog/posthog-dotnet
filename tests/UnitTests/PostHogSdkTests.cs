@@ -1,6 +1,7 @@
 using NSubstitute;
 using PostHog;
 using PostHog.Api;
+using PostHog.Features;
 
 namespace UnitTests;
 
@@ -21,13 +22,13 @@ public sealed class PostHogSdkTests : IDisposable
     public void CaptureDelegatesToDefaultClient()
     {
         var client = Substitute.For<IPostHogClient>();
-        client.Capture("user-123", "Test Event", null, null, false, null).Returns(true);
+        client.Capture("user-123", "Test Event", null, null, (FeatureFlagEvaluations?)null, null).Returns(true);
         PostHogSdk.DefaultClient = client;
 
         var captured = PostHogSdk.Capture("user-123", "Test Event");
 
         Assert.True(captured);
-        client.Received(1).Capture("user-123", "Test Event", null, null, false, null);
+        client.Received(1).Capture("user-123", "Test Event", null, null, (FeatureFlagEvaluations?)null, null);
     }
 
     [Fact]
@@ -52,16 +53,29 @@ public sealed class PostHogSdkTests : IDisposable
         Assert.False(captured);
     }
 
-    [Fact]
-    public async Task AsyncCallsAreNoOpWithoutDefaultClient()
+    [Theory]
+    [InlineData(nameof(PostHogSdk.IdentifyAsync))]
+    [InlineData(nameof(PostHogSdk.IsFeatureEnabledAsync))]
+    [InlineData(nameof(PostHogSdk.GetFeatureFlagAsync))]
+    public async Task AsyncCallIsNoOpWithoutDefaultClient(string method)
     {
-        var identifyResult = await PostHogSdk.IdentifyAsync("user-123");
-        var enabled = await PostHogSdk.IsFeatureEnabledAsync("beta-feature", "user-123");
-        var flag = await PostHogSdk.GetFeatureFlagAsync("beta-feature", "user-123");
-
-        Assert.Equal(0, identifyResult.Status);
-        Assert.False(enabled);
-        Assert.Null(flag);
+        switch (method)
+        {
+            case nameof(PostHogSdk.IdentifyAsync):
+                var identifyResult = await PostHogSdk.IdentifyAsync("user-123");
+                Assert.Equal(0, identifyResult.Status);
+                break;
+            case nameof(PostHogSdk.IsFeatureEnabledAsync):
+                var enabled = await PostHogSdk.IsFeatureEnabledAsync("beta-feature", "user-123");
+                Assert.False(enabled);
+                break;
+            case nameof(PostHogSdk.GetFeatureFlagAsync):
+                var flag = await PostHogSdk.GetFeatureFlagAsync("beta-feature", "user-123");
+                Assert.Null(flag);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(method), method, null);
+        }
     }
 
     [Fact]

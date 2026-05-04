@@ -34,7 +34,6 @@ using PostHog;
 PostHogSdk.Init(new PostHogOptions { ProjectToken = "YOUR_PROJECT_TOKEN" });
 PostHogSdk.Capture("user-123", "Test Event");
 
-await PostHogSdk.FlushAsync();
 await PostHogSdk.ShutdownAsync();
 ```
 

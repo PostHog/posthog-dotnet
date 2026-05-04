@@ -70,6 +70,7 @@ public static class PostHogSdk
     /// <param name="sendFeatureFlags">Whether to send feature flag data with the event.</param>
     /// <param name="timestamp">Optional timestamp when the event occurred.</param>
     /// <returns><c>true</c> if the event was successfully enqueued; otherwise <c>false</c>.</returns>
+#pragma warning disable CS0618
     public static bool Capture(
         string distinctId,
         string eventName,
@@ -78,6 +79,7 @@ public static class PostHogSdk
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
         => Current.Capture(distinctId, eventName, properties, groups, sendFeatureFlags, timestamp);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Captures an exception using the default client.
@@ -98,6 +100,7 @@ public static class PostHogSdk
     /// <param name="sendFeatureFlags">Whether to send feature flag data with the event.</param>
     /// <param name="timestamp">Optional timestamp when the event occurred.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued; otherwise <c>false</c>.</returns>
+#pragma warning disable CS0618
     public static bool CaptureException(
         Exception exception,
         string distinctId,
@@ -106,6 +109,7 @@ public static class PostHogSdk
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
         => Current.CaptureException(exception, distinctId, properties, groups, sendFeatureFlags, timestamp);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Identifies a user using the default client.
@@ -175,12 +179,14 @@ public static class PostHogSdk
     /// <param name="options">Optional options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns><c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.</returns>
+#pragma warning disable CS0618
     public static Task<bool> IsFeatureEnabledAsync(
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options = null,
         CancellationToken cancellationToken = default)
         => Current.IsFeatureEnabledAsync(featureKey, distinctId, options, cancellationToken);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves a feature flag using the default client.
@@ -190,12 +196,14 @@ public static class PostHogSdk
     /// <param name="options">Optional options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The feature flag or <c>null</c> if it does not exist or is not enabled.</returns>
+#pragma warning disable CS0618
     public static Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
         string distinctId,
         FeatureFlagOptions? options = null,
         CancellationToken cancellationToken = default)
         => Current.GetFeatureFlagAsync(featureKey, distinctId, options, cancellationToken);
+#pragma warning restore CS0618
 
     /// <summary>
     /// Retrieves all feature flags using the default client.
@@ -242,7 +250,12 @@ public static class PostHogSdk
     /// <returns>A <see cref="ValueTask"/> representing the asynchronous operation.</returns>
     public static async ValueTask ShutdownAsync()
     {
-        var client = Interlocked.Exchange(ref _defaultClient, null) ?? Current;
+        var client = Interlocked.Exchange(ref _defaultClient, null);
+        if (client is null)
+        {
+            return;
+        }
+
         try
         {
             await client.FlushAsync();
