@@ -6,7 +6,7 @@ using PostHog.Json;
 
 namespace PostHog;
 
-internal sealed class NoOpPostHogClient : IPostHogClient
+internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluationsHost
 {
     static readonly IReadOnlyDictionary<string, FeatureFlag> EmptyFeatureFlags = new Dictionary<string, FeatureFlag>();
     static int _loggedNoDefaultClient;
@@ -60,12 +60,30 @@ internal sealed class NoOpPostHogClient : IPostHogClient
         DateTimeOffset? timestamp = null)
         => false;
 
+    public bool Capture(
+        string distinctId,
+        string eventName,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        FeatureFlagEvaluations? flags,
+        DateTimeOffset? timestamp = null)
+        => false;
+
     public bool CaptureException(
         Exception exception,
         string distinctId,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
+        DateTimeOffset? timestamp = null)
+        => false;
+
+    public bool CaptureException(
+        Exception exception,
+        string distinctId,
+        Dictionary<string, object>? properties,
+        GroupCollection? groups,
+        FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null)
         => false;
 
@@ -92,6 +110,12 @@ internal sealed class NoOpPostHogClient : IPostHogClient
         CancellationToken cancellationToken)
         => Task.FromResult(EmptyFeatureFlags);
 
+    public Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
+        string distinctId,
+        AllFeatureFlagsOptions? options,
+        CancellationToken cancellationToken)
+        => Task.FromResult(FeatureFlagEvaluations.Empty(this, distinctId));
+
     public Task LoadFeatureFlagsAsync(CancellationToken cancellationToken)
         => Task.CompletedTask;
 
@@ -106,4 +130,20 @@ internal sealed class NoOpPostHogClient : IPostHogClient
 
     public ValueTask DisposeAsync()
         => default;
+
+    void IFeatureFlagEvaluationsHost.CaptureFeatureFlagCalled(
+        string distinctId,
+        string featureKey,
+        EvaluatedFlagRecord? record,
+        GroupCollection? groups,
+        string? requestId,
+        long? evaluatedAt,
+        long? flagDefinitionsLoadedAt,
+        IReadOnlyCollection<string> errors)
+    {
+    }
+
+    void IFeatureFlagEvaluationsHost.LogFilterWarning(string message)
+    {
+    }
 }
