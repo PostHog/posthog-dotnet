@@ -1,70 +1,50 @@
 name: Release
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
+    paths:
+      - '.changeset/*.md'
   workflow_dispatch:
-    inputs:
-      bump_type:
-        description: Version bump to apply
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
 
 permissions:
   contents: read
 
+# Concurrency control: only one release process can run at a time
+# This prevents race conditions if multiple releasable changesets merge simultaneously
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  check-release-label:
-    name: Check for release label
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.merged == true &&
-       contains(github.event.pull_request.labels.*.name, 'release'))
+  check-changesets:
+    name: Check for changesets
     runs-on: ubuntu-latest
     outputs:
-      should-release: ${{ steps.check.outputs.should-release }}
-      bump-type: ${{ steps.check.outputs.bump-type }}
+      has-changesets: ${{ steps.check.outputs.has-changesets }}
     steps:
-      - name: Check release conditions
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check for changesets
         id: check
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BUMP_TYPE: ${{ inputs.bump_type }}
-          HAS_BUMP_MAJOR: ${{ contains(github.event.pull_request.labels.*.name, 'bump-major') }}
-          HAS_BUMP_MINOR: ${{ contains(github.event.pull_request.labels.*.name, 'bump-minor') }}
-          HAS_BUMP_PATCH: ${{ contains(github.event.pull_request.labels.*.name, 'bump-patch') }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "bump-type=$BUMP_TYPE" >> "$GITHUB_OUTPUT"
-            echo "should-release=true" >> "$GITHUB_OUTPUT"
-            echo "Manual release requested with bump type '$BUMP_TYPE'"
-          elif [ "$HAS_BUMP_MAJOR" = "true" ]; then
-            echo "bump-type=major" >> "$GITHUB_OUTPUT"
-            echo "should-release=true" >> "$GITHUB_OUTPUT"
-          elif [ "$HAS_BUMP_MINOR" = "true" ]; then
-            echo "bump-type=minor" >> "$GITHUB_OUTPUT"
-            echo "should-release=true" >> "$GITHUB_OUTPUT"
-          elif [ "$HAS_BUMP_PATCH" = "true" ]; then
-            echo "bump-type=patch" >> "$GITHUB_OUTPUT"
-            echo "should-release=true" >> "$GITHUB_OUTPUT"
+          changeset_count=$(find .changeset -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l)
+          if [ "$changeset_count" -gt 0 ]; then
+            echo "has-changesets=true" >> "$GITHUB_OUTPUT"
+            echo "Found $changeset_count changeset(s), ready to release"
           else
-            echo "should-release=false" >> "$GITHUB_OUTPUT"
+            echo "has-changesets=false" >> "$GITHUB_OUTPUT"
+            echo "No changesets to release"
           fi
 
   notify-approval-needed:
     name: Notify Slack - Approval Needed
-    needs: check-release-label
-    if: needs.check-release-label.outputs.should-release == 'true'
+    needs: check-changesets
+    if: needs.check-changesets.outputs.has-changesets == 'true'
     uses: posthog/.github/.github/workflows/notify-approval-needed.yml@main
     with:
       slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
@@ -75,19 +55,19 @@ jobs:
 
   release:
     name: Bump version and release
-    needs: [check-release-label, notify-approval-needed]
+    needs: [check-changesets, notify-approval-needed]
     runs-on: ubuntu-latest
-    # Use `always()` so the release proceeds even if the Slack notification fails —
-    # a Slack outage shouldn't block releases.
-    if: always() && needs.check-release-label.outputs.should-release == 'true'
+    if: always() && needs.check-changesets.outputs.has-changesets == 'true'
     environment: Release
     permissions:
       contents: write
       actions: write
+      id-token: write
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_NOLOGO: true
       DOTNET_VERSION: "9.0.102"
+      PackageDirectory: ${{ github.workspace }}/build/packages/Release
     steps:
       - name: Notify Slack - Approved
         if: needs.notify-approval-needed.outputs.slack_ts != ''
@@ -98,7 +78,6 @@ jobs:
           thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
           message: "✅ Release approved! Version bump in progress..."
           emoji_reaction: "white_check_mark"
-
       - name: Get GitHub App token
         id: releaser
         uses: actions/create-github-app-token@v3
@@ -113,33 +92,37 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.releaser.outputs.token }}
 
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Calculate new version
-        id: version
+      - name: Apply changesets and update version
+        id: apply-changesets
         run: |
-          current=$(grep -o '<Version>[^<]*' Directory.Build.props | head -n 1 | sed 's/<Version>//')
-          IFS='.' read -r major minor patch <<< "$current"
-          patch=$(echo "$patch" | cut -d- -f1)
-          case "${{ needs.check-release-label.outputs.bump-type }}" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-          new_version="$major.$minor.$patch"
-          echo "current=$current" >> "$GITHUB_OUTPUT"
-          echo "new=$new_version" >> "$GITHUB_OUTPUT"
-          echo "Bumping $current → $new_version"
-
-      - name: Update version
-        env:
-          CURRENT_VERSION: ${{ steps.version.outputs.current }}
-          NEW_VERSION: ${{ steps.version.outputs.new }}
-        run: |
+          pnpm changeset version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          CURRENT_VERSION=$(grep -o '<Version>[^<]*' Directory.Build.props | head -n 1 | sed 's/<Version>//')
           sed -i "s|<Version>${CURRENT_VERSION}</Version>|<Version>${NEW_VERSION}</Version>|" Directory.Build.props
+          echo "new-version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "New version: $NEW_VERSION"
 
       - name: Restore NuGet Packages
         run: dotnet restore --locked-mode
@@ -150,34 +133,41 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build
 
-      - name: Check for changes
-        id: check-changes
+      - name: Commit version bump
+        id: commit-version-bump
+        env:
+          NEW_VERSION: ${{ steps.apply-changesets.outputs.new-version }}
         run: |
-          if git diff --quiet Directory.Build.props src/PostHog/Generated/VersionConstants.cs; then
+          git add -A
+          if git diff --staged --quiet; then
             echo "No changes to commit"
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "committed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            git commit -m "chore: release $NEW_VERSION [version bump] [skip ci]"
+            git push origin main
+            echo "committed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit version bump
-        if: steps.check-changes.outputs.has_changes == 'true'
-        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
+      - name: NuGet login
+        if: steps.commit-version-bump.outputs.committed == 'true'
+        uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1.1.0
+        id: login
         with:
-          commit_message: "Bump version to ${{ steps.version.outputs.new }}"
-          repo: ${{ github.repository }}
-          branch: main
-          file_pattern: "Directory.Build.props src/PostHog/Generated/VersionConstants.cs"
+          user: PostHog-Engineering
+
+      - name: Publish NuGet package
+        if: steps.commit-version-bump.outputs.committed == 'true'
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: find "${{ env.PackageDirectory }}" -type f -name "*.nupkg" -exec dotnet nuget push {} --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate \;
 
       - name: Create GitHub Release
-        if: steps.check-changes.outputs.has_changes == 'true'
+        if: steps.commit-version-bump.outputs.committed == 'true'
         env:
           GH_TOKEN: ${{ steps.releaser.outputs.token }}
-          VERSION: ${{ steps.version.outputs.new }}
-        run: |
-          gh release create "$VERSION" --target main --generate-notes
+          VERSION: ${{ steps.apply-changesets.outputs.new-version }}
+        run: gh release create "$VERSION" --target main --generate-notes
 
       - name: Send failure event to PostHog
         if: failure()
@@ -190,7 +180,7 @@ jobs:
               "commitSha": "${{ github.sha }}",
               "jobStatus": "${{ job.status }}",
               "ref": "${{ github.ref }}",
-              "version": "${{ steps.version.outputs.new }}"
+              "version": "${{ steps.apply-changesets.outputs.new-version }}"
             }
 
       - name: Notify Slack - Failed
@@ -200,7 +190,7 @@ jobs:
           slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
           slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
           thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-          message: "❌ Failed to release `posthog-dotnet@${{ steps.version.outputs.new }}`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+          message: "❌ Failed to release `posthog-dotnet@${{ steps.apply-changesets.outputs.new-version }}`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
           emoji_reaction: "x"
 
   notify-rejected:
