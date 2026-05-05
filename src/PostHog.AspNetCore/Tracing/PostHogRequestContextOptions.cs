@@ -1,15 +1,24 @@
+using Microsoft.AspNetCore.Http;
+
 namespace PostHog;
 
 /// <summary>
-/// Options for <see cref="PostHogTracingHeadersMiddlewareExtensions.UsePostHogTracingHeaders" />.
+/// Options for <see cref="PostHogRequestContextMiddlewareExtensions.UsePostHogRequestContext" />.
 /// </summary>
-public sealed class PostHogTracingHeadersOptions
+public sealed class PostHogRequestContextOptions
 {
     /// <summary>
     /// Captures unhandled downstream exceptions with the active request context, then rethrows them.
-    /// Defaults to <c>true</c>, matching PostHog server-side context helpers in other SDKs.
+    /// Defaults to <c>false</c> to avoid duplicate exception capture in applications that already
+    /// handle exceptions elsewhere.
     /// </summary>
-    public bool CaptureExceptions { get; set; } = true;
+    public bool CaptureExceptions { get; set; }
+
+    /// <summary>
+    /// Minimum response status code required for unhandled exception capture. Responses below this
+    /// threshold are rethrown without capture. Defaults to <c>500</c>.
+    /// </summary>
+    public int MinimumExceptionStatusCode { get; set; } = StatusCodes.Status500InternalServerError;
 
     /// <summary>
     /// Includes the request query string in <c>$current_url</c>. Defaults to <c>false</c>
@@ -27,8 +36,8 @@ public sealed class PostHogTracingHeadersOptions
 
     /// <summary>
     /// Uses the authenticated ASP.NET Core user ID when <c>X-POSTHOG-DISTINCT-ID</c> is missing.
-    /// Defaults to <c>true</c>. Disable this if your server-side user ID does not match the
-    /// distinct ID used by your frontend PostHog SDK.
+    /// Defaults to <c>false</c> because backend user IDs often differ from frontend PostHog distinct IDs.
+    /// Enable only when those identifiers intentionally match.
     /// </summary>
-    public bool UseAuthenticatedUserIdWhenDistinctIdHeaderMissing { get; set; } = true;
+    public bool UseAuthenticatedUserIdWhenDistinctIdHeaderMissing { get; set; }
 }

@@ -3,15 +3,17 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
+using NSubstitute;
 using PostHog;
+using PostHog.Features;
 using UnitTests.Fakes;
 
-namespace PostHogTracingHeadersMiddlewareTests;
+namespace PostHogRequestContextMiddlewareTests;
 
-public class ThePostHogTracingHeadersMiddleware
+public class ThePostHogRequestContextMiddleware
 {
     [Fact]
-    public async Task AppliesTracingHeadersAndRequestMetadataToDownstreamCaptures()
+    public async Task AppliesRequestContextHeadersAndRequestMetadataToDownstreamCaptures()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
@@ -80,7 +82,7 @@ public class ThePostHogTracingHeadersMiddleware
     }
 
     [Fact]
-    public async Task ExplicitCaptureValuesOverrideTracingContext()
+    public async Task ExplicitCaptureValuesOverrideRequestContext()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
@@ -110,12 +112,15 @@ public class ThePostHogTracingHeadersMiddleware
     }
 
     [Fact]
-    public async Task MissingTracingHeadersCreatePersonlessCaptureWithoutSession()
+    public async Task MissingRequestContextHeadersCreatePersonlessCaptureWithoutSession()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
         var httpContext = CreateHttpContext();
+        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "authenticated-user")],
+            authenticationType: "test"));
 
         var middleware = CreateMiddleware(
             _ =>
@@ -153,7 +158,8 @@ public class ThePostHogTracingHeadersMiddleware
                 client.Capture("authenticated-event");
                 return Task.CompletedTask;
             },
-            client);
+            client,
+            options => options.UseAuthenticatedUserIdWhenDistinctIdHeaderMissing = true);
 
         await middleware.InvokeAsync(httpContext);
         await client.FlushAsync();
@@ -193,7 +199,7 @@ public class ThePostHogTracingHeadersMiddleware
     }
 
     [Fact]
-    public async Task ConcurrentRequestsDoNotLeakTracingContext()
+    public async Task ConcurrentRequestsDoNotLeakRequestContext()
     {
         var container = new TestContainer();
         var client = container.Activate<PostHogClient>();
@@ -241,7 +247,8 @@ public class ThePostHogTracingHeadersMiddleware
 
         var middleware = CreateMiddleware(
             _ => throw new InvalidOperationException("boom"),
-            client);
+            client,
+            options => options.CaptureExceptions = true);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(httpContext));
         Assert.Null(PostHogContext.Current);
@@ -259,7 +266,7 @@ public class ThePostHogTracingHeadersMiddleware
     }
 
     [Fact]
-    public async Task DoesNotCaptureUnhandledExceptionsWhenDisabled()
+    public async Task DoesNotCaptureUnhandledExceptionsByDefault()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
@@ -268,8 +275,7 @@ public class ThePostHogTracingHeadersMiddleware
 
         var middleware = CreateMiddleware(
             _ => throw new InvalidOperationException("boom"),
-            client,
-            options => options.CaptureExceptions = false);
+            client);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(httpContext));
         await client.FlushAsync();
@@ -277,14 +283,60 @@ public class ThePostHogTracingHeadersMiddleware
         Assert.Empty(requestHandler.ReceivedRequests);
     }
 
-    static PostHogTracingHeadersMiddleware CreateMiddleware(
+    [Fact]
+    public async Task DoesNotCaptureUnhandledExceptionsBelowMinimumStatusCode()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        var httpContext = CreateHttpContext();
+        httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+
+        var middleware = CreateMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            client,
+            options =>
+            {
+                options.CaptureExceptions = true;
+                options.MinimumExceptionStatusCode = StatusCodes.Status500InternalServerError;
+            });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(httpContext));
+        await client.FlushAsync();
+
+        Assert.Empty(requestHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task PreservesOriginalExceptionWhenExceptionCaptureThrows()
+    {
+        var postHog = Substitute.For<IPostHogClient>();
+        postHog.CaptureException(
+                Arg.Any<Exception>(),
+                Arg.Any<string?>(),
+                Arg.Any<Dictionary<string, object>?>(),
+                Arg.Any<GroupCollection?>(),
+                Arg.Any<FeatureFlagEvaluations?>(),
+                Arg.Any<DateTimeOffset?>())
+            .Returns(_ => throw new InvalidOperationException("capture failed"));
+
+        var middleware = CreateMiddleware(
+            _ => throw new NotSupportedException("original"),
+            postHog,
+            options => options.CaptureExceptions = true);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => middleware.InvokeAsync(CreateHttpContext()));
+        Assert.Equal("original", exception.Message);
+    }
+
+    static PostHogRequestContextMiddleware CreateMiddleware(
         RequestDelegate next,
         IPostHogClient client,
-        Action<PostHogTracingHeadersOptions>? configure = null)
+        Action<PostHogRequestContextOptions>? configure = null)
     {
-        var options = new PostHogTracingHeadersOptions();
+        var options = new PostHogRequestContextOptions();
         configure?.Invoke(options);
-        return new PostHogTracingHeadersMiddleware(next, client, options);
+        return new PostHogRequestContextMiddleware(next, client, options);
     }
 
     static DefaultHttpContext CreateHttpContext(string path = "/api/test")

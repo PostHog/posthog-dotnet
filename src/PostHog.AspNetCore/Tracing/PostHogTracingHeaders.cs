@@ -7,7 +7,7 @@ using PostHog.Api;
 namespace PostHog;
 
 /// <summary>
-/// Helpers for extracting PostHog tracing context from ASP.NET Core requests.
+/// Helpers for extracting PostHog request context from ASP.NET Core requests.
 /// </summary>
 internal static class PostHogTracingHeaders
 {
@@ -29,12 +29,12 @@ internal static class PostHogTracingHeaders
     const int MaxHeaderValueLength = 1000;
 
     /// <summary>
-    /// Extracts sanitized tracing identity and request metadata from an ASP.NET Core HTTP context.
+    /// Extracts sanitized request identity and request metadata from an ASP.NET Core HTTP context.
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="options">Options controlling privacy-sensitive request metadata extraction.</param>
-    /// <returns>The extracted tracing context.</returns>
-    public static PostHogTracingContext Extract(HttpContext httpContext, PostHogTracingHeadersOptions options)
+    /// <returns>The extracted request context.</returns>
+    public static PostHogRequestContextData Extract(HttpContext httpContext, PostHogRequestContextOptions options)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(options);
@@ -65,7 +65,7 @@ internal static class PostHogTracingHeaders
             properties[PostHogProperties.SessionId] = sessionId;
         }
 
-        return new PostHogTracingContext(distinctId, sessionId, properties);
+        return new PostHogRequestContextData(distinctId, sessionId, properties);
     }
 
     internal static string? SanitizeHeaderValue(StringValues values)
@@ -142,12 +142,12 @@ internal static class PostHogTracingHeaders
 }
 
 /// <summary>
-/// Sanitized PostHog tracing context extracted from an ASP.NET Core request.
+/// Sanitized PostHog request context extracted from an ASP.NET Core request.
 /// </summary>
 /// <param name="DistinctId">The analytics distinct ID to apply to captures without an explicit distinct ID.</param>
 /// <param name="SessionId">The session ID to apply as <c>$session_id</c> when captures do not provide one explicitly.</param>
 /// <param name="Properties">Request metadata to add to captures before explicit capture properties.</param>
-internal sealed record PostHogTracingContext(
+internal sealed record PostHogRequestContextData(
     string? DistinctId,
     string? SessionId,
     IReadOnlyDictionary<string, object> Properties);

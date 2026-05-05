@@ -80,10 +80,10 @@ More detailed docs for using this library can be found at [PostHog Docs for the 
 
 ### Frontend-to-backend request context
 
-If your frontend uses PostHog JS tracing headers, add the ASP.NET Core middleware before routes that call PostHog:
+If your frontend sends PostHog JS request context headers, add the ASP.NET Core middleware before routes that call PostHog:
 
 ```csharp
-app.UsePostHogTracingHeaders();
+app.UsePostHogRequestContext();
 ```
 
 This reads client-controlled `X-POSTHOG-DISTINCT-ID`, `X-POSTHOG-SESSION-ID`, and `X-POSTHOG-WINDOW-ID` headers into a request-local analytics context. Captures inside the request can then omit `distinctId`:
@@ -92,17 +92,35 @@ This reads client-controlled `X-POSTHOG-DISTINCT-ID`, `X-POSTHOG-SESSION-ID`, an
 posthog.Capture("checkout started");
 ```
 
+These headers are client-controlled analytics context, not authentication. If `X-POSTHOG-DISTINCT-ID` is missing, captures become personless by default. You can opt in to using the authenticated ASP.NET Core user ID only when that ID intentionally matches your frontend PostHog distinct ID:
+
+```csharp
+app.UsePostHogRequestContext(options =>
+{
+    options.UseAuthenticatedUserIdWhenDistinctIdHeaderMissing = true;
+});
+```
+
 The middleware also adds basic request metadata such as `$current_url`, `$request_method`, `$request_path`, and `$user_agent`. Query strings and client IPs are privacy-sensitive and are disabled by default; opt in only if you need them:
 
 ```csharp
-app.UsePostHogTracingHeaders(options =>
+app.UsePostHogRequestContext(options =>
 {
     options.IncludeQueryStringInCurrentUrl = true;
     options.CaptureClientIp = true;
 });
 ```
 
-By default the middleware captures unhandled downstream exceptions with the request context and rethrows them. Set `options.CaptureExceptions = false` if you already handle exception capture elsewhere. If your app is behind a proxy, configure ASP.NET Core forwarded headers before enabling `CaptureClientIp`.
+Unhandled downstream exception capture is disabled by default to avoid duplicate reporting if your app already captures exceptions elsewhere. Enable it explicitly to capture exceptions with the active request context and rethrow them:
+
+```csharp
+app.UsePostHogRequestContext(options =>
+{
+    options.CaptureExceptions = true;
+});
+```
+
+If your app is behind a proxy, configure ASP.NET Core forwarded headers before enabling `CaptureClientIp`.
 
 Inject the `IPostHogClient` interface into your controller or page:
 
