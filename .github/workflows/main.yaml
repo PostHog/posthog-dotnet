@@ -7,9 +7,6 @@ on:
   pull_request:
     branches:
       - main
-  release:
-    types:
-      - published    # Run the workflow when a new GitHub release is published
   workflow_dispatch:
 
 env:
@@ -44,16 +41,6 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore --nologo
         shell: bash
-
-      # Upload the package using the SHA in the name of the artifact
-      - name: Upload NuGet Package Artifacts
-        if: github.event_name == 'release'
-        uses: actions/upload-artifact@v7
-        with:
-          name: nuget
-          if-no-files-found: error
-          retention-days: 7
-          path: ${{ env.PackageDirectory }}/*.nupkg
 
       - name: Run Tests
         run: dotnet test --logger "trx;LogFileName=test-results.trx" --configuration Release --no-build --nologo
@@ -100,40 +87,3 @@ jobs:
       - name: Format!
         run: bin/fmt --check
         shell: bash
-
-  release:
-    # Publish only when we publish a GitHub release
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      checks: write
-      contents: read
-      id-token: write
-    steps:
-      # Download the NuGet packages created in the build job for this tagged commit.
-      - uses: actions/download-artifact@v8
-        with:
-          name: nuget
-          path: .
-
-      - name: Setup .NET Core
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      # Get a short-lived NuGet API key
-      - name: NuGet login
-        uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1.1.0
-        id: login
-        with:
-          user: PostHog-Engineering
-
-      # Publish all NuGet packages to NuGet.org
-      # Use --skip-duplicate to prevent errors if a package with the same version already exists.
-      # If you retry a failed workflow, already published packages will be skipped without error.
-      - name: Publish NuGet package
-        shell: bash
-        env:
-          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-        run: find . -type f -name "*.nupkg" -exec dotnet nuget push {} --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate \;

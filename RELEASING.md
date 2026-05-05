@@ -1,12 +1,45 @@
 # Releasing
 
-Releases are usually driven by PR labels. When a PR with the right labels is merged to `main`, a GitHub Actions workflow handles version bumping, tagging, creating a GitHub Release (with auto-generated notes), and publishing to NuGet. You can also trigger the `Release` workflow manually from GitHub Actions and choose the bump type.
+This repository uses [Changesets](https://github.com/changesets/changesets) for version management and an automated GitHub Actions workflow for releases.
 
-## Release Process
+## How to Release
 
-1. Either:
-   - add the `release` label and exactly one of `bump-patch`, `bump-minor`, or `bump-major` to your PR, then merge it to `main`, or
-   - open the `Release` workflow in GitHub Actions, click **Run workflow**, and choose `patch`, `minor`, or `major`
-2. Approve the release in the GitHub Environment gate (the workflow pauses for maintainer approval)
-3. The workflow bumps the version in `Directory.Build.props`, commits to `main`, creates a git tag, and creates a GitHub Release
-4. The GitHub Release triggers the [`main.yaml`](.github/workflows/main.yaml) workflow, which builds and publishes the packages to NuGet
+### 1. Add a Changeset
+
+When making a change that should be released, add a changeset:
+
+```bash
+pnpm changeset
+```
+
+This prompts you to select the version bump (`patch`, `minor`, or `major`) and write a short release summary. Commit the generated file in `.changeset/` with your pull request.
+
+### 2. Merge the Pull Request
+
+After review, merge the PR to `main`. No GitHub release label is required.
+
+A push to `main` that includes `.changeset/*.md` changes automatically starts the release workflow. The workflow then:
+
+1. Checks for pending changesets
+2. Notifies the client libraries team in Slack for approval
+3. Waits for approval from a maintainer via the GitHub `Release` environment
+4. The workflow applies Changesets, syncs `Directory.Build.props`, publishes packages to NuGet, and creates a GitHub Release.
+5. Notifies Slack when the release completes or fails
+
+### Manual Trigger
+
+You can also manually trigger the release workflow from the Actions tab with `workflow_dispatch`. Manual runs still require pending changesets.
+
+## Version Bumping
+
+Changesets determines the next version from the committed changeset files:
+
+- **patch**: bug fixes, documentation updates, and internal changes
+- **minor**: backwards-compatible features
+- **major**: breaking changes
+
+## Troubleshooting
+
+### No changesets found
+
+If the release workflow reports that no changesets were found, make sure your PR includes at least one releasable `.changeset/*.md` file.
