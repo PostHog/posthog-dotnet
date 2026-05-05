@@ -74,39 +74,6 @@ public sealed class PostHogContext
         return new DisposableScope(parent);
     }
 
-    /// <summary>
-    /// Sets the current async execution flow's context without a disposable scope.
-    /// Prefer <see cref="BeginScope" /> when possible so the previous context is restored automatically.
-    /// </summary>
-    /// <param name="distinctId">Optional distinct ID to apply to captures.</param>
-    /// <param name="sessionId">Optional session ID to apply as <c>$session_id</c> to captures.</param>
-    /// <param name="properties">Optional properties to apply to captures.</param>
-    /// <param name="fresh">If <c>true</c>, do not inherit values from the current context.</param>
-    public static void Enter(
-        string? distinctId = null,
-        string? sessionId = null,
-        IReadOnlyDictionary<string, object>? properties = null,
-        bool fresh = false)
-    {
-        var current = CurrentContext.Value;
-        var baseContext = fresh ? null : current;
-
-        var mergedProperties = baseContext?.Properties.ToDictionary(pair => pair.Key, pair => pair.Value)
-                               ?? new Dictionary<string, object>(0);
-        if (properties is not null)
-        {
-            foreach (var (key, value) in properties)
-            {
-                mergedProperties[key] = value;
-            }
-        }
-
-        var resolvedDistinctId = string.IsNullOrEmpty(distinctId) ? baseContext?.DistinctId : distinctId;
-        var resolvedSessionId = string.IsNullOrEmpty(sessionId) ? baseContext?.SessionId : sessionId;
-
-        CurrentContext.Value = new PostHogContext(resolvedDistinctId, resolvedSessionId, mergedProperties);
-    }
-
     sealed class DisposableScope(PostHogContext? parent) : IDisposable
     {
         bool _disposed;

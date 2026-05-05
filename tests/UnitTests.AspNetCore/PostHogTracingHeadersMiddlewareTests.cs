@@ -21,9 +21,8 @@ public class ThePostHogTracingHeadersMiddleware
         httpContext.Request.Headers["x-posthog-session-id"] = "frontend-session";
         httpContext.Request.Headers["x-posthog-window-id"] = "window-123";
         httpContext.Request.Headers[HeaderNames.UserAgent] = "TestAgent/1.0";
-        httpContext.Request.Headers["X-Forwarded-For"] = "203.0.113.9, 10.0.0.2";
 
-        var middleware = new PostHogTracingHeadersMiddleware(
+        var middleware = CreateMiddleware(
             context =>
             {
                 Assert.Equal("frontend-user", PostHogContext.Current?.DistinctId);
@@ -42,12 +41,42 @@ public class ThePostHogTracingHeadersMiddleware
         Assert.Equal("frontend-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
         Assert.Equal("frontend-session", properties.GetProperty("$session_id").GetString());
-        Assert.Equal("https://example.com/api/test?filter=1", properties.GetProperty("$current_url").GetString());
+        Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
         Assert.Equal("POST", properties.GetProperty("$request_method").GetString());
         Assert.Equal("/api/test", properties.GetProperty("$request_path").GetString());
         Assert.Equal("TestAgent/1.0", properties.GetProperty("$user_agent").GetString());
-        Assert.Equal("203.0.113.9", properties.GetProperty("$ip").GetString());
+        Assert.False(properties.TryGetProperty("$ip", out _));
         Assert.Equal("window-123", properties.GetProperty("$window_id").GetString());
+    }
+
+    [Fact]
+    public async Task PrivacySensitiveRequestMetadataIsOptIn()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        var httpContext = CreateHttpContext();
+
+        var middleware = CreateMiddleware(
+            _ =>
+            {
+                client.Capture("metadata-event");
+                return Task.CompletedTask;
+            },
+            client,
+            options =>
+            {
+                options.IncludeQueryStringInCurrentUrl = true;
+                options.CaptureClientIp = true;
+            });
+
+        await middleware.InvokeAsync(httpContext);
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var metadataProperties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
+        Assert.Equal("https://example.com/api/test?filter=1", metadataProperties.GetProperty("$current_url").GetString());
+        Assert.Equal("10.0.0.2", metadataProperties.GetProperty("$ip").GetString());
     }
 
     [Fact]
@@ -60,7 +89,7 @@ public class ThePostHogTracingHeadersMiddleware
         httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "context-user";
         httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "context-session";
 
-        var middleware = new PostHogTracingHeadersMiddleware(
+        var middleware = CreateMiddleware(
             _ =>
             {
                 client.Capture(
@@ -88,7 +117,7 @@ public class ThePostHogTracingHeadersMiddleware
         var client = container.Activate<PostHogClient>();
         var httpContext = CreateHttpContext();
 
-        var middleware = new PostHogTracingHeadersMiddleware(
+        var middleware = CreateMiddleware(
             _ =>
             {
                 client.Capture("personless-event");
@@ -118,7 +147,7 @@ public class ThePostHogTracingHeadersMiddleware
             [new Claim(ClaimTypes.NameIdentifier, "authenticated-user")],
             authenticationType: "test"));
 
-        var middleware = new PostHogTracingHeadersMiddleware(
+        var middleware = CreateMiddleware(
             _ =>
             {
                 client.Capture("authenticated-event");
@@ -144,7 +173,7 @@ public class ThePostHogTracingHeadersMiddleware
         httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "  session\u0000-id  ";
         httpContext.Request.Headers[PostHogTracingHeaders.WindowId] = new string('w', 1200);
 
-        var middleware = new PostHogTracingHeadersMiddleware(
+        var middleware = CreateMiddleware(
             _ =>
             {
                 client.Capture("sanitized-event");
@@ -171,7 +200,7 @@ public class ThePostHogTracingHeadersMiddleware
         var results = new Dictionary<string, (string? DistinctId, string? SessionId)>();
         var gate = new object();
 
-        var middleware = new PostHogTracingHeadersMiddleware(
+        var middleware = CreateMiddleware(
             async context =>
             {
                 await Task.Delay(25);
@@ -210,7 +239,7 @@ public class ThePostHogTracingHeadersMiddleware
         httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "exception-session";
         httpContext.Request.Headers[HeaderNames.UserAgent] = "ExceptionAgent/1.0";
 
-        var middleware = new PostHogTracingHeadersMiddleware(
+        var middleware = CreateMiddleware(
             _ => throw new InvalidOperationException("boom"),
             client);
 
@@ -224,9 +253,38 @@ public class ThePostHogTracingHeadersMiddleware
         Assert.Equal("exception-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
         Assert.Equal("exception-session", properties.GetProperty("$session_id").GetString());
-        Assert.Equal("https://example.com/api/test?filter=1", properties.GetProperty("$current_url").GetString());
+        Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
         Assert.Equal("ExceptionAgent/1.0", properties.GetProperty("$user_agent").GetString());
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, properties.GetProperty("$response_status_code").GetInt32());
+    }
+
+    [Fact]
+    public async Task DoesNotCaptureUnhandledExceptionsWhenDisabled()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        var httpContext = CreateHttpContext();
+
+        var middleware = CreateMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            client,
+            options => options.CaptureExceptions = false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(httpContext));
+        await client.FlushAsync();
+
+        Assert.Empty(requestHandler.ReceivedRequests);
+    }
+
+    static PostHogTracingHeadersMiddleware CreateMiddleware(
+        RequestDelegate next,
+        IPostHogClient client,
+        Action<PostHogTracingHeadersOptions>? configure = null)
+    {
+        var options = new PostHogTracingHeadersOptions();
+        configure?.Invoke(options);
+        return new PostHogTracingHeadersMiddleware(next, client, options);
     }
 
     static DefaultHttpContext CreateHttpContext(string path = "/api/test")

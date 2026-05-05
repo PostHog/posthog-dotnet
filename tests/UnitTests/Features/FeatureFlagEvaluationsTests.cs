@@ -58,6 +58,24 @@ public class TheEvaluateFlagsAsyncMethod
     }
 
     [Fact]
+    public async Task UsesContextDistinctIdWhenEvaluateFlagsOmitsDistinctId()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-a": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        using (PostHogContext.BeginScope(distinctId: "context-user", fresh: true))
+        {
+            await client.EvaluateFlagsAsync();
+        }
+
+        var request = flagsHandler.ReceivedRequests.Single();
+        var body = await request.Content!.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal("context-user", doc.RootElement.GetProperty("distinct_id").GetString());
+    }
+
+    [Fact]
     public async Task ForwardsFlagKeysToFlagsRequestBody()
     {
         var container = new TestContainer();

@@ -78,6 +78,32 @@ More detailed docs for using this library can be found at [PostHog Docs for the 
 
 ## Usage
 
+### Frontend-to-backend request context
+
+If your frontend uses PostHog JS tracing headers, add the ASP.NET Core middleware before routes that call PostHog:
+
+```csharp
+app.UsePostHogTracingHeaders();
+```
+
+This reads client-controlled `X-POSTHOG-DISTINCT-ID`, `X-POSTHOG-SESSION-ID`, and `X-POSTHOG-WINDOW-ID` headers into a request-local analytics context. Captures inside the request can then omit `distinctId`:
+
+```csharp
+posthog.Capture("checkout started");
+```
+
+The middleware also adds basic request metadata such as `$current_url`, `$request_method`, `$request_path`, and `$user_agent`. Query strings and client IPs are privacy-sensitive and are disabled by default; opt in only if you need them:
+
+```csharp
+app.UsePostHogTracingHeaders(options =>
+{
+    options.IncludeQueryStringInCurrentUrl = true;
+    options.CaptureClientIp = true;
+});
+```
+
+By default the middleware captures unhandled downstream exceptions with the request context and rethrows them. Set `options.CaptureExceptions = false` if you already handle exception capture elsewhere. If your app is behind a proxy, configure ASP.NET Core forwarded headers before enabling `CaptureClientIp`.
+
 Inject the `IPostHogClient` interface into your controller or page:
 
 ```csharp

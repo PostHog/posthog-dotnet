@@ -10,6 +10,24 @@ using static Ensure;
 public static class CaptureExceptionExtensions
 {
     /// <summary>
+    /// Captures an exception using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="exception">The exception to capture.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool CaptureException(
+        this IPostHogClient client,
+        Exception exception,
+        Dictionary<string, object>? properties = null)
+        => NotNull(client).CaptureException(
+            exception,
+            null,
+            properties,
+            groups: null,
+            flags: null);
+
+    /// <summary>
     /// Captures an exception event.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>

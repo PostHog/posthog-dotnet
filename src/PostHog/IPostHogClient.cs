@@ -88,7 +88,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <summary>
     /// Captures an event.
     /// </summary>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, captures use the current <see cref="PostHogContext"/> distinct ID, or a personless generated ID if no context ID is set.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
@@ -97,7 +97,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     bool Capture(
-        string distinctId,
+        string? distinctId,
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
@@ -110,7 +110,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <see cref="EvaluateFlagsAsync"/>; it avoids a second <c>/flags</c> request and guarantees the
     /// event reflects the same flag values the caller branched on.
     /// </summary>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, captures use the current <see cref="PostHogContext"/> distinct ID, or a personless generated ID if no context ID is set.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
@@ -118,7 +118,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     bool Capture(
-        string distinctId,
+        string? distinctId,
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
@@ -135,7 +135,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// Capture an exception as an event.
     /// </summary>
     /// <param name="exception">The exception to capture.</param>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, captures use the current <see cref="PostHogContext"/> distinct ID, or a personless generated ID if no context ID is set.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
@@ -144,7 +144,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     bool CaptureException(
         Exception exception,
-        string distinctId,
+        string? distinctId,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
@@ -154,7 +154,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// Capture an exception as an event, attaching feature flag properties from a snapshot.
     /// </summary>
     /// <param name="exception">The exception to capture.</param>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, captures use the current <see cref="PostHogContext"/> distinct ID, or a personless generated ID if no context ID is set.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event.</param>
     /// <param name="flags">A snapshot of feature flag evaluations. When non-null, <c>$feature/&lt;key&gt;</c> and <c>$active_feature_flags</c> are attached from the snapshot — no <c>/flags</c> call is made.</param>
@@ -162,7 +162,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     bool CaptureException(
         Exception exception,
-        string distinctId,
+        string? distinctId,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
@@ -178,7 +178,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// Determines whether a feature is enabled for the specified user.
     /// </summary>
     /// <param name="featureKey">The name of the feature flag.</param>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, uses the current <see cref="PostHogContext"/> distinct ID.</param>
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>
@@ -187,7 +187,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     Task<bool> IsFeatureEnabledAsync(
         string featureKey,
-        string distinctId,
+        string? distinctId,
         FeatureFlagOptions? options,
         CancellationToken cancellationToken);
 
@@ -195,14 +195,14 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// Retrieves a feature flag.
     /// </summary>
     /// <param name="featureKey">The name of the feature flag.</param>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, uses the current <see cref="PostHogContext"/> distinct ID.</param>
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
-        string distinctId,
+        string? distinctId,
         FeatureFlagOptions? options,
         CancellationToken cancellationToken);
 
@@ -217,14 +217,14 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <summary>
     /// Retrieves all the feature flags.
     /// </summary>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, uses the current <see cref="PostHogContext"/> distinct ID.</param>
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>
     /// A dictionary containing all the feature flags. The key is the feature flag key and the value is the feature flag.
     /// </returns>
     Task<IReadOnlyDictionary<string, FeatureFlag>> GetAllFeatureFlagsAsync(
-        string distinctId,
+        string? distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken);
 
@@ -235,7 +235,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// without a second <c>/flags</c> request. <c>$feature_flag_called</c> events are fired lazily
     /// on first access of each flag, deduplicated against the SDK's per-distinct-id cache.
     /// </summary>
-    /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <param name="distinctId">Optional: The identifier you use for the user. If omitted, uses the current <see cref="PostHogContext"/> distinct ID.</param>
     /// <param name="options">
     /// Optional: Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/>
     /// scopes the underlying <c>/flags</c> request body — distinct from
@@ -251,7 +251,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// network and server work; use <c>Only(...)</c> to scope an existing snapshot for capture.
     /// </remarks>
     Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
-        string distinctId,
+        string? distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
 #if !NETSTANDARD2_0

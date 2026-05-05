@@ -6,11 +6,13 @@ namespace PostHog;
 /// <summary>
 /// ASP.NET Core middleware that applies PostHog tracing headers to the current async request context.
 /// </summary>
-public sealed class PostHogTracingHeadersMiddleware(
+internal sealed class PostHogTracingHeadersMiddleware(
     RequestDelegate next,
     IPostHogClient postHog,
-    bool captureExceptions = true)
+    PostHogTracingHeadersOptions options)
 {
+    readonly PostHogTracingHeadersOptions _options = options ?? throw new ArgumentNullException(nameof(options));
+
     /// <summary>
     /// Runs the downstream ASP.NET Core pipeline in a request-local <see cref="PostHogContext" />.
     /// </summary>
@@ -19,19 +21,25 @@ public sealed class PostHogTracingHeadersMiddleware(
     {
         ArgumentNullException.ThrowIfNull(httpContext);
 
-        var tracingContext = PostHogTracingHeaders.Extract(httpContext);
+        var tracingContext = PostHogTracingHeaders.Extract(httpContext, _options);
         using (PostHogContext.BeginScope(
                    tracingContext.DistinctId,
                    tracingContext.SessionId,
                    tracingContext.Properties,
                    fresh: true))
         {
+            if (!_options.CaptureExceptions)
+            {
+                await next(httpContext);
+                return;
+            }
+
             try
             {
                 await next(httpContext);
             }
 #pragma warning disable CA1031 // Capture unhandled framework exceptions, then rethrow.
-            catch (Exception exception) when (captureExceptions)
+            catch (Exception exception)
 #pragma warning restore CA1031
             {
                 postHog.CaptureException(exception, GetExceptionProperties(httpContext));
@@ -40,11 +48,14 @@ public sealed class PostHogTracingHeadersMiddleware(
         }
     }
 
-    static Dictionary<string, object>? GetExceptionProperties(HttpContext httpContext)
+    static Dictionary<string, object> GetExceptionProperties(HttpContext httpContext)
     {
         var statusCode = httpContext.Response.StatusCode;
-        return statusCode > 0
-            ? new Dictionary<string, object> { [PostHogProperties.ResponseStatusCode] = statusCode }
-            : null;
+        if (statusCode < StatusCodes.Status400BadRequest)
+        {
+            statusCode = StatusCodes.Status500InternalServerError;
+        }
+
+        return new Dictionary<string, object> { [PostHogProperties.ResponseStatusCode] = statusCode };
     }
 }

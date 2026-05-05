@@ -11,13 +11,16 @@ public static class PostHogTracingHeadersMiddlewareExtensions
     /// Adds request-scoped PostHog context extraction for <c>X-POSTHOG-*</c> tracing headers.
     /// </summary>
     /// <param name="app">The application builder.</param>
-    /// <param name="captureExceptions">If <c>true</c>, unhandled downstream exceptions are captured and rethrown.</param>
+    /// <param name="configure">Optional configuration for exception capture and privacy-sensitive request metadata.</param>
     /// <returns>The passed in <see cref="IApplicationBuilder" />.</returns>
     public static IApplicationBuilder UsePostHogTracingHeaders(
         this IApplicationBuilder app,
-        bool captureExceptions = true)
+        Action<PostHogTracingHeadersOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(app);
-        return app.UseMiddleware<PostHogTracingHeadersMiddleware>(captureExceptions);
+
+        var options = new PostHogTracingHeadersOptions();
+        configure?.Invoke(options);
+        return app.UseMiddleware<PostHogTracingHeadersMiddleware>(options);
     }
 }

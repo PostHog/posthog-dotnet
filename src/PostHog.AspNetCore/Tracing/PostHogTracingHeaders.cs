@@ -9,7 +9,7 @@ namespace PostHog;
 /// <summary>
 /// Helpers for extracting PostHog tracing context from ASP.NET Core requests.
 /// </summary>
-public static class PostHogTracingHeaders
+internal static class PostHogTracingHeaders
 {
     /// <summary>
     /// The frontend distinct ID tracing header.
@@ -26,29 +26,38 @@ public static class PostHogTracingHeaders
     /// </summary>
     public const string WindowId = "X-POSTHOG-WINDOW-ID";
 
-    const string XForwardedFor = "X-Forwarded-For";
     const int MaxHeaderValueLength = 1000;
 
     /// <summary>
     /// Extracts sanitized tracing identity and request metadata from an ASP.NET Core HTTP context.
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="options">Options controlling privacy-sensitive request metadata extraction.</param>
     /// <returns>The extracted tracing context.</returns>
-    public static PostHogTracingContext Extract(HttpContext httpContext)
+    public static PostHogTracingContext Extract(HttpContext httpContext, PostHogTracingHeadersOptions options)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(options);
 
         var request = httpContext.Request;
-        var distinctId = SanitizeHeaderValue(request.Headers[DistinctId]) ?? GetAuthenticatedUserId(httpContext.User);
+        var distinctId = SanitizeHeaderValue(request.Headers[DistinctId]);
+        if (string.IsNullOrEmpty(distinctId) && options.UseAuthenticatedUserIdWhenDistinctIdHeaderMissing)
+        {
+            distinctId = GetAuthenticatedUserId(httpContext.User);
+        }
+
         var sessionId = SanitizeHeaderValue(request.Headers[SessionId]);
         var windowId = SanitizeHeaderValue(request.Headers[WindowId]);
 
         var properties = new Dictionary<string, object>();
-        AddIfPresent(properties, PostHogProperties.CurrentUrl, GetCurrentUrl(request));
+        AddIfPresent(properties, PostHogProperties.CurrentUrl, GetCurrentUrl(request, options.IncludeQueryStringInCurrentUrl));
         AddIfPresent(properties, PostHogProperties.RequestMethod, request.Method);
         AddIfPresent(properties, PostHogProperties.RequestPath, GetRequestPath(request));
         AddIfPresent(properties, PostHogProperties.UserAgent, SanitizeHeaderValue(request.Headers[HeaderNames.UserAgent]));
-        AddIfPresent(properties, PostHogProperties.Ip, GetClientIp(httpContext));
+        if (options.CaptureClientIp)
+        {
+            AddIfPresent(properties, PostHogProperties.Ip, httpContext.Connection.RemoteIpAddress?.ToString());
+        }
         AddIfPresent(properties, PostHogProperties.WindowId, windowId);
 
         if (!string.IsNullOrEmpty(sessionId))
@@ -66,7 +75,12 @@ public static class PostHogTracingHeaders
             return null;
         }
 
-        var value = values.ToString();
+        var value = values.Count > 0 ? values[0] : values.ToString();
+        return SanitizeValue(value);
+    }
+
+    static string? SanitizeValue(string? value)
+    {
         if (string.IsNullOrWhiteSpace(value))
         {
             return null;
@@ -98,44 +112,32 @@ public static class PostHogTracingHeaders
         }
 
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? identity.Name;
-        return string.IsNullOrWhiteSpace(userId) ? null : userId;
+        return SanitizeValue(userId);
     }
 
-    static string? GetCurrentUrl(HttpRequest request)
+    static string? GetCurrentUrl(HttpRequest request, bool includeQueryString)
     {
         if (string.IsNullOrEmpty(request.Scheme) || !request.Host.HasValue)
         {
             return null;
         }
 
-        return string.Concat(
+        var url = string.Concat(
             request.Scheme,
             "://",
             request.Host.ToUriComponent(),
             request.PathBase.ToUriComponent(),
-            request.Path.ToUriComponent(),
-            request.QueryString.ToUriComponent());
+            request.Path.ToUriComponent());
+
+        return includeQueryString
+            ? string.Concat(url, request.QueryString.ToUriComponent())
+            : url;
     }
 
     static string? GetRequestPath(HttpRequest request)
     {
         var path = string.Concat(request.PathBase.ToUriComponent(), request.Path.ToUriComponent());
         return string.IsNullOrEmpty(path) ? null : path;
-    }
-
-    static string? GetClientIp(HttpContext httpContext)
-    {
-        var forwardedFor = SanitizeHeaderValue(httpContext.Request.Headers[XForwardedFor]);
-        if (!string.IsNullOrEmpty(forwardedFor))
-        {
-            var firstIp = forwardedFor.Split(',')[0].Trim();
-            if (!string.IsNullOrEmpty(firstIp))
-            {
-                return firstIp;
-            }
-        }
-
-        return httpContext.Connection.RemoteIpAddress?.ToString();
     }
 }
 
@@ -145,7 +147,7 @@ public static class PostHogTracingHeaders
 /// <param name="DistinctId">The analytics distinct ID to apply to captures without an explicit distinct ID.</param>
 /// <param name="SessionId">The session ID to apply as <c>$session_id</c> when captures do not provide one explicitly.</param>
 /// <param name="Properties">Request metadata to add to captures before explicit capture properties.</param>
-public sealed record PostHogTracingContext(
+internal sealed record PostHogTracingContext(
     string? DistinctId,
     string? SessionId,
     IReadOnlyDictionary<string, object> Properties);
