@@ -170,10 +170,13 @@ jobs:
 
       - name: Set version bump outputs
         id: version-bump-outputs
+        env:
+          HAS_CHANGES: ${{ steps.check-changes.outputs.has-changes }}
+          COMMIT_HASH: ${{ steps.commit-version-bump.outputs.commit-hash }}
         run: |
-          if [ "${{ steps.check-changes.outputs.has-changes }}" = "true" ]; then
+          if [ "$HAS_CHANGES" = "true" ]; then
             echo "committed=true" >> "$GITHUB_OUTPUT"
-            echo "commit-sha=${{ steps.commit-version-bump.outputs.commit-hash }}" >> "$GITHUB_OUTPUT"
+            echo "commit-sha=$COMMIT_HASH" >> "$GITHUB_OUTPUT"
           else
             echo "committed=false" >> "$GITHUB_OUTPUT"
             echo "commit-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
