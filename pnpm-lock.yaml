@@ -17,13 +17,13 @@ importers:
   src/PostHog.AI:
     dependencies:
       PostHog:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../PostHog
 
   src/PostHog.AspNetCore:
     dependencies:
       PostHog:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../PostHog
 
 packages:
