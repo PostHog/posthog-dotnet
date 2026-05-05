@@ -12,6 +12,20 @@ importers:
         specifier: ^2.30.0
         version: 2.31.0
 
+  src/PostHog: {}
+
+  src/PostHog.AI:
+    dependencies:
+      PostHog:
+        specifier: workspace:*
+        version: link:../PostHog
+
+  src/PostHog.AspNetCore:
+    dependencies:
+      PostHog:
+        specifier: workspace:*
+        version: link:../PostHog
+
 packages:
 
   '@babel/runtime@7.29.2':
