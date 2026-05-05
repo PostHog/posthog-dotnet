@@ -20,12 +20,16 @@ public static class CaptureExceptionExtensions
         this IPostHogClient client,
         Exception exception,
         Dictionary<string, object>? properties = null)
-        => NotNull(client).CaptureException(
+    {
+        var checkedClient = NotNull(client);
+        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties);
+        return checkedClient.CaptureException(
             exception,
-            null,
-            properties,
+            context.DistinctId,
+            context.Properties,
             groups: null,
             flags: null);
+    }
 
     /// <summary>
     /// Captures an exception event.

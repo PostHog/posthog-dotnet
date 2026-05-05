@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Http;
-using PostHog.Api;
 
 namespace PostHog;
 
@@ -79,5 +78,5 @@ internal sealed class PostHogRequestContextMiddleware(
     }
 
     static Dictionary<string, object> GetExceptionProperties(int statusCode)
-        => new() { [PostHogProperties.ResponseStatusCode] = statusCode };
+        => new() { [PostHogRequestPropertyNames.ResponseStatusCode] = statusCode };
 }

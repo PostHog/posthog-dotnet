@@ -18,12 +18,16 @@ public static class CaptureExtensions
     public static bool Capture(
         this IPostHogClient client,
         string eventName)
-        => NotNull(client).Capture(
-            null,
+    {
+        var checkedClient = NotNull(client);
+        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties: null);
+        return checkedClient.Capture(
+            context.DistinctId,
             eventName,
-            properties: null,
+            context.Properties,
             groups: null,
             flags: null);
+    }
 
     /// <summary>
     /// Captures an event using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
@@ -36,12 +40,16 @@ public static class CaptureExtensions
         this IPostHogClient client,
         string eventName,
         Dictionary<string, object>? properties)
-        => NotNull(client).Capture(
-            null,
+    {
+        var checkedClient = NotNull(client);
+        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties);
+        return checkedClient.Capture(
+            context.DistinctId,
             eventName,
-            properties,
+            context.Properties,
             groups: null,
             flags: null);
+    }
 
     /// <summary>
     /// Captures an event.

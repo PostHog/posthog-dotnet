@@ -313,7 +313,7 @@ public class ThePostHogRequestContextMiddleware
         var postHog = Substitute.For<IPostHogClient>();
         postHog.CaptureException(
                 Arg.Any<Exception>(),
-                Arg.Any<string?>(),
+                Arg.Any<string>(),
                 Arg.Any<Dictionary<string, object>?>(),
                 Arg.Any<GroupCollection?>(),
                 Arg.Any<FeatureFlagEvaluations?>(),

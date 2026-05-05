@@ -32,6 +32,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly ILogger<PostHogClient> _logger;
     readonly bool _isDisabled;
     readonly IFeatureFlagEvaluationsHost _evaluationsHost;
+    int _missingFeatureFlagDistinctIdWarningLogged;
 
     /// <summary>
     /// Constructs a <see cref="PostHogClient"/>. This is the main class used to interact with PostHog.
@@ -141,6 +142,14 @@ public sealed class PostHogClient : IPostHogClient
         return true;
     }
 
+    void LogMissingFeatureFlagDistinctIdWarningOnce()
+    {
+        if (Interlocked.Exchange(ref _missingFeatureFlagDistinctIdWarningLogged, 1) == 0)
+        {
+            _logger.LogWarningMissingFeatureFlagDistinctId();
+        }
+    }
+
     /// <summary>
     /// To marry up whatever a user does before they sign up or log in with what they do after you need to make an
     /// alias call. This will allow you to answer questions like "Which marketing channels leads to users churning
@@ -219,7 +228,7 @@ public sealed class PostHogClient : IPostHogClient
 
     /// <inheritdoc/>
     public bool Capture(
-        string? distinctId,
+        string distinctId,
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
@@ -230,7 +239,7 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     public bool Capture(
-        string? distinctId,
+        string distinctId,
         string eventName,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
@@ -258,22 +267,12 @@ public sealed class PostHogClient : IPostHogClient
             properties = AddTimestampToProperties(properties, timestamp.Value);
         }
 
-        var postHogContext = PostHogContext.Current;
-        var identity = ResolveIdentity(distinctId, postHogContext);
-        properties = ApplyContextProperties(properties, postHogContext);
-        if (identity.IsPersonless)
-        {
-            properties ??= [];
-            if (!properties.ContainsKey(PostHogProperties.ProcessPersonProfile))
-            {
-                properties[PostHogProperties.ProcessPersonProfile] = false;
-            }
-        }
+        var captureContext = PostHogContextHelper.ResolveCaptureContext(distinctId, properties);
 
         var capturedEvent = new CapturedEvent(
             eventName,
-            identity.DistinctId,
-            properties,
+            captureContext.DistinctId,
+            captureContext.Properties,
             timestamp: timestamp ?? _timeProvider.GetUtcNow());
 
         if (groups is { Count: > 0 })
@@ -309,68 +308,19 @@ public sealed class PostHogClient : IPostHogClient
             // Prefer local evaluation when available
             if (_featureFlagsLoader.IsLoaded)
             {
-                return AddLocalFeatureFlagDataAsync(identity.DistinctId, groups, capturedEvent);
+                return AddLocalFeatureFlagDataAsync(captureContext.DistinctId, groups, capturedEvent);
             }
 
             // Otherwise we fall back to remote /flags call
-            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, identity.DistinctId, groups, capturedEvent);
+            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, captureContext.DistinctId, groups, capturedEvent);
         }
     }
-
-    static CaptureIdentity ResolveIdentity(
-        string? distinctId,
-        PostHogContext? context)
-    {
-        if (!string.IsNullOrEmpty(distinctId))
-        {
-            return new CaptureIdentity(distinctId!, IsPersonless: false);
-        }
-
-        var contextDistinctId = context?.DistinctId;
-        if (!string.IsNullOrEmpty(contextDistinctId))
-        {
-            return new CaptureIdentity(contextDistinctId!, IsPersonless: false);
-        }
-
-        return new CaptureIdentity(Guid.NewGuid().ToString(), IsPersonless: true);
-    }
-
-    static Dictionary<string, object>? ApplyContextProperties(
-        Dictionary<string, object>? properties,
-        PostHogContext? context)
-    {
-        if (context is null)
-        {
-            return properties;
-        }
-
-        var mergedProperties = context.Properties.ToDictionary(pair => pair.Key, pair => pair.Value);
-        if (!string.IsNullOrEmpty(context.SessionId) && !mergedProperties.ContainsKey(PostHogProperties.SessionId))
-        {
-            mergedProperties[PostHogProperties.SessionId] = context.SessionId!;
-        }
-
-        if (properties is not null)
-        {
-            foreach (var (key, value) in properties)
-            {
-                mergedProperties[key] = value;
-            }
-        }
-
-        return mergedProperties;
-    }
-
-    readonly record struct CaptureIdentity(string DistinctId, bool IsPersonless);
-
-    static string? ResolveDistinctId(string? distinctId)
-        => distinctId is not null ? distinctId : PostHogContext.Current?.DistinctId;
 
     /// <inheritdoc/>
     [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     public bool CaptureException(
         Exception exception,
-        string? distinctId,
+        string distinctId,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         bool sendFeatureFlags,
@@ -380,7 +330,7 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public bool CaptureException(
         Exception exception,
-        string? distinctId,
+        string distinctId,
         Dictionary<string, object>? properties,
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
@@ -412,7 +362,7 @@ public sealed class PostHogClient : IPostHogClient
         {
             var host = _options.Value.HostUrl.ToString().TrimEnd('/').Replace(".i.", ".", StringComparison.Ordinal);
             properties ??= [];
-            var identity = ResolveIdentity(distinctId, PostHogContext.Current);
+            var identity = PostHogContextHelper.ResolveIdentity(distinctId, PostHogContext.Current);
             if (identity.IsPersonless && !properties.ContainsKey(PostHogProperties.ProcessPersonProfile))
             {
                 properties[PostHogProperties.ProcessPersonProfile] = false;
@@ -510,7 +460,7 @@ public sealed class PostHogClient : IPostHogClient
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     public async Task<bool> IsFeatureEnabledAsync(
         string featureKey,
-        string? distinctId,
+        string distinctId,
         FeatureFlagOptions? options,
         CancellationToken cancellationToken)
     {
@@ -539,7 +489,7 @@ public sealed class PostHogClient : IPostHogClient
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     public async Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
-        string? distinctId,
+        string distinctId,
         FeatureFlagOptions? options,
         CancellationToken cancellationToken)
     {
@@ -553,12 +503,12 @@ public sealed class PostHogClient : IPostHogClient
             return null;
         }
 
-        distinctId = ResolveDistinctId(distinctId);
-        if (distinctId is null)
+        var resolvedDistinctId = PostHogContextHelper.ResolveDistinctId(distinctId);
+        if (resolvedDistinctId is null)
         {
+            LogMissingFeatureFlagDistinctIdWarningOnce();
             return null;
         }
-        var resolvedDistinctId = distinctId;
 
         LocalEvaluator? localEvaluator;
         try
@@ -890,28 +840,28 @@ public sealed class PostHogClient : IPostHogClient
 
     /// <inheritdoc/>
     public async Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
-        string? distinctId,
+        string distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
-        distinctId = ResolveDistinctId(distinctId);
+        var resolvedDistinctId = PostHogContextHelper.ResolveDistinctId(distinctId) ?? string.Empty;
         if (CheckDisabledAndLog(nameof(EvaluateFlagsAsync)))
         {
-            return FeatureFlagEvaluations.Empty(_evaluationsHost, distinctId ?? string.Empty);
+            return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId);
         }
 
         if (RequiresMissingPersonalApiKey(options, nameof(EvaluateFlagsAsync)))
         {
-            return FeatureFlagEvaluations.Empty(_evaluationsHost, distinctId ?? string.Empty);
+            return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId);
         }
 
-        if (string.IsNullOrEmpty(distinctId))
+        if (resolvedDistinctId.Length == 0)
         {
             // Empty distinct id is a safety fallback. Returning an empty snapshot avoids leaking
             // events with empty distinct ids when the caller forgot to resolve one.
+            LogMissingFeatureFlagDistinctIdWarningOnce();
             return FeatureFlagEvaluations.Empty(_evaluationsHost, string.Empty);
         }
-        var resolvedDistinctId = distinctId!;
 
         var records = new Dictionary<string, EvaluatedFlagRecord>(StringComparer.Ordinal);
         var errors = new List<string>();
@@ -1023,7 +973,7 @@ public sealed class PostHogClient : IPostHogClient
 
     /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<string, FeatureFlag>> GetAllFeatureFlagsAsync(
-        string? distinctId,
+        string distinctId,
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
@@ -1037,12 +987,12 @@ public sealed class PostHogClient : IPostHogClient
             return EmptyFeatureFlags;
         }
 
-        distinctId = ResolveDistinctId(distinctId);
-        if (distinctId is null)
+        var resolvedDistinctId = PostHogContextHelper.ResolveDistinctId(distinctId);
+        if (resolvedDistinctId is null)
         {
+            LogMissingFeatureFlagDistinctIdWarningOnce();
             return EmptyFeatureFlags;
         }
-        var resolvedDistinctId = distinctId;
 
         if (_options.Value.PersonalApiKey is not null)
         {
@@ -1385,4 +1335,10 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] {Message}")]
     public static partial void LogWarningFeatureFlagFilter(this ILogger<PostHogClient> logger, string message);
+
+    [LoggerMessage(
+        EventId = 23,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] distinctId is required to evaluate feature flags. Pass a distinctId explicitly or set a PostHogContext for the current request.")]
+    public static partial void LogWarningMissingFeatureFlagDistinctId(this ILogger<PostHogClient> logger);
 }

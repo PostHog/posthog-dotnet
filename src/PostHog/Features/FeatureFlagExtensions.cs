@@ -263,7 +263,10 @@ public static class FeatureFlagExtensions
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(this IPostHogClient client)
-        => NotNull(client).EvaluateFlagsAsync(distinctId: null, options: null, CancellationToken.None);
+        => NotNull(client).EvaluateFlagsAsync(
+            PostHogContextHelper.ResolveDistinctId(distinctId: null) ?? string.Empty,
+            options: null,
+            CancellationToken.None);
 
     /// <summary>
     /// Evaluates all feature flags using the current <see cref="PostHogContext"/> distinct ID and returns a <see cref="FeatureFlagEvaluations"/> snapshot.
@@ -273,7 +276,10 @@ public static class FeatureFlagExtensions
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         this IPostHogClient client,
         AllFeatureFlagsOptions options)
-        => NotNull(client).EvaluateFlagsAsync(distinctId: null, options, CancellationToken.None);
+        => NotNull(client).EvaluateFlagsAsync(
+            PostHogContextHelper.ResolveDistinctId(distinctId: null) ?? string.Empty,
+            options,
+            CancellationToken.None);
 
     /// <summary>
     /// Evaluates all feature flags for the user and returns a <see cref="FeatureFlagEvaluations"/> snapshot.

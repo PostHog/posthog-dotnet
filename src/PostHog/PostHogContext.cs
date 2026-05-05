@@ -1,4 +1,5 @@
 using System.Threading;
+using PostHog.Api;
 
 namespace PostHog;
 
@@ -90,3 +91,79 @@ public sealed class PostHogContext
         }
     }
 }
+
+internal readonly record struct PostHogCaptureContext(
+    string DistinctId,
+    Dictionary<string, object>? Properties,
+    bool IsPersonless);
+
+internal static class PostHogContextHelper
+{
+    internal static PostHogCaptureContext ResolveCaptureContext(
+        string? distinctId,
+        Dictionary<string, object>? properties)
+    {
+        var postHogContext = PostHogContext.Current;
+        var identity = ResolveIdentity(distinctId, postHogContext);
+        var resolvedProperties = ApplyContextProperties(properties, postHogContext);
+        if (identity.IsPersonless)
+        {
+            resolvedProperties ??= [];
+            if (!resolvedProperties.ContainsKey(PostHogProperties.ProcessPersonProfile))
+            {
+                resolvedProperties[PostHogProperties.ProcessPersonProfile] = false;
+            }
+        }
+
+        return new PostHogCaptureContext(identity.DistinctId, resolvedProperties, identity.IsPersonless);
+    }
+
+    internal static string? ResolveDistinctId(string? distinctId)
+        => distinctId is not null ? distinctId : PostHogContext.Current?.DistinctId;
+
+    internal static PostHogCaptureIdentity ResolveIdentity(
+        string? distinctId,
+        PostHogContext? context)
+    {
+        if (!string.IsNullOrEmpty(distinctId))
+        {
+            return new PostHogCaptureIdentity(distinctId!, IsPersonless: false);
+        }
+
+        var contextDistinctId = context?.DistinctId;
+        if (!string.IsNullOrEmpty(contextDistinctId))
+        {
+            return new PostHogCaptureIdentity(contextDistinctId!, IsPersonless: false);
+        }
+
+        return new PostHogCaptureIdentity(Guid.NewGuid().ToString(), IsPersonless: true);
+    }
+
+    static Dictionary<string, object>? ApplyContextProperties(
+        Dictionary<string, object>? properties,
+        PostHogContext? context)
+    {
+        if (context is null)
+        {
+            return properties;
+        }
+
+        var mergedProperties = context.Properties.ToDictionary(pair => pair.Key, pair => pair.Value);
+        if (!string.IsNullOrEmpty(context.SessionId) && !mergedProperties.ContainsKey(PostHogProperties.SessionId))
+        {
+            mergedProperties[PostHogProperties.SessionId] = context.SessionId!;
+        }
+
+        if (properties is not null)
+        {
+            foreach (var (key, value) in properties)
+            {
+                mergedProperties[key] = value;
+            }
+        }
+
+        return mergedProperties;
+    }
+}
+
+internal readonly record struct PostHogCaptureIdentity(string DistinctId, bool IsPersonless);

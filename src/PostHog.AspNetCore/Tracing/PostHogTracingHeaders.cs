@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
-using PostHog.Api;
 
 namespace PostHog;
 
@@ -50,19 +49,19 @@ internal static class PostHogTracingHeaders
         var windowId = SanitizeHeaderValue(request.Headers[WindowId]);
 
         var properties = new Dictionary<string, object>();
-        AddIfPresent(properties, PostHogProperties.CurrentUrl, GetCurrentUrl(request, options.IncludeQueryStringInCurrentUrl));
-        AddIfPresent(properties, PostHogProperties.RequestMethod, request.Method);
-        AddIfPresent(properties, PostHogProperties.RequestPath, GetRequestPath(request));
-        AddIfPresent(properties, PostHogProperties.UserAgent, SanitizeHeaderValue(request.Headers[HeaderNames.UserAgent]));
+        AddIfPresent(properties, PostHogRequestPropertyNames.CurrentUrl, GetCurrentUrl(request, options.IncludeQueryStringInCurrentUrl));
+        AddIfPresent(properties, PostHogRequestPropertyNames.RequestMethod, request.Method);
+        AddIfPresent(properties, PostHogRequestPropertyNames.RequestPath, GetRequestPath(request));
+        AddIfPresent(properties, PostHogRequestPropertyNames.UserAgent, SanitizeHeaderValue(request.Headers[HeaderNames.UserAgent]));
         if (options.CaptureClientIp)
         {
-            AddIfPresent(properties, PostHogProperties.Ip, httpContext.Connection.RemoteIpAddress?.ToString());
+            AddIfPresent(properties, PostHogRequestPropertyNames.Ip, httpContext.Connection.RemoteIpAddress?.ToString());
         }
-        AddIfPresent(properties, PostHogProperties.WindowId, windowId);
+        AddIfPresent(properties, PostHogRequestPropertyNames.WindowId, windowId);
 
         if (!string.IsNullOrEmpty(sessionId))
         {
-            properties[PostHogProperties.SessionId] = sessionId;
+            properties[PostHogRequestPropertyNames.SessionId] = sessionId;
         }
 
         return new PostHogRequestContextData(distinctId, sessionId, properties);
