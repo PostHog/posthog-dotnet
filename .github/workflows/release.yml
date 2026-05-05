@@ -64,8 +64,8 @@ jobs:
       actions: write
       id-token: write
     outputs:
-      committed: ${{ steps.commit-version-bump.outputs.committed }}
-      commit-sha: ${{ steps.commit-version-bump.outputs.commit-sha }}
+      committed: ${{ steps.version-bump-outputs.outputs.committed }}
+      commit-sha: ${{ steps.version-bump-outputs.outputs.commit-sha }}
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_NOLOGO: true
@@ -147,18 +147,35 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build
 
+      - name: Check for version bump changes
+        id: check-changes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes to commit"
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Commit version bump
         id: commit-version-bump
+        if: steps.check-changes.outputs.has-changes == 'true'
+        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
+        with:
+          commit_message: "chore: update package versions [version bump] [skip ci]"
+          repo: ${{ github.repository }}
+          branch: main
+        env:
+          GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
+
+      - name: Set version bump outputs
+        id: version-bump-outputs
         run: |
-          git add -A
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-            echo "committed=false" >> "$GITHUB_OUTPUT"
-            echo "commit-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "chore: update package versions [version bump] [skip ci]"
-            git push origin main
+          if [ "${{ steps.check-changes.outputs.has-changes }}" = "true" ]; then
             echo "committed=true" >> "$GITHUB_OUTPUT"
+            echo "commit-sha=${{ steps.commit-version-bump.outputs.commit-hash }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "committed=false" >> "$GITHUB_OUTPUT"
             echo "commit-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
