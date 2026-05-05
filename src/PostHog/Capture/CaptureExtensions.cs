@@ -10,6 +10,40 @@ using static Ensure;
 public static class CaptureExtensions
 {
     /// <summary>
+    /// Captures an event using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="eventName">Human friendly name of the event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string eventName)
+        => NotNull(client).Capture(
+            null!,
+            eventName,
+            properties: null,
+            groups: null,
+            flags: null);
+
+    /// <summary>
+    /// Captures an event using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="eventName">Human friendly name of the event.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool Capture(
+        this IPostHogClient client,
+        string eventName,
+        Dictionary<string, object>? properties)
+        => NotNull(client).Capture(
+            null!,
+            eventName,
+            properties,
+            groups: null,
+            flags: null);
+
+    /// <summary>
     /// Captures an event.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
@@ -521,10 +555,23 @@ public static class CaptureExtensions
             eventPropertyValue: surveyId,
             properties);
 
-
-
-
-
+    /// <summary>
+    /// Captures an exception using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
+    /// </summary>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
+    /// <param name="exception">The exception to capture.</param>
+    /// <param name="properties">Optional: The properties to send along with the event.</param>
+    /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
+    public static bool CaptureException(
+        this IPostHogClient client,
+        Exception exception,
+        Dictionary<string, object>? properties = null)
+        => NotNull(client).CaptureException(
+            exception,
+            null!,
+            properties,
+            groups: null,
+            flags: null);
 
     static bool CaptureSpecialEvent(
         this IPostHogClient client,

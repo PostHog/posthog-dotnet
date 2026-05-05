@@ -258,9 +258,21 @@ public sealed class PostHogClient : IPostHogClient
             properties = AddTimestampToProperties(properties, timestamp.Value);
         }
 
+        var postHogContext = PostHogContext.Current;
+        var identity = ResolveIdentity(distinctId, postHogContext);
+        properties = ApplyContextProperties(properties, postHogContext, _options.Value.SuperProperties);
+        if (identity.IsPersonless)
+        {
+            properties ??= [];
+            if (!properties.ContainsKey(PostHogProperties.ProcessPersonProfile))
+            {
+                properties[PostHogProperties.ProcessPersonProfile] = false;
+            }
+        }
+
         var capturedEvent = new CapturedEvent(
             eventName,
-            distinctId,
+            identity.DistinctId,
             properties,
             timestamp: timestamp ?? _timeProvider.GetUtcNow());
 
@@ -269,7 +281,10 @@ public sealed class PostHogClient : IPostHogClient
             capturedEvent.Properties["$groups"] = groups.ToDictionary(g => g.GroupType, g => g.GroupKey);
         }
 
-        capturedEvent.Properties.Merge(_options.Value.SuperProperties);
+        if (postHogContext is null)
+        {
+            capturedEvent.Properties.Merge(_options.Value.SuperProperties);
+        }
 
         var batchItem = new BatchItem<CapturedEvent, CapturedEventBatchContext>(BatchTask);
 
@@ -297,13 +312,64 @@ public sealed class PostHogClient : IPostHogClient
             // Prefer local evaluation when available
             if (_featureFlagsLoader.IsLoaded)
             {
-                return AddLocalFeatureFlagDataAsync(distinctId, groups, capturedEvent);
+                return AddLocalFeatureFlagDataAsync(identity.DistinctId, groups, capturedEvent);
             }
 
             // Otherwise we fall back to remote /flags call
-            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, distinctId, groups, capturedEvent);
+            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, identity.DistinctId, groups, capturedEvent);
         }
     }
+
+    static CaptureIdentity ResolveIdentity(
+        string? distinctId,
+        PostHogContext? context)
+    {
+        if (!string.IsNullOrEmpty(distinctId))
+        {
+            return new CaptureIdentity(distinctId!, IsPersonless: false);
+        }
+
+        var contextDistinctId = context?.DistinctId;
+        if (!string.IsNullOrEmpty(contextDistinctId))
+        {
+            return new CaptureIdentity(contextDistinctId!, IsPersonless: false);
+        }
+
+        return new CaptureIdentity(Guid.NewGuid().ToString(), IsPersonless: true);
+    }
+
+    static Dictionary<string, object>? ApplyContextProperties(
+        Dictionary<string, object>? properties,
+        PostHogContext? context,
+        IReadOnlyDictionary<string, object> superProperties)
+    {
+        if (context is null)
+        {
+            return properties;
+        }
+
+        var mergedProperties = superProperties.ToDictionary(pair => pair.Key, pair => pair.Value);
+        foreach (var (key, value) in context.Properties)
+        {
+            mergedProperties[key] = value;
+        }
+        if (!string.IsNullOrEmpty(context.SessionId) && !mergedProperties.ContainsKey(PostHogProperties.SessionId))
+        {
+            mergedProperties[PostHogProperties.SessionId] = context.SessionId!;
+        }
+
+        if (properties is not null)
+        {
+            foreach (var (key, value) in properties)
+            {
+                mergedProperties[key] = value;
+            }
+        }
+
+        return mergedProperties;
+    }
+
+    readonly record struct CaptureIdentity(string DistinctId, bool IsPersonless);
 
     /// <inheritdoc/>
     [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
@@ -351,10 +417,16 @@ public sealed class PostHogClient : IPostHogClient
         {
             var host = _options.Value.HostUrl.ToString().TrimEnd('/').Replace(".i.", ".", StringComparison.Ordinal);
             properties ??= [];
-            properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{distinctId}";
+            var identity = ResolveIdentity(distinctId, PostHogContext.Current);
+            if (identity.IsPersonless && !properties.ContainsKey(PostHogProperties.ProcessPersonProfile))
+            {
+                properties[PostHogProperties.ProcessPersonProfile] = false;
+            }
+
+            properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{identity.DistinctId}";
             properties = ExceptionPropertiesBuilder.Build(properties, exception);
 
-            return CaptureCore(distinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
+            return CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception e)
