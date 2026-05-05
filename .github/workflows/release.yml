@@ -225,6 +225,11 @@ jobs:
           ref: ${{ needs.version-bump.outputs.commit-sha }}
           fetch-depth: 0
 
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Fetch tags
         run: git fetch --tags --force
 
