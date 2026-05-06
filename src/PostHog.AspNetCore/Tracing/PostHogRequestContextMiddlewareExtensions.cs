@@ -17,13 +17,11 @@ public static class PostHogRequestContextMiddlewareExtensions
         this IApplicationBuilder app,
         Action<PostHogRequestContextOptions>? configure = null)
     {
-        if (app is null)
-        {
-            return app!;
-        }
+        ArgumentNullException.ThrowIfNull(app);
 
         var options = new PostHogRequestContextOptions();
         configure?.Invoke(options);
         return app.UseMiddleware<PostHogRequestContextMiddleware>(options);
     }
+
 }

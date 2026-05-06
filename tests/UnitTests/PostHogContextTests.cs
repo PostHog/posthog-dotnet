@@ -100,26 +100,21 @@ public class ThePostHogContext
         Assert.Equal("context-only-value", properties.GetProperty("context-only").GetString());
     }
 
-    [Fact]
-    public void MissingDistinctIdCreatesPersonlessContext()
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(true, true)]
+    public void PersonlessContextSetsProcessPersonProfile(bool? explicitOverride, bool expectedValue)
     {
-        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties: null);
+        var properties = explicitOverride.HasValue
+            ? new Dictionary<string, object> { ["$process_person_profile"] = explicitOverride.Value }
+            : null;
+
+        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties: properties);
 
         Assert.True(Guid.TryParse(context.DistinctId, out _));
         Assert.True(context.IsPersonless);
         Assert.NotNull(context.Properties);
-        Assert.False((bool)context.Properties["$process_person_profile"]);
-    }
-
-    [Fact]
-    public void ExplicitProcessPersonProfileOverridesPersonlessDefault()
-    {
-        var context = PostHogContextHelper.ResolveCaptureContext(
-            distinctId: null,
-            properties: new Dictionary<string, object> { ["$process_person_profile"] = true });
-
-        Assert.NotNull(context.Properties);
-        Assert.True((bool)context.Properties["$process_person_profile"]);
+        Assert.Equal(expectedValue, (bool)context.Properties["$process_person_profile"]);
     }
 
     [Fact]

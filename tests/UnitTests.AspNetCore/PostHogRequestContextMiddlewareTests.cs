@@ -21,6 +21,13 @@ public class ThePostHogRequestContextMiddleware
     }
 
     [Fact]
+    public void NullApplicationBuilderThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => PostHogRequestContextMiddlewareExtensions.UsePostHogRequestContext(null!));
+    }
+
+    [Fact]
     public void NullTracingExtractionInputsReturnEmptyContext()
     {
         var requestContext = PostHogTracingHeaders.Extract(null, null);
@@ -60,7 +67,7 @@ public class ThePostHogRequestContextMiddleware
         Assert.Equal("frontend-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
         Assert.Equal("frontend-session", properties.GetProperty("$session_id").GetString());
-        Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
+        Assert.Equal("https://example.com/api/test?filter=1", properties.GetProperty("$current_url").GetString());
         Assert.Equal("POST", properties.GetProperty("$request_method").GetString());
         Assert.Equal("/api/test", properties.GetProperty("$request_path").GetString());
         Assert.Equal("TestAgent/1.0", properties.GetProperty("$user_agent").GetString());
@@ -255,7 +262,7 @@ public class ThePostHogRequestContextMiddleware
         Assert.Equal("exception-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
         Assert.Equal("exception-session", properties.GetProperty("$session_id").GetString());
-        Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
+        Assert.Equal("https://example.com/api/test?filter=1", properties.GetProperty("$current_url").GetString());
         Assert.Equal("ExceptionAgent/1.0", properties.GetProperty("$user_agent").GetString());
         Assert.Equal("10.0.0.2", properties.GetProperty("$ip").GetString());
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, properties.GetProperty("$response_status_code").GetInt32());

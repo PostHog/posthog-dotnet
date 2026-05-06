@@ -74,8 +74,7 @@ internal static class PostHogTracingHeaders
             return null;
         }
 
-        var value = values.Count > 0 ? values[0] : values.ToString();
-        return SanitizeValue(value);
+        return SanitizeValue(values[0]);
     }
 
     internal static string? SanitizeValue(string? value)
@@ -117,7 +116,8 @@ internal static class PostHogTracingHeaders
             "://",
             request.Host.ToUriComponent(),
             request.PathBase.ToUriComponent(),
-            request.Path.ToUriComponent());
+            request.Path.ToUriComponent(),
+            request.QueryString.ToUriComponent());
     }
 
     static string? GetRequestPath(HttpRequest request)
