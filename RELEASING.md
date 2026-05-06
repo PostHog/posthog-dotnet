@@ -1,45 +1,85 @@
 # Releasing
 
-This repository uses [Changesets](https://github.com/changesets/changesets) for version management and an automated GitHub Actions workflow for releases.
+This repository uses [Changesets](https://github.com/changesets/changesets) for version management and an automated GitHub Actions workflow for NuGet releases.
 
-## How to Release
+## Packages
 
-### 1. Add a Changeset
+This repo publishes three NuGet packages independently:
 
-When making a change that should be released, add a changeset:
+| NuGet package | Changeset package | Version source | Project file |
+| --- | --- | --- | --- |
+| `PostHog` | `PostHog` | `src/PostHog/package.json` | `src/PostHog/PostHog.csproj` |
+| `PostHog.AspNetCore` | `PostHog.AspNetCore` | `src/PostHog.AspNetCore/package.json` | `src/PostHog.AspNetCore/PostHog.AspNetCore.csproj` |
+| `PostHog.AI` | `PostHog.AI` | `src/PostHog.AI/package.json` | `src/PostHog.AI/PostHog.AI.csproj` |
+
+`PostHog.AspNetCore` and `PostHog.AI` depend on `PostHog`. If a changeset bumps `PostHog`, Changesets will also patch-bump the dependent packages so their NuGet dependencies point at the new `PostHog` version.
+
+## How to release
+
+### 1. Add a changeset
+
+When making a releasable change, run:
 
 ```bash
 pnpm changeset
 ```
 
-This prompts you to select the version bump (`patch`, `minor`, or `major`) and write a short release summary. Commit the generated file in `.changeset/` with your pull request.
+Select the package or packages that changed:
 
-### 2. Merge the Pull Request
+- Core SDK change: select `PostHog`
+- ASP.NET Core integration change: select `PostHog.AspNetCore`
+- AI Observability change: select `PostHog.AI`
 
-After review, merge the PR to `main`. No GitHub release label is required.
+Then choose the bump type:
 
-A push to `main` that includes `.changeset/*.md` changes automatically starts the release workflow. The workflow then:
+- `patch`: bug fixes, documentation updates, dependency-only updates, and internal changes
+- `minor`: backwards-compatible features
+- `major`: breaking changes
 
-1. Checks for pending changesets
-2. Notifies the client libraries team in Slack for approval
-3. Waits for approval from a maintainer via the GitHub `Release` environment
-4. The workflow applies Changesets, syncs `Directory.Build.props`, publishes packages to NuGet, and creates a GitHub Release.
-5. Notifies Slack when the release completes or fails
+Commit the generated `.changeset/*.md` file with your PR.
 
-### Manual Trigger
+Example changeset for an AI-only patch release:
 
-You can also manually trigger the release workflow from the Actions tab with `workflow_dispatch`. Manual runs still require pending changesets.
+```md
+---
+"PostHog.AI": patch
+---
 
-## Version Bumping
+Fix OpenAI tracing metadata.
+```
 
-Changesets determines the next version from the committed changeset files:
+### 2. Merge the PR
 
-- **patch**: bug fixes, documentation updates, and internal changes
-- **minor**: backwards-compatible features
-- **major**: breaking changes
+After review, merge the PR to `main`. A push to `main` that includes `.changeset/*.md` changes automatically starts the release workflow. The workflow then:
+
+1. Checks for pending changesets.
+2. Notifies the client libraries team in Slack for approval.
+3. Waits for approval from a maintainer via the GitHub `Release` environment.
+4. Runs `pnpm changeset version` to update the selected package `package.json` versions and changelogs.
+5. Syncs those versions into the matching `.csproj` files.
+6. Builds and tests the solution.
+7. Commits the version bump to `main`.
+8. Publishes only the packages whose package versions changed.
+9. Creates package-specific GitHub releases and tags, for example `PostHog-v2.6.1` or `PostHog.AI-v0.1.1`.
+
+### Manual trigger
+
+You can manually trigger the release workflow from the Actions tab with `workflow_dispatch`. Manual runs still require pending changesets.
+
+## Important notes
+
+- Do not edit `.csproj` package versions manually for a release. Edit the relevant package's `package.json` only if doing a one-off correction; normal releases should use `pnpm changeset`.
+- The root `package.json` is tooling-only and is not released.
+- The workflow publishes packages sequentially with `PostHog` first, because the other packages depend on it.
+- If only `PostHog.AI` changes, only `PostHog.AI` is versioned and published.
+- If `PostHog` changes, `PostHog.AspNetCore` and `PostHog.AI` receive patch dependency bumps and are published too.
 
 ## Troubleshooting
 
 ### No changesets found
 
 If the release workflow reports that no changesets were found, make sure your PR includes at least one releasable `.changeset/*.md` file.
+
+### A package did not publish
+
+Check whether that package's `package.json` version changed in the version-bump commit. The publish job intentionally skips packages whose versions did not change.
