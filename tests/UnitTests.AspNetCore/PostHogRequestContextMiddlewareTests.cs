@@ -13,6 +13,24 @@ namespace PostHogRequestContextMiddlewareTests;
 public class ThePostHogRequestContextMiddleware
 {
     [Fact]
+    public async Task NullHttpContextDoesNotThrow()
+    {
+        var middleware = CreateMiddleware(_ => throw new InvalidOperationException("should not run"), Substitute.For<IPostHogClient>());
+
+        await middleware.InvokeAsync(null);
+    }
+
+    [Fact]
+    public void NullTracingExtractionInputsReturnEmptyContext()
+    {
+        var requestContext = PostHogTracingHeaders.Extract(null, null);
+
+        Assert.Null(requestContext.DistinctId);
+        Assert.Null(requestContext.SessionId);
+        Assert.Empty(requestContext.Properties);
+    }
+
+    [Fact]
     public async Task AppliesRequestContextHeadersAndRequestMetadataToDownstreamCaptures()
     {
         var container = new TestContainer();
@@ -21,7 +39,6 @@ public class ThePostHogRequestContextMiddleware
         var httpContext = CreateHttpContext();
         httpContext.Request.Headers["x-posthog-distinct-id"] = "frontend-user";
         httpContext.Request.Headers["x-posthog-session-id"] = "frontend-session";
-        httpContext.Request.Headers["x-posthog-window-id"] = "window-123";
         httpContext.Request.Headers[HeaderNames.UserAgent] = "TestAgent/1.0";
 
         var middleware = CreateMiddleware(
@@ -47,38 +64,44 @@ public class ThePostHogRequestContextMiddleware
         Assert.Equal("POST", properties.GetProperty("$request_method").GetString());
         Assert.Equal("/api/test", properties.GetProperty("$request_path").GetString());
         Assert.Equal("TestAgent/1.0", properties.GetProperty("$user_agent").GetString());
-        Assert.False(properties.TryGetProperty("$ip", out _));
-        Assert.Equal("window-123", properties.GetProperty("$window_id").GetString());
+        Assert.Equal("10.0.0.2", properties.GetProperty("$ip").GetString());
     }
 
     [Fact]
-    public async Task PrivacySensitiveRequestMetadataIsOptIn()
+    public async Task CanDisableTracingHeaderCaptureWhilePreservingRequestMetadata()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
         var httpContext = CreateHttpContext();
+        httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "header-user";
+        httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "header-session";
+        httpContext.Request.Headers[HeaderNames.UserAgent] = "TestAgent/1.0";
 
         var middleware = CreateMiddleware(
             _ =>
             {
+                Assert.Null(PostHogContext.Current?.DistinctId);
+                Assert.Null(PostHogContext.Current?.SessionId);
                 client.Capture("metadata-event");
                 return Task.CompletedTask;
             },
             client,
-            options =>
-            {
-                options.IncludeQueryStringInCurrentUrl = true;
-                options.CaptureClientIp = true;
-            });
+            options => options.UseTracingHeaders = false);
 
         await middleware.InvokeAsync(httpContext);
         await client.FlushAsync();
 
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        var metadataProperties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
-        Assert.Equal("https://example.com/api/test?filter=1", metadataProperties.GetProperty("$current_url").GetString());
-        Assert.Equal("10.0.0.2", metadataProperties.GetProperty("$ip").GetString());
+        var batchItem = document.RootElement.GetProperty("batch")[0];
+        Assert.NotEqual("header-user", batchItem.GetProperty("distinct_id").GetString());
+        Assert.True(Guid.TryParse(batchItem.GetProperty("distinct_id").GetString(), out _));
+        var properties = batchItem.GetProperty("properties");
+        Assert.False(properties.GetProperty("$process_person_profile").GetBoolean());
+        Assert.False(properties.TryGetProperty("$session_id", out _));
+        Assert.Equal("/api/test", properties.GetProperty("$request_path").GetString());
+        Assert.Equal("TestAgent/1.0", properties.GetProperty("$user_agent").GetString());
+        Assert.Equal("10.0.0.2", properties.GetProperty("$ip").GetString());
     }
 
     [Fact]
@@ -136,36 +159,10 @@ public class ThePostHogRequestContextMiddleware
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
         var batchItem = document.RootElement.GetProperty("batch")[0];
         Assert.True(Guid.TryParse(batchItem.GetProperty("distinct_id").GetString(), out _));
+        Assert.NotEqual("authenticated-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
         Assert.False(properties.GetProperty("$process_person_profile").GetBoolean());
         Assert.False(properties.TryGetProperty("$session_id", out _));
-    }
-
-    [Fact]
-    public async Task UsesAuthenticatedUserIdWhenDistinctHeaderIsMissing()
-    {
-        var container = new TestContainer();
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-        var httpContext = CreateHttpContext();
-        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, "authenticated-user")],
-            authenticationType: "test"));
-
-        var middleware = CreateMiddleware(
-            _ =>
-            {
-                client.Capture("authenticated-event");
-                return Task.CompletedTask;
-            },
-            client,
-            options => options.UseAuthenticatedUserIdWhenDistinctIdHeaderMissing = true);
-
-        await middleware.InvokeAsync(httpContext);
-        await client.FlushAsync();
-
-        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        Assert.Equal("authenticated-user", document.RootElement.GetProperty("batch")[0].GetProperty("distinct_id").GetString());
     }
 
     [Fact]
@@ -176,8 +173,7 @@ public class ThePostHogRequestContextMiddleware
         var client = container.Activate<PostHogClient>();
         var httpContext = CreateHttpContext();
         httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = " \u0000\u0001\u0002 ";
-        httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "  session\u0000-id  ";
-        httpContext.Request.Headers[PostHogTracingHeaders.WindowId] = new string('w', 1200);
+        httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = $"  {new string('s', 1200)}\u0000  ";
 
         var middleware = CreateMiddleware(
             _ =>
@@ -194,8 +190,7 @@ public class ThePostHogRequestContextMiddleware
         var batchItem = document.RootElement.GetProperty("batch")[0];
         Assert.True(Guid.TryParse(batchItem.GetProperty("distinct_id").GetString(), out _));
         var properties = batchItem.GetProperty("properties");
-        Assert.Equal("session-id", properties.GetProperty("$session_id").GetString());
-        Assert.Equal(1000, properties.GetProperty("$window_id").GetString()?.Length);
+        Assert.Equal(new string('s', 1000), properties.GetProperty("$session_id").GetString());
     }
 
     [Fact]
@@ -262,7 +257,38 @@ public class ThePostHogRequestContextMiddleware
         Assert.Equal("exception-session", properties.GetProperty("$session_id").GetString());
         Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
         Assert.Equal("ExceptionAgent/1.0", properties.GetProperty("$user_agent").GetString());
+        Assert.Equal("10.0.0.2", properties.GetProperty("$ip").GetString());
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, properties.GetProperty("$response_status_code").GetInt32());
+    }
+
+    [Fact]
+    public async Task CapturesUnhandledExceptionsWithAuthenticatedUserBeforeTracingHeader()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        var httpContext = CreateHttpContext();
+        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "server-user")],
+            authenticationType: "test"));
+        httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "client-user";
+        httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "client-session";
+
+        var middleware = CreateMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            client,
+            options => options.CaptureExceptions = true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(httpContext));
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var batchItem = document.RootElement.GetProperty("batch")[0];
+        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+        Assert.Equal("server-user", batchItem.GetProperty("distinct_id").GetString());
+        var properties = batchItem.GetProperty("properties");
+        Assert.Equal("client-session", properties.GetProperty("$session_id").GetString());
+        Assert.Contains("/person/server-user", properties.GetProperty("$exception_personURL").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -276,30 +302,6 @@ public class ThePostHogRequestContextMiddleware
         var middleware = CreateMiddleware(
             _ => throw new InvalidOperationException("boom"),
             client);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(httpContext));
-        await client.FlushAsync();
-
-        Assert.Empty(requestHandler.ReceivedRequests);
-    }
-
-    [Fact]
-    public async Task DoesNotCaptureUnhandledExceptionsBelowMinimumStatusCode()
-    {
-        var container = new TestContainer();
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-        var httpContext = CreateHttpContext();
-        httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
-
-        var middleware = CreateMiddleware(
-            _ => throw new InvalidOperationException("boom"),
-            client,
-            options =>
-            {
-                options.CaptureExceptions = true;
-                options.MinimumExceptionStatusCode = StatusCodes.Status500InternalServerError;
-            });
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(httpContext));
         await client.FlushAsync();

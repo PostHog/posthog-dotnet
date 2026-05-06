@@ -10,7 +10,7 @@ using static Ensure;
 public static class CaptureExtensions
 {
     /// <summary>
-    /// Captures an event using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
+    /// Captures an event using the current request context distinct ID, or as a personless event if none is set.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="eventName">Human friendly name of the event.</param>
@@ -30,7 +30,7 @@ public static class CaptureExtensions
     }
 
     /// <summary>
-    /// Captures an event using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
+    /// Captures an event using the current request context distinct ID, or as a personless event if none is set.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="eventName">Human friendly name of the event.</param>

@@ -10,7 +10,7 @@ using static Ensure;
 public static class CaptureExceptionExtensions
 {
     /// <summary>
-    /// Captures an exception using the current <see cref="PostHogContext" /> distinct ID, or as a personless event if none is set.
+    /// Captures an exception using the current request context distinct ID, or as a personless event if none is set.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="exception">The exception to capture.</param>

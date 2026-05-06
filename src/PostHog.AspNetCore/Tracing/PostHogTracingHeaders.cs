@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
@@ -20,51 +19,52 @@ internal static class PostHogTracingHeaders
     /// </summary>
     public const string SessionId = "X-POSTHOG-SESSION-ID";
 
-    /// <summary>
-    /// The frontend window ID tracing header used by Node SDK integrations.
-    /// </summary>
-    public const string WindowId = "X-POSTHOG-WINDOW-ID";
-
     const int MaxHeaderValueLength = 1000;
 
     /// <summary>
     /// Extracts sanitized request identity and request metadata from an ASP.NET Core HTTP context.
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
-    /// <param name="options">Options controlling privacy-sensitive request metadata extraction.</param>
+    /// <param name="options">Options controlling tracing header extraction.</param>
     /// <returns>The extracted request context.</returns>
-    public static PostHogRequestContextData Extract(HttpContext httpContext, PostHogRequestContextOptions options)
+    public static PostHogRequestContextData Extract(HttpContext? httpContext, PostHogRequestContextOptions? options)
     {
-        ArgumentNullException.ThrowIfNull(httpContext);
-        ArgumentNullException.ThrowIfNull(options);
-
-        var request = httpContext.Request;
-        var distinctId = SanitizeHeaderValue(request.Headers[DistinctId]);
-        if (string.IsNullOrEmpty(distinctId) && options.UseAuthenticatedUserIdWhenDistinctIdHeaderMissing)
+        if (httpContext is null)
         {
-            distinctId = GetAuthenticatedUserId(httpContext.User);
+            return EmptyContext();
         }
 
-        var sessionId = SanitizeHeaderValue(request.Headers[SessionId]);
-        var windowId = SanitizeHeaderValue(request.Headers[WindowId]);
-
-        var properties = new Dictionary<string, object>();
-        AddIfPresent(properties, PostHogRequestPropertyNames.CurrentUrl, GetCurrentUrl(request, options.IncludeQueryStringInCurrentUrl));
-        AddIfPresent(properties, PostHogRequestPropertyNames.RequestMethod, request.Method);
-        AddIfPresent(properties, PostHogRequestPropertyNames.RequestPath, GetRequestPath(request));
-        AddIfPresent(properties, PostHogRequestPropertyNames.UserAgent, SanitizeHeaderValue(request.Headers[HeaderNames.UserAgent]));
-        if (options.CaptureClientIp)
+        try
         {
+            options ??= new PostHogRequestContextOptions();
+            var request = httpContext.Request;
+            var distinctId = options.UseTracingHeaders
+                ? SanitizeHeaderValue(request.Headers[DistinctId])
+                : null;
+            var sessionId = options.UseTracingHeaders
+                ? SanitizeHeaderValue(request.Headers[SessionId])
+                : null;
+
+            var properties = new Dictionary<string, object>();
+            AddIfPresent(properties, PostHogRequestPropertyNames.CurrentUrl, GetCurrentUrl(request));
+            AddIfPresent(properties, PostHogRequestPropertyNames.RequestMethod, request.Method);
+            AddIfPresent(properties, PostHogRequestPropertyNames.RequestPath, GetRequestPath(request));
+            AddIfPresent(properties, PostHogRequestPropertyNames.UserAgent, SanitizeHeaderValue(request.Headers[HeaderNames.UserAgent]));
             AddIfPresent(properties, PostHogRequestPropertyNames.Ip, httpContext.Connection.RemoteIpAddress?.ToString());
-        }
-        AddIfPresent(properties, PostHogRequestPropertyNames.WindowId, windowId);
 
-        if (!string.IsNullOrEmpty(sessionId))
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                properties[PostHogRequestPropertyNames.SessionId] = sessionId;
+            }
+
+            return new PostHogRequestContextData(distinctId, sessionId, properties);
+        }
+#pragma warning disable CA1031 // Header/request parsing must not crash the host app.
+        catch
+#pragma warning restore CA1031
         {
-            properties[PostHogRequestPropertyNames.SessionId] = sessionId;
+            return EmptyContext();
         }
-
-        return new PostHogRequestContextData(distinctId, sessionId, properties);
     }
 
     internal static string? SanitizeHeaderValue(StringValues values)
@@ -78,7 +78,7 @@ internal static class PostHogTracingHeaders
         return SanitizeValue(value);
     }
 
-    static string? SanitizeValue(string? value)
+    internal static string? SanitizeValue(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -94,6 +94,9 @@ internal static class PostHogTracingHeaders
         return sanitized.Length <= MaxHeaderValueLength ? sanitized : sanitized[..MaxHeaderValueLength];
     }
 
+    static PostHogRequestContextData EmptyContext()
+        => new(null, null, new Dictionary<string, object>(0));
+
     static void AddIfPresent(Dictionary<string, object> properties, string key, string? value)
     {
         if (!string.IsNullOrEmpty(value))
@@ -102,35 +105,19 @@ internal static class PostHogTracingHeaders
         }
     }
 
-    static string? GetAuthenticatedUserId(ClaimsPrincipal user)
-    {
-        var identity = user.Identity;
-        if (identity?.IsAuthenticated != true)
-        {
-            return null;
-        }
-
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? identity.Name;
-        return SanitizeValue(userId);
-    }
-
-    static string? GetCurrentUrl(HttpRequest request, bool includeQueryString)
+    static string? GetCurrentUrl(HttpRequest request)
     {
         if (string.IsNullOrEmpty(request.Scheme) || !request.Host.HasValue)
         {
             return null;
         }
 
-        var url = string.Concat(
+        return string.Concat(
             request.Scheme,
             "://",
             request.Host.ToUriComponent(),
             request.PathBase.ToUriComponent(),
             request.Path.ToUriComponent());
-
-        return includeQueryString
-            ? string.Concat(url, request.QueryString.ToUriComponent())
-            : url;
     }
 
     static string? GetRequestPath(HttpRequest request)

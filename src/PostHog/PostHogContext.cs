@@ -6,7 +6,7 @@ namespace PostHog;
 /// <summary>
 /// Request-local PostHog context that is applied to captures in the current async execution flow.
 /// </summary>
-public sealed class PostHogContext
+internal sealed class PostHogContext
 {
     static readonly AsyncLocal<PostHogContext?> CurrentContext = new();
 

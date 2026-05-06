@@ -8,16 +8,19 @@ namespace PostHog;
 public static class PostHogRequestContextMiddlewareExtensions
 {
     /// <summary>
-    /// Adds request-scoped PostHog context extraction for <c>X-POSTHOG-*</c> headers.
+    /// Adds request-scoped PostHog context extraction for PostHog tracing headers and request metadata.
     /// </summary>
     /// <param name="app">The application builder.</param>
-    /// <param name="configure">Optional configuration for exception capture and privacy-sensitive request metadata.</param>
+    /// <param name="configure">Optional configuration for tracing headers and exception capture.</param>
     /// <returns>The passed in <see cref="IApplicationBuilder" />.</returns>
     public static IApplicationBuilder UsePostHogRequestContext(
         this IApplicationBuilder app,
         Action<PostHogRequestContextOptions>? configure = null)
     {
-        ArgumentNullException.ThrowIfNull(app);
+        if (app is null)
+        {
+            return app!;
+        }
 
         var options = new PostHogRequestContextOptions();
         configure?.Invoke(options);

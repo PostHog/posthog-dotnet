@@ -8,6 +8,5 @@ internal static class PostHogRequestPropertyNames
     public const string RequestPath = "$request_path";
     public const string UserAgent = "$user_agent";
     public const string Ip = "$ip";
-    public const string WindowId = "$window_id";
     public const string ResponseStatusCode = "$response_status_code";
 }

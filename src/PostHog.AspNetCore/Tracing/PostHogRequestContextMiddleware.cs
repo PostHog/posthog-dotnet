@@ -10,17 +10,22 @@ internal sealed class PostHogRequestContextMiddleware(
     IPostHogClient postHog,
     PostHogRequestContextOptions options)
 {
-    readonly PostHogRequestContextOptions _options = options ?? throw new ArgumentNullException(nameof(options));
+    readonly RequestDelegate _next = next ?? (_ => Task.CompletedTask);
+    readonly IPostHogClient? _postHog = postHog;
+    readonly PostHogRequestContextOptions _options = options ?? new PostHogRequestContextOptions();
 
     /// <summary>
-    /// Runs the downstream ASP.NET Core pipeline in a request-local <see cref="PostHogContext" />.
+    /// Runs the downstream ASP.NET Core pipeline in a request-local PostHog context.
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
-    public async Task InvokeAsync(HttpContext httpContext)
+    public async Task InvokeAsync(HttpContext? httpContext)
     {
-        ArgumentNullException.ThrowIfNull(httpContext);
+        if (httpContext is null)
+        {
+            return;
+        }
 
-        var requestContext = PostHogTracingHeaders.Extract(httpContext, _options);
+        var requestContext = ExtractRequestContext(httpContext, _options);
         using (PostHogContext.BeginScope(
                    requestContext.DistinctId,
                    requestContext.SessionId,
@@ -29,37 +34,66 @@ internal sealed class PostHogRequestContextMiddleware(
         {
             if (!_options.CaptureExceptions)
             {
-                await next(httpContext);
+                await _next(httpContext);
                 return;
             }
 
             try
             {
-                await next(httpContext);
+                await _next(httpContext);
             }
 #pragma warning disable CA1031 // Capture unhandled framework exceptions, then rethrow.
             catch (Exception exception)
 #pragma warning restore CA1031
             {
-                var statusCode = GetExceptionStatusCode(httpContext);
-                if (statusCode >= _options.MinimumExceptionStatusCode)
-                {
-                    TryCaptureException(postHog, exception, statusCode);
-                }
+                TryCaptureException(
+                    _postHog,
+                    exception,
+                    GetExceptionStatusCode(httpContext),
+                    PostHogAuthenticatedUser.GetDistinctId(httpContext.User));
 
                 throw;
             }
         }
     }
 
-    static void TryCaptureException(
-        IPostHogClient postHog,
-        Exception exception,
-        int statusCode)
+    static PostHogRequestContextData ExtractRequestContext(
+        HttpContext httpContext,
+        PostHogRequestContextOptions options)
     {
         try
         {
-            postHog.CaptureException(exception, GetExceptionProperties(statusCode));
+            return PostHogTracingHeaders.Extract(httpContext, options);
+        }
+#pragma warning disable CA1031 // Request metadata parsing must not crash the host app.
+        catch
+#pragma warning restore CA1031
+        {
+            return new PostHogRequestContextData(null, null, new Dictionary<string, object>(0));
+        }
+    }
+
+    static void TryCaptureException(
+        IPostHogClient? postHog,
+        Exception exception,
+        int statusCode,
+        string? authenticatedDistinctId)
+    {
+        try
+        {
+            if (postHog is null)
+            {
+                return;
+            }
+
+            var properties = GetExceptionProperties(statusCode);
+            if (!string.IsNullOrEmpty(authenticatedDistinctId))
+            {
+                postHog.CaptureException(exception, authenticatedDistinctId, properties);
+                return;
+            }
+
+            postHog.CaptureException(exception, properties);
         }
 #pragma warning disable CA1031 // PostHog must not replace the host application's original exception.
         catch

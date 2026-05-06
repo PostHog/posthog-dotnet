@@ -1339,6 +1339,6 @@ internal static partial class PostHogClientLoggerExtensions
     [LoggerMessage(
         EventId = 23,
         Level = LogLevel.Warning,
-        Message = "[FEATURE FLAGS] distinctId is required to evaluate feature flags. Pass a distinctId explicitly or set a PostHogContext for the current request.")]
+        Message = "[FEATURE FLAGS] distinctId is required to evaluate feature flags. Pass a distinctId explicitly or use PostHog request context for the current request.")]
     public static partial void LogWarningMissingFeatureFlagDistinctId(this ILogger<PostHogClient> logger);
 }
