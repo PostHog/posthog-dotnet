@@ -78,6 +78,40 @@ More detailed docs for using this library can be found at [PostHog Docs for the 
 
 ## Usage
 
+### Frontend-to-backend request context
+
+If your frontend sends PostHog JS request context headers, add the ASP.NET Core middleware before routes that call PostHog:
+
+```csharp
+app.UsePostHogRequestContext();
+```
+
+This reads client-controlled `X-POSTHOG-DISTINCT-ID` and `X-POSTHOG-SESSION-ID` headers into a request-local analytics context. Captures inside the request can then omit `distinctId`:
+
+```csharp
+posthog.Capture("checkout started");
+```
+
+These headers are client-controlled analytics context, not authentication. If `X-POSTHOG-DISTINCT-ID` is missing, normal captures become personless by default. You can disable tracing header use while still collecting request metadata:
+
+```csharp
+app.UsePostHogRequestContext(options =>
+{
+    options.UseTracingHeaders = false;
+});
+```
+
+The middleware also adds request metadata such as `$current_url`, `$request_method`, `$request_path`, `$user_agent`, and `$ip`. If your app is behind a proxy, configure ASP.NET Core forwarded headers before this middleware so `$ip` uses the normalized `HttpContext.Connection.RemoteIpAddress` value.
+
+Unhandled downstream exception capture is disabled by default to avoid duplicate reporting if your app already captures exceptions elsewhere. Enable it explicitly to capture exceptions with the active request context and rethrow them. Exception capture uses the same request context identity/session/properties as regular captures:
+
+```csharp
+app.UsePostHogRequestContext(options =>
+{
+    options.CaptureExceptions = true;
+});
+```
+
 Inject the `IPostHogClient` interface into your controller or page:
 
 ```csharp
