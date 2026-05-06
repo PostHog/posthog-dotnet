@@ -61,6 +61,10 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// <summary>
     /// Whether this client is disabled and should no-op instead of sending data to PostHog. (Default: false)
     /// </summary>
+    /// <remarks>
+    /// Read once during <see cref="PostHogClient"/> construction. Mutating this after the client is
+    /// activated has no effect. Re-create the client to change the disabled state.
+    /// </remarks>
     public bool Disabled { get; set; }
 
     /// <summary>
