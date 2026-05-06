@@ -1566,7 +1566,12 @@ public class TheDisabledClient
         Assert.Empty(batchHandler.ReceivedRequests);
         Assert.Empty(flagsHandler.ReceivedRequests);
         Assert.Empty(localEvaluationHandler.ReceivedRequests);
+        AssertDisabledLog(container, nameof(PostHogClient.IdentifyAsync));
         AssertDisabledLog(container, nameof(PostHogClient.Capture));
+        AssertDisabledLog(container, nameof(PostHogClient.FlushAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.IsFeatureEnabledAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.GetAllFeatureFlagsAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.LoadFeatureFlagsAsync));
 
         var options = ((IOptions<PostHogOptions>)((IServiceProvider)container).GetService(typeof(IOptions<PostHogOptions>))!).Value;
         Assert.Null(options.ProjectToken);
