@@ -118,8 +118,8 @@ internal static class PostHogContextHelper
         return new PostHogCaptureContext(identity.DistinctId, resolvedProperties, identity.IsPersonless);
     }
 
-    internal static string? ResolveDistinctId(string? distinctId)
-        => distinctId is not null ? distinctId : PostHogContext.Current?.DistinctId;
+    internal static string? ResolveDistinctId(string? preferredDistinctId = null)
+        => preferredDistinctId is not null ? preferredDistinctId : PostHogContext.Current?.DistinctId;
 
     internal static PostHogCaptureIdentity ResolveIdentity(
         string? distinctId,

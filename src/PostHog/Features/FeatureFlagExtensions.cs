@@ -264,7 +264,7 @@ public static class FeatureFlagExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(this IPostHogClient client)
         => NotNull(client).EvaluateFlagsAsync(
-            PostHogContextHelper.ResolveDistinctId(distinctId: null) ?? string.Empty,
+            PostHogContextHelper.ResolveDistinctId() ?? string.Empty,
             options: null,
             CancellationToken.None);
 
@@ -277,7 +277,7 @@ public static class FeatureFlagExtensions
         this IPostHogClient client,
         AllFeatureFlagsOptions options)
         => NotNull(client).EvaluateFlagsAsync(
-            PostHogContextHelper.ResolveDistinctId(distinctId: null) ?? string.Empty,
+            PostHogContextHelper.ResolveDistinctId() ?? string.Empty,
             options,
             CancellationToken.None);
 
