@@ -1501,6 +1501,33 @@ public class TheDisabledClient
     }
 
     [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \n\t ")]
+    public void DoesNotLogProjectTokenRequiredWhenExplicitlyDisabledAndProjectTokenIsMissing(string? projectToken)
+    {
+        var container = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options =>
+            {
+                options.ProjectToken = projectToken;
+                options.Disabled = true;
+            });
+        });
+        var client = container.Activate<PostHogClient>();
+
+        var captured = client.Capture("distinct-id", "some-event");
+
+        Assert.False(captured);
+        AssertDisabledLog(container, nameof(PostHogClient.Capture));
+        AssertNoProjectTokenRequiredLog(container);
+
+        var options = ((IOptions<PostHogOptions>)((IServiceProvider)container).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Null(options.ProjectToken);
+        Assert.True(options.Disabled);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData(" \n\t ")]
     public async Task NoOpsWhenLegacyProjectApiKeyIsEmptyOrWhitespace(string projectApiKey)
@@ -1559,6 +1586,12 @@ public class TheDisabledClient
     {
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
         Assert.Contains(errorLogs, log => log.EventId.Id == 14);
+    }
+
+    static void AssertNoProjectTokenRequiredLog(TestContainer container)
+    {
+        var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
+        Assert.DoesNotContain(errorLogs, log => log.EventId.Id == 14);
     }
 }
 

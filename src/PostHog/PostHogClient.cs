@@ -106,7 +106,7 @@ public sealed class PostHogClient : IPostHogClient
         options.Normalize();
 
         var projectTokenMissing = options.ProjectToken is null;
-        if (projectTokenMissing)
+        if (projectTokenMissing && !options.Disabled)
         {
             logger.LogErrorProjectTokenRequired();
         }
