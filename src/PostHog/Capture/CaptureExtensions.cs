@@ -10,48 +10,6 @@ using static Ensure;
 public static class CaptureExtensions
 {
     /// <summary>
-    /// Captures an event using the current request context distinct ID, or as a personless event if none is set.
-    /// </summary>
-    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
-    /// <param name="eventName">Human friendly name of the event.</param>
-    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool Capture(
-        this IPostHogClient client,
-        string eventName)
-    {
-        var checkedClient = NotNull(client);
-        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties: null);
-        return checkedClient.Capture(
-            context.DistinctId,
-            eventName,
-            context.Properties,
-            groups: null,
-            flags: null);
-    }
-
-    /// <summary>
-    /// Captures an event using the current request context distinct ID, or as a personless event if none is set.
-    /// </summary>
-    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
-    /// <param name="eventName">Human friendly name of the event.</param>
-    /// <param name="properties">Optional: The properties to send along with the event.</param>
-    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
-    public static bool Capture(
-        this IPostHogClient client,
-        string eventName,
-        Dictionary<string, object>? properties)
-    {
-        var checkedClient = NotNull(client);
-        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties);
-        return checkedClient.Capture(
-            context.DistinctId,
-            eventName,
-            context.Properties,
-            groups: null,
-            flags: null);
-    }
-
-    /// <summary>
     /// Captures an event.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>

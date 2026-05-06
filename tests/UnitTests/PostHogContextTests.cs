@@ -36,7 +36,7 @@ public class ThePostHogContext
     }
 
     [Fact]
-    public async Task CaptureUsesContextWhenDistinctIdIsNotExplicit()
+    public async Task CaptureMergesContextWhenDistinctIdIsExplicit()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
@@ -48,15 +48,15 @@ public class ThePostHogContext
                    properties: new Dictionary<string, object> { ["context-property"] = "context-value" },
                    fresh: true))
         {
-            client.Capture("context-event");
+            client.Capture("explicit-user", "context-event");
         }
         await client.FlushAsync();
 
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
         var batchItem = document.RootElement.GetProperty("batch")[0];
-        Assert.Equal("context-user", batchItem.GetProperty("distinct_id").GetString());
+        Assert.Equal("explicit-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
-        Assert.Equal("context-user", properties.GetProperty("distinct_id").GetString());
+        Assert.Equal("explicit-user", properties.GetProperty("distinct_id").GetString());
         Assert.Equal("context-session", properties.GetProperty("$session_id").GetString());
         Assert.Equal("context-value", properties.GetProperty("context-property").GetString());
         Assert.False(properties.TryGetProperty("$process_person_profile", out _));
@@ -101,47 +101,29 @@ public class ThePostHogContext
     }
 
     [Fact]
-    public async Task MissingDistinctIdCreatesPersonlessEvent()
+    public void MissingDistinctIdCreatesPersonlessContext()
     {
-        var container = new TestContainer();
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
+        var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties: null);
 
-        using (PostHogContext.BeginScope(fresh: true))
-        {
-            client.Capture("personless-event");
-        }
-        await client.FlushAsync();
-
-        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        var batchItem = document.RootElement.GetProperty("batch")[0];
-        Assert.True(Guid.TryParse(batchItem.GetProperty("distinct_id").GetString(), out _));
-        var properties = batchItem.GetProperty("properties");
-        Assert.False(properties.GetProperty("$process_person_profile").GetBoolean());
+        Assert.True(Guid.TryParse(context.DistinctId, out _));
+        Assert.True(context.IsPersonless);
+        Assert.NotNull(context.Properties);
+        Assert.False((bool)context.Properties["$process_person_profile"]);
     }
 
     [Fact]
-    public async Task ExplicitProcessPersonProfileOverridesPersonlessDefault()
+    public void ExplicitProcessPersonProfileOverridesPersonlessDefault()
     {
-        var container = new TestContainer();
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
+        var context = PostHogContextHelper.ResolveCaptureContext(
+            distinctId: null,
+            properties: new Dictionary<string, object> { ["$process_person_profile"] = true });
 
-        using (PostHogContext.BeginScope(fresh: true))
-        {
-            client.Capture(
-                "personless-event",
-                new Dictionary<string, object> { ["$process_person_profile"] = true });
-        }
-        await client.FlushAsync();
-
-        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        var properties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
-        Assert.True(properties.GetProperty("$process_person_profile").GetBoolean());
+        Assert.NotNull(context.Properties);
+        Assert.True((bool)context.Properties["$process_person_profile"]);
     }
 
     [Fact]
-    public async Task CaptureExceptionUsesContext()
+    public async Task CaptureExceptionMergesContextWhenDistinctIdIsExplicit()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
@@ -149,17 +131,17 @@ public class ThePostHogContext
 
         using (PostHogContext.BeginScope(distinctId: "context-user", sessionId: "context-session", fresh: true))
         {
-            client.CaptureException(new InvalidOperationException("boom"));
+            client.CaptureException(new InvalidOperationException("boom"), "explicit-user");
         }
         await client.FlushAsync();
 
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
         var batchItem = document.RootElement.GetProperty("batch")[0];
         Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
-        Assert.Equal("context-user", batchItem.GetProperty("distinct_id").GetString());
+        Assert.Equal("explicit-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
         Assert.Equal("context-session", properties.GetProperty("$session_id").GetString());
-        Assert.Contains("/person/context-user", properties.GetProperty("$exception_personURL").GetString(), StringComparison.Ordinal);
+        Assert.Contains("/person/explicit-user", properties.GetProperty("$exception_personURL").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -189,7 +171,7 @@ public class ThePostHogContext
             using (PostHogContext.BeginScope(distinctId: distinctId, sessionId: sessionId, fresh: true))
             {
                 await Task.Delay(10);
-                client.Capture(eventName);
+                client.Capture(distinctId, eventName);
             }
         }
     }
