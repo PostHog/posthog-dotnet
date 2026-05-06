@@ -49,8 +49,7 @@ internal sealed class PostHogRequestContextMiddleware(
                 TryCaptureException(
                     _postHog,
                     exception,
-                    GetExceptionStatusCode(httpContext),
-                    PostHogAuthenticatedUser.GetDistinctId(httpContext.User));
+                    GetExceptionStatusCode(httpContext));
 
                 throw;
             }
@@ -76,8 +75,7 @@ internal sealed class PostHogRequestContextMiddleware(
     static void TryCaptureException(
         IPostHogClient? postHog,
         Exception exception,
-        int statusCode,
-        string? authenticatedDistinctId)
+        int statusCode)
     {
         try
         {
@@ -86,14 +84,7 @@ internal sealed class PostHogRequestContextMiddleware(
                 return;
             }
 
-            var properties = GetExceptionProperties(statusCode);
-            if (!string.IsNullOrEmpty(authenticatedDistinctId))
-            {
-                postHog.CaptureException(exception, authenticatedDistinctId, properties);
-                return;
-            }
-
-            postHog.CaptureException(exception, properties);
+            postHog.CaptureException(exception, GetExceptionProperties(statusCode));
         }
 #pragma warning disable CA1031 // PostHog must not replace the host application's original exception.
         catch

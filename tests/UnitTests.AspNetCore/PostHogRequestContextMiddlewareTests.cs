@@ -262,7 +262,7 @@ public class ThePostHogRequestContextMiddleware
     }
 
     [Fact]
-    public async Task CapturesUnhandledExceptionsWithAuthenticatedUserBeforeTracingHeader()
+    public async Task DoesNotDeriveExceptionIdentityFromAspNetUserAutomatically()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
@@ -285,10 +285,10 @@ public class ThePostHogRequestContextMiddleware
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
         var batchItem = document.RootElement.GetProperty("batch")[0];
         Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
-        Assert.Equal("server-user", batchItem.GetProperty("distinct_id").GetString());
+        Assert.Equal("client-user", batchItem.GetProperty("distinct_id").GetString());
         var properties = batchItem.GetProperty("properties");
         Assert.Equal("client-session", properties.GetProperty("$session_id").GetString());
-        Assert.Contains("/person/server-user", properties.GetProperty("$exception_personURL").GetString(), StringComparison.Ordinal);
+        Assert.Contains("/person/client-user", properties.GetProperty("$exception_personURL").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]

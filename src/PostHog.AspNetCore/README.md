@@ -103,7 +103,7 @@ app.UsePostHogRequestContext(options =>
 
 The middleware also adds request metadata such as `$current_url`, `$request_method`, `$request_path`, `$user_agent`, and `$ip`. If your app is behind a proxy, configure ASP.NET Core forwarded headers before this middleware so `$ip` uses the normalized `HttpContext.Connection.RemoteIpAddress` value.
 
-Unhandled downstream exception capture is disabled by default to avoid duplicate reporting if your app already captures exceptions elsewhere. Enable it explicitly to capture exceptions with the active request context and rethrow them. Exception capture prefers the authenticated ASP.NET Core user ID when available, then falls back to tracing header context:
+Unhandled downstream exception capture is disabled by default to avoid duplicate reporting if your app already captures exceptions elsewhere. Enable it explicitly to capture exceptions with the active request context and rethrow them. Exception capture uses the same request context identity/session/properties as regular captures:
 
 ```csharp
 app.UsePostHogRequestContext(options =>
