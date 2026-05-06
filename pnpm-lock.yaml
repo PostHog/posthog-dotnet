@@ -14,17 +14,9 @@ importers:
 
   src/PostHog: {}
 
-  src/PostHog.AI:
-    dependencies:
-      PostHog:
-        specifier: workspace:^
-        version: link:../PostHog
+  src/PostHog.AI: {}
 
-  src/PostHog.AspNetCore:
-    dependencies:
-      PostHog:
-        specifier: workspace:^
-        version: link:../PostHog
+  src/PostHog.AspNetCore: {}
 
 packages:
 

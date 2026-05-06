@@ -1,8 +1,5 @@
 {
   "name": "PostHog.AspNetCore",
   "version": "2.6.1",
-  "private": true,
-  "dependencies": {
-    "PostHog": "workspace:^"
-  }
+  "private": true
 }
