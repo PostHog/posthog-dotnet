@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.6.2
+
+### Patch Changes
+
+- 293539c: Disable the client without logging a project token error when the SDK is explicitly disabled or the project token is missing.
+
 ## 2.6.1
 
 ### Patch Changes

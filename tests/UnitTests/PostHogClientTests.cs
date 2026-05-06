@@ -1405,6 +1405,248 @@ public class TheCaptureExceptionMethod
     }
 }
 
+public class TheDisabledClient
+{
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \n\t ")]
+    // NullIfEmpty uses string.Trim(), so char.IsWhiteSpace characters like NBSP are treated as missing.
+    // ZWSP (U+200B) is intentionally treated as a real token because it is not whitespace for string.Trim().
+    [InlineData("\u00A0")]
+    public async Task NoOpsWhenProjectTokenIsMissingEmptyOrWhitespace(string? projectToken)
+    {
+        var container = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options =>
+            {
+                options.ProjectToken = projectToken;
+                options.PersonalApiKey = "fake-personal-api-key";
+            });
+        });
+        var captureHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var localEvaluationHandler = container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags": []}""");
+        var client = container.Activate<PostHogClient>();
+
+        var aliasResult = await client.AliasAsync("previous-id", "new-id", CancellationToken.None);
+        var identifyResult = await client.IdentifyAsync("distinct-id");
+        var groupResult = await client.GroupIdentifyAsync("organization", "id:5", null, CancellationToken.None);
+        var groupWithDistinctIdResult = await client.GroupIdentifyAsync("distinct-id", "organization", "id:5", null, CancellationToken.None);
+        var captured = client.Capture("distinct-id", "some-event");
+        var capturedException = client.CaptureException(new InvalidOperationException("boom"), "distinct-id");
+        await client.FlushAsync();
+#pragma warning disable CS0618
+        var isFeatureEnabled = await client.IsFeatureEnabledAsync("flag-key", "distinct-id");
+        var featureFlag = await client.GetFeatureFlagAsync("flag-key", "distinct-id", null, CancellationToken.None);
+#pragma warning restore CS0618
+        var remoteConfigPayload = await client.GetRemoteConfigPayloadAsync("config-key", CancellationToken.None);
+        var flagEvaluations = await client.EvaluateFlagsAsync("distinct-id", null, CancellationToken.None);
+        var allFlags = await client.GetAllFeatureFlagsAsync("distinct-id", null, CancellationToken.None);
+        await client.LoadFeatureFlagsAsync();
+
+        Assert.Equal(0, aliasResult.Status);
+        Assert.Equal(0, identifyResult.Status);
+        Assert.Equal(0, groupResult.Status);
+        Assert.Equal(0, groupWithDistinctIdResult.Status);
+        Assert.False(captured);
+        Assert.False(capturedException);
+        Assert.False(isFeatureEnabled);
+        Assert.Null(featureFlag);
+        Assert.Null(remoteConfigPayload);
+        Assert.Empty(flagEvaluations.Keys);
+        Assert.Empty(allFlags);
+        Assert.Empty(captureHandler.ReceivedRequests);
+        Assert.Empty(batchHandler.ReceivedRequests);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        Assert.Empty(localEvaluationHandler.ReceivedRequests);
+        AssertDisabledLog(container, nameof(PostHogClient.AliasAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.IdentifyAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.GroupIdentifyAsync), expectedCount: 2);
+        AssertDisabledLog(container, nameof(PostHogClient.Capture));
+        AssertDisabledLog(container, nameof(PostHogClient.CaptureException));
+        AssertDisabledLog(container, nameof(PostHogClient.FlushAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.IsFeatureEnabledAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.GetFeatureFlagAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.GetRemoteConfigPayloadAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.EvaluateFlagsAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.GetAllFeatureFlagsAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.LoadFeatureFlagsAsync));
+        AssertProjectTokenRequiredLog(container);
+
+        var options = ((IOptions<PostHogOptions>)((IServiceProvider)container).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Null(options.ProjectToken);
+        Assert.False(options.Disabled);
+    }
+
+    [Fact]
+    public async Task FlushAsyncNoOpsWhenExplicitlyDisabled()
+    {
+        var container = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options =>
+            {
+                options.ProjectToken = "fake-project-token";
+                options.Disabled = true;
+            });
+        });
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        await client.FlushAsync();
+
+        Assert.Empty(batchHandler.ReceivedRequests);
+        AssertDisabledLog(container, nameof(PostHogClient.FlushAsync));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \n\t ")]
+    public void DoesNotLogProjectTokenRequiredWhenExplicitlyDisabledAndProjectTokenIsMissing(string? projectToken)
+    {
+        var container = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options =>
+            {
+                options.ProjectToken = projectToken;
+                options.Disabled = true;
+            });
+        });
+        var client = container.Activate<PostHogClient>();
+
+        var captured = client.Capture("distinct-id", "some-event");
+
+        Assert.False(captured);
+        AssertDisabledLog(container, nameof(PostHogClient.Capture));
+        AssertNoProjectTokenRequiredLog(container);
+
+        var options = ((IOptions<PostHogOptions>)((IServiceProvider)container).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Null(options.ProjectToken);
+        Assert.True(options.Disabled);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" \n\t ")]
+    public async Task NoOpsWhenLegacyProjectApiKeyIsEmptyOrWhitespace(string projectApiKey)
+    {
+        var container = new TestContainer(services =>
+        {
+            services.Configure<PostHogOptions>(options =>
+            {
+                options.ProjectToken = null;
+                options.PersonalApiKey = "fake-personal-api-key";
+#pragma warning disable CS0618
+                options.ProjectApiKey = projectApiKey;
+#pragma warning restore CS0618
+            });
+        });
+        var captureHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var localEvaluationHandler = container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags": []}""");
+        var client = container.Activate<PostHogClient>();
+
+        var identifyResult = await client.IdentifyAsync("distinct-id");
+        var captured = client.Capture("distinct-id", "some-event");
+        await client.FlushAsync();
+#pragma warning disable CS0618
+        var isFeatureEnabled = await client.IsFeatureEnabledAsync("flag-key", "distinct-id");
+#pragma warning restore CS0618
+        var allFlags = await client.GetAllFeatureFlagsAsync("distinct-id", null, CancellationToken.None);
+        await client.LoadFeatureFlagsAsync();
+
+        Assert.Equal(0, identifyResult.Status);
+        Assert.False(captured);
+        Assert.False(isFeatureEnabled);
+        Assert.Empty(allFlags);
+        Assert.Empty(captureHandler.ReceivedRequests);
+        Assert.Empty(batchHandler.ReceivedRequests);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        Assert.Empty(localEvaluationHandler.ReceivedRequests);
+        AssertDisabledLog(container, nameof(PostHogClient.IdentifyAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.Capture));
+        AssertDisabledLog(container, nameof(PostHogClient.FlushAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.IsFeatureEnabledAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.GetAllFeatureFlagsAsync));
+        AssertDisabledLog(container, nameof(PostHogClient.LoadFeatureFlagsAsync));
+
+        var options = ((IOptions<PostHogOptions>)((IServiceProvider)container).GetService(typeof(IOptions<PostHogOptions>))!).Value;
+        Assert.Null(options.ProjectToken);
+        Assert.False(options.Disabled);
+    }
+
+    static void AssertDisabledLog(TestContainer container, string methodName, int expectedCount = 1)
+    {
+        var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
+        var matches = warningLogs.Count(log =>
+            log.EventId.Id == 20
+            && log.Message == $"PostHog SDK is disabled; {methodName} is a no-op.");
+        Assert.Equal(expectedCount, matches);
+    }
+
+    static void AssertProjectTokenRequiredLog(TestContainer container)
+    {
+        var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
+        Assert.Contains(errorLogs, log => log.EventId.Id == 14);
+    }
+
+    static void AssertNoProjectTokenRequiredLog(TestContainer container)
+    {
+        var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
+        Assert.DoesNotContain(errorLogs, log => log.EventId.Id == 14);
+    }
+}
+
+public class ThePersonalApiKeyProtectedMethods
+{
+    [Fact]
+    public async Task NoOpWhenPersonalApiKeyIsMissing()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var localEvaluationHandler = container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags": []}""");
+        var remoteConfigHandler = container.FakeHttpMessageHandler.AddRemoteConfigResponse("config-key", """{"enabled": true}""");
+        var client = container.Activate<PostHogClient>();
+
+        var onlyEvaluateLocally = new FeatureFlagOptions { OnlyEvaluateLocally = true };
+#pragma warning disable CS0618
+        var isFeatureEnabled = await client.IsFeatureEnabledAsync("flag-key", "distinct-id", onlyEvaluateLocally, CancellationToken.None);
+        var featureFlag = await client.GetFeatureFlagAsync("flag-key", "distinct-id", onlyEvaluateLocally, CancellationToken.None);
+#pragma warning restore CS0618
+        var flagEvaluations = await client.EvaluateFlagsAsync("distinct-id", onlyEvaluateLocally, CancellationToken.None);
+        var allFlags = await client.GetAllFeatureFlagsAsync("distinct-id", onlyEvaluateLocally, CancellationToken.None);
+        var remoteConfigPayload = await client.GetRemoteConfigPayloadAsync("config-key", CancellationToken.None);
+        await client.LoadFeatureFlagsAsync();
+
+        Assert.False(isFeatureEnabled);
+        Assert.Null(featureFlag);
+        Assert.Empty(flagEvaluations.Keys);
+        Assert.Empty(allFlags);
+        Assert.Null(remoteConfigPayload);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        Assert.Empty(localEvaluationHandler.ReceivedRequests);
+        Assert.Empty(remoteConfigHandler.ReceivedRequests);
+        AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.IsFeatureEnabledAsync));
+        AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.GetFeatureFlagAsync));
+        AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.EvaluateFlagsAsync));
+        AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.GetAllFeatureFlagsAsync));
+        AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.GetRemoteConfigPayloadAsync));
+        AssertPersonalApiKeyMissingLog(container, nameof(PostHogClient.LoadFeatureFlagsAsync));
+    }
+
+    static void AssertPersonalApiKeyMissingLog(TestContainer container, string methodName)
+    {
+        var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
+        var matches = warningLogs.Count(log =>
+            log.EventId.Id == 21
+            && log.Message == $"PostHog personal_api_key is not configured; {methodName} is a no-op.");
+        Assert.Equal(1, matches);
+    }
+}
+
 public class TheLoadFeatureFlagsAsyncMethod
 {
     [Fact]
@@ -1433,10 +1675,10 @@ public class TheLoadFeatureFlagsAsyncMethod
 
         await client.LoadFeatureFlagsAsync();
 
-        // Verify warning was logged
         var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
         Assert.Contains(warningLogs, log =>
-            log.Message?.Contains("You have to specify a personal_api_key to use feature flags", StringComparison.Ordinal) == true);
+            log.Message?.Contains("personal_api_key is not configured", StringComparison.Ordinal) == true
+            && log.Message.Contains(nameof(PostHogClient.LoadFeatureFlagsAsync), StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1449,7 +1691,8 @@ public class TheLoadFeatureFlagsAsyncMethod
 
         var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
         Assert.Contains(warningLogs, log =>
-            log.Message?.Contains("You have to specify a personal_api_key to use feature flags", StringComparison.Ordinal) == true);
+            log.Message?.Contains("personal_api_key is not configured", StringComparison.Ordinal) == true
+            && log.Message.Contains(nameof(PostHogClient.LoadFeatureFlagsAsync), StringComparison.Ordinal));
     }
 
     [Fact]
