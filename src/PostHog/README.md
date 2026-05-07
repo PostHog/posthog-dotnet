@@ -45,4 +45,17 @@ PostHogSDK.DefaultClient = client;
 PostHogSDK.Capture("user-123", "Test Event");
 ```
 
-If no default client is configured, `PostHogSDK` methods are no-ops and log a warning once through `Microsoft.Extensions.Logging`. To enable SDK logs for the static facade and clients created by `PostHogSDK.Init`, set `PostHogSDK.LoggerFactory` before calling SDK methods.
+If no default client is configured, `PostHogSDK` methods are no-ops and log a warning once through `Microsoft.Extensions.Logging`. To enable SDK logs for the static facade and clients created by `PostHogSDK.Init`, set `PostHogSDK.LoggerFactory` before calling SDK methods:
+
+```csharp
+using Microsoft.Extensions.Logging;
+using PostHog.Sdk;
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.AddConsole();
+    builder.SetMinimumLevel(LogLevel.Information);
+});
+
+PostHogSDK.LoggerFactory = loggerFactory;
+```
