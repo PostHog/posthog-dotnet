@@ -79,6 +79,23 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     }
 
     [Fact]
+    public async Task MissingDistinctIdReturnsEmptySingleFlagResultsWithWarningAndNoHttpCall()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        Assert.False(await client.IsFeatureEnabledAsync("flag-key", null!));
+        Assert.Null(await client.GetFeatureFlagAsync("flag-key", null!, options: null, CancellationToken.None));
+
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        var warning = Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning),
+            e => (e.Message ?? string.Empty).Contains("distinctId is required", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, warning.LogLevel);
+    }
+
+    [Fact]
     public async Task CapturesFeatureFlagCalledEventOnlyOncePerDistinctIdFlagKeyAndResponse()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
