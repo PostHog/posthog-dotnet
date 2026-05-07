@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.7.0
+
+### Minor Changes
+
+- db7fe08: Add the static `PostHogSdk` facade in the `PostHog.Sdk` namespace.
+
 ## 2.6.2
 
 ### Patch Changes
