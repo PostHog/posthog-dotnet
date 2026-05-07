@@ -1,2 +1,4 @@
 packages:
-  - '.'
+  - 'src/PostHog'
+  - 'src/PostHog.AspNetCore'
+  - 'src/PostHog.AI'

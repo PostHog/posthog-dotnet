@@ -12,6 +12,12 @@ importers:
         specifier: ^2.30.0
         version: 2.31.0
 
+  src/PostHog: {}
+
+  src/PostHog.AI: {}
+
+  src/PostHog.AspNetCore: {}
+
 packages:
 
   '@babel/runtime@7.29.2':

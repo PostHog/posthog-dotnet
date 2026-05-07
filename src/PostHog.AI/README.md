@@ -2,6 +2,11 @@
 
 This package provides AI Observability for .NET applications using PostHog. It currently supports intercepting and tracing requests to OpenAI and Azure OpenAI.
 
+> [!WARNING]  
+> This package is currently in a pre-release stage. We're making it available publicly to solicit
+> feedback. While we always strive to maintain a high level of quality, use this package at your own
+> risk. There *will* be many breaking changes until we reach a stable release.
+
 ## Installation
 
 Install the `PostHog.AI` package via NuGet:
