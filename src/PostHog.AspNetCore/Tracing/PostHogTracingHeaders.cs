@@ -46,7 +46,7 @@ internal static class PostHogTracingHeaders
                 : null;
 
             var properties = new Dictionary<string, object>();
-            AddIfPresent(properties, PostHogRequestPropertyNames.CurrentUrl, GetCurrentUrl(request, options.IncludeQueryStringInCurrentUrl));
+            AddIfPresent(properties, PostHogRequestPropertyNames.CurrentUrl, GetCurrentUrl(request));
             AddIfPresent(properties, PostHogRequestPropertyNames.RequestMethod, request.Method);
             AddIfPresent(properties, PostHogRequestPropertyNames.RequestPath, GetRequestPath(request));
             AddIfPresent(properties, PostHogRequestPropertyNames.UserAgent, SanitizeHeaderValue(request.Headers[HeaderNames.UserAgent]));
@@ -104,7 +104,7 @@ internal static class PostHogTracingHeaders
         }
     }
 
-    static string? GetCurrentUrl(HttpRequest request, bool includeQueryString)
+    static string? GetCurrentUrl(HttpRequest request)
     {
         if (string.IsNullOrEmpty(request.Scheme) || !request.Host.HasValue)
         {
@@ -116,8 +116,7 @@ internal static class PostHogTracingHeaders
             "://",
             request.Host.ToUriComponent(),
             request.PathBase.ToUriComponent(),
-            request.Path.ToUriComponent(),
-            includeQueryString ? request.QueryString.ToUriComponent() : string.Empty);
+            request.Path.ToUriComponent());
     }
 
     static string? GetRequestPath(HttpRequest request)

@@ -76,32 +76,6 @@ public class ThePostHogRequestContextMiddleware
     }
 
     [Fact]
-    public async Task CanIncludeQueryStringInCurrentUrlWhenExplicitlyEnabled()
-    {
-        var container = new TestContainer();
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-        var httpContext = CreateHttpContext();
-        httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "frontend-user";
-
-        var middleware = CreateMiddleware(
-            _ =>
-            {
-                client.Capture("query-string-event");
-                return Task.CompletedTask;
-            },
-            client,
-            options => options.IncludeQueryStringInCurrentUrl = true);
-
-        await middleware.InvokeAsync(httpContext);
-        await client.FlushAsync();
-
-        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        var properties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
-        Assert.Equal("https://example.com/api/test?filter=1", properties.GetProperty("$current_url").GetString());
-    }
-
-    [Fact]
     public async Task CanDisableTracingHeaderCaptureWhilePreservingRequestMetadata()
     {
         var container = new TestContainer();

@@ -24,12 +24,6 @@ public sealed class PostHogRequestContextOptions
     public bool UseTracingHeaders { get; set; } = true;
 
     /// <summary>
-    /// Includes the request query string in the <c>$current_url</c> request metadata property. Defaults to
-    /// <c>false</c> to avoid sending server-side secrets such as OAuth codes, reset tokens, or signed URL parameters.
-    /// </summary>
-    public bool IncludeQueryStringInCurrentUrl { get; set; }
-
-    /// <summary>
     /// Captures unhandled downstream exceptions with the active request context, then rethrows them.
     /// Defaults to <c>false</c> to avoid duplicate exception capture in applications that already
     /// handle exceptions elsewhere.
