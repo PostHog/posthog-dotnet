@@ -17,7 +17,7 @@ internal sealed class PostHogContext
     {
         DistinctId = string.IsNullOrWhiteSpace(distinctId) ? null : distinctId;
         SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId;
-        Properties = properties?.ToDictionary(pair => pair.Key, pair => pair.Value) ?? new Dictionary<string, object>(0);
+        Properties = properties ?? new Dictionary<string, object>(0);
     }
 
     /// <summary>
