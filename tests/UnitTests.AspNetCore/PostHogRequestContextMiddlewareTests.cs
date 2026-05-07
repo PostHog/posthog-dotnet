@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 using NSubstitute;
 using PostHog;
+using PostHog.AspNetCore;
 using PostHog.Features;
 using UnitTests.Fakes;
 

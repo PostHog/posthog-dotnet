@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PostHog;
+using PostHog.AspNetCore;
 using UnitTests.Fakes;
 
 namespace PostHogRequestContextExtensionsTests;

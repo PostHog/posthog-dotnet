@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using PostHog.AspNetCore;
 
 namespace PostHog;
 

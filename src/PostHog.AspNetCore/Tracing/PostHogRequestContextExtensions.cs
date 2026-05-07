@@ -1,7 +1,7 @@
 using PostHog.Features;
 using static PostHog.Library.Ensure;
 
-namespace PostHog;
+namespace PostHog.AspNetCore;
 
 /// <summary>
 /// Extension methods that use the current ASP.NET Core PostHog request context.
