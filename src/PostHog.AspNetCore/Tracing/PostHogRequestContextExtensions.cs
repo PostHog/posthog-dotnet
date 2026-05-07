@@ -75,6 +75,11 @@ public static class PostHogRequestContextExtensions
     /// <summary>
     /// Evaluates all feature flags using the current request context distinct ID and returns a <see cref="FeatureFlagEvaluations"/> snapshot.
     /// </summary>
+    /// <remarks>
+    /// This overload resolves the distinct ID from the current ASP.NET Core PostHog request context. If that context
+    /// was populated from tracing headers, the identity is client-controlled analytics context, not authentication or
+    /// authorization context. Pass an authenticated distinct ID explicitly for security-sensitive server branching.
+    /// </remarks>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <returns>A snapshot of feature flag evaluations.</returns>
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(this IPostHogClient client)
@@ -86,6 +91,11 @@ public static class PostHogRequestContextExtensions
     /// <summary>
     /// Evaluates all feature flags using the current request context distinct ID and returns a <see cref="FeatureFlagEvaluations"/> snapshot.
     /// </summary>
+    /// <remarks>
+    /// This overload resolves the distinct ID from the current ASP.NET Core PostHog request context. If that context
+    /// was populated from tracing headers, the identity is client-controlled analytics context, not authentication or
+    /// authorization context. Pass an authenticated distinct ID explicitly for security-sensitive server branching.
+    /// </remarks>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="options">Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes the underlying <c>/flags</c> request body.</param>
     /// <returns>A snapshot of feature flag evaluations.</returns>

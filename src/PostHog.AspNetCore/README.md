@@ -97,7 +97,15 @@ using PostHog.AspNetCore;
 posthog.Capture("checkout started");
 ```
 
-These headers are client-controlled analytics context, not authentication. If `X-POSTHOG-DISTINCT-ID` is missing, normal captures become personless by default. You can disable tracing header use while still collecting request metadata:
+These headers are client-controlled analytics context, not authentication. If `X-POSTHOG-DISTINCT-ID` is missing, normal captures become personless by default.
+
+The request-context `EvaluateFlagsAsync()` overloads also use the current request context distinct ID. Use them for analytics-driven consistency with frontend flag evaluation, not authorization checks. For security-sensitive server branching, pass an authenticated distinct ID explicitly:
+
+```csharp
+var flags = await posthog.EvaluateFlagsAsync(authenticatedUserId);
+```
+
+You can disable tracing header use while still collecting request metadata:
 
 ```csharp
 app.UsePostHogRequestContext(options =>
