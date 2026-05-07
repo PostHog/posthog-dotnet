@@ -210,7 +210,7 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
     async Task TryFlushBatchesAsync()
     {
         // Background flushes coalesce when another flush is already in progress.
-        if (!_flushLock.Wait(0))
+        if (!await _flushLock.WaitAsync(0))
         {
             return;
         }
