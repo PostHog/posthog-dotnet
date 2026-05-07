@@ -76,6 +76,32 @@ public class ThePostHogRequestContextMiddleware
     }
 
     [Fact]
+    public async Task OmitsCurrentUrlAndIpWhenRequestPartsAreMissing()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "frontend-user";
+
+        var middleware = CreateMiddleware(
+            _ =>
+            {
+                client.Capture("bare-context-event");
+                return Task.CompletedTask;
+            },
+            client);
+
+        await middleware.InvokeAsync(httpContext);
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
+        Assert.False(properties.TryGetProperty("$current_url", out _));
+        Assert.False(properties.TryGetProperty("$ip", out _));
+    }
+
+    [Fact]
     public async Task CanDisableTracingHeaderCaptureWhilePreservingRequestMetadata()
     {
         var container = new TestContainer();
