@@ -143,6 +143,7 @@ public class ThePostHogContext
 
     [Theory]
     [InlineData(null, false)]
+    [InlineData(false, false)]
     [InlineData(true, true)]
     public void PersonlessContextSetsProcessPersonProfile(bool? explicitOverride, bool expectedValue)
     {
