@@ -76,6 +76,32 @@ public class ThePostHogRequestContextMiddleware
     }
 
     [Fact]
+    public async Task CurrentUrlOmitsQueryString()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        var httpContext = CreateHttpContext();
+        httpContext.Request.QueryString = new QueryString("?oauth_code=secret&filter=1");
+        httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "frontend-user";
+
+        var middleware = CreateMiddleware(
+            _ =>
+            {
+                client.Capture("current-url-event");
+                return Task.CompletedTask;
+            },
+            client);
+
+        await middleware.InvokeAsync(httpContext);
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
+        Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
+    }
+
+    [Fact]
     public async Task OmitsCurrentUrlAndIpWhenRequestPartsAreMissing()
     {
         var container = new TestContainer();
