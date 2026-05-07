@@ -36,6 +36,26 @@ public class ThePostHogContext
     }
 
     [Fact]
+    public void InnerScopeDistinctIdOverridesParent()
+    {
+        using (PostHogContext.BeginScope(distinctId: "outer-user", fresh: true))
+        using (PostHogContext.BeginScope(distinctId: "inner-user"))
+        {
+            Assert.Equal("inner-user", PostHogContext.Current?.DistinctId);
+        }
+    }
+
+    [Fact]
+    public void InnerScopeEmptyDistinctIdInheritsParent()
+    {
+        using (PostHogContext.BeginScope(distinctId: "outer-user", fresh: true))
+        using (PostHogContext.BeginScope(distinctId: string.Empty))
+        {
+            Assert.Equal("outer-user", PostHogContext.Current?.DistinctId);
+        }
+    }
+
+    [Fact]
     public async Task CaptureMergesContextWhenDistinctIdIsExplicit()
     {
         var container = new TestContainer();
