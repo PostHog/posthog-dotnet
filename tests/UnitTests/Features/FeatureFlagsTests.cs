@@ -2670,6 +2670,23 @@ public class TheGetFeatureFlagAsyncMethod
 
 public class TheGetAllFeatureFlagsAsyncMethod
 {
+    [Fact]
+    public async Task MissingDistinctIdReturnsEmptyAllFlagsWithWarningAndNoHttpCall()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var flags = await client.GetAllFeatureFlagsAsync(null!, options: null, CancellationToken.None);
+
+        Assert.Empty(flags);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        var warning = Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning),
+            e => (e.Message ?? string.Empty).Contains("distinctId is required", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, warning.LogLevel);
+    }
+
     [Fact] // Ported from PostHog/posthog-python test_get_all_flags_with_fallback
     public async Task RetrievesAllFlagsWithFallback()
     {
