@@ -15,8 +15,8 @@ internal sealed class PostHogContext
         string? sessionId,
         IReadOnlyDictionary<string, object>? properties)
     {
-        DistinctId = string.IsNullOrEmpty(distinctId) ? null : distinctId;
-        SessionId = string.IsNullOrEmpty(sessionId) ? null : sessionId;
+        DistinctId = string.IsNullOrWhiteSpace(distinctId) ? null : distinctId;
+        SessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId;
         Properties = properties?.ToDictionary(pair => pair.Key, pair => pair.Value) ?? new Dictionary<string, object>(0);
     }
 
@@ -68,8 +68,8 @@ internal sealed class PostHogContext
             }
         }
 
-        var resolvedDistinctId = string.IsNullOrEmpty(distinctId) ? baseContext?.DistinctId : distinctId;
-        var resolvedSessionId = string.IsNullOrEmpty(sessionId) ? baseContext?.SessionId : sessionId;
+        var resolvedDistinctId = string.IsNullOrWhiteSpace(distinctId) ? baseContext?.DistinctId : distinctId;
+        var resolvedSessionId = string.IsNullOrWhiteSpace(sessionId) ? baseContext?.SessionId : sessionId;
 
         CurrentContext.Value = new PostHogContext(resolvedDistinctId, resolvedSessionId, mergedProperties);
         return new DisposableScope(parent);
@@ -119,19 +119,21 @@ internal static class PostHogContextHelper
     }
 
     internal static string? ResolveDistinctId(string? preferredDistinctId = null)
-        => preferredDistinctId is not null ? preferredDistinctId : PostHogContext.Current?.DistinctId;
+        => !string.IsNullOrWhiteSpace(preferredDistinctId)
+            ? preferredDistinctId
+            : PostHogContext.Current?.DistinctId;
 
     internal static PostHogCaptureIdentity ResolveIdentity(
         string? distinctId,
         PostHogContext? context)
     {
-        if (!string.IsNullOrEmpty(distinctId))
+        if (!string.IsNullOrWhiteSpace(distinctId))
         {
             return new PostHogCaptureIdentity(distinctId!, IsPersonless: false);
         }
 
         var contextDistinctId = context?.DistinctId;
-        if (!string.IsNullOrEmpty(contextDistinctId))
+        if (!string.IsNullOrWhiteSpace(contextDistinctId))
         {
             return new PostHogCaptureIdentity(contextDistinctId!, IsPersonless: false);
         }

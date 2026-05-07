@@ -844,21 +844,21 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
-        var resolvedDistinctId = PostHogContextHelper.ResolveDistinctId(distinctId) ?? string.Empty;
+        var resolvedDistinctId = PostHogContextHelper.ResolveDistinctId(distinctId);
         if (CheckDisabledAndLog(nameof(EvaluateFlagsAsync)))
         {
-            return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId);
+            return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId ?? string.Empty);
         }
 
         if (RequiresMissingPersonalApiKey(options, nameof(EvaluateFlagsAsync)))
         {
-            return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId);
+            return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId ?? string.Empty);
         }
 
-        if (resolvedDistinctId.Length == 0)
+        if (resolvedDistinctId is null)
         {
-            // Empty distinct id is a safety fallback. Returning an empty snapshot avoids leaking
-            // events with empty distinct ids when the caller forgot to resolve one.
+            // Missing distinct ID is a safety fallback. Returning an empty snapshot avoids leaking
+            // events without a usable distinct ID when the caller forgot to resolve one.
             LogMissingFeatureFlagDistinctIdWarningOnce();
             return FeatureFlagEvaluations.Empty(_evaluationsHost, string.Empty);
         }
