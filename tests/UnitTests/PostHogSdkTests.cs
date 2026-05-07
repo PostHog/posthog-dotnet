@@ -8,18 +8,18 @@ using PostHog.Features;
 
 namespace UnitTests;
 
-[CollectionDefinition(nameof(PostHogSDKTestScope), DisableParallelization = true)]
-public sealed class PostHogSDKTestScope
+[CollectionDefinition(nameof(PostHogSdkTestScope), DisableParallelization = true)]
+public sealed class PostHogSdkTestScope
 {
 }
 
-[Collection(nameof(PostHogSDKTestScope))]
-public sealed class PostHogSDKTests : IDisposable
+[Collection(nameof(PostHogSdkTestScope))]
+public sealed class PostHogSdkTests : IDisposable
 {
-    public PostHogSDKTests()
+    public PostHogSdkTests()
     {
-        PostHogSDK.DefaultClient = null;
-        PostHogSDK.LoggerFactory = NullLoggerFactory.Instance;
+        PostHogSdk.DefaultClient = null;
+        PostHogSdk.LoggerFactory = NullLoggerFactory.Instance;
     }
 
     [Fact]
@@ -27,9 +27,9 @@ public sealed class PostHogSDKTests : IDisposable
     {
         var client = Substitute.For<IPostHogClient>();
         client.Capture("user-123", "Test Event", null, null, (FeatureFlagEvaluations?)null, null).Returns(true);
-        PostHogSDK.DefaultClient = client;
+        PostHogSdk.DefaultClient = client;
 
-        var captured = PostHogSDK.Capture("user-123", "Test Event");
+        var captured = PostHogSdk.Capture("user-123", "Test Event");
 
         Assert.True(captured);
         client.Received(1).Capture("user-123", "Test Event", null, null, (FeatureFlagEvaluations?)null, null);
@@ -41,9 +41,9 @@ public sealed class PostHogSDKTests : IDisposable
         var client = Substitute.For<IPostHogClient>();
         client.IdentifyAsync("user-123", null, null, CancellationToken.None)
             .Returns(Task.FromResult(new ApiResult(1)));
-        PostHogSDK.DefaultClient = client;
+        PostHogSdk.DefaultClient = client;
 
-        var result = await PostHogSDK.IdentifyAsync("user-123");
+        var result = await PostHogSdk.IdentifyAsync("user-123");
 
         Assert.Equal(1, result.Status);
         await client.Received(1).IdentifyAsync("user-123", null, null, CancellationToken.None);
@@ -52,7 +52,7 @@ public sealed class PostHogSDKTests : IDisposable
     [Fact]
     public void CaptureIsNoOpWithoutDefaultClient()
     {
-        var captured = PostHogSDK.Capture("user-123", "Test Event");
+        var captured = PostHogSdk.Capture("user-123", "Test Event");
 
         Assert.False(captured);
     }
@@ -61,37 +61,37 @@ public sealed class PostHogSDKTests : IDisposable
     public void NoDefaultClientWarningUsesConfiguredLoggerOnce()
     {
         var loggerFactory = new FakeLoggerProvider();
-        PostHogSDK.LoggerFactory = loggerFactory;
+        PostHogSdk.LoggerFactory = loggerFactory;
 
-        PostHogSDK.Capture("user-123", "Test Event");
-        PostHogSDK.Capture("user-123", "Test Event");
+        PostHogSdk.Capture("user-123", "Test Event");
+        PostHogSdk.Capture("user-123", "Test Event");
 
         var warnings = loggerFactory.GetAllEvents(
-            "PostHog.Sdk.PostHogSDK",
+            "PostHog.Sdk.PostHogSdk",
             LogLevel.Warning,
             "LogWarningNoDefaultClient");
         var warning = Assert.Single(warnings);
-        Assert.Contains("PostHogSDK.DefaultClient is not configured", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("PostHogSdk.DefaultClient is not configured", warning.Message, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData(nameof(PostHogSDK.IdentifyAsync))]
-    [InlineData(nameof(PostHogSDK.IsFeatureEnabledAsync))]
-    [InlineData(nameof(PostHogSDK.GetFeatureFlagAsync))]
+    [InlineData(nameof(PostHogSdk.IdentifyAsync))]
+    [InlineData(nameof(PostHogSdk.IsFeatureEnabledAsync))]
+    [InlineData(nameof(PostHogSdk.GetFeatureFlagAsync))]
     public async Task AsyncCallIsNoOpWithoutDefaultClient(string method)
     {
         switch (method)
         {
-            case nameof(PostHogSDK.IdentifyAsync):
-                var identifyResult = await PostHogSDK.IdentifyAsync("user-123");
+            case nameof(PostHogSdk.IdentifyAsync):
+                var identifyResult = await PostHogSdk.IdentifyAsync("user-123");
                 Assert.Equal(0, identifyResult.Status);
                 break;
-            case nameof(PostHogSDK.IsFeatureEnabledAsync):
-                var enabled = await PostHogSDK.IsFeatureEnabledAsync("beta-feature", "user-123");
+            case nameof(PostHogSdk.IsFeatureEnabledAsync):
+                var enabled = await PostHogSdk.IsFeatureEnabledAsync("beta-feature", "user-123");
                 Assert.False(enabled);
                 break;
-            case nameof(PostHogSDK.GetFeatureFlagAsync):
-                var flag = await PostHogSDK.GetFeatureFlagAsync("beta-feature", "user-123");
+            case nameof(PostHogSdk.GetFeatureFlagAsync):
+                var flag = await PostHogSdk.GetFeatureFlagAsync("beta-feature", "user-123");
                 Assert.Null(flag);
                 break;
             default:
@@ -102,9 +102,9 @@ public sealed class PostHogSDKTests : IDisposable
     [Fact]
     public void InitCreatesAndStoresDefaultClient()
     {
-        var client = PostHogSDK.Init(new PostHogOptions { ProjectToken = "test-token" });
+        var client = PostHogSdk.Init(new PostHogOptions { ProjectToken = "test-token" });
 
-        Assert.Same(client, PostHogSDK.DefaultClient);
+        Assert.Same(client, PostHogSdk.DefaultClient);
     }
 
     [Fact]
@@ -112,18 +112,18 @@ public sealed class PostHogSDKTests : IDisposable
     {
         var client = Substitute.For<IPostHogClient>();
         client.FlushAsync().Returns(Task.CompletedTask);
-        PostHogSDK.DefaultClient = client;
+        PostHogSdk.DefaultClient = client;
 
-        await PostHogSDK.ShutdownAsync();
+        await PostHogSdk.ShutdownAsync();
 
-        Assert.Null(PostHogSDK.DefaultClient);
+        Assert.Null(PostHogSdk.DefaultClient);
         await client.Received(1).FlushAsync();
         await client.Received(1).DisposeAsync();
     }
 
     public void Dispose()
     {
-        PostHogSDK.ShutdownAsync().AsTask().GetAwaiter().GetResult();
-        PostHogSDK.LoggerFactory = NullLoggerFactory.Instance;
+        PostHogSdk.ShutdownAsync().AsTask().GetAwaiter().GetResult();
+        PostHogSdk.LoggerFactory = NullLoggerFactory.Instance;
     }
 }

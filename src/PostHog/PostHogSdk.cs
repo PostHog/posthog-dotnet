@@ -15,7 +15,7 @@ namespace PostHog.Sdk;
 /// Prefer dependency injection and <see cref="IPostHogClient"/> for applications that already use DI. This facade is
 /// intended for console apps, scripts, and other places where passing a client instance around is inconvenient.
 /// </remarks>
-public static class PostHogSDK
+public static class PostHogSdk
 {
     static IPostHogClient? _defaultClient;
     static ILoggerFactory _loggerFactory = NullLoggerFactory.Instance;
@@ -306,16 +306,16 @@ public static class PostHogSDK
     {
         if (Interlocked.Exchange(ref _loggedNoDefaultClient, 1) == 0)
         {
-            LoggerFactory.CreateLogger(typeof(PostHogSDK)).LogWarningNoDefaultClient();
+            LoggerFactory.CreateLogger(typeof(PostHogSdk)).LogWarningNoDefaultClient();
         }
     }
 }
 
-internal static partial class PostHogSDKLoggerExtensions
+internal static partial class PostHogSdkLoggerExtensions
 {
     [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Warning,
-        Message = "PostHogSDK.DefaultClient is not configured. PostHogSDK calls will be ignored until a default client is configured.")]
+        Message = "PostHogSdk.DefaultClient is not configured. PostHogSdk calls will be ignored until a default client is configured.")]
     public static partial void LogWarningNoDefaultClient(this ILogger logger);
 }
