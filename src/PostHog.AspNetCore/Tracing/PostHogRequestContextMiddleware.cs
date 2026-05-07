@@ -12,9 +12,9 @@ internal sealed class PostHogRequestContextMiddleware(
     IPostHogClient postHog,
     PostHogRequestContextOptions options)
 {
-    readonly RequestDelegate _next = next ?? (_ => Task.CompletedTask);
-    readonly IPostHogClient? _postHog = postHog;
-    readonly PostHogRequestContextOptions _options = options ?? new PostHogRequestContextOptions();
+    readonly RequestDelegate _next = next;
+    readonly IPostHogClient _postHog = postHog;
+    readonly PostHogRequestContextOptions _options = options;
 
     /// <summary>
     /// Runs the downstream ASP.NET Core pipeline in a request-local PostHog context.
@@ -75,17 +75,12 @@ internal sealed class PostHogRequestContextMiddleware(
     }
 
     static void TryCaptureException(
-        IPostHogClient? postHog,
+        IPostHogClient postHog,
         Exception exception,
         int statusCode)
     {
         try
         {
-            if (postHog is null)
-            {
-                return;
-            }
-
             postHog.CaptureException(exception, GetExceptionProperties(statusCode));
         }
 #pragma warning disable CA1031 // PostHog must not replace the host application's original exception.
