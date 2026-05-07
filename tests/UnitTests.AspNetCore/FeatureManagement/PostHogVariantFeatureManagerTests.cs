@@ -111,6 +111,9 @@ public class TheIsEnabledAsyncMethod
             }
             """
         );
+        var contextProvider = container.GetRequiredService<IPostHogFeatureFlagContextProvider>() as FakePostHogFeatureFlagContextProvider;
+        Assert.NotNull(contextProvider);
+        contextProvider.Context = new PostHogFeatureFlagContext { DistinctId = "test-user" };
         var featureManager = container.Activate<PostHogVariantFeatureManager>();
 
         Assert.True(await featureManager.IsEnabledAsync("beta-feature"));
