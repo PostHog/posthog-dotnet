@@ -1,30 +1,20 @@
-using System.Diagnostics;
 using System.Text.Json;
+using PostHog;
 using PostHog.Api;
 using PostHog.Features;
 using PostHog.Json;
 
-namespace PostHog;
+namespace PostHog.Sdk;
 
 internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluationsHost
 {
     static readonly IReadOnlyDictionary<string, FeatureFlag> EmptyFeatureFlags = new Dictionary<string, FeatureFlag>();
-    static int _loggedNoDefaultClient;
 
     NoOpPostHogClient()
     {
     }
 
     internal static NoOpPostHogClient Instance { get; } = new();
-
-    internal static void LogNoDefaultClient()
-    {
-        if (Interlocked.Exchange(ref _loggedNoDefaultClient, 1) == 0)
-        {
-            Trace.TraceWarning(
-                "PostHogSdk.DefaultClient is not configured. PostHogSdk calls will be ignored until a default client is configured.");
-        }
-    }
 
     public Task<ApiResult> AliasAsync(string previousId, string newId, CancellationToken cancellationToken)
         => Task.FromResult(new ApiResult(0));

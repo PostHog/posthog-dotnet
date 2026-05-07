@@ -1,9 +1,12 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using PostHog;
 using PostHog.Api;
 using PostHog.Features;
 using PostHog.Json;
 
-namespace PostHog;
+namespace PostHog.Sdk;
 
 /// <summary>
 /// Static convenience facade that delegates calls to a process-wide default <see cref="IPostHogClient"/>.
@@ -12,9 +15,11 @@ namespace PostHog;
 /// Prefer dependency injection and <see cref="IPostHogClient"/> for applications that already use DI. This facade is
 /// intended for console apps, scripts, and other places where passing a client instance around is inconvenient.
 /// </remarks>
-public static class PostHogSdk
+public static class PostHogSDK
 {
     static IPostHogClient? _defaultClient;
+    static ILoggerFactory _loggerFactory = NullLoggerFactory.Instance;
+    static int _loggedNoDefaultClient;
 
     /// <summary>
     /// Gets or sets the process-wide default PostHog client used by the static facade methods.
@@ -26,7 +31,23 @@ public static class PostHogSdk
     public static IPostHogClient? DefaultClient
     {
         get => Volatile.Read(ref _defaultClient);
-        set => Volatile.Write(ref _defaultClient, value);
+        set
+        {
+            Volatile.Write(ref _defaultClient, value);
+            if (value is null)
+            {
+                Interlocked.Exchange(ref _loggedNoDefaultClient, 0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the logger factory used by the static facade and clients created by <see cref="Init"/>.
+    /// </summary>
+    public static ILoggerFactory LoggerFactory
+    {
+        get => Volatile.Read(ref _loggerFactory);
+        set => Volatile.Write(ref _loggerFactory, value ?? NullLoggerFactory.Instance);
     }
 
     /// <summary>
@@ -36,7 +57,7 @@ public static class PostHogSdk
     /// <returns>The created <see cref="IPostHogClient"/>.</returns>
     public static IPostHogClient Init(PostHogOptions options)
     {
-        var client = new PostHogClient(options);
+        var client = new PostHogClient(options, loggerFactory: LoggerFactory);
         DefaultClient = client;
         return client;
     }
@@ -276,8 +297,25 @@ public static class PostHogSdk
                 return client;
             }
 
-            NoOpPostHogClient.LogNoDefaultClient();
+            LogNoDefaultClient();
             return NoOpPostHogClient.Instance;
         }
     }
+
+    static void LogNoDefaultClient()
+    {
+        if (Interlocked.Exchange(ref _loggedNoDefaultClient, 1) == 0)
+        {
+            LoggerFactory.CreateLogger(typeof(PostHogSDK)).LogWarningNoDefaultClient();
+        }
+    }
+}
+
+internal static partial class PostHogSDKLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Warning,
+        Message = "PostHogSDK.DefaultClient is not configured. PostHogSDK calls will be ignored until a default client is configured.")]
+    public static partial void LogWarningNoDefaultClient(this ILogger logger);
 }

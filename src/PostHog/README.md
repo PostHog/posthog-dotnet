@@ -21,26 +21,28 @@ var client = new PostHogClient(new PostHogOptions { ProjectToken = "YOUR_PROJECT
 client.Capture("user-123", "Test Event");
 ```
 
-For console apps, scripts, or other places where passing a client instance around is inconvenient, you can configure a process-wide default client and use the `PostHogSdk` facade:
+For console apps, scripts, or other places where passing a client instance around is inconvenient, you can configure a process-wide default client and use the `PostHogSDK` facade:
 
 ```csharp
 using PostHog;
+using PostHog.Sdk;
 
-PostHogSdk.Init(new PostHogOptions { ProjectToken = "YOUR_PROJECT_TOKEN" });
-PostHogSdk.Capture("user-123", "Test Event");
+PostHogSDK.Init(new PostHogOptions { ProjectToken = "YOUR_PROJECT_TOKEN" });
+PostHogSDK.Capture("user-123", "Test Event");
 
-await PostHogSdk.ShutdownAsync();
+await PostHogSDK.ShutdownAsync();
 ```
 
 You can also assign an existing client:
 
 ```csharp
 using PostHog;
+using PostHog.Sdk;
 
 var client = new PostHogClient(new PostHogOptions { ProjectToken = "YOUR_PROJECT_TOKEN" });
-PostHogSdk.DefaultClient = client;
+PostHogSDK.DefaultClient = client;
 
-PostHogSdk.Capture("user-123", "Test Event");
+PostHogSDK.Capture("user-123", "Test Event");
 ```
 
-If no default client is configured, `PostHogSdk` methods are no-ops and emit a warning once.
+If no default client is configured, `PostHogSDK` methods are no-ops and log a warning once through `Microsoft.Extensions.Logging`. To enable SDK logs for the static facade and clients created by `PostHogSDK.Init`, set `PostHogSDK.LoggerFactory` before calling SDK methods.
