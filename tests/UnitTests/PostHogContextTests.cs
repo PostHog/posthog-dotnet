@@ -56,6 +56,27 @@ public class ThePostHogContext
     }
 
     [Fact]
+    public void InnerScopeWhitespaceDistinctIdInheritsParent()
+    {
+        using (PostHogContext.BeginScope(distinctId: "outer-user", fresh: true))
+        using (PostHogContext.BeginScope(distinctId: "   "))
+        {
+            Assert.Equal("outer-user", PostHogContext.Current?.DistinctId);
+        }
+    }
+
+    [Fact]
+    public void FreshScopeWhitespaceDistinctIdIsIgnored()
+    {
+        using (PostHogContext.BeginScope(distinctId: "   ", fresh: true))
+        {
+            Assert.Null(PostHogContext.Current?.DistinctId);
+            var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties: null);
+            Assert.True(context.IsPersonless);
+        }
+    }
+
+    [Fact]
     public async Task CaptureMergesContextWhenDistinctIdIsExplicit()
     {
         var container = new TestContainer();
