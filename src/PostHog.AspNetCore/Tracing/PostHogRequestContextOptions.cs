@@ -17,8 +17,9 @@ public sealed class PostHogRequestContextOptions
     /// </summary>
     /// <remarks>
     /// This controls whether the opted-in middleware can populate analytics identity/session from tracing headers.
-    /// A call site still opts into that identity by omitting its distinct ID or using a parameterless request-context
-    /// helper; calls with explicit distinct IDs use the explicit value.
+    /// Tracing headers are client-controlled analytics context, not authentication or authorization context. A call
+    /// site still opts into that identity by omitting its distinct ID or using a parameterless request-context helper;
+    /// calls with explicit distinct IDs use the explicit value.
     /// </remarks>
     public bool UseTracingHeaders { get; set; } = true;
 
