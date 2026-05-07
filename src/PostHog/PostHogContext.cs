@@ -150,8 +150,19 @@ internal static class PostHogContextHelper
             return properties;
         }
 
-        var mergedProperties = context.Properties.ToDictionary(pair => pair.Key, pair => pair.Value);
-        if (!string.IsNullOrEmpty(context.SessionId) && !mergedProperties.ContainsKey(PostHogProperties.SessionId))
+        var shouldAddSessionId = !string.IsNullOrEmpty(context.SessionId)
+                                 && !context.Properties.ContainsKey(PostHogProperties.SessionId);
+        var capacity = context.Properties.Count
+                       + (shouldAddSessionId ? 1 : 0)
+                       + (properties?.Count ?? 0);
+        var mergedProperties = new Dictionary<string, object>(capacity);
+
+        foreach (var (key, value) in context.Properties)
+        {
+            mergedProperties[key] = value;
+        }
+
+        if (shouldAddSessionId)
         {
             mergedProperties[PostHogProperties.SessionId] = context.SessionId!;
         }
