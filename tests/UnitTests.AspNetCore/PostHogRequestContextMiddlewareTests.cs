@@ -236,14 +236,20 @@ public class ThePostHogRequestContextMiddleware
         Assert.Null(PostHogContext.Current);
     }
 
-    [Fact]
-    public async Task CapturesUnhandledExceptionsWithRequestContextAndRethrows()
+    [Theory]
+    [InlineData(200, 500)]
+    [InlineData(399, 500)]
+    [InlineData(400, 400)]
+    [InlineData(503, 503)]
+    public async Task CapturesUnhandledExceptionsWithRequestContextAndRethrows(
+        int responseStatusCode,
+        int expectedCapturedStatusCode)
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
         var httpContext = CreateHttpContext();
-        httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        httpContext.Response.StatusCode = responseStatusCode;
         httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "exception-user";
         httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "exception-session";
         httpContext.Request.Headers[HeaderNames.UserAgent] = "ExceptionAgent/1.0";
@@ -266,7 +272,7 @@ public class ThePostHogRequestContextMiddleware
         Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
         Assert.Equal("ExceptionAgent/1.0", properties.GetProperty("$user_agent").GetString());
         Assert.Equal("10.0.0.2", properties.GetProperty("$ip").GetString());
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, properties.GetProperty("$response_status_code").GetInt32());
+        Assert.Equal(expectedCapturedStatusCode, properties.GetProperty("$response_status_code").GetInt32());
     }
 
     [Fact]
