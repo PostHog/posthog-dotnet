@@ -89,7 +89,7 @@ using PostHog.AspNetCore;
 app.UsePostHogRequestContext();
 ```
 
-This reads client-controlled `X-POSTHOG-DISTINCT-ID` and `X-POSTHOG-SESSION-ID` headers into a request-local analytics context. Captures inside the request can then omit `distinctId`:
+This reads client-controlled `X-POSTHOG-DISTINCT-ID` and `X-POSTHOG-SESSION-ID` headers into a request-local analytics context. Installing the middleware opts the pipeline into request context extraction; individual PostHog calls use request-context identity only when they omit an explicit `distinctId` or call a parameterless request-context helper. Explicit distinct IDs always override request context. Captures inside the request can then omit `distinctId`:
 
 ```csharp
 using PostHog.AspNetCore;
