@@ -80,15 +80,20 @@ More detailed docs for using this library can be found at [PostHog Docs for the 
 
 ### Frontend-to-backend request context
 
-If your frontend sends PostHog JS request context headers, add the ASP.NET Core middleware before routes that call PostHog:
+If your frontend sends PostHog JS request context headers, import the ASP.NET Core helpers and add the middleware before routes that call PostHog:
 
 ```csharp
+using PostHog;
+using PostHog.AspNetCore;
+
 app.UsePostHogRequestContext();
 ```
 
 This reads client-controlled `X-POSTHOG-DISTINCT-ID` and `X-POSTHOG-SESSION-ID` headers into a request-local analytics context. Captures inside the request can then omit `distinctId`:
 
 ```csharp
+using PostHog.AspNetCore;
+
 posthog.Capture("checkout started");
 ```
 
