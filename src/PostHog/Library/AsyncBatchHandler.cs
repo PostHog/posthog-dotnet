@@ -43,10 +43,10 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
     readonly PeriodicTimer _timer;
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly SemaphoreSlim _flushSignal = new(0); // Used to signal when a flush is needed
+    readonly SemaphoreSlim _flushLock = new(1, 1); // Ensures only one flush drains the queue at a time.
     readonly Task _timerTask;
     readonly Task _flushSignalTask;
     volatile int _disposed;
-    volatile int _flushing;
 
     public AsyncBatchHandler(
         Func<IEnumerable<TItem>, Task> batchHandlerFunc,
@@ -132,27 +132,28 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
 
     async Task HandleFlushSignal(CancellationToken cancellationToken)
     {
-        try
+        while (!cancellationToken.IsCancellationRequested)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
                 await _flushSignal.WaitAsync(cancellationToken);
-                await FlushBatchesAsync();
+                await TryFlushBatchesAsync();
             }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogTraceOperationCancelled(nameof(HandleFlushSignal));
-        }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogTraceOperationCancelled(nameof(HandleFlushSignal));
+                break;
+            }
 #pragma warning disable CA1031 // Do not catch general exception types
-        catch (Exception ex)
+            catch (Exception ex)
 #pragma warning restore CA1031
-        {
-            // When running locally we want this to throw so we can see the exception.
-            Debug.Assert(ex is not ArgumentException and not NullReferenceException,
-                $"Unexpected {ex.GetType().FullName} occurred during async batch handling.");
+            {
+                // When running locally we want this to throw so we can see the exception.
+                Debug.Assert(ex is not ArgumentException and not NullReferenceException,
+                    $"Unexpected {ex.GetType().FullName} occurred during async batch handling.");
 
-            _logger.LogErrorUnexpectedException(ex);
+                _logger.LogErrorUnexpectedException(ex);
+            }
         }
     }
 
@@ -195,25 +196,43 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
 
     async Task FlushBatchesAsync()
     {
-        // If we're flushing, don't start another flush.
-        if (Interlocked.CompareExchange(ref _flushing, 1, 0) == 1)
+        await _flushLock.WaitAsync();
+        try
+        {
+            await DrainBatchesAsync();
+        }
+        finally
+        {
+            _flushLock.Release();
+        }
+    }
+
+    async Task TryFlushBatchesAsync()
+    {
+        // Background flushes coalesce when another flush is already in progress.
+        if (!await _flushLock.WaitAsync(0))
         {
             return;
         }
 
         try
         {
-            var batchContext = _batchContextFunc();
-            while (_channel.Reader.TryReadBatch(_options.Value.MaxBatchSize, out var batch))
-            {
-                var tasks = batch.Select(item => item.ResolveItem(batchContext));
-                var resolved = await Task.WhenAll(tasks);
-                await SendBatch(resolved);
-            }
+            await DrainBatchesAsync();
         }
         finally
         {
-            Interlocked.Exchange(ref _flushing, 0);
+            _flushLock.Release();
+        }
+    }
+
+    async Task DrainBatchesAsync()
+    {
+        var batchContext = _batchContextFunc();
+        while (_channel.Reader.TryReadBatch(_options.Value.MaxBatchSize, out var batch))
+        {
+            var tasks = batch.Select(item => item.ResolveItem(batchContext));
+            var resolved = await Task.WhenAll(tasks);
+            await SendBatch(resolved);
         }
 
         return;
@@ -247,8 +266,7 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
         _logger.LogInfoDisposeAsyncCalled();
 
         // Cancel the token so both background loops exit, then wait for them to finish.
-        // This ensures any in-flight flush completes and _flushing returns to 0 before
-        // we attempt the final flush below.
+        // This ensures any in-flight flush completes before we attempt the final flush below.
         try
         {
             await _cancellationTokenSource.CancelAsync();
@@ -276,6 +294,10 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
                 $"Unexpected {e.GetType().FullName} occurred during async batch handling.");
 
             _logger.LogErrorUnexpectedException(e);
+        }
+        finally
+        {
+            _flushLock.Dispose();
         }
     }
 }

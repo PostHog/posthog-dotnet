@@ -148,6 +148,89 @@ public class TheEnqueueMethod
     }
 
     [Fact]
+    public async Task BackgroundFlushContinuesAfterException()
+    {
+        var options = new FakeOptions<PostHogOptions>(new()
+        {
+            FlushAt = 2,
+            MaxBatchSize = 2,
+            FlushInterval = TimeSpan.FromHours(3)
+        });
+        var items = new List<int>();
+        var firstFlushStarted = new TaskCompletionSource();
+        var secondFlushCompleted = new TaskCompletionSource();
+        int callCount = 0;
+
+        Func<IEnumerable<int>, Task> handlerFunc = batch =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                firstFlushStarted.SetResult();
+                throw new InvalidOperationException("Test exception");
+            }
+
+            items.AddRange(batch);
+            secondFlushCompleted.SetResult();
+            return Task.CompletedTask;
+        };
+
+        await using var batchHandler = new AsyncBatchHandler<int, object>(
+            handlerFunc,
+            () => new object(),
+            new FakeTimeProvider(),
+            options);
+
+        batchHandler.Enqueue(Task.FromResult(1));
+        batchHandler.Enqueue(Task.FromResult(2));
+        await CompleteWithin(firstFlushStarted.Task, TimeSpan.FromSeconds(1));
+
+        batchHandler.Enqueue(Task.FromResult(3));
+        batchHandler.Enqueue(Task.FromResult(4));
+        await CompleteWithin(secondFlushCompleted.Task, TimeSpan.FromSeconds(1));
+
+        Assert.Equal([3, 4], items);
+    }
+
+    [Fact]
+    public async Task FlushAsyncWaitsForInProgressFlush()
+    {
+        var options = new FakeOptions<PostHogOptions>(new()
+        {
+            FlushAt = 1,
+            FlushInterval = TimeSpan.FromHours(3)
+        });
+        var items = new List<int>();
+        var flushStarted = new TaskCompletionSource();
+        var flushCanProceed = new TaskCompletionSource();
+
+        Func<IEnumerable<int>, Task> handlerFunc = async batch =>
+        {
+            flushStarted.SetResult();
+            await flushCanProceed.Task;
+            items.AddRange(batch);
+        };
+
+        await using var batchHandler = new AsyncBatchHandler<int, object>(
+            handlerFunc,
+            () => new object(),
+            new FakeTimeProvider(),
+            options);
+
+        batchHandler.Enqueue(Task.FromResult(42));
+        await CompleteWithin(flushStarted.Task, TimeSpan.FromSeconds(1));
+
+        var flushTask = batchHandler.FlushAsync();
+        var completedEarly = await Task.WhenAny(flushTask, Task.Delay(TimeSpan.FromMilliseconds(100)));
+        Assert.NotSame(flushTask, completedEarly);
+
+        flushCanProceed.SetResult();
+        await CompleteWithin(flushTask, TimeSpan.FromSeconds(1));
+
+        Assert.Equal([42], items);
+    }
+
+    [Fact]
     public async Task DropsOlderEventsWhenMaxQueueMet()
     {
         var timeProvider = new FakeTimeProvider();
@@ -259,6 +342,17 @@ public class TheEnqueueMethod
         batchHandler.Enqueue(Task.FromResult(3));
 
         Assert.Equal(0, batchHandler.Count);
+    }
+
+    static async Task CompleteWithin(Task task, TimeSpan timeout)
+    {
+        var completedTask = await Task.WhenAny(task, Task.Delay(timeout));
+        if (completedTask != task)
+        {
+            throw new TimeoutException("The operation timed out.");
+        }
+
+        await task;
     }
 }
 
