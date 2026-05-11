@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.7.1
+
+### Patch Changes
+
+- 16583c8: Fix `AsyncBatchHandler` background flushing so transient batch send failures no longer permanently stop future flushes. `FlushAsync()` now also waits for an in-progress flush instead of returning early without doing work.
+
 ## 2.7.0
 
 ### Minor Changes
