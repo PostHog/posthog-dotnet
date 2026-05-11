@@ -1,5 +1,12 @@
 # PostHog.AspNetCore
 
+## 2.6.2
+
+### Patch Changes
+
+- Updated dependencies [293539c]
+  - PostHog@2.6.2
+
 ## 2.6.1
 
 ### Patch Changes

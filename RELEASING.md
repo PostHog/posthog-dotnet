@@ -12,7 +12,7 @@ This repo publishes three NuGet packages independently:
 | `PostHog.AspNetCore` | `PostHog.AspNetCore` | `src/PostHog.AspNetCore/package.json` | `src/PostHog.AspNetCore/PostHog.AspNetCore.csproj` |
 | `PostHog.AI` | `PostHog.AI` | `src/PostHog.AI/package.json` | `src/PostHog.AI/PostHog.AI.csproj` |
 
-`PostHog.AspNetCore` and `PostHog.AI` depend on `PostHog`. If a changeset bumps `PostHog`, Changesets will also patch-bump the dependent packages so their NuGet dependencies point at the new `PostHog` version.
+The package-specific `package.json` files are Changesets metadata only. They intentionally do not declare internal package dependencies, so Changesets releases only the packages selected by changesets. The actual NuGet package dependencies come from the `.csproj` project references when packages are built.
 
 ## How to release
 
@@ -72,7 +72,8 @@ You can manually trigger the release workflow from the Actions tab with `workflo
 - The root `package.json` is tooling-only and is not released.
 - The workflow publishes packages sequentially with `PostHog` first, because the other packages depend on it.
 - If only `PostHog.AI` changes, only `PostHog.AI` is versioned and published.
-- If `PostHog` changes, `PostHog.AspNetCore` and `PostHog.AI` receive patch dependency bumps and are published too.
+- If only `PostHog` changes, only `PostHog` is versioned and published, including for major releases.
+- Do not add internal `dependencies` entries to the package-specific `package.json` files unless you intentionally want Changesets to couple those packages' releases.
 
 ## Troubleshooting
 
