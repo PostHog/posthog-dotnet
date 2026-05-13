@@ -80,6 +80,46 @@ public class TheEvaluateFlagsAsyncMethod
     }
 
     [Fact]
+    public async Task SendsEvaluationContextsToFlagsRequestBody()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.EvaluationContexts = ["production", "backend"];
+        }));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-a": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+
+        var request = flagsHandler.ReceivedRequests.Single();
+        var body = await request.Content!.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var evaluationContexts = doc.RootElement.GetProperty("evaluation_contexts")
+            .EnumerateArray()
+            .Select(e => e.GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(new[] { "production", "backend" }, evaluationContexts);
+    }
+
+    [Fact]
+    public async Task OmitsEvaluationContextsWhenEmpty()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.EvaluationContexts = [];
+        }));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-a": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+
+        var request = flagsHandler.ReceivedRequests.Single();
+        var body = await request.Content!.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.False(doc.RootElement.TryGetProperty("evaluation_contexts", out _));
+    }
+
+    [Fact]
     public async Task OnlyEvaluateLocallyDoesNotHitRemote()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");

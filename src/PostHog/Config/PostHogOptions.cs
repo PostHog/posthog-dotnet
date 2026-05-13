@@ -59,6 +59,15 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public string? PersonalApiKey { get; set; }
 
     /// <summary>
+    /// Evaluation contexts for feature flags.
+    /// </summary>
+    /// <remarks>
+    /// When set, only feature flags with no evaluation contexts or at least one matching context will be evaluated
+    /// for this SDK instance. Use this to isolate flags by application, platform, or product area.
+    /// </remarks>
+    public IReadOnlyList<string>? EvaluationContexts { get; set; }
+
+    /// <summary>
     /// Whether this client is disabled and should no-op instead of sending data to PostHog. (Default: false)
     /// </summary>
     /// <remarks>

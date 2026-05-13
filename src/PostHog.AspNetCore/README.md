@@ -253,6 +253,22 @@ options: new AllFeatureFlagsOptions
 });
 ```
 
+### Evaluation contexts
+
+Configure SDK-level feature flag evaluation contexts to only evaluate flags intended for this application,
+platform, or product area.
+
+```csharp
+builder.Services.AddPostHog(options =>
+{
+    options.ProjectToken = "YOUR_PROJECT_TOKEN";
+    options.EvaluationContexts = ["main-app", "api", "backend"];
+});
+```
+
+Flags without evaluation contexts continue to evaluate for all SDKs. Flags with contexts evaluate only when at least
+one configured context matches.
+
 ## Feature Management
 
 `PostHog.AspNetCore` supports .NET Feature Management. This allows you to use the &lt;feature /&gt; tag helper and 
