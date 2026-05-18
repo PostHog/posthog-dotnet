@@ -114,7 +114,7 @@ app.UsePostHogRequestContext(options =>
 });
 ```
 
-The middleware also adds request metadata such as `$current_url`, `$request_method`, `$request_path`, `$user_agent`, and `$ip`. `$current_url` omits the query string by default to avoid sending secrets such as OAuth codes, reset tokens, or signed URL parameters. If you need browser-SDK parity and have reviewed the risk, set `IncludeQueryStringInCurrentUrl = true`.
+The middleware also adds request metadata such as `$current_url`, `$request_method`, `$request_path`, `$user_agent`, and `$ip`. `$current_url` omits the query string to avoid sending secrets such as OAuth codes, reset tokens, or signed URL parameters.
 
 If your app is behind a proxy, configure ASP.NET Core forwarded headers before this middleware so `$ip` uses the normalized `HttpContext.Connection.RemoteIpAddress` value.
 
