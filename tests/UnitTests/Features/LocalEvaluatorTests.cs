@@ -2365,51 +2365,22 @@ public class TheSemverOperators
 
     [Theory]
     // Invalid version in filter value - should throw InconclusiveMatchException
-    [InlineData("not-a-version")]
-    [InlineData("")]
-    [InlineData("abc.def.ghi")]
-    [InlineData(".1.2.3")]
-    // Leading-zero filter values are invalid per semver 2.0.0 §2
-    [InlineData("01.02.03")]
-    [InlineData("1.07.3")]
-    [InlineData("01.2.3")]
-    [InlineData("1.2.03")]
-    public void ThrowsInconclusiveMatchExceptionForInvalidFilterVersion(string filterValue)
-    {
-        var flags = CreateFlags(
-            key: "version",
-            properties: [
-                new PropertyFilter
-                {
-                    Type = FilterType.Person,
-                    Key = "app_version",
-                    Value = new PropertyFilterValue(filterValue),
-                    Operator = ComparisonOperator.SemverEquals
-                }
-            ]
-        );
-        var properties = new Dictionary<string, object?>
-        {
-            ["app_version"] = "1.2.3"
-        };
-        var localEvaluator = new LocalEvaluator(flags);
-
-        Assert.Throws<InconclusiveMatchException>(() =>
-            localEvaluator.EvaluateFeatureFlag(
-                key: "version",
-                distinctId: "distinct-id",
-                personProperties: properties));
-    }
-
-    [Theory]
-    // Leading-zero flag values are rejected across non-equality operators
+    [InlineData("not-a-version", ComparisonOperator.SemverEquals)]
+    [InlineData("", ComparisonOperator.SemverEquals)]
+    [InlineData("abc.def.ghi", ComparisonOperator.SemverEquals)]
+    [InlineData(".1.2.3", ComparisonOperator.SemverEquals)]
+    // Leading-zero filter values are invalid per semver 2.0.0 §2, across all operators
+    [InlineData("01.02.03", ComparisonOperator.SemverEquals)]
+    [InlineData("1.07.3", ComparisonOperator.SemverEquals)]
+    [InlineData("01.2.3", ComparisonOperator.SemverEquals)]
+    [InlineData("1.2.03", ComparisonOperator.SemverEquals)]
     [InlineData("1.07.3", ComparisonOperator.SemverGreaterThan)]
     [InlineData("01.2.3", ComparisonOperator.SemverGreaterThanOrEquals)]
     [InlineData("1.2.03", ComparisonOperator.SemverLessThan)]
     [InlineData("01.02.03", ComparisonOperator.SemverLessThanOrEquals)]
     [InlineData("1.07.3", ComparisonOperator.SemverTilde)]
     [InlineData("01.2.3", ComparisonOperator.SemverCaret)]
-    public void ThrowsInconclusiveMatchExceptionForLeadingZeroFlagValueAcrossOperators(string filterValue, ComparisonOperator comparison)
+    public void ThrowsInconclusiveMatchExceptionForInvalidFilterVersion(string filterValue, ComparisonOperator comparison)
     {
         var flags = CreateFlags(
             key: "version",

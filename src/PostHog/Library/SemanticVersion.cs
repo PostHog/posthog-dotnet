@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 namespace PostHog.Library;
 
@@ -138,22 +139,12 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
     static bool TryParseSemverNumeric(string part, out int value)
     {
         value = 0;
-        if (string.IsNullOrEmpty(part))
+        if (string.IsNullOrEmpty(part) || (part.Length > 1 && part[0] == '0'))
         {
             return false;
         }
-        if (part.Length > 1 && part[0] == '0')
-        {
-            return false;
-        }
-        foreach (var c in part)
-        {
-            if (!char.IsDigit(c))
-            {
-                return false;
-            }
-        }
-        return int.TryParse(part, out value);
+        // NumberStyles.None + InvariantCulture rejects signs, whitespace, and non-ASCII digits.
+        return int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out value);
     }
 
     /// <summary>
