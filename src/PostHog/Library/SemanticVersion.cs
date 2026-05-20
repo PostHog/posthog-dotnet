@@ -47,6 +47,7 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
     /// 5. Default missing components to 0 (e.g., "1.2" → (1, 2, 0), "1" → (1, 0, 0))
     /// 6. Ignore extra components beyond the third (e.g., "1.2.3.4" → (1, 2, 3))
     /// 7. Return false for truly invalid input (empty string, non-numeric parts, leading dot)
+    /// 8. Reject components with leading zeros per semver 2.0.0 §2 (e.g., "01.02.03")
     /// </remarks>
     public static bool TryParse(string? value, [NotNullWhen(returnValue: true)] out SemanticVersion? version)
     {
@@ -110,33 +111,49 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         var parts = trimmed.Split('.');
 
         // Parse major (required)
-        if (!int.TryParse(parts[0], out var major))
+        if (!TryParseSemverNumeric(parts[0], out var major))
         {
             return false;
         }
 
         // Parse minor (optional, defaults to 0)
         var minor = 0;
-        if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]) && !int.TryParse(parts[1], out minor))
+        if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]) && !TryParseSemverNumeric(parts[1], out minor))
         {
             return false;
         }
 
         // Parse patch (optional, defaults to 0)
         var patch = 0;
-        if (parts.Length > 2 && !string.IsNullOrEmpty(parts[2]) && !int.TryParse(parts[2], out patch))
-        {
-            return false;
-        }
-
-        // Reject negative version components
-        if (major < 0 || minor < 0 || patch < 0)
+        if (parts.Length > 2 && !string.IsNullOrEmpty(parts[2]) && !TryParseSemverNumeric(parts[2], out patch))
         {
             return false;
         }
 
         version = new SemanticVersion(major, minor, patch);
         return true;
+    }
+
+    // Semver 2.0.0 §2: numeric identifiers MUST NOT include leading zeros.
+    static bool TryParseSemverNumeric(string part, out int value)
+    {
+        value = 0;
+        if (string.IsNullOrEmpty(part))
+        {
+            return false;
+        }
+        if (part.Length > 1 && part[0] == '0')
+        {
+            return false;
+        }
+        foreach (var c in part)
+        {
+            if (!char.IsDigit(c))
+            {
+                return false;
+            }
+        }
+        return int.TryParse(part, out value);
     }
 
     /// <summary>
@@ -252,7 +269,7 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         {
             // "X" pattern - treat as "X.*"
             // Bare wildcards like "*" and non-numeric values are invalid
-            if (!int.TryParse(parts[0], out var major))
+            if (!TryParseSemverNumeric(parts[0], out var major))
             {
                 return false;
             }
@@ -264,7 +281,7 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         else if (parts.Length == 2)
         {
             // "X.Y" or "X.*" pattern
-            if (!int.TryParse(parts[0], out var major))
+            if (!TryParseSemverNumeric(parts[0], out var major))
             {
                 return false;
             }
@@ -277,7 +294,7 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
                 return true;
             }
 
-            if (!int.TryParse(parts[1], out var minor))
+            if (!TryParseSemverNumeric(parts[1], out var minor))
             {
                 return false;
             }
@@ -290,12 +307,12 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         else if (parts.Length >= 3)
         {
             // "X.Y.Z" or "X.Y.*" pattern
-            if (!int.TryParse(parts[0], out var major))
+            if (!TryParseSemverNumeric(parts[0], out var major))
             {
                 return false;
             }
 
-            if (!int.TryParse(parts[1], out var minor))
+            if (!TryParseSemverNumeric(parts[1], out var minor))
             {
                 return false;
             }
