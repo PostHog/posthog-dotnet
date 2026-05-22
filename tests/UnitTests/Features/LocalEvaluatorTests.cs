@@ -2369,6 +2369,12 @@ public class TheSemverOperators
     [InlineData("", ComparisonOperator.SemverEquals)]
     [InlineData("abc.def.ghi", ComparisonOperator.SemverEquals)]
     [InlineData(".1.2.3", ComparisonOperator.SemverEquals)]
+    // Mirror the override-version test: non-leading-zero malformed inputs must also fail
+    // under non-equals operators, not just SemverEquals.
+    [InlineData("not-a-version", ComparisonOperator.SemverGreaterThan)]
+    [InlineData("", ComparisonOperator.SemverGreaterThan)]
+    [InlineData("abc.def.ghi", ComparisonOperator.SemverTilde)]
+    [InlineData(".1.2.3", ComparisonOperator.SemverCaret)]
     // Leading-zero filter values are invalid per semver 2.0.0 §2, across all operators
     [InlineData("01.02.03", ComparisonOperator.SemverEquals)]
     [InlineData("1.07.3", ComparisonOperator.SemverEquals)]

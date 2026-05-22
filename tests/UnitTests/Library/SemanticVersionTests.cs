@@ -108,7 +108,7 @@ public class TheTryParseMethod
 
     [Theory]
     // Literal "0" components are valid per semver 2.0.0
-    [InlineData("0.0.0", 0, 0, 0)]
+    [InlineData("0.0.1", 0, 0, 1)]
     [InlineData("0.1.0", 0, 1, 0)]
     [InlineData("1.0.0", 1, 0, 0)]
     [InlineData("1.2.0", 1, 2, 0)]
@@ -148,6 +148,12 @@ public class TheTryParseMethod
     [InlineData("01.2.3")]    // Leading zero in major
     [InlineData("00.0.0")]    // Leading zero on a zero major
     [InlineData("v01.2.3")]   // Leading zero with v-prefix
+    [InlineData("01.2.3-alpha")]      // Leading zero + pre-release
+    [InlineData("01.2.3+build")]      // Leading zero + build metadata
+    [InlineData("  01.2.3  ")]        // Leading zero + outer whitespace
+    [InlineData("1. 2.3")]            // Embedded whitespace in minor (NumberStyles.None rejects)
+    [InlineData("١.2.3")]             // Arabic-Indic digit in major (InvariantCulture rejects)
+    [InlineData("99999999999999.0.0")] // Overflows int.MaxValue
     public void ReturnsFalseForInvalidInput(string? input)
     {
         var result = SemanticVersion.TryParse(input, out var version);
@@ -485,6 +491,8 @@ public class TheTryParseWildcardMethod
     [InlineData("01")]       // Leading zero in implicit major
     [InlineData("01.2")]     // Leading zero in implicit X.Y
     [InlineData("1.02")]     // Leading zero in implicit minor
+    [InlineData("v01.*")]    // Leading zero with v-prefix
+    [InlineData("001.*")]    // Multiple leading zeros
     public void ReturnsFalseForInvalidPatterns(string? pattern)
     {
         var result = SemanticVersion.TryParseWildcard(pattern, out var lower, out var upper);

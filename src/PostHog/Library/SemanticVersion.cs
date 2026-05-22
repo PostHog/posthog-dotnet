@@ -112,21 +112,21 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         var parts = trimmed.Split('.');
 
         // Parse major (required)
-        if (!TryParseSemverNumeric(parts[0], out var major))
+        if (!TryParseSemverNumericIdentifier(parts[0], out var major))
         {
             return false;
         }
 
         // Parse minor (optional, defaults to 0)
         var minor = 0;
-        if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]) && !TryParseSemverNumeric(parts[1], out minor))
+        if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]) && !TryParseSemverNumericIdentifier(parts[1], out minor))
         {
             return false;
         }
 
         // Parse patch (optional, defaults to 0)
         var patch = 0;
-        if (parts.Length > 2 && !string.IsNullOrEmpty(parts[2]) && !TryParseSemverNumeric(parts[2], out patch))
+        if (parts.Length > 2 && !string.IsNullOrEmpty(parts[2]) && !TryParseSemverNumericIdentifier(parts[2], out patch))
         {
             return false;
         }
@@ -135,15 +135,20 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         return true;
     }
 
-    // Semver 2.0.0 §2: numeric identifiers MUST NOT include leading zeros.
-    static bool TryParseSemverNumeric(string part, out int value)
+    static bool TryParseSemverNumericIdentifier(string part, out int value)
     {
         value = 0;
-        if (string.IsNullOrEmpty(part) || (part.Length > 1 && part[0] == '0'))
+        if (string.IsNullOrEmpty(part))
+        {
+            return false;
+        }
+        // Semver 2.0.0 §2: literal "0" is allowed; "01", "00", "001" are not.
+        if (part.Length > 1 && part[0] == '0')
         {
             return false;
         }
         // NumberStyles.None + InvariantCulture rejects signs, whitespace, and non-ASCII digits.
+        // The sign rejection is what lets TryParse drop the explicit negative-component check.
         return int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out value);
     }
 
@@ -260,7 +265,7 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         {
             // "X" pattern - treat as "X.*"
             // Bare wildcards like "*" and non-numeric values are invalid
-            if (!TryParseSemverNumeric(parts[0], out var major))
+            if (!TryParseSemverNumericIdentifier(parts[0], out var major))
             {
                 return false;
             }
@@ -272,7 +277,7 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         else if (parts.Length == 2)
         {
             // "X.Y" or "X.*" pattern
-            if (!TryParseSemverNumeric(parts[0], out var major))
+            if (!TryParseSemverNumericIdentifier(parts[0], out var major))
             {
                 return false;
             }
@@ -285,7 +290,7 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
                 return true;
             }
 
-            if (!TryParseSemverNumeric(parts[1], out var minor))
+            if (!TryParseSemverNumericIdentifier(parts[1], out var minor))
             {
                 return false;
             }
@@ -298,12 +303,12 @@ internal readonly record struct SemanticVersion : IComparable<SemanticVersion>
         else if (parts.Length >= 3)
         {
             // "X.Y.Z" or "X.Y.*" pattern
-            if (!TryParseSemverNumeric(parts[0], out var major))
+            if (!TryParseSemverNumericIdentifier(parts[0], out var major))
             {
                 return false;
             }
 
-            if (!TryParseSemverNumeric(parts[1], out var minor))
+            if (!TryParseSemverNumericIdentifier(parts[1], out var minor))
             {
                 return false;
             }
