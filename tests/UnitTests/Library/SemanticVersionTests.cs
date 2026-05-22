@@ -107,10 +107,12 @@ public class TheTryParseMethod
     }
 
     [Theory]
-    // Leading zeros are parsed as integers
-    [InlineData("01.02.03", 1, 2, 3)]
-    [InlineData("001.002.003", 1, 2, 3)]
-    public void ParsesLeadingZeros(string input, int expectedMajor, int expectedMinor, int expectedPatch)
+    // Literal "0" components are valid per semver 2.0.0
+    [InlineData("0.0.1", 0, 0, 1)]
+    [InlineData("0.1.0", 0, 1, 0)]
+    [InlineData("1.0.0", 1, 0, 0)]
+    [InlineData("1.2.0", 1, 2, 0)]
+    public void ParsesLiteralZeroComponents(string input, int expectedMajor, int expectedMinor, int expectedPatch)
     {
         var result = SemanticVersion.TryParse(input, out var version);
 
@@ -139,6 +141,19 @@ public class TheTryParseMethod
     [InlineData("1.-2.3")]    // Negative minor
     [InlineData("-1.2.3")]    // Negative major
     [InlineData("1.2.-3")]    // Negative patch
+    [InlineData("01.02.03")]  // Leading zeros (all components)
+    [InlineData("001.002.003")] // Multiple leading zeros
+    [InlineData("1.07.3")]    // Leading zero in minor
+    [InlineData("1.2.03")]    // Leading zero in patch
+    [InlineData("01.2.3")]    // Leading zero in major
+    [InlineData("00.0.0")]    // Leading zero on a zero major
+    [InlineData("v01.2.3")]   // Leading zero with v-prefix
+    [InlineData("01.2.3-alpha")]      // Leading zero + pre-release
+    [InlineData("01.2.3+build")]      // Leading zero + build metadata
+    [InlineData("  01.2.3  ")]        // Leading zero + outer whitespace
+    [InlineData("1. 2.3")]            // Embedded whitespace in minor (NumberStyles.None rejects)
+    [InlineData("١.2.3")]             // Arabic-Indic digit in major (InvariantCulture rejects)
+    [InlineData("99999999999999.0.0")] // Overflows int.MaxValue
     public void ReturnsFalseForInvalidInput(string? input)
     {
         var result = SemanticVersion.TryParse(input, out var version);
@@ -470,6 +485,14 @@ public class TheTryParseWildcardMethod
     [InlineData("1.2.3.*")]  // Too specific
     [InlineData(".1.*")]     // Leading dot
     [InlineData("abc.*")]    // Non-numeric
+    [InlineData("01.*")]     // Leading zero in major
+    [InlineData("1.02.*")]   // Leading zero in minor
+    [InlineData("01.2.*")]   // Leading zero in major (X.Y.*)
+    [InlineData("01")]       // Leading zero in implicit major
+    [InlineData("01.2")]     // Leading zero in implicit X.Y
+    [InlineData("1.02")]     // Leading zero in implicit minor
+    [InlineData("v01.*")]    // Leading zero with v-prefix
+    [InlineData("001.*")]    // Multiple leading zeros
     public void ReturnsFalseForInvalidPatterns(string? pattern)
     {
         var result = SemanticVersion.TryParseWildcard(pattern, out var lower, out var upper);

@@ -2289,7 +2289,6 @@ public class TheSemverOperators
     [InlineData("1.2.3-alpha", ComparisonOperator.SemverEquals, "1.2.3", true)] // Pre-release stripped
     [InlineData("1.2.3+build", ComparisonOperator.SemverEquals, "1.2.3", true)] // Build metadata stripped
     [InlineData("  1.2.3  ", ComparisonOperator.SemverEquals, "1.2.3", true)]   // Whitespace stripped
-    [InlineData("01.02.03", ComparisonOperator.SemverEquals, "1.2.3", true)]    // Leading zeros
     [InlineData("1.2", ComparisonOperator.SemverEquals, "1.2.0", true)]         // Partial version
     [InlineData("1", ComparisonOperator.SemverEquals, "1.0.0", true)]           // Partial version
     [InlineData("1.2.3.4", ComparisonOperator.SemverEquals, "1.2.3", true)]     // Extra parts ignored
@@ -2329,6 +2328,14 @@ public class TheSemverOperators
     [InlineData(".1.2.3", ComparisonOperator.SemverEquals)]
     [InlineData("not-a-version", ComparisonOperator.SemverGreaterThan)]
     [InlineData("", ComparisonOperator.SemverGreaterThan)]
+    // Leading-zero override values are invalid per semver 2.0.0 §2
+    [InlineData("01.02.03", ComparisonOperator.SemverEquals)]
+    [InlineData("1.07.3", ComparisonOperator.SemverEquals)]
+    [InlineData("01.02.03", ComparisonOperator.SemverNotEquals)]
+    [InlineData("1.07.3", ComparisonOperator.SemverGreaterThan)]
+    [InlineData("01.2.3", ComparisonOperator.SemverGreaterThanOrEquals)]
+    [InlineData("1.2.03", ComparisonOperator.SemverLessThan)]
+    [InlineData("1.07.3", ComparisonOperator.SemverLessThanOrEquals)]
     public void ThrowsInconclusiveMatchExceptionForInvalidOverrideVersion(string overrideValue, ComparisonOperator comparison)
     {
         var flags = CreateFlags(
@@ -2358,11 +2365,28 @@ public class TheSemverOperators
 
     [Theory]
     // Invalid version in filter value - should throw InconclusiveMatchException
-    [InlineData("not-a-version")]
-    [InlineData("")]
-    [InlineData("abc.def.ghi")]
-    [InlineData(".1.2.3")]
-    public void ThrowsInconclusiveMatchExceptionForInvalidFilterVersion(string filterValue)
+    [InlineData("not-a-version", ComparisonOperator.SemverEquals)]
+    [InlineData("", ComparisonOperator.SemverEquals)]
+    [InlineData("abc.def.ghi", ComparisonOperator.SemverEquals)]
+    [InlineData(".1.2.3", ComparisonOperator.SemverEquals)]
+    // Mirror the override-version test: non-leading-zero malformed inputs must also fail
+    // under non-equals operators, not just SemverEquals.
+    [InlineData("not-a-version", ComparisonOperator.SemverGreaterThan)]
+    [InlineData("", ComparisonOperator.SemverGreaterThan)]
+    [InlineData("abc.def.ghi", ComparisonOperator.SemverTilde)]
+    [InlineData(".1.2.3", ComparisonOperator.SemverCaret)]
+    // Leading-zero filter values are invalid per semver 2.0.0 §2, across all operators
+    [InlineData("01.02.03", ComparisonOperator.SemverEquals)]
+    [InlineData("1.07.3", ComparisonOperator.SemverEquals)]
+    [InlineData("01.2.3", ComparisonOperator.SemverEquals)]
+    [InlineData("1.2.03", ComparisonOperator.SemverEquals)]
+    [InlineData("1.07.3", ComparisonOperator.SemverGreaterThan)]
+    [InlineData("01.2.3", ComparisonOperator.SemverGreaterThanOrEquals)]
+    [InlineData("1.2.03", ComparisonOperator.SemverLessThan)]
+    [InlineData("01.02.03", ComparisonOperator.SemverLessThanOrEquals)]
+    [InlineData("1.07.3", ComparisonOperator.SemverTilde)]
+    [InlineData("01.2.3", ComparisonOperator.SemverCaret)]
+    public void ThrowsInconclusiveMatchExceptionForInvalidFilterVersion(string filterValue, ComparisonOperator comparison)
     {
         var flags = CreateFlags(
             key: "version",
@@ -2372,7 +2396,7 @@ public class TheSemverOperators
                     Type = FilterType.Person,
                     Key = "app_version",
                     Value = new PropertyFilterValue(filterValue),
-                    Operator = ComparisonOperator.SemverEquals
+                    Operator = comparison
                 }
             ]
         );
@@ -2394,6 +2418,10 @@ public class TheSemverOperators
     [InlineData("*")]
     [InlineData("1.2.3")]  // Not a wildcard pattern
     [InlineData("abc.*")]
+    // Leading-zero wildcard patterns are invalid per semver 2.0.0 §2
+    [InlineData("01.*")]
+    [InlineData("1.02.*")]
+    [InlineData("01.2.*")]
     public void ThrowsInconclusiveMatchExceptionForInvalidWildcardPattern(string filterValue)
     {
         var flags = CreateFlags(
