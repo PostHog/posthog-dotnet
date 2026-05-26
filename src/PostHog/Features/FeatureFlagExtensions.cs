@@ -81,7 +81,10 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns><c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.</returns>
+    /// <returns>
+    /// <c>true</c> if the feature is enabled for the user; <c>false</c> if it is evaluated and disabled;
+    /// <c>null</c> when the SDK cannot determine the flag value.
+    /// </returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<bool?> IsFeatureEnabledAsync(
         this IPostHogClient client,
@@ -104,7 +107,10 @@ public static class FeatureFlagExtensions
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
-    /// <returns><c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.</returns>
+    /// <returns>
+    /// <c>true</c> if the feature is enabled for the user; <c>false</c> if it is evaluated and disabled;
+    /// <c>null</c> when the SDK cannot determine the flag value.
+    /// </returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<bool?> IsFeatureEnabledAsync(
         this IPostHogClient client,
