@@ -4,4 +4,4 @@
 "PostHog.AI": patch
 ---
 
-Document public APIs and correct group collection keys.
+Document public APIs and make `GroupCollection.TryAdd(Group)` store entries by group type instead of group key, matching the collection's one-group-per-type behavior.
