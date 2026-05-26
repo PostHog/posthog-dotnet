@@ -20,7 +20,7 @@ public sealed class MemoryFeatureFlagCache(TimeProvider timeProvider, int sizeLi
         CompactionPercentage = compactPercentage
     });
 
-    /// <inherititdoc/>
+    /// <inheritdoc />
     public override async Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
         IReadOnlyDictionary<string, object?>? personProperties,
@@ -41,5 +41,8 @@ public sealed class MemoryFeatureFlagCache(TimeProvider timeProvider, int sizeLi
         return flags ?? new FlagsResult();
     }
 
+    /// <summary>
+    /// Releases the resources used by the underlying memory cache.
+    /// </summary>
     public void Dispose() => _cache.Dispose();
 }

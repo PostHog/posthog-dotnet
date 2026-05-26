@@ -9,7 +9,7 @@ namespace PostHog.Library;
 /// Determines the operating system platform and version at runtime, maps out,
 /// and assigns the corresponding values to the <c>Name</c> and <c>Version</c> properties.
 /// Currently, we detect between different Windows / Windows Server versions (after Windows 2000), and simple Linux or macOS.
-/// For unsupported platforms, the <c>Name</c> is set to "Unknown" and the <c>Version</c> is set to the value of <see cref="Environment.OSVersion.VersionString"/>.
+/// For unsupported platforms, the <c>Name</c> is set to "Unknown" and the <c>Version</c> is set to the value of <c>Environment.OSVersion.VersionString</c>.
 /// </remarks>
 public static class OperatingSystemInfo
 {
@@ -17,7 +17,14 @@ public static class OperatingSystemInfo
     private static readonly string _name = GetOSName();
     private static readonly string _version = GetOSVersion();
 
+    /// <summary>
+    /// Gets a human-friendly operating system name.
+    /// </summary>
     public static string Name => _name;
+
+    /// <summary>
+    /// Gets a human-friendly operating system version.
+    /// </summary>
     public static string Version => _version;
 
     private static string GetOSName()

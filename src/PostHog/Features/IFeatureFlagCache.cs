@@ -107,6 +107,9 @@ public interface IFeatureFlagCache
 /// </summary>
 public sealed class NullFeatureFlagCache : IFeatureFlagCache
 {
+    /// <summary>
+    /// Gets the singleton <see cref="NullFeatureFlagCache"/> instance.
+    /// </summary>
     public static readonly NullFeatureFlagCache Instance = new();
 
     private NullFeatureFlagCache()

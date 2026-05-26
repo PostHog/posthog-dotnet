@@ -13,6 +13,10 @@ public class PostHogConfigurationBuilder : IPostHogConfigurationBuilder
     readonly IServiceCollection _services;
     readonly IHttpClientBuilder _httpClientBuilder;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PostHogConfigurationBuilder"/> class.
+    /// </summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> where PostHog services are registered.</param>
     public PostHogConfigurationBuilder(IServiceCollection services)
     {
         _services = services;
@@ -31,7 +35,7 @@ public class PostHogConfigurationBuilder : IPostHogConfigurationBuilder
     /// Builds the <see cref="IServiceCollection"/> with the configured services. This enables us to try and add
     /// default services after we've configured the <see cref="PostHogClient"/>.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>The configured <see cref="IServiceCollection"/>.</returns>
     public IServiceCollection Build()
     {
         // Try to set up defaults if they haven't been set yet.

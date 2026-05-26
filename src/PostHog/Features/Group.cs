@@ -46,7 +46,7 @@ public record Group
     /// <summary>
     /// Constructs a <see cref="Group"/> with the specified properties.
     /// </summary>
-    /// <param name="properties"></param>
+    /// <param name="properties">The properties to associate with this group.</param>
     public Group(IReadOnlyDictionary<string, object?> properties)
     {
         Properties = properties.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
@@ -83,7 +83,8 @@ public record Group
     /// The indexer for <see cref="Group"/> used to get or set a property value.
     /// </summary>
     /// <param name="name">The property name.</param>
-    /// <exception cref="KeyNotFoundException"></exception>
+    /// <returns>The property value.</returns>
+    /// <exception cref="KeyNotFoundException">Thrown when getting a property that does not exist or has a <c>null</c> value.</exception>
     public object this[string name]
     {
         get => NotNull(Properties)[name] ?? throw new KeyNotFoundException();

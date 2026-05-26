@@ -17,8 +17,7 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>
-    /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature does not
-    /// exist.
+    /// <c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.
     /// </returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static Task<bool> IsFeatureEnabledAsync(
@@ -39,7 +38,7 @@ public static class FeatureFlagExtensions
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <returns>
-    /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
+    /// <c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.
     /// </returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static Task<bool> IsFeatureEnabledAsync(
@@ -60,7 +59,7 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <returns>
-    /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
+    /// <c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.
     /// </returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static Task<bool> IsFeatureEnabledAsync(
@@ -75,14 +74,14 @@ public static class FeatureFlagExtensions
 #pragma warning restore CS0618
 
     /// <summary>
-    /// Retrieves a feature flag.
+    /// Determines whether a feature is enabled for the specified user using supplied person properties.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns><c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<bool?> IsFeatureEnabledAsync(
         this IPostHogClient client,
@@ -99,13 +98,13 @@ public static class FeatureFlagExtensions
 #pragma warning restore CS0618
 
     /// <summary>
-    /// Retrieves a feature flag.
+    /// Determines whether a feature is enabled for the specified user using supplied person properties.
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns><c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).IsEnabled(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<bool?> IsFeatureEnabledAsync(
         this IPostHogClient client,
@@ -127,7 +126,7 @@ public static class FeatureFlagExtensions
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns>The feature flag result, or <c>null</c> when the SDK cannot evaluate it.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
@@ -146,7 +145,7 @@ public static class FeatureFlagExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns>The feature flag result, or <c>null</c> when the SDK cannot evaluate it.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
@@ -167,7 +166,7 @@ public static class FeatureFlagExtensions
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns>The feature flag result, or <c>null</c> when the SDK cannot evaluate it.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
@@ -188,7 +187,7 @@ public static class FeatureFlagExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns>The feature flag result, or <c>null</c> when the SDK cannot evaluate it.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
@@ -211,7 +210,7 @@ public static class FeatureFlagExtensions
     /// <param name="featureKey">The name of the feature flag.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns>The feature flag result, or <c>null</c> when the SDK cannot evaluate it.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId, options).GetFlag(featureKey). This method will be removed in a future major version.", error: false)]
     public static async Task<FeatureFlag?> GetFeatureFlagAsync(
         this IPostHogClient client,
@@ -263,6 +262,7 @@ public static class FeatureFlagExtensions
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <returns>A snapshot of feature flag evaluations.</returns>
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         this IPostHogClient client,
         string distinctId)
@@ -274,6 +274,7 @@ public static class FeatureFlagExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A snapshot of feature flag evaluations.</returns>
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         this IPostHogClient client,
         string distinctId,
@@ -286,6 +287,7 @@ public static class FeatureFlagExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="options">Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes the underlying <c>/flags</c> request body.</param>
+    /// <returns>A snapshot of feature flag evaluations.</returns>
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         this IPostHogClient client,
         string distinctId,
@@ -300,6 +302,7 @@ public static class FeatureFlagExtensions
     /// that the polling mechanism is started for automatic updates. A personal API key is required
     /// for local evaluation. If no personal API key is configured, a warning will be logged.
     /// </remarks>
+    /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public static Task LoadFeatureFlagsAsync(this IPostHogClient client)
         => NotNull(client).LoadFeatureFlagsAsync(CancellationToken.None);

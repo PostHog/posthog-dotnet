@@ -14,6 +14,7 @@ public static class IdentifyPersonAsyncExtensions
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static Task<ApiResult> IdentifyAsync(this IPostHogClient client, string distinctId)
         => NotNull(client).IdentifyAsync(distinctId, CancellationToken.None);
 
@@ -24,6 +25,7 @@ public static class IdentifyPersonAsyncExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static Task<ApiResult> IdentifyAsync(
         this IPostHogClient client,
         string distinctId,
@@ -43,6 +45,7 @@ public static class IdentifyPersonAsyncExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="email">An email to associate with the person.</param>
     /// <param name="name">The person's name.</param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static Task<ApiResult> IdentifyAsync(
         this IPostHogClient client,
         string distinctId,
@@ -63,6 +66,7 @@ public static class IdentifyPersonAsyncExtensions
     /// <param name="email">An email to associate with the person.</param>
     /// <param name="name">The person's name.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static Task<ApiResult> IdentifyAsync(
         this IPostHogClient client,
         string distinctId,
@@ -88,6 +92,7 @@ public static class IdentifyPersonAsyncExtensions
     /// Key value pairs to store as properties of the user in addition to the already specified "email" and "name".
     /// Any key value pairs in this dictionary that match existing property keys will overwrite those properties.
     /// </param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static async Task<ApiResult> IdentifyAsync(
         this IPostHogClient client,
         string distinctId,
@@ -114,6 +119,7 @@ public static class IdentifyPersonAsyncExtensions
     /// Any key value pairs in this dictionary that match existing property keys will overwrite those properties.
     /// </param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static async Task<ApiResult> IdentifyAsync(
         this IPostHogClient client,
         string distinctId,
@@ -144,6 +150,7 @@ public static class IdentifyPersonAsyncExtensions
     /// <param name="personPropertiesToSetOnce">User properties to set only once (ex: Sign up date). If a property already exists, then the
     /// value in this dictionary is ignored.
     /// </param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static async Task<ApiResult> IdentifyAsync(
         this IPostHogClient client,
         string distinctId,
@@ -175,6 +182,7 @@ public static class IdentifyPersonAsyncExtensions
     /// value in this dictionary is ignored.
     /// </param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <returns>An <see cref="ApiResult"/> with the result of the operation.</returns>
     public static async Task<ApiResult> IdentifyAsync(
         this IPostHogClient client,
         string distinctId,

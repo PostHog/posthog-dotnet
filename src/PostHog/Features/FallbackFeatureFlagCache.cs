@@ -14,7 +14,7 @@ public class FallbackFeatureFlagCache(IFeatureFlagCache primary, IFeatureFlagCac
     readonly IFeatureFlagCache _primary = Ensure.NotNull(primary);
     readonly IFeatureFlagCache _fallback = Ensure.NotNull(fallback);
 
-    /// <inherititdoc/>
+    /// <inheritdoc />
     public override async Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
         IReadOnlyDictionary<string, object?>? personProperties,

@@ -15,12 +15,18 @@ public class PostHogOpenAIHandler : DelegatingHandler
     private readonly IPostHogClient _postHogClient;
     private readonly ILogger<PostHogOpenAIHandler> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PostHogOpenAIHandler"/> class.
+    /// </summary>
+    /// <param name="postHogClient">The PostHog client used to capture AI observability events.</param>
+    /// <param name="logger">The logger used to report capture failures.</param>
     public PostHogOpenAIHandler(IPostHogClient postHogClient, ILogger<PostHogOpenAIHandler> logger)
     {
         _postHogClient = postHogClient ?? throw new ArgumentNullException(nameof(postHogClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken

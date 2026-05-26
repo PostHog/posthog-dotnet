@@ -97,6 +97,11 @@ public sealed class PostHogAIContext
     /// <param name="groups">Optional groups to associate with events.</param>
     /// <param name="privacyMode">Optional flag to enable/disable privacy mode.</param>
     /// <returns>An <see cref="IDisposable"/> that ends the scope when disposed.</returns>
+    /// <remarks>
+    /// Context is stored in <see cref="AsyncLocal{T}"/> and flows with asynchronous execution. Nested scopes inherit
+    /// parent values for any null arguments. Parent and child property/group dictionaries are merged, with child values
+    /// overriding parent values for duplicate keys. Disposing the returned object restores the previous context.
+    /// </remarks>
     public static IDisposable BeginScope(
         string? distinctId = null,
         string? traceId = null,

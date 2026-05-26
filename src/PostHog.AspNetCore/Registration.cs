@@ -28,7 +28,7 @@ public static class Registration
     /// <param name="builder">The <see cref="IHostApplicationBuilder"/>.</param>
     /// <param name="options">Provides a mean to configure the <see cref="PostHogClient"/> and some of the services it uses.</param>
     /// <returns>The passed in <see cref="IHostApplicationBuilder"/>.</returns>
-    /// <exception cref="ArgumentNullException">If <see cref="builder"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">If <paramref name="builder"/> is null.</exception>
     public static IHostApplicationBuilder AddPostHog(
         this IHostApplicationBuilder builder,
         Action<IPostHogConfigurationBuilder>? options)

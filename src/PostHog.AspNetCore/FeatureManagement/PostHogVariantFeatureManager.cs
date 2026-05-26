@@ -11,12 +11,14 @@ namespace PostHog.FeatureManagement;
 /// </summary>
 /// <param name="posthog">The <see cref="IPostHogClient"/> used to evaluate feature flags.</param>
 /// <param name="targetingContextAccessor">The <see cref="ITargetingContextAccessor" /> used to evaluate feature flags.</param>
+/// <param name="logger">The logger used to report registration problems.</param>
 public class PostHogVariantFeatureManager(
     IPostHogClient posthog,
     ITargetingContextAccessor targetingContextAccessor,
     ILogger<PostHogVariantFeatureManager> logger)
     : IVariantFeatureManager
 {
+    /// <inheritdoc />
     public async IAsyncEnumerable<string> GetFeatureNamesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = new())
     {
@@ -31,6 +33,7 @@ public class PostHogVariantFeatureManager(
         }
     }
 
+    /// <inheritdoc />
     public async ValueTask<bool> IsEnabledAsync(string feature, CancellationToken cancellationToken = new())
     {
         var targetingContext = await targetingContextAccessor.GetContextAsync();
@@ -38,6 +41,7 @@ public class PostHogVariantFeatureManager(
         return await IsEnabledAsync<TargetingContext>(feature, targetingContext, cancellationToken);
     }
 
+    /// <inheritdoc />
     public async ValueTask<bool> IsEnabledAsync<TContext>(
         string feature,
         TContext context,
@@ -47,12 +51,14 @@ public class PostHogVariantFeatureManager(
         return flag is { IsEnabled: true };
     }
 
+    /// <inheritdoc />
     public async ValueTask<Variant> GetVariantAsync(string feature, CancellationToken cancellationToken = new())
     {
         var targetingContext = await targetingContextAccessor.GetContextAsync();
         return await GetVariantAsync(feature, targetingContext, cancellationToken);
     }
 
+    /// <inheritdoc />
     public async ValueTask<Variant> GetVariantAsync(
         string feature,
         ITargetingContext? context,

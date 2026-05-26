@@ -27,7 +27,7 @@ public class GroupCollection : ICollection<Group>
     /// </summary>
     /// <param name="groupType">The type of group in PostHog. For example, company, project, etc.</param>
     /// <param name="groupKey">The identifier for the group such as the ID of the group in the database.</param>
-    /// <exception cref="ArgumentNullException">Thrown if a group with this group type already exists.</exception>
+    /// <exception cref="ArgumentException">Thrown if a group with this group type already exists.</exception>
     public void Add(string groupType, string groupKey)
     {
         if (TryAdd(groupType, groupKey))
@@ -42,20 +42,20 @@ public class GroupCollection : ICollection<Group>
     /// </summary>
     /// <param name="group">The group to add.</param>
     /// <returns><c>true</c> if the group was added. <c>false</c> if the group type already exists.</returns>
-    public bool TryAdd(Group group) => _groups.TryAdd(NotNull(group).GroupKey, group);
+    public bool TryAdd(Group group) => _groups.TryAdd(NotNull(group).GroupType, group);
 
     /// <summary>
     /// Adds a <see cref="Group"/> to this collection.
     /// </summary>
     /// <param name="group">The group to add.</param>
-    /// <exception cref="ArgumentNullException">Thrown if a group with this group type already exists.</exception>
+    /// <exception cref="ArgumentException">Thrown if a group with this group type already exists.</exception>
     public void Add(Group group)
     {
         if (_groups.TryAdd(NotNull(group).GroupType, group))
         {
             return;
         }
-        ThrowArgumentExceptionIfGroupWithGroupTypeExists(group.GroupKey);
+        ThrowArgumentExceptionIfGroupWithGroupTypeExists(group.GroupType);
     }
 
     /// <summary>
@@ -112,6 +112,10 @@ public class GroupCollection : ICollection<Group>
         throw new ArgumentException($"A group with the `group_type` of '{groupType}' already exists.", nameof(groupType));
 
 
+    /// <summary>
+    /// Returns an enumerator that iterates through the groups in this collection.
+    /// </summary>
+    /// <returns>An enumerator for the groups in this collection.</returns>
     public IEnumerator<Group> GetEnumerator() => _groups.Values.GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
@@ -119,7 +123,8 @@ public class GroupCollection : ICollection<Group>
     /// <summary>
     /// The indexer for this <see cref="GroupCollection"/> used to get or set a group.
     /// </summary>
-    /// <param name="groupType"></param>
+    /// <param name="groupType">The type of group to get or set.</param>
+    /// <returns>The group with the specified group type.</returns>
     public Group this[string groupType]
     {
         get => _groups[groupType];

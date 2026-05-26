@@ -7,5 +7,8 @@ namespace PostHog.Config;
 /// </summary>
 public interface IPostHogAspNetCoreConfigurationBuilder : IPostHogConfigurationBuilder
 {
+    /// <summary>
+    /// Gets the ASP.NET Core application configuration.
+    /// </summary>
     public IConfiguration Configuration { get; }
 }

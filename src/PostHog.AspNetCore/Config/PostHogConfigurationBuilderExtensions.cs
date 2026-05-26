@@ -38,6 +38,7 @@ public static class PostHogConfigurationBuilderExtensions
     /// person properties and groups when evaluating feature flags. There's a base implementation of
     /// <see cref="PostHogFeatureFlagContextProvider"/> you can override.
     /// </remarks>
+    /// <typeparam name="TContextProvider">The context provider type used to supply feature flag evaluation context.</typeparam>
     /// <param name="builder">The <see cref="IPostHogConfigurationBuilder"/>.</param>
     /// <returns>The passed in <see cref="IPostHogConfigurationBuilder"/>.</returns>
     public static IPostHogConfigurationBuilder UseFeatureManagement<TContextProvider>(this IPostHogConfigurationBuilder builder)
@@ -54,6 +55,7 @@ public static class PostHogConfigurationBuilderExtensions
     /// <see cref="PostHogFeatureFlagContextProvider"/> you can override.
     /// </remarks>
     /// <param name="builder">The <see cref="IPostHogConfigurationBuilder"/>.</param>
+    /// <typeparam name="TContextProvider">The context provider type used to supply feature flag evaluation context.</typeparam>
     /// <param name="configure">
     /// Action used to configure the <see cref="IFeatureManagementBuilder"/>. Use this to provide a custom
     /// <see cref="ITargetingContextAccessor"/>.

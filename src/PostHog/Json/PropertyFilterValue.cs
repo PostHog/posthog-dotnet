@@ -58,11 +58,19 @@ public class PropertyFilterValue
             _ => throw new ArgumentException($"JsonValueKind: {jsonElement.ValueKind} is not supported for filter property values.", nameof(jsonElement))
         };
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PropertyFilterValue"/> class with a list of string values.
+    /// </summary>
+    /// <param name="listOfStrings">The list of string values to match against.</param>
     public PropertyFilterValue(IReadOnlyList<string> listOfStrings)
     {
         ListOfStrings = listOfStrings;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PropertyFilterValue"/> class with a cohort identifier.
+    /// </summary>
+    /// <param name="cohortId">The cohort identifier.</param>
     public PropertyFilterValue(long cohortId)
     {
         CohortId = cohortId;
@@ -74,11 +82,19 @@ public class PropertyFilterValue
     /// <remarks>As far as I can tell, this is the only place we have a numeric.</remarks>
     public long? CohortId { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PropertyFilterValue"/> class with a string value.
+    /// </summary>
+    /// <param name="stringValue">The string value.</param>
     public PropertyFilterValue(string stringValue)
     {
         StringValue = stringValue;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PropertyFilterValue"/> class with a boolean value.
+    /// </summary>
+    /// <param name="booleanValue">The boolean value.</param>
     public PropertyFilterValue(bool booleanValue)
     {
         BooleanValue = booleanValue;
@@ -250,9 +266,36 @@ public class PropertyFilterValue
         }
     }
 
+    /// <summary>
+    /// Determines whether the left filter value is greater than the right value.
+    /// </summary>
+    /// <param name="left">The filter value to compare.</param>
+    /// <param name="right">The value to compare against.</param>
+    /// <returns><c>true</c> if <paramref name="left"/> is greater than <paramref name="right"/>; otherwise <c>false</c>.</returns>
     public static bool operator >(PropertyFilterValue left, object? right) => NotNull(left).CompareTo(right) > 0;
+
+    /// <summary>
+    /// Determines whether the left filter value is less than the right value.
+    /// </summary>
+    /// <param name="left">The filter value to compare.</param>
+    /// <param name="right">The value to compare against.</param>
+    /// <returns><c>true</c> if <paramref name="left"/> is less than <paramref name="right"/>; otherwise <c>false</c>.</returns>
     public static bool operator <(PropertyFilterValue? left, object? right) => NotNull(left).CompareTo(right) < 0;
+
+    /// <summary>
+    /// Determines whether the left filter value is greater than or equal to the right value.
+    /// </summary>
+    /// <param name="left">The filter value to compare.</param>
+    /// <param name="right">The value to compare against.</param>
+    /// <returns><c>true</c> if <paramref name="left"/> is greater than or equal to <paramref name="right"/>; otherwise <c>false</c>.</returns>
     public static bool operator >=(PropertyFilterValue left, object? right) => NotNull(left).CompareTo(right) >= 0;
+
+    /// <summary>
+    /// Determines whether the left filter value is less than or equal to the right value.
+    /// </summary>
+    /// <param name="left">The filter value to compare.</param>
+    /// <param name="right">The value to compare against.</param>
+    /// <returns><c>true</c> if <paramref name="left"/> is less than or equal to <paramref name="right"/>; otherwise <c>false</c>.</returns>
     public static bool operator <=(PropertyFilterValue left, object? right) => NotNull(left).CompareTo(right) <= 0;
 
     static SemanticVersion ParseOverrideSemver(object? overrideValue)
@@ -340,6 +383,10 @@ public class PropertyFilterValue
         return overrideVersion.IsInRange(lower.Value, upper.Value);
     }
 
+    /// <summary>
+    /// Returns a string representation of this filter value.
+    /// </summary>
+    /// <returns>The string, cohort, list, or boolean value represented as a string.</returns>
     public override string ToString()
     {
         return this switch
@@ -354,10 +401,19 @@ public class PropertyFilterValue
         };
     }
 
+    /// <summary>
+    /// Determines whether the specified object is equal to the current filter value.
+    /// </summary>
+    /// <param name="obj">The object to compare with the current filter value.</param>
+    /// <returns><c>true</c> if the specified object is equal to the current filter value; otherwise <c>false</c>.</returns>
     public override bool Equals(object? obj) =>
         obj is PropertyFilterValue other
         && Equals(other);
 
+    /// <summary>
+    /// Serves as the default hash function.
+    /// </summary>
+    /// <returns>A hash code for the current filter value.</returns>
     public override int GetHashCode() => HashCode.Combine(StringValue, ListOfStrings, BooleanValue);
 
     /// <summary>

@@ -46,7 +46,12 @@ internal record FlagsApiResult
     public long? EvaluatedAt { get; init; }
 }
 
-// This is a transformation of the FlagsApiResult to a more usable form.
+/// <summary>
+/// Normalized feature flag evaluation results returned by the <c>/flags</c> endpoint.
+/// </summary>
+/// <remarks>
+/// This is a transformation of the raw flags API response into a shape that is easier for SDK callers and caches to consume.
+/// </remarks>
 public record FlagsResult
 {
     /// <summary>

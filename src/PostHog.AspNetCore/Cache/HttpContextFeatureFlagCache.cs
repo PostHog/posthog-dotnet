@@ -11,6 +11,8 @@ namespace PostHog.Cache;
 /// An implementation of <see cref="IFeatureFlagCache"/> that uses the current <see cref="HttpContext"/> to cache
 /// feature flags. If the <see cref="HttpContext"/> is not available, then the feature flags are not cached.
 /// </summary>
+/// <param name="httpContextAccessor">Accessor for the current <see cref="HttpContext"/>.</param>
+/// <param name="logger">Logger used to report cache hits, misses, and cache access failures.</param>
 public class HttpContextFeatureFlagCache(
     IHttpContextAccessor httpContextAccessor,
     ILogger<HttpContextFeatureFlagCache> logger) : IFeatureFlagCache
@@ -18,7 +20,7 @@ public class HttpContextFeatureFlagCache(
     /// <summary>
     /// Constructs a new instance of <see cref="HttpContextFeatureFlagCache"/> without a logger.
     /// </summary>
-    /// <param name="httpContextAccessor"></param>
+    /// <param name="httpContextAccessor">Accessor for the current <see cref="HttpContext"/>.</param>
     public HttpContextFeatureFlagCache(IHttpContextAccessor httpContextAccessor)
         : this(httpContextAccessor, NullLogger<HttpContextFeatureFlagCache>.Instance)
     {

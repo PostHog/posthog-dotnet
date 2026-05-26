@@ -33,12 +33,14 @@ public static class PostHogAIExtensions
 
     /// <summary>
     /// Adds an <see cref="OpenAIClient"/> that intercepts requests and sends events to PostHog.
-    /// Note: This will override the <see cref="OpenAIClientOptions.Transport"/> property to use the PostHog handler.
+    /// Note: This sets the <c>OpenAIClientOptions.Transport</c> property to use the PostHog handler and throws if a custom transport is already configured.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/>.</param>
     /// <param name="apiKey">The OpenAI API key.</param>
     /// <param name="configureOptions">Optional action to configure <see cref="OpenAIClientOptions"/>.</param>
     /// <returns>The <see cref="IHttpClientBuilder"/> for the underlying HttpClient, allowing further customization (e.g. resilience).</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="apiKey"/> is null, empty, or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when PostHog services are not registered or when <paramref name="configureOptions"/> sets a custom transport.</exception>
     public static IHttpClientBuilder AddPostHogOpenAIClient(
         this IServiceCollection services,
         string apiKey,

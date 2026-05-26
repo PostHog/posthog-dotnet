@@ -15,6 +15,7 @@ namespace PostHog.Features;
 /// <param name="options">The options used to configure the client.</param>
 /// <param name="timeProvider">The time provider <see cref="TimeProvider"/> to use to determine time.</param>
 /// <param name="taskScheduler">Used to run tasks on the background.</param>
+/// <param name="loggerFactory">Creates loggers used by the loader and local evaluator.</param>
 internal sealed class LocalFeatureFlagsLoader(
     PostHogApiClient postHogApiClient,
     IOptions<PostHogOptions> options,
