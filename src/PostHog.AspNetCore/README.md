@@ -78,6 +78,55 @@ More detailed docs for using this library can be found at [PostHog Docs for the 
 
 ## Usage
 
+### Frontend-to-backend request context
+
+If your frontend sends PostHog JS request context headers, import the ASP.NET Core helpers and add the middleware before routes that call PostHog:
+
+```csharp
+using PostHog;
+using PostHog.AspNetCore;
+
+app.UsePostHogRequestContext();
+```
+
+This reads client-controlled `X-POSTHOG-DISTINCT-ID` and `X-POSTHOG-SESSION-ID` headers into a request-local analytics context. Installing the middleware opts the pipeline into request context extraction; individual PostHog calls use request-context identity only when they omit an explicit `distinctId` or call a parameterless request-context helper. Explicit distinct IDs always override request context. Captures inside the request can then omit `distinctId`:
+
+```csharp
+using PostHog.AspNetCore;
+
+posthog.Capture("checkout started");
+```
+
+These headers are client-controlled analytics context, not authentication. If `X-POSTHOG-DISTINCT-ID` is missing, normal captures become personless by default.
+
+The request-context `EvaluateFlagsAsync()` overloads also use the current request context distinct ID. Use them for analytics-driven consistency with frontend flag evaluation, not authorization checks. For security-sensitive server branching, pass an authenticated distinct ID explicitly:
+
+```csharp
+var flags = await posthog.EvaluateFlagsAsync(authenticatedUserId);
+```
+
+You can disable tracing header use while still collecting request metadata:
+
+```csharp
+app.UsePostHogRequestContext(options =>
+{
+    options.UseTracingHeaders = false;
+});
+```
+
+The middleware also adds request metadata such as `$current_url`, `$request_method`, `$request_path`, `$user_agent`, and `$ip`. `$current_url` omits the query string to avoid sending secrets such as OAuth codes, reset tokens, or signed URL parameters.
+
+If your app is behind a proxy, configure ASP.NET Core forwarded headers before this middleware so `$ip` uses the normalized `HttpContext.Connection.RemoteIpAddress` value.
+
+Unhandled downstream exception capture is disabled by default to avoid duplicate reporting if your app already captures exceptions elsewhere. Enable it explicitly to capture exceptions with the active request context and rethrow them. Exception capture uses the same request context identity/session/properties as regular captures:
+
+```csharp
+app.UsePostHogRequestContext(options =>
+{
+    options.CaptureExceptions = true;
+});
+```
+
 Inject the `IPostHogClient` interface into your controller or page:
 
 ```csharp

@@ -78,6 +78,44 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         Assert.True(await client.IsFeatureEnabledAsync("feature-flag", "distinct-id"));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task BlankDistinctIdReturnsEmptyResultsAcrossFeatureFlagApis(string distinctId)
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        Assert.False(await client.IsFeatureEnabledAsync("flag-key", distinctId));
+        Assert.Null(await client.GetFeatureFlagAsync("flag-key", distinctId, options: null, CancellationToken.None));
+        Assert.Empty(await client.GetAllFeatureFlagsAsync(distinctId, options: null, CancellationToken.None));
+        Assert.Empty((await client.EvaluateFlagsAsync(distinctId, options: null, CancellationToken.None)).Keys);
+
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        var warning = Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning),
+            e => (e.Message ?? string.Empty).Contains("distinctId is required", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, warning.LogLevel);
+    }
+
+    [Fact]
+    public async Task MissingDistinctIdReturnsEmptySingleFlagResultsWithWarningAndNoHttpCall()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        Assert.False(await client.IsFeatureEnabledAsync("flag-key", null!));
+        Assert.Null(await client.GetFeatureFlagAsync("flag-key", null!, options: null, CancellationToken.None));
+
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        var warning = Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning),
+            e => (e.Message ?? string.Empty).Contains("distinctId is required", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, warning.LogLevel);
+    }
+
     [Fact]
     public async Task CapturesFeatureFlagCalledEventOnlyOncePerDistinctIdFlagKeyAndResponse()
     {
@@ -2653,6 +2691,23 @@ public class TheGetFeatureFlagAsyncMethod
 
 public class TheGetAllFeatureFlagsAsyncMethod
 {
+    [Fact]
+    public async Task MissingDistinctIdReturnsEmptyAllFlagsWithWarningAndNoHttpCall()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-key": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var flags = await client.GetAllFeatureFlagsAsync(null!, options: null, CancellationToken.None);
+
+        Assert.Empty(flags);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        var warning = Assert.Single(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning),
+            e => (e.Message ?? string.Empty).Contains("distinctId is required", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, warning.LogLevel);
+    }
+
     [Fact] // Ported from PostHog/posthog-python test_get_all_flags_with_fallback
     public async Task RetrievesAllFlagsWithFallback()
     {
