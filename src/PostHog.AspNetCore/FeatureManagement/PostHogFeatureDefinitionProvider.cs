@@ -9,6 +9,7 @@ namespace PostHog.FeatureManagement;
 /// <param name="posthog">The <see cref="IPostHogClient"/> used to evaluate feature flags.</param>
 public class PostHogFeatureDefinitionProvider(IPostHogClient posthog) : IFeatureDefinitionProvider
 {
+    /// <inheritdoc />
     public async Task<FeatureDefinition?> GetFeatureDefinitionAsync(string featureName)
     {
         await foreach (var feature in GetAllFeatureDefinitionsAsync())
@@ -21,6 +22,7 @@ public class PostHogFeatureDefinitionProvider(IPostHogClient posthog) : IFeature
         return null;
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<FeatureDefinition> GetAllFeatureDefinitionsAsync()
     {
         var localEvaluator = await posthog.GetLocalEvaluatorAsync(CancellationToken.None);

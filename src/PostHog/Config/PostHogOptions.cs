@@ -137,7 +137,7 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public int FlushAt { get; set; } = 20;
 
     /// <summary>
-    /// The interval in milliseconds between periodic flushes. (Default: 30s)
+    /// The interval between periodic flushes. (Default: 30s)
     /// </summary>
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(30);
 

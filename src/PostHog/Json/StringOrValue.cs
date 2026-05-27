@@ -67,12 +67,14 @@ public readonly struct StringOrValue<T> : IStringOrObject, IEquatable<T>, IEquat
     /// Implicitly converts a string to a <see cref="StringOrValue{T}"/>.
     /// </summary>
     /// <param name="stringValue">The string value.</param>
+    /// <returns>A <see cref="StringOrValue{T}"/> containing <paramref name="stringValue"/>.</returns>
     public static implicit operator StringOrValue<T>(string stringValue) => new(stringValue);
 
     /// <summary>
     /// Implicitly converts a value of type <typeparamref name="T"/> to a <see cref="StringOrValue{T}"/>.
     /// </summary>
     /// <param name="value">The value of type <typeparamref name="T"/>.</param>
+    /// <returns>A <see cref="StringOrValue{T}"/> containing <paramref name="value"/>.</returns>
     public static implicit operator StringOrValue<T>(T value) => new(value);
 
     /// <summary>
@@ -81,12 +83,27 @@ public readonly struct StringOrValue<T> : IStringOrObject, IEquatable<T>, IEquat
     /// <remarks>
     /// This is here to satisfy CA2225: Operator overloads have named alternates.
     /// </remarks>
+    /// <returns>This <see cref="StringOrValue{T}"/> instance.</returns>
     public StringOrValue<T> ToStringOrValue() => this;
 
+    /// <summary>
+    /// Returns the string value, the value converted to a string, or an empty string when neither is set.
+    /// </summary>
+    /// <returns>A string representation of this instance.</returns>
     public override string ToString() => (IsString ? StringValue : Value?.ToString()) ?? string.Empty;
 
+    /// <summary>
+    /// Determines whether this instance contains the specified value.
+    /// </summary>
+    /// <param name="obj">The value to compare with this instance.</param>
+    /// <returns><c>true</c> if this instance contains an equal value; otherwise <c>false</c>.</returns>
     public bool Equals(T? obj) => IsValue && obj is not null && EqualityComparer<T>.Default.Equals(Value, obj);
 
+    /// <summary>
+    /// Determines whether this instance is equal to another <see cref="StringOrValue{T}"/>.
+    /// </summary>
+    /// <param name="other">The other instance to compare with this instance.</param>
+    /// <returns><c>true</c> if both instances represent the same value or string; otherwise <c>false</c>.</returns>
     public bool Equals(StringOrValue<T> other)
         => (IsDefault && other.IsDefault)
            || other.IsValue
@@ -94,30 +111,73 @@ public readonly struct StringOrValue<T> : IStringOrObject, IEquatable<T>, IEquat
            && EqualityComparer<T>.Default.Equals(Value, other.Value)
            || other.IsString && IsString && StringComparer.Ordinal.Equals(StringValue, other.StringValue);
 
+    /// <summary>
+    /// Determines whether the specified object is equal to this instance.
+    /// </summary>
+    /// <param name="obj">The object to compare with this instance.</param>
+    /// <returns><c>true</c> if the object is equal to this instance; otherwise <c>false</c>.</returns>
     public override bool Equals([NotNullWhen(true)] object? obj)
         => obj is StringOrValue<T> value && Equals(value.Value);
 
+    /// <summary>
+    /// Serves as the default hash function.
+    /// </summary>
+    /// <returns>A hash code for this instance.</returns>
     public override int GetHashCode() => IsValue
         ? Value?.GetHashCode() ?? 0
         : StringValue?.GetHashCode(StringComparison.Ordinal) ?? 0;
 
-    // Override the == operator
+    /// <summary>
+    /// Determines whether two <see cref="StringOrValue{T}"/> instances are equal.
+    /// </summary>
+    /// <param name="left">The left instance to compare.</param>
+    /// <param name="right">The right instance to compare.</param>
+    /// <returns><c>true</c> if the instances are equal; otherwise <c>false</c>.</returns>
     public static bool operator ==(StringOrValue<T> left, StringOrValue<T> right)
         => left.Equals(right);
 
+    /// <summary>
+    /// Determines whether two <see cref="StringOrValue{T}"/> instances are not equal.
+    /// </summary>
+    /// <param name="left">The left instance to compare.</param>
+    /// <param name="right">The right instance to compare.</param>
+    /// <returns><c>true</c> if the instances are not equal; otherwise <c>false</c>.</returns>
     public static bool operator !=(StringOrValue<T> left, StringOrValue<T> right)
         => !left.Equals(right);
 
+    /// <summary>
+    /// Determines whether a nullable <see cref="StringOrValue{T}"/> contains the specified value.
+    /// </summary>
+    /// <param name="left">The instance to compare.</param>
+    /// <param name="right">The value to compare with the instance.</param>
+    /// <returns><c>true</c> if the instance contains the specified value; otherwise <c>false</c>.</returns>
     public static bool operator ==(StringOrValue<T>? left, T right)
         => left is not null && left.Equals(right);
 
+    /// <summary>
+    /// Determines whether a <see cref="StringOrValue{T}"/> contains the specified value.
+    /// </summary>
+    /// <param name="left">The instance to compare.</param>
+    /// <param name="right">The value to compare with the instance.</param>
+    /// <returns><c>true</c> if the instance contains the specified value; otherwise <c>false</c>.</returns>
     public static bool operator ==(StringOrValue<T> left, T right)
         => left.Equals(right);
 
-    // Override the != operator
+    /// <summary>
+    /// Determines whether a nullable <see cref="StringOrValue{T}"/> does not contain the specified value.
+    /// </summary>
+    /// <param name="left">The instance to compare.</param>
+    /// <param name="right">The value to compare with the instance.</param>
+    /// <returns><c>true</c> if the instance does not contain the specified value; otherwise <c>false</c>.</returns>
     public static bool operator !=(StringOrValue<T>? left, T right)
         => left is null || !left.Equals(right);
 
+    /// <summary>
+    /// Determines whether a <see cref="StringOrValue{T}"/> does not contain the specified value.
+    /// </summary>
+    /// <param name="left">The instance to compare.</param>
+    /// <param name="right">The value to compare with the instance.</param>
+    /// <returns><c>true</c> if the instance does not contain the specified value; otherwise <c>false</c>.</returns>
     public static bool operator !=(StringOrValue<T> left, T right)
         => !left.Equals(right);
 }

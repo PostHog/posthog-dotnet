@@ -216,7 +216,7 @@ public static class PostHogSdk
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="options">Optional options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>The feature flag or <c>null</c> if it does not exist or is not enabled.</returns>
+    /// <returns>The feature flag result, or <c>null</c> when the SDK cannot evaluate it.</returns>
 #pragma warning disable CS0618
     public static Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
@@ -242,6 +242,10 @@ public static class PostHogSdk
     /// <summary>
     /// Retrieves a remote config payload using the default client.
     /// </summary>
+    /// <remarks>
+    /// Requires <see cref="PostHogOptions.PersonalApiKey"/>. Returns <c>null</c> when the client is disabled,
+    /// the personal API key is missing, the payload is missing, or the request fails.
+    /// </remarks>
     /// <param name="key">The remote config key.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>The remote config payload or <c>null</c>.</returns>

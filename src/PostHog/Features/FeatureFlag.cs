@@ -107,9 +107,9 @@ public record FeatureFlag
         && JsonEqual(Payload, other.Payload);
 
     /// <summary>
-    /// Determines whether the specified <see cref="object"/> is equal to the current <see cref="FeatureFlag"/>.
+    /// Serves as the default hash function.
     /// </summary>
-    /// <returns><c>true</c> if the specified <see cref="object"/> is equal to the current <see cref="FeatureFlag"/>; otherwise, <c>false</c>.</returns>
+    /// <returns>A hash code for the current <see cref="FeatureFlag"/>.</returns>
     public override int GetHashCode() => HashCode.Combine(Key, IsEnabled, VariantKey, Payload);
 
     static bool JsonEqual(JsonDocument? source, JsonDocument? comparand) =>
@@ -120,10 +120,10 @@ public record FeatureFlag
         : JsonNode.Parse(jsonDocument.RootElement.GetRawText());
 
     /// <summary>
-    /// Implicit cast to nullable boolean.
+    /// Implicit cast to boolean.
     /// </summary>
     /// <param name="flag">The <see cref="FeatureFlag"/>.</param>
-    /// <returns><c>true</c> if this feature flag is enabled, <c>false</c> if it is not, and <c>null</c> if it can't be determined.</returns>
+    /// <returns><c>true</c> if this feature flag is non-null and enabled; otherwise <c>false</c>.</returns>
 #pragma warning disable CA2225
     public static implicit operator bool(FeatureFlag? flag) => flag is { IsEnabled: true };
 #pragma warning restore CA2225

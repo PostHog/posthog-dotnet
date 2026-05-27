@@ -182,7 +182,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>
-    /// <c>true</c> if the feature is enabled for the user. <c>false</c> if not. <c>null</c> if the feature is undefined.
+    /// <c>true</c> if the feature is enabled for the user; otherwise <c>false</c>.
     /// </returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).IsEnabled(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     Task<bool> IsFeatureEnabledAsync(
@@ -198,7 +198,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="options">Optional: Options used to control feature flag evaluation.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>The feature flag or null if it does not exist or is not enabled.</returns>
+    /// <returns>The feature flag result, or <c>null</c> when the SDK cannot evaluate it.</returns>
     [Obsolete("Prefer EvaluateFlagsAsync(distinctId).GetFlag(featureKey) — one /flags request powers all flag branching for the request. This method will be removed in a future major version.", error: false)]
     Task<FeatureFlag?> GetFeatureFlagAsync(
         string featureKey,
@@ -209,9 +209,13 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <summary>
     /// Retrieves a remote config payload.
     /// </summary>
+    /// <remarks>
+    /// Requires <see cref="PostHogOptions.PersonalApiKey"/>. Returns <c>null</c> when the client is disabled,
+    /// the personal API key is missing, the payload is missing, or the request fails.
+    /// </remarks>
     /// <param name="key">The remote config key.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
-    /// <returns>The <see cref="JsonDocument"/> payload for the remote config setting.</returns>
+    /// <returns>The <see cref="JsonDocument"/> payload for the remote config setting, or <c>null</c>.</returns>
     Task<JsonDocument?> GetRemoteConfigPayloadAsync(string key, CancellationToken cancellationToken);
 
     /// <summary>

@@ -80,6 +80,7 @@ public sealed class FeatureFlagEvaluations
     /// (distinct id, key, value) tuple.
     /// </summary>
     /// <param name="key">The feature flag key.</param>
+    /// <returns><c>true</c> if the flag is present and enabled; otherwise <c>false</c>.</returns>
     public bool IsEnabled(string key)
     {
         var record = RecordAccess(key);
@@ -92,6 +93,7 @@ public sealed class FeatureFlagEvaluations
     /// (distinct id, key, value) tuple.
     /// </summary>
     /// <param name="key">The feature flag key.</param>
+    /// <returns>The evaluated feature flag, or <c>null</c> if the flag is not present in the snapshot.</returns>
     public FeatureFlag? GetFlag(string key)
     {
         var record = RecordAccess(key);
@@ -103,6 +105,7 @@ public sealed class FeatureFlagEvaluations
     /// Does NOT record access and does NOT fire <c>$feature_flag_called</c>.
     /// </summary>
     /// <param name="key">The feature flag key.</param>
+    /// <returns>The payload for the flag, or <c>null</c> if the flag is not present or has no payload.</returns>
     public JsonDocument? GetFlagPayload(string key)
         => _records.TryGetValue(NotNull(key), out var record) ? record.Flag.Payload : null;
 
@@ -118,6 +121,7 @@ public sealed class FeatureFlagEvaluations
     /// <see cref="PostHogOptions.FeatureFlagsLogWarnings"/> to <c>false</c> to suppress the warning.
     /// </para>
     /// </remarks>
+    /// <returns>A snapshot containing only accessed flags, or all flags if no flags have been accessed yet.</returns>
     public FeatureFlagEvaluations OnlyAccessed()
     {
         if (_accessed.IsEmpty)
@@ -140,10 +144,10 @@ public sealed class FeatureFlagEvaluations
     }
 
     /// <summary>
-    /// Returns a new snapshot containing only the named flags. Unknown keys are dropped silently
-    /// (a warning is logged for each missing key).
+    /// Returns a new snapshot containing only the named flags. Unknown keys are dropped and a warning is logged.
     /// </summary>
     /// <param name="keys">The flag keys to retain.</param>
+    /// <returns>A snapshot containing only flags whose keys are present in both this snapshot and <paramref name="keys"/>.</returns>
     public FeatureFlagEvaluations Only(IEnumerable<string> keys)
     {
         var filtered = new Dictionary<string, EvaluatedFlagRecord>(StringComparer.Ordinal);

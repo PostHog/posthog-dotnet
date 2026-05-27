@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 internal static class TaskExtensions
 {
     /// <summary>
-    /// Waits for a <see cref="ValueTask{bool}"/> to complete within the specified timeout.
+    /// Waits for a <see cref="ValueTask{TResult}"/> returning <see cref="bool"/> to complete within the specified timeout.
     /// If the task does not complete within the timeout, it returns false.
     /// </summary>
     public static async Task<bool> WaitAsync(this ValueTask<bool> valueTask, TimeSpan timeout)
@@ -26,7 +26,7 @@ internal static class TaskExtensions
     }
 
     /// <summary>
-    /// Waits for a <see cref="Task{bool}"/> to complete within the specified timeout.
+    /// Waits for a <see cref="Task{TResult}"/> returning <see cref="bool"/> to complete within the specified timeout.
     /// If the task does not complete within the timeout, it returns false.
     /// </summary>
     public static async Task<bool> WaitAsync(this Task<bool> task, TimeSpan timeout)

@@ -16,6 +16,10 @@ public static class Examples
         PersonalApiKey = Environment.GetEnvironmentVariable("PostHog__PersonalApiKey"),
     });
 
+    /// <summary>
+    /// Runs the example snippets used by the documentation.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public static async Task Main()
     {
         await using var posthog = new PostHogClient(new PostHogOptions

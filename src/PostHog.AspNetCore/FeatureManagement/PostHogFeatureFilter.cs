@@ -7,6 +7,7 @@ namespace PostHog.FeatureManagement;
 /// PostHog <see cref="IFeatureFilter"/> that uses PostHog's API to check if a feature is enabled for the current user.
 /// </summary>
 /// <param name="variantFeatureManager">The <see cref="IVariantFeatureManager"/> we'll use to evaluate the flag.</param>
+/// <param name="logger">The logger used to report registration problems.</param>
 [FilterAlias("PostHog")]
 public class PostHogFeatureFilter(IVariantFeatureManager variantFeatureManager, ILogger<PostHogFeatureFilter> logger)
     : IFeatureFilter

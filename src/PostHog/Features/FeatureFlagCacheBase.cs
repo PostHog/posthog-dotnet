@@ -4,8 +4,12 @@ using PostHog.Features;
 
 namespace PostHog.Features;
 
+/// <summary>
+/// Base implementation of <see cref="IFeatureFlagCache"/> that adapts older feature-flag cache methods to the current flags-result API.
+/// </summary>
 public abstract class FeatureFlagCacheBase : IFeatureFlagCache
 {
+    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<string, FeatureFlag>> GetAndCacheFeatureFlagsAsync(
         string distinctId,
         Func<CancellationToken, Task<IReadOnlyDictionary<string, FeatureFlag>>> fetcher,
@@ -21,6 +25,7 @@ public abstract class FeatureFlagCacheBase : IFeatureFlagCache
         return results.Flags;
     }
 
+    /// <inheritdoc />
     public async Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
         Func<string, CancellationToken, Task<FlagsResult>> fetcher,
@@ -30,6 +35,7 @@ public abstract class FeatureFlagCacheBase : IFeatureFlagCache
         return await GetAndCacheFlagsAsync(distinctId, null, null, fetcher, cancellationToken);
     }
 
+    /// <inheritdoc />
     public abstract Task<FlagsResult> GetAndCacheFlagsAsync(
         string distinctId,
         IReadOnlyDictionary<string, object?>? personProperties,

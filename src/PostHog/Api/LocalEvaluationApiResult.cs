@@ -418,7 +418,7 @@ internal record PropertyFilter : Filter
 }
 
 /// <summary>
-/// The types of comparison operators for a filter.
+/// The targeting filter types returned by the local feature flag definitions API.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumMemberNameJsonConverter<FilterType>))]
 public enum FilterType

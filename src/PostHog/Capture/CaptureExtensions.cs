@@ -347,6 +347,7 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="pagePath">The URL or path of the page to capture.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool CapturePageView(
         this IPostHogClient client,
         string distinctId,
@@ -359,6 +360,7 @@ public static class CaptureExtensions
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="pagePath">The URL or path of the page to capture.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
+    /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     [Obsolete("Prefer CapturePageView(distinctId, pagePath) and forward a FeatureFlagEvaluations snapshot via Capture(..., flags: snapshot, ...) when needed. This overload will be removed in a future major version.", error: false)]
     public static bool CapturePageView(
         this IPostHogClient client,
@@ -375,7 +377,7 @@ public static class CaptureExtensions
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="screenName">The URL or path of the page to capture.</param>
+    /// <param name="screenName">The name of the screen to capture.</param>
     /// <param name="properties">Additional context to save with the event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool CaptureScreenView(
@@ -395,7 +397,7 @@ public static class CaptureExtensions
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="screenName">The URL or path of the page to capture.</param>
+    /// <param name="screenName">The name of the screen to capture.</param>
     /// <param name="properties">Additional context to save with the event.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
@@ -421,7 +423,7 @@ public static class CaptureExtensions
     /// </summary>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="screenName">The URL or path of the page to capture.</param>
+    /// <param name="screenName">The name of the screen to capture.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool CaptureScreenView(
         this IPostHogClient client,

@@ -13,6 +13,7 @@ public static class ServiceCollectionExtensions
     /// Registers <see cref="PostHogClient"/> as a singleton.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> where PostHog client dependencies are registered.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so additional calls can be chained.</returns>
     public static IServiceCollection AddPostHog(this IServiceCollection services)
         => services.AddPostHog(_ => { });
 
@@ -21,6 +22,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> where PostHog client dependencies are registered.</param>
     /// <param name="options">An action used to provide additional configuration or services for the PostHog client.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so additional calls can be chained.</returns>
     public static IServiceCollection AddPostHog(
         this IServiceCollection services,
         Action<IPostHogConfigurationBuilder> options)
