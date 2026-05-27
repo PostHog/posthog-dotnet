@@ -523,11 +523,6 @@ public static class CaptureExtensions
             eventPropertyValue: surveyId,
             properties);
 
-
-
-
-
-
     static bool CaptureSpecialEvent(
         this IPostHogClient client,
         string distinctId,
