@@ -133,6 +133,11 @@ internal sealed class PostHogApiClient : IDisposable
             payload["flag_keys_to_evaluate"] = flagKeysToEvaluate;
         }
 
+        if (_options.Value.EvaluationContexts is { Count: > 0 } evaluationContexts)
+        {
+            payload["evaluation_contexts"] = evaluationContexts;
+        }
+
         groupProperties?.AddToPayload(payload);
 
         PrepareAndMutatePayload(payload);

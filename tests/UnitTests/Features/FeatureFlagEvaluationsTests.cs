@@ -79,6 +79,46 @@ public class TheEvaluateFlagsAsyncMethod
         Assert.Equal(new[] { "flag-a", "flag-b" }, flagKeys);
     }
 
+    public static IEnumerable<object?[]> EvaluationContextsRequestBodyCases()
+    {
+        yield return [new[] { "production", "backend" }, new[] { "production", "backend" }];
+        yield return [Array.Empty<string>(), null];
+        yield return [null, null];
+    }
+
+    [Theory]
+    [MemberData(nameof(EvaluationContextsRequestBodyCases))]
+    public async Task SendsEvaluationContextsToFlagsRequestBodyWhenConfigured(
+        string[]? configuredEvaluationContexts,
+        string[]? expectedEvaluationContexts)
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.EvaluationContexts = configuredEvaluationContexts;
+        }));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-a": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+
+        var request = flagsHandler.ReceivedRequests.Single();
+        var body = await request.Content!.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+
+        if (expectedEvaluationContexts is null)
+        {
+            Assert.False(doc.RootElement.TryGetProperty("evaluation_contexts", out _));
+        }
+        else
+        {
+            var evaluationContexts = doc.RootElement.GetProperty("evaluation_contexts")
+                .EnumerateArray()
+                .Select(e => e.GetString() ?? string.Empty)
+                .ToArray();
+            Assert.Equal(expectedEvaluationContexts, evaluationContexts);
+        }
+    }
+
     [Fact]
     public async Task OnlyEvaluateLocallyDoesNotHitRemote()
     {

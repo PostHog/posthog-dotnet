@@ -48,6 +48,8 @@ public class TheAddPostHogMethod
                 ["PostHogTest:FeatureFlagPollInterval"] = "00:00:10",
                 ["PostHogTest:FlushAt"] = "10",
                 ["PostHogTest:MaxBatchSize"] = "99",
+                ["PostHogTest:EvaluationContexts:0"] = "main-app",
+                ["PostHogTest:EvaluationContexts:1"] = "api",
                 ["PostHogTest:SuperProperties:Castle"] = "Winterfell",
                 ["PostHogTest:SuperProperties:Family"] = "Starks"
             })
@@ -73,6 +75,7 @@ public class TheAddPostHogMethod
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
         Assert.Equal(10, options.FlushAt);
         Assert.Equal(99, options.MaxBatchSize);
+        Assert.Equal(new[] { "main-app", "api" }, options.EvaluationContexts);
         Assert.Equal(new()
         {
             ["Castle"] = "Winterfell",
