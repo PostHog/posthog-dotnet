@@ -332,6 +332,63 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             , received);
     }
 
+    public static IEnumerable<object[]> GroupContextDedupeScenarios =>
+    [
+        // Different group contexts produce separate events.
+        [
+            new GroupCollection[]
+            {
+                new() { new Group("organization", "org-a") },
+                new() { new Group("organization", "org-b") },
+            },
+            2,
+        ],
+        // Repeated calls under the same group context dedupe to one event.
+        [
+            new GroupCollection[]
+            {
+                new() { new Group("organization", "org-a") },
+                new() { new Group("organization", "org-a") },
+                new() { new Group("organization", "org-a") },
+            },
+            1,
+        ],
+        // Same groups in different insertion order dedupe to one event because the
+        // dedup key is canonicalized.
+        [
+            new GroupCollection[]
+            {
+                new() { new Group("organization", "org-a"), new Group("team", "red") },
+                new() { new Group("team", "red"), new Group("organization", "org-a") },
+            },
+            1,
+        ],
+    ];
+
+    [Theory]
+    [MemberData(nameof(GroupContextDedupeScenarios))]
+    public async Task DedupesFeatureFlagCalledByGroupContext(
+        GroupCollection[] groupsPerCall,
+        int expectedMatchCount)
+    {
+        var container = new TestContainer();
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddRepeatedFlagsResponse(groupsPerCall.Length, """{"featureFlags": {"flag-key": true}}""");
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        foreach (var groups in groupsPerCall)
+        {
+            var options = new FeatureFlagOptions { Groups = groups };
+            Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", options, CancellationToken.None));
+        }
+
+        await client.FlushAsync();
+        var body = captureRequestHandler.GetReceivedRequestBody(indented: false);
+        var matches = System.Text.RegularExpressions.Regex.Matches(body, "\\$feature_flag_called");
+        Assert.Equal(expectedMatchCount, matches.Count);
+    }
+
     [Fact]
     public async Task DoesNotCaptureFeatureFlagCalledEventWhenSendFeatureFlagsFalse()
     {

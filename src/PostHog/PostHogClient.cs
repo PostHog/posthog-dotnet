@@ -753,9 +753,13 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         CancellationToken cancellationToken)
     {
+        var groupsCacheKey = CanonicalGroupsCacheKey(groups);
+
         _featureFlagCalledEventCache.GetOrCreate(
-            key: (distinctId, featureKey, cacheKeyValue),
-            // This factory only runs when the (distinct id, key, value) tuple is not yet cached.
+            key: (distinctId, featureKey, cacheKeyValue, groupsCacheKey),
+            // This factory only runs when the (distinctId, featureKey, cacheKeyValue, groupsCacheKey) tuple is not yet cached.
+            // Group context is included so group-scoped flags fire a separate event for each group
+            // a user is evaluated under, instead of dedup-ing across groups.
             factory: cacheEntry =>
             {
                 cacheEntry.SetSize(1);
@@ -781,6 +785,22 @@ public sealed class PostHogClient : IPostHogClient
                     _options.Value.FeatureFlagSentCacheCompactionPercentage),
                 cancellationToken);
         }
+    }
+
+    // Build a canonical string for the groups collection that is order-independent
+    // so two equal sets of groups always produce the same dedup cache key.
+    // Returns the empty string when no groups were passed, preserving the
+    // no-groups dedupe shape for callers that don't pass a GroupCollection.
+    static string CanonicalGroupsCacheKey(GroupCollection? groups)
+    {
+        if (groups is null || groups.Count == 0)
+        {
+            return string.Empty;
+        }
+        var pairs = groups
+            .OrderBy(g => g.GroupType, StringComparer.Ordinal)
+            .Select(g => Uri.EscapeDataString(g.GroupType) + "=" + Uri.EscapeDataString(g.GroupKey));
+        return string.Join(";", pairs);
     }
 
     sealed class EvaluationsHost : IFeatureFlagEvaluationsHost
