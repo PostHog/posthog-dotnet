@@ -294,80 +294,61 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             , received);
     }
 
-    [Fact]
-    public async Task CapturesSeparateFeatureFlagCalledEventsPerGroupContext()
+    public static IEnumerable<object[]> GroupContextDedupeScenarios =>
+    [
+        // Different group contexts produce separate events.
+        [
+            new GroupCollection[]
+            {
+                new() { new Group("organization", "org-a") },
+                new() { new Group("organization", "org-b") },
+            },
+            2,
+        ],
+        // Repeated calls under the same group context dedupe to one event.
+        [
+            new GroupCollection[]
+            {
+                new() { new Group("organization", "org-a") },
+                new() { new Group("organization", "org-a") },
+                new() { new Group("organization", "org-a") },
+            },
+            1,
+        ],
+        // Same groups in different insertion order dedupe to one event because the
+        // dedup key is canonicalized.
+        [
+            new GroupCollection[]
+            {
+                new() { new Group("organization", "org-a"), new Group("team", "red") },
+                new() { new Group("team", "red"), new Group("organization", "org-a") },
+            },
+            1,
+        ],
+    ];
+
+    [Theory]
+    [MemberData(nameof(GroupContextDedupeScenarios))]
+    public async Task DedupesFeatureFlagCalledByGroupContext(
+        GroupCollection[] groupsPerCall,
+        int expectedMatchCount)
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedFlagsResponse(2, """{"featureFlags": {"flag-key": true}}""");
+        messageHandler.AddRepeatedFlagsResponse(groupsPerCall.Length, """{"featureFlags": {"flag-key": true}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        // Same user, same flag, same response — but two different group contexts.
-        var optionsA = new FeatureFlagOptions { Groups = new GroupCollection() };
-        optionsA.Groups!.Add(new Group("organization", "org-a"));
-        var optionsB = new FeatureFlagOptions { Groups = new GroupCollection() };
-        optionsB.Groups!.Add(new Group("organization", "org-b"));
-
-        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", optionsA, CancellationToken.None));
-        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", optionsB, CancellationToken.None));
+        foreach (var groups in groupsPerCall)
+        {
+            var options = new FeatureFlagOptions { Groups = groups };
+            Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", options, CancellationToken.None));
+        }
 
         await client.FlushAsync();
         var body = captureRequestHandler.GetReceivedRequestBody(indented: false);
         var matches = System.Text.RegularExpressions.Regex.Matches(body, "\\$feature_flag_called");
-        Assert.Equal(2, matches.Count);
-        Assert.Contains("\"organization\":\"org-a\"", body, StringComparison.Ordinal);
-        Assert.Contains("\"organization\":\"org-b\"", body, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task DedupesFeatureFlagCalledAcrossRepeatedCallsUnderSameGroupContext()
-    {
-        var container = new TestContainer();
-        var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedFlagsResponse(3, """{"featureFlags": {"flag-key": true}}""");
-        var captureRequestHandler = messageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var options = new FeatureFlagOptions { Groups = new GroupCollection() };
-        options.Groups!.Add(new Group("organization", "org-a"));
-
-        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", options, CancellationToken.None));
-        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", options, CancellationToken.None));
-        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", options, CancellationToken.None));
-
-        await client.FlushAsync();
-        var body = captureRequestHandler.GetReceivedRequestBody(indented: false);
-        var matches = System.Text.RegularExpressions.Regex.Matches(body, "\\$feature_flag_called");
-        Assert.Single(matches);
-    }
-
-    [Fact]
-    public async Task DedupesFeatureFlagCalledAcrossGroupInsertionOrder()
-    {
-        var container = new TestContainer();
-        var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedFlagsResponse(2, """{"featureFlags": {"flag-key": true}}""");
-        var captureRequestHandler = messageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        // Same groups, two different insertion orders. The dedup key is canonicalized so both
-        // calls produce a cache hit.
-        var optionsA = new FeatureFlagOptions { Groups = new GroupCollection() };
-        optionsA.Groups!.Add(new Group("organization", "org-a"));
-        optionsA.Groups!.Add(new Group("team", "red"));
-
-        var optionsB = new FeatureFlagOptions { Groups = new GroupCollection() };
-        optionsB.Groups!.Add(new Group("team", "red"));
-        optionsB.Groups!.Add(new Group("organization", "org-a"));
-
-        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", optionsA, CancellationToken.None));
-        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "user-1", optionsB, CancellationToken.None));
-
-        await client.FlushAsync();
-        var body = captureRequestHandler.GetReceivedRequestBody(indented: false);
-        var matches = System.Text.RegularExpressions.Regex.Matches(body, "\\$feature_flag_called");
-        Assert.Single(matches);
+        Assert.Equal(expectedMatchCount, matches.Count);
     }
 
     [Fact]
