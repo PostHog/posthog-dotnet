@@ -1,4 +1,5 @@
 #pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
@@ -1598,6 +1599,84 @@ public class TheDisabledClient
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
         Assert.DoesNotContain(errorLogs, log => log.EventId.Id == 14);
     }
+}
+
+public class TheApiFailureNoOpBehavior
+{
+    [Fact]
+    public async Task DirectIngestionMethodsReturnNoOpResultOnApiError()
+    {
+        var container = new TestContainer();
+        var aliasHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var identifyHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var groupHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var groupWithDistinctIdHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var client = container.Activate<PostHogClient>();
+
+        var aliasResult = await client.AliasAsync("previous-id", "new-id", CancellationToken.None);
+        var identifyResult = await client.IdentifyAsync("distinct-id");
+        var groupResult = await client.GroupIdentifyAsync("organization", "id:5", null, CancellationToken.None);
+        var groupWithDistinctIdResult = await client.GroupIdentifyAsync("distinct-id", "organization", "id:5", null, CancellationToken.None);
+
+        Assert.Equal(0, aliasResult.Status);
+        Assert.Equal(0, identifyResult.Status);
+        Assert.Equal(0, groupResult.Status);
+        Assert.Equal(0, groupWithDistinctIdResult.Status);
+        Assert.Single(aliasHandler.ReceivedRequests);
+        Assert.Single(identifyHandler.ReceivedRequests);
+        Assert.Single(groupHandler.ReceivedRequests);
+        Assert.Single(groupWithDistinctIdHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task FlushAsyncDoesNotThrowOnApiError()
+    {
+        var container = new TestContainer();
+        var batchHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/batch"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(client.Capture("distinct-id", "some-event"));
+        await client.FlushAsync();
+
+        Assert.Single(batchHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task LoadFeatureFlagsAsyncDoesNotThrowOnApiError()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        var localEvaluationHandler = container.FakeHttpMessageHandler.AddResponse(
+            FakeHttpMessageHandlerExtensions.LocalEvaluationUrl,
+            HttpMethod.Get,
+            UnauthorizedResponse());
+        var client = container.Activate<PostHogClient>();
+
+        await client.LoadFeatureFlagsAsync();
+
+        Assert.Single(localEvaluationHandler.ReceivedRequests);
+    }
+
+    static HttpResponseMessage UnauthorizedResponse() => new(HttpStatusCode.Unauthorized)
+    {
+        Content = new StringContent("""
+            {"detail":"Invalid project token"}
+            """, Encoding.UTF8, "application/json")
+    };
 }
 
 public class ThePersonalApiKeyProtectedMethods
