@@ -1189,7 +1189,7 @@ public sealed class PostHogClient : IPostHogClient
         {
             await _asyncBatchHandler.FlushAsync();
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
         {
             _logger.LogErrorApiCallFailed(e, nameof(FlushAsync));
         }
