@@ -154,9 +154,8 @@ public class ETagSupportTests
 
         await client.LoadFeatureFlagsAsync(CancellationToken.None); // Stores ETag
 
-        // This should throw quota_limited error and clear ETag
-        await Assert.ThrowsAsync<ApiException>(
-            () => client.LoadFeatureFlagsAsync(CancellationToken.None));
+        // Quota-limited errors should be swallowed by the public SDK method, while still clearing the ETag.
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
 
         // Next request should not have If-None-Match header (ETag was cleared)
         await client.LoadFeatureFlagsAsync(CancellationToken.None);

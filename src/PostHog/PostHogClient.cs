@@ -23,7 +23,6 @@ public sealed class PostHogClient : IPostHogClient
     readonly IFeatureFlagCache _featureFlagsCache;
     readonly MemoryCache _featureFlagCalledEventCache;
     static readonly ApiResult NoOpApiResult = new(0);
-    static readonly Task<ApiResult> NoOpApiResultTask = Task.FromResult(NoOpApiResult);
     static readonly IReadOnlyDictionary<string, FeatureFlag> EmptyFeatureFlags = new Dictionary<string, FeatureFlag>(0);
 
     readonly TimeProvider _timeProvider;
@@ -173,7 +172,15 @@ public sealed class PostHogClient : IPostHogClient
             return NoOpApiResult;
         }
 
-        return await _apiClient.AliasAsync(previousId, newId, cancellationToken);
+        try
+        {
+            return await _apiClient.AliasAsync(previousId, newId, cancellationToken);
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorApiCallFailed(e, nameof(AliasAsync));
+            return NoOpApiResult;
+        }
     }
 
     /// <inheritdoc/>
@@ -188,15 +195,23 @@ public sealed class PostHogClient : IPostHogClient
             return NoOpApiResult;
         }
 
-        return await _apiClient.IdentifyAsync(
-            distinctId,
-            personPropertiesToSet,
-            personPropertiesToSetOnce,
-            cancellationToken);
+        try
+        {
+            return await _apiClient.IdentifyAsync(
+                distinctId,
+                personPropertiesToSet,
+                personPropertiesToSetOnce,
+                cancellationToken);
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorApiCallFailed(e, nameof(IdentifyAsync));
+            return NoOpApiResult;
+        }
     }
 
     /// <inheritdoc/>
-    public Task<ApiResult> GroupIdentifyAsync(
+    public async Task<ApiResult> GroupIdentifyAsync(
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
@@ -204,14 +219,22 @@ public sealed class PostHogClient : IPostHogClient
     {
         if (CheckDisabledAndLog(nameof(GroupIdentifyAsync)))
         {
-            return NoOpApiResultTask;
+            return NoOpApiResult;
         }
 
-        return _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken);
+        try
+        {
+            return await _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken);
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorApiCallFailed(e, nameof(GroupIdentifyAsync));
+            return NoOpApiResult;
+        }
     }
 
     /// <inheritdoc/>
-    public Task<ApiResult> GroupIdentifyAsync(
+    public async Task<ApiResult> GroupIdentifyAsync(
         string distinctId,
         string type,
         StringOrValue<int> key,
@@ -220,10 +243,18 @@ public sealed class PostHogClient : IPostHogClient
     {
         if (CheckDisabledAndLog(nameof(GroupIdentifyAsync)))
         {
-            return NoOpApiResultTask;
+            return NoOpApiResult;
         }
 
-        return _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken, distinctId);
+        try
+        {
+            return await _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken, distinctId);
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorApiCallFailed(e, nameof(GroupIdentifyAsync));
+            return NoOpApiResult;
+        }
     }
 
     /// <inheritdoc/>
@@ -510,7 +541,7 @@ public sealed class PostHogClient : IPostHogClient
             return null;
         }
 
-        LocalEvaluator? localEvaluator;
+        LocalEvaluator? localEvaluator = null;
         try
         {
             localEvaluator = await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
@@ -519,6 +550,10 @@ public sealed class PostHogClient : IPostHogClient
         {
             _logger.LogWarningQuotaExceeded(e);
             return null;
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorFailedToLoadFeatureFlags(e);
         }
 
         FeatureFlag? response = null;
@@ -928,6 +963,12 @@ public sealed class PostHogClient : IPostHogClient
                 errors.Add(FeatureFlagError.QuotaLimited);
                 fallbackToRemote = false;
             }
+            catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+            {
+                _logger.LogErrorFailedToLoadFeatureFlags(e);
+                errors.Add(FeatureFlagError.UnknownError);
+                fallbackToRemote = options is not { OnlyEvaluateLocally: true };
+            }
         }
 
         // 2. Remote pass — only if we still need it.
@@ -1040,6 +1081,14 @@ public sealed class PostHogClient : IPostHogClient
                 _logger.LogWarningQuotaExceeded(e);
                 return EmptyFeatureFlags;
             }
+            catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+            {
+                _logger.LogErrorFailedToLoadFeatureFlags(e);
+                if (options is { OnlyEvaluateLocally: true })
+                {
+                    return EmptyFeatureFlags;
+                }
+            }
         }
 
         try
@@ -1121,12 +1170,10 @@ public sealed class PostHogClient : IPostHogClient
         catch (ApiException e) when (e.ErrorType is "quota_limited")
         {
             _logger.LogWarningQuotaExceeded(e);
-            throw;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
         {
             _logger.LogErrorFailedToLoadFeatureFlags(e);
-            throw;
         }
     }
 
@@ -1138,7 +1185,14 @@ public sealed class PostHogClient : IPostHogClient
             return;
         }
 
-        await _asyncBatchHandler.FlushAsync();
+        try
+        {
+            await _asyncBatchHandler.FlushAsync();
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorApiCallFailed(e, nameof(FlushAsync));
+        }
     }
 
     /// <inheritdoc/>
@@ -1161,6 +1215,11 @@ public sealed class PostHogClient : IPostHogClient
         catch (ApiException e) when (e.ErrorType is "quota_limited")
         {
             _logger.LogWarningQuotaExceeded(e);
+            return null;
+        }
+        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
+        {
+            _logger.LogErrorFailedToLoadFeatureFlags(e);
             return null;
         }
     }
@@ -1361,4 +1420,10 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] distinctId is required to evaluate feature flags. Pass a distinctId explicitly or use PostHog request context for the current request.")]
     public static partial void LogWarningMissingFeatureFlagDistinctId(this ILogger<PostHogClient> logger);
+
+    [LoggerMessage(
+        EventId = 24,
+        Level = LogLevel.Error,
+        Message = "PostHog API call failed in {MethodName}; returning a no-op result.")]
+    public static partial void LogErrorApiCallFailed(this ILogger<PostHogClient> logger, Exception exception, string methodName);
 }

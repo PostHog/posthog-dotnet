@@ -1,4 +1,5 @@
 #pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
@@ -1102,52 +1103,115 @@ public class TheCaptureExceptionMethod
     [Fact]
     public async Task CaptureExceptionCauseIOFailureEmptyContext()
     {
-        FileStream? lockHandle = null;
-        var (container, requestHandler, client) = CreateClient();
+        var (_, requestHandler, client) = CreateClient();
+        var compiledThrower = await CreateDivideByZeroExceptionWithTempSourceFileAsync();
 
         try
         {
-            try
+            // Lock the source file exclusively so File.ReadAllLines(sourcePath) will throw IOException
+            // and as result frames will not contain source code context. Use a temp file so parallel
+            // target-framework test runs do not contend over this test source file.
+            await using var lockHandle = new FileStream(
+                compiledThrower.SourcePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.None);
+
+            client.CaptureException(compiledThrower.Exception, "some-distinct-id");
+            await client.FlushAsync();
+
+            var (_, batchItem, props) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: true));
+            var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
+            var frames = GetStackFrames(divideByZeroException);
+
+            Assert.True(File.Exists(compiledThrower.SourcePath));
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+
+            var sourceFrame = frames.FirstOrDefault(f =>
+                f.TryGetProperty("abs_path", out var absPath) &&
+                string.Equals(absPath.GetString(), compiledThrower.SourcePath, StringComparison.Ordinal));
+
+            // In Release builds, stack frames may not include source file paths due
+            // to JIT optimizations, making this scenario impossible to reproduce.
+            if (sourceFrame.ValueKind is JsonValueKind.Undefined)
             {
-                var zero = 0;
-                var result = 1 / zero;
+                return;
             }
-            catch (DivideByZeroException ex)
-            {
-                var st = new System.Diagnostics.StackTrace(ex, true);
-                var path = st.GetFrames()
-                    .Select(f => f?.GetFileName())
-                    .FirstOrDefault(p => !string.IsNullOrEmpty(p) && File.Exists(p));
 
-                // In Release builds, stack frames may not include source file paths due
-                // to JIT optimizations, making this scenario impossible to reproduce.
-                if (path is null)
-                {
-                    return;
-                }
-
-                // Lock the source file exclusively so File.ReadAllLines(path) will throw IOException
-                // and as result frames will not contain source code context
-                lockHandle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
-
-                client.CaptureException(ex, "some-distinct-id");
-                await client.FlushAsync();
-
-                var received = requestHandler.GetReceivedRequestBody(indented: true);
-                var (_, batchItem, props) = ParseSingleEvent(received);
-                var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
-                var frames = GetStackFrames(divideByZeroException);
-
-                Assert.True(File.Exists(path));
-                Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
-                AssertContextEmpty(frames[0]);
-            }
+            AssertContextEmpty(sourceFrame);
         }
         finally
         {
-            if (lockHandle != null)
+            File.Delete(compiledThrower.SourcePath);
+        }
+    }
+
+    private static async Task<(string SourcePath, DivideByZeroException Exception, AssemblyLoadContext LoadContext)>
+        CreateDivideByZeroExceptionWithTempSourceFileAsync()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"PostHogClientTests-{Guid.NewGuid():N}.cs");
+        var code =
+            """
+            using System;
+            public static class Thrower
             {
-                await lockHandle.DisposeAsync();
+                public static void Boom()
+                {
+                    int zero = 0;
+                    var _ = 1 / zero;
+                }
+            }
+            """;
+
+        await File.WriteAllTextAsync(sourcePath, code, Encoding.UTF8);
+
+        var shouldDeleteSource = true;
+        try
+        {
+            var parse = CSharpParseOptions.Default;
+            var tree = CSharpSyntaxTree.ParseText(SourceText.From(code, Encoding.UTF8), parse, path: sourcePath);
+            var trustedPlatformAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
+
+            var refs = trustedPlatformAssemblies
+                .Where(p => p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => MetadataReference.CreateFromFile(g.First()));
+
+            var comp = CSharpCompilation.Create(
+                $"ThrowerAsm{Guid.NewGuid():N}",
+                [tree],
+                refs,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Debug));
+
+            using var pe = new MemoryStream();
+            using var pdb = new MemoryStream();
+            var emit = comp.Emit(pe, pdb, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
+            Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+
+            pe.Position = 0;
+            pdb.Position = 0;
+
+            var assemblyLoadContext = new AssemblyLoadContext($"ThrowerCtx{Guid.NewGuid():N}", isCollectible: true);
+            var assembly = assemblyLoadContext.LoadFromStream(pe, pdb);
+            var boom = assembly.GetType("Thrower")!.GetMethod("Boom", BindingFlags.Public | BindingFlags.Static)!;
+
+            try
+            {
+                boom.Invoke(null, null);
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException is DivideByZeroException ex)
+            {
+                shouldDeleteSource = false;
+                return (sourcePath, ex, assemblyLoadContext);
+            }
+
+            throw new InvalidOperationException("Expected Thrower.Boom to throw a DivideByZeroException.");
+        }
+        finally
+        {
+            if (shouldDeleteSource)
+            {
+                File.Delete(sourcePath);
             }
         }
     }
@@ -1598,6 +1662,84 @@ public class TheDisabledClient
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
         Assert.DoesNotContain(errorLogs, log => log.EventId.Id == 14);
     }
+}
+
+public class TheApiFailureNoOpBehavior
+{
+    [Fact]
+    public async Task DirectIngestionMethodsReturnNoOpResultOnApiError()
+    {
+        var container = new TestContainer();
+        var aliasHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var identifyHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var groupHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var groupWithDistinctIdHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/capture"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var client = container.Activate<PostHogClient>();
+
+        var aliasResult = await client.AliasAsync("previous-id", "new-id", CancellationToken.None);
+        var identifyResult = await client.IdentifyAsync("distinct-id");
+        var groupResult = await client.GroupIdentifyAsync("organization", "id:5", null, CancellationToken.None);
+        var groupWithDistinctIdResult = await client.GroupIdentifyAsync("distinct-id", "organization", "id:5", null, CancellationToken.None);
+
+        Assert.Equal(0, aliasResult.Status);
+        Assert.Equal(0, identifyResult.Status);
+        Assert.Equal(0, groupResult.Status);
+        Assert.Equal(0, groupWithDistinctIdResult.Status);
+        Assert.Single(aliasHandler.ReceivedRequests);
+        Assert.Single(identifyHandler.ReceivedRequests);
+        Assert.Single(groupHandler.ReceivedRequests);
+        Assert.Single(groupWithDistinctIdHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task FlushAsyncDoesNotThrowOnApiError()
+    {
+        var container = new TestContainer();
+        var batchHandler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/batch"),
+            HttpMethod.Post,
+            UnauthorizedResponse());
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(client.Capture("distinct-id", "some-event"));
+        await client.FlushAsync();
+
+        Assert.Single(batchHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task LoadFeatureFlagsAsyncDoesNotThrowOnApiError()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        var localEvaluationHandler = container.FakeHttpMessageHandler.AddResponse(
+            FakeHttpMessageHandlerExtensions.LocalEvaluationUrl,
+            HttpMethod.Get,
+            UnauthorizedResponse());
+        var client = container.Activate<PostHogClient>();
+
+        await client.LoadFeatureFlagsAsync();
+
+        Assert.Single(localEvaluationHandler.ReceivedRequests);
+    }
+
+    static HttpResponseMessage UnauthorizedResponse() => new(HttpStatusCode.Unauthorized)
+    {
+        Content = new StringContent("""
+            {"detail":"Invalid project token"}
+            """, Encoding.UTF8, "application/json")
+    };
 }
 
 public class ThePersonalApiKeyProtectedMethods
