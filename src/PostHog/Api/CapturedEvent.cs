@@ -16,11 +16,17 @@ public class CapturedEvent
     /// <param name="distinctId">The identifier for the user.</param>
     /// <param name="properties">The properties to associate with the event.</param>
     /// <param name="timestamp">The ISO 8601 timestamp.</param>
+    /// <param name="isServer">
+    /// When <c>true</c> (the default), the event includes the <c>$is_server</c> property set to <c>true</c>. Set to
+    /// <c>false</c> (via <see cref="PostHogOptions.IsServer"/>) when using the SDK as a client/CLI so the device OS
+    /// is attributed normally; the property is then omitted.
+    /// </param>
     public CapturedEvent(
         string eventName,
         string distinctId,
         Dictionary<string, object>? properties,
-        DateTimeOffset timestamp)
+        DateTimeOffset timestamp,
+        bool isServer = true)
     {
         Uuid = Guid.NewGuid().ToString();
         EventName = eventName;
@@ -32,7 +38,10 @@ public class CapturedEvent
         // Every event has to have these properties.
         Properties[PostHogProperties.DistinctId] = distinctId; // See `get_distinct_id` in PostHog/posthog api/capture.py line 321
         Properties[PostHogProperties.Lib] = PostHogApiClient.LibraryName;
-        Properties[PostHogProperties.IsServer] = true;
+        if (isServer)
+        {
+            Properties[PostHogProperties.IsServer] = true;
+        }
         Properties[PostHogProperties.LibVersion] = VersionConstants.Version;
         Properties[PostHogProperties.GeoIpDisable] = Properties.GetValueOrDefault(PostHogProperties.GeoIpDisable, true);
     }

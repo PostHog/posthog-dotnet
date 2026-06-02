@@ -19,13 +19,17 @@ internal class ExceptionPropertiesBuilder
 
     public static Dictionary<string, object> Build(
         Dictionary<string, object> properties,
-        Exception exception)
+        Exception exception,
+        bool isServer = true)
     {
         properties["$exception_type"] = exception.GetType().FullName ?? exception.GetType().Name;
         properties["$exception_message"] = exception.Message;
         properties["$exception_level"] = "error";
         properties["$lib"] = "posthog-dotnet";
-        properties[PostHogProperties.IsServer] = true;
+        if (isServer)
+        {
+            properties[PostHogProperties.IsServer] = true;
+        }
         properties["$lib_version"] = VersionConstants.Version;
         properties["$os"] = OperatingSystemInfo.Name;
         properties["$os_version"] = OperatingSystemInfo.Version;

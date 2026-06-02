@@ -88,6 +88,14 @@ public class TheConstructor
     }
 
     [Fact]
+    public void OmitsIsServerWhenIsServerIsFalse()
+    {
+        var capturedEvent = new CapturedEvent("test-event", "user-1", null, DateTimeOffset.UtcNow, isServer: false);
+
+        Assert.False(capturedEvent.Properties.ContainsKey("$is_server"));
+    }
+
+    [Fact]
     public void SetsGeoIpDisableToTrueByDefault()
     {
         var capturedEvent = new CapturedEvent("test-event", "user-1", null, DateTimeOffset.UtcNow);

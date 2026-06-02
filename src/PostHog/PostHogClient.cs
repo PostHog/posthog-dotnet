@@ -304,7 +304,8 @@ public sealed class PostHogClient : IPostHogClient
             eventName,
             captureContext.DistinctId,
             captureContext.Properties,
-            timestamp: timestamp ?? _timeProvider.GetUtcNow());
+            timestamp: timestamp ?? _timeProvider.GetUtcNow(),
+            isServer: _options.Value.IsServer);
 
         if (groups is { Count: > 0 })
         {
@@ -400,7 +401,7 @@ public sealed class PostHogClient : IPostHogClient
             }
 
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{identity.DistinctId}";
-            properties = ExceptionPropertiesBuilder.Build(properties, exception);
+            properties = ExceptionPropertiesBuilder.Build(properties, exception, _options.Value.IsServer);
 
             return CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
         }

@@ -52,6 +52,42 @@ public class TheIdentifyPersonAsyncMethod
                        """, received);
     }
 
+    [Fact]
+    public async Task OmitsIsServerWhenIsServerOptionIsFalse()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.ProjectToken = "fake-project-token";
+            options.EnableCompression = false;
+            options.IsServer = false;
+        }));
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.IdentifyAsync("some-distinct-id");
+
+        Assert.Equal(1, result.Status);
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.DoesNotContain("$is_server", received, StringComparison.Ordinal);
+        Assert.Equal($$"""
+                       {
+                         "event": "$identify",
+                         "distinct_id": "some-distinct-id",
+                         "properties": {
+                           "$lib": "posthog-dotnet",
+                           "$lib_version": "{{VersionConstants.Version}}",
+                           "$os": "{{RuntimeInformation.OSDescription}}",
+                           "$framework": "{{RuntimeInformation.FrameworkDescription}}",
+                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
+                           "$geoip_disable": true
+                         },
+                         "api_key": "fake-project-token",
+                         "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                       }
+                       """, received);
+    }
+
     [Fact] // Similar to PostHog/posthog-python test_basic_identify
     public async Task SendsCorrectPayloadWithGeoIpEnabled()
     {
