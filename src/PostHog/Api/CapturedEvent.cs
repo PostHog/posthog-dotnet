@@ -32,6 +32,7 @@ public class CapturedEvent
         // Every event has to have these properties.
         Properties[PostHogProperties.DistinctId] = distinctId; // See `get_distinct_id` in PostHog/posthog api/capture.py line 321
         Properties[PostHogProperties.Lib] = PostHogApiClient.LibraryName;
+        Properties[PostHogProperties.IsServer] = true;
         Properties[PostHogProperties.LibVersion] = VersionConstants.Version;
         Properties[PostHogProperties.GeoIpDisable] = Properties.GetValueOrDefault(PostHogProperties.GeoIpDisable, true);
     }

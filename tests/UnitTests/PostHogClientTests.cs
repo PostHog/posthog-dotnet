@@ -39,6 +39,7 @@ public class TheIdentifyPersonAsyncMethod
                          "distinct_id": "some-distinct-id",
                          "properties": {
                            "$lib": "posthog-dotnet",
+                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
@@ -69,6 +70,7 @@ public class TheIdentifyPersonAsyncMethod
                          "distinct_id": "some-distinct-id",
                          "properties": {
                            "$lib": "posthog-dotnet",
+                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
@@ -113,6 +115,7 @@ public class TheIdentifyPersonAsyncMethod
                              "join_date": "2024-01-21"
                            },
                            "$lib": "posthog-dotnet",
+                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
@@ -151,6 +154,7 @@ public class TheIdentifyPersonAsyncMethod
                          "distinct_id": "some-distinct-id",
                          "properties": {
                            "$lib": "posthog-dotnet",
+                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
@@ -190,6 +194,7 @@ public class TheIdentifyGroupAsyncMethod
                              "name": "PostHog"
                            },
                            "$lib": "posthog-dotnet",
+                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
@@ -225,6 +230,7 @@ public class TheIdentifyGroupAsyncMethod
                              "name": "PostHog"
                            },
                            "$lib": "posthog-dotnet",
+                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
@@ -276,6 +282,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/flag1": true,
@@ -295,6 +302,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/flag1": true,
@@ -314,6 +322,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "another-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/flag1": true,
@@ -333,6 +342,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/flag1": true,
@@ -352,6 +362,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/flag1": true,
@@ -371,6 +382,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "another-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/flag1": true,
@@ -390,6 +402,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "third-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/flag1": true,
@@ -434,6 +447,7 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true
                            },
@@ -472,6 +486,7 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true
                            },
@@ -509,6 +524,7 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$groups": {
@@ -549,6 +565,7 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/test-flag": true,
@@ -592,6 +609,7 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$groups": {
@@ -635,6 +653,7 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$groups": {
@@ -685,6 +704,7 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true
                            },
@@ -760,6 +780,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$feature/local-flag": true,
@@ -827,6 +848,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true
                            },
@@ -889,6 +911,7 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
+                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true
                            },
@@ -925,6 +948,7 @@ public class TheCaptureExceptionMethod
             Assert.Equal("System.DivideByZeroException", props.GetProperty("$exception_type").GetString());
             Assert.Contains("divide by zero", props.GetProperty("$exception_message").GetString(), StringComparison.OrdinalIgnoreCase);
             Assert.Equal("posthog-dotnet", props.GetProperty("$lib").GetString());
+            Assert.True(props.GetProperty("$is_server").GetBoolean());
             Assert.Equal(VersionConstants.Version, props.GetProperty("$lib_version").GetString());
 
             var firstException = GetFirstException(props);

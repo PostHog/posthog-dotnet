@@ -82,6 +82,8 @@ public class TheConstructor
 
         Assert.True(capturedEvent.Properties.TryGetValue("$lib", out var lib));
         Assert.Equal("posthog-dotnet", lib);
+        Assert.True(capturedEvent.Properties.TryGetValue("$is_server", out var isServer));
+        Assert.Equal(true, isServer);
         Assert.True(capturedEvent.Properties.ContainsKey("$lib_version"));
     }
 

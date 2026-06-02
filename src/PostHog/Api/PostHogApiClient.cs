@@ -277,6 +277,7 @@ internal sealed class PostHogApiClient : IDisposable
         var properties = payload.GetOrAdd<string, Dictionary<string, object>>("properties");
 
         properties[PostHogProperties.Lib] = LibraryName;
+        properties[PostHogProperties.IsServer] = true;
         properties[PostHogProperties.LibVersion] = VersionConstants.Version;
         properties[PostHogProperties.Os] = RuntimeInformation.OSDescription;
         properties[PostHogProperties.Framework] = RuntimeInformation.FrameworkDescription;
