@@ -1,4 +1,5 @@
-﻿using PostHog.Library;
+﻿using PostHog.Api;
+using PostHog.Library;
 using PostHog.Versioning;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -24,6 +25,7 @@ internal class ExceptionPropertiesBuilder
         properties["$exception_message"] = exception.Message;
         properties["$exception_level"] = "error";
         properties["$lib"] = "posthog-dotnet";
+        properties[PostHogProperties.IsServer] = true;
         properties["$lib_version"] = VersionConstants.Version;
         properties["$os"] = OperatingSystemInfo.Name;
         properties["$os_version"] = OperatingSystemInfo.Version;
