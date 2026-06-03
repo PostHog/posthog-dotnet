@@ -304,8 +304,7 @@ public sealed class PostHogClient : IPostHogClient
             eventName,
             captureContext.DistinctId,
             captureContext.Properties,
-            timestamp: timestamp ?? _timeProvider.GetUtcNow(),
-            isServer: _options.Value.IsServer);
+            timestamp: timestamp ?? _timeProvider.GetUtcNow());
 
         if (groups is { Count: > 0 })
         {
@@ -313,6 +312,12 @@ public sealed class PostHogClient : IPostHogClient
         }
 
         capturedEvent.Properties.Merge(_options.Value.SuperProperties);
+
+        // Stamp $is_server last so a super property can't override the SDK's server/client classification.
+        if (_options.Value.IsServer)
+        {
+            capturedEvent.Properties[PostHogProperties.IsServer] = true;
+        }
 
         var batchItem = new BatchItem<CapturedEvent, CapturedEventBatchContext>(BatchTask);
 
@@ -401,7 +406,7 @@ public sealed class PostHogClient : IPostHogClient
             }
 
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{identity.DistinctId}";
-            properties = ExceptionPropertiesBuilder.Build(properties, exception, _options.Value.IsServer);
+            properties = ExceptionPropertiesBuilder.Build(properties, exception);
 
             return CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
         }

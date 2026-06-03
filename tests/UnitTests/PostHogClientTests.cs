@@ -39,12 +39,12 @@ public class TheIdentifyPersonAsyncMethod
                          "distinct_id": "some-distinct-id",
                          "properties": {
                            "$lib": "posthog-dotnet",
-                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": true
+                           "$geoip_disable": true,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -106,12 +106,12 @@ public class TheIdentifyPersonAsyncMethod
                          "distinct_id": "some-distinct-id",
                          "properties": {
                            "$lib": "posthog-dotnet",
-                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": false
+                           "$geoip_disable": false,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -151,12 +151,12 @@ public class TheIdentifyPersonAsyncMethod
                              "join_date": "2024-01-21"
                            },
                            "$lib": "posthog-dotnet",
-                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": true
+                           "$geoip_disable": true,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -190,13 +190,13 @@ public class TheIdentifyPersonAsyncMethod
                          "distinct_id": "some-distinct-id",
                          "properties": {
                            "$lib": "posthog-dotnet",
-                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true,
-                           "source": "repo-name"
+                           "source": "repo-name",
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -230,12 +230,12 @@ public class TheIdentifyGroupAsyncMethod
                              "name": "PostHog"
                            },
                            "$lib": "posthog-dotnet",
-                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": true
+                           "$geoip_disable": true,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -266,12 +266,12 @@ public class TheIdentifyGroupAsyncMethod
                              "name": "PostHog"
                            },
                            "$lib": "posthog-dotnet",
-                           "$is_server": true,
                            "$lib_version": "{{VersionConstants.Version}}",
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": true
+                           "$geoip_disable": true,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -318,9 +318,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -338,9 +338,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -358,9 +358,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "another-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-1",
@@ -378,9 +378,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -398,9 +398,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "some-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -418,9 +418,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "another-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-1",
@@ -438,9 +438,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "third-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-2",
@@ -483,9 +483,9 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -522,9 +522,9 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -560,12 +560,12 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$groups": {
                                "company": "acme-corp"
-                             }
+                             },
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -601,9 +601,9 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/test-flag": true,
                              "$active_feature_flags": [
                                "test-flag"
@@ -645,12 +645,12 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$groups": {
                                "company": "acme-corp"
-                             }
+                             },
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -689,12 +689,12 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$groups": {
                                "company": "acme-corp"
                              },
+                             "$is_server": true,
                              "$feature/test-flag": true,
                              "$active_feature_flags": [
                                "test-flag"
@@ -740,9 +740,9 @@ public class TheCaptureMethod
                              "timestamp": "2023-12-25T10:30:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -816,9 +816,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/local-flag": true,
                              "$feature/another-local-flag": true,
                              "$active_feature_flags": [
@@ -884,9 +884,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          }
@@ -947,9 +947,9 @@ public class TheCaptureMethod
                            "properties": {
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
-                             "$is_server": true,
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          }

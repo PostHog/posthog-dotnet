@@ -1,5 +1,4 @@
-﻿using PostHog.Api;
-using PostHog.Library;
+﻿using PostHog.Library;
 using PostHog.Versioning;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -19,17 +18,12 @@ internal class ExceptionPropertiesBuilder
 
     public static Dictionary<string, object> Build(
         Dictionary<string, object> properties,
-        Exception exception,
-        bool isServer = true)
+        Exception exception)
     {
         properties["$exception_type"] = exception.GetType().FullName ?? exception.GetType().Name;
         properties["$exception_message"] = exception.Message;
         properties["$exception_level"] = "error";
         properties["$lib"] = "posthog-dotnet";
-        if (isServer)
-        {
-            properties[PostHogProperties.IsServer] = true;
-        }
         properties["$lib_version"] = VersionConstants.Version;
         properties["$os"] = OperatingSystemInfo.Name;
         properties["$os_version"] = OperatingSystemInfo.Version;

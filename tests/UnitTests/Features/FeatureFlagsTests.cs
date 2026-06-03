@@ -196,9 +196,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -215,9 +215,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -234,9 +234,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -292,9 +292,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature/flag-key": true,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -309,9 +309,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature/flag-key": true,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   },
@@ -326,9 +326,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature/flag-key": false,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -503,9 +503,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_definitions_loaded_at": 1705864103000,
                       "distinct_id": "659df793-429a-4517-84ff-747dfc103e6c",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{VersionConstants.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -555,9 +555,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -608,9 +608,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -737,9 +737,9 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
-                      "$is_server": true,
                       "$lib_version": "{{client.Version}}",
-                      "$geoip_disable": true
+                      "$geoip_disable": true,
+                      "$is_server": true
                     },
                     "timestamp": "2024-01-21T19:08:23\u002B00:00"
                   }
@@ -2464,9 +2464,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": true,
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:23\u002B00:00"
                            }
@@ -2514,13 +2514,13 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": true,
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
                                "$geoip_disable": true,
                                "$groups": {
                                  "company": "id:5",
                                  "department": "id:3"
-                               }
+                               },
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:23\u002B00:00"
                            }
@@ -2580,9 +2580,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:23\u002B00:00"
                            },
@@ -2597,9 +2597,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:24\u002B00:00"
                            },
@@ -2614,9 +2614,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/another-flag-key": "flag-variant-2",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:25\u002B00:00"
                            },
@@ -2631,9 +2631,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:27\u002B00:00"
                            }
@@ -2688,9 +2688,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:23\u002B00:00"
                            },
@@ -2705,9 +2705,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:24\u002B00:00"
                            },
@@ -2722,9 +2722,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/another-flag-key": "flag-variant-2",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:25\u002B00:00"
                            },
@@ -2739,9 +2739,9 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
-                               "$is_server": true,
                                "$lib_version": "{{client.Version}}",
-                               "$geoip_disable": true
+                               "$geoip_disable": true,
+                               "$is_server": true
                              },
                              "timestamp": "2024-01-21T19:08:27\u002B00:00"
                            }

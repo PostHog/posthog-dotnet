@@ -277,10 +277,6 @@ internal sealed class PostHogApiClient : IDisposable
         var properties = payload.GetOrAdd<string, Dictionary<string, object>>("properties");
 
         properties[PostHogProperties.Lib] = LibraryName;
-        if (_options.Value.IsServer)
-        {
-            properties[PostHogProperties.IsServer] = true;
-        }
         properties[PostHogProperties.LibVersion] = VersionConstants.Version;
         properties[PostHogProperties.Os] = RuntimeInformation.OSDescription;
         properties[PostHogProperties.Framework] = RuntimeInformation.FrameworkDescription;
@@ -288,6 +284,12 @@ internal sealed class PostHogApiClient : IDisposable
         properties[PostHogProperties.GeoIpDisable] = properties.GetValueOrDefault(PostHogProperties.GeoIpDisable, true);
 
         properties.Merge(_options.Value.SuperProperties);
+
+        // Stamp $is_server last so a super property can't override the SDK's server/client classification.
+        if (_options.Value.IsServer)
+        {
+            properties[PostHogProperties.IsServer] = true;
+        }
 
         payload["properties"] = properties;
 
