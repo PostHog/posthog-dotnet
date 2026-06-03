@@ -43,6 +43,43 @@ public class TheIdentifyPersonAsyncMethod
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
+                           "$geoip_disable": true,
+                           "$is_server": true
+                         },
+                         "api_key": "fake-project-token",
+                         "timestamp": "2024-01-21T19:08:23\u002B00:00"
+                       }
+                       """, received);
+    }
+
+    [Fact]
+    public async Task OmitsIsServerWhenIsServerOptionIsFalse()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.ProjectToken = "fake-project-token";
+            options.EnableCompression = false;
+            options.IsServer = false;
+        }));
+        container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
+        var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.IdentifyAsync("some-distinct-id");
+
+        Assert.Equal(1, result.Status);
+        var received = requestHandler.GetReceivedRequestBody(indented: true);
+        Assert.DoesNotContain("$is_server", received, StringComparison.Ordinal);
+        Assert.Equal($$"""
+                       {
+                         "event": "$identify",
+                         "distinct_id": "some-distinct-id",
+                         "properties": {
+                           "$lib": "posthog-dotnet",
+                           "$lib_version": "{{VersionConstants.Version}}",
+                           "$os": "{{RuntimeInformation.OSDescription}}",
+                           "$framework": "{{RuntimeInformation.FrameworkDescription}}",
+                           "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true
                          },
                          "api_key": "fake-project-token",
@@ -73,7 +110,8 @@ public class TheIdentifyPersonAsyncMethod
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": false
+                           "$geoip_disable": false,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -117,7 +155,8 @@ public class TheIdentifyPersonAsyncMethod
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": true
+                           "$geoip_disable": true,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -156,7 +195,8 @@ public class TheIdentifyPersonAsyncMethod
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
                            "$geoip_disable": true,
-                           "source": "repo-name"
+                           "source": "repo-name",
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -194,7 +234,8 @@ public class TheIdentifyGroupAsyncMethod
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": true
+                           "$geoip_disable": true,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -229,7 +270,8 @@ public class TheIdentifyGroupAsyncMethod
                            "$os": "{{RuntimeInformation.OSDescription}}",
                            "$framework": "{{RuntimeInformation.FrameworkDescription}}",
                            "$arch": "{{RuntimeInformation.ProcessArchitecture}}",
-                           "$geoip_disable": true
+                           "$geoip_disable": true,
+                           "$is_server": true
                          },
                          "api_key": "fake-project-token",
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
@@ -278,6 +320,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -297,6 +340,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -316,6 +360,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-1",
@@ -335,6 +380,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -354,6 +400,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-0",
@@ -373,6 +420,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-1",
@@ -392,6 +440,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/flag1": true,
                              "$feature/flag2": false,
                              "$feature/flag3": "variant-2",
@@ -435,7 +484,8 @@ public class TheCaptureMethod
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -473,7 +523,8 @@ public class TheCaptureMethod
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -513,7 +564,8 @@ public class TheCaptureMethod
                              "$geoip_disable": true,
                              "$groups": {
                                "company": "acme-corp"
-                             }
+                             },
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -551,6 +603,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/test-flag": true,
                              "$active_feature_flags": [
                                "test-flag"
@@ -596,7 +649,8 @@ public class TheCaptureMethod
                              "$geoip_disable": true,
                              "$groups": {
                                "company": "acme-corp"
-                             }
+                             },
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -640,6 +694,7 @@ public class TheCaptureMethod
                              "$groups": {
                                "company": "acme-corp"
                              },
+                             "$is_server": true,
                              "$feature/test-flag": true,
                              "$active_feature_flags": [
                                "test-flag"
@@ -686,7 +741,8 @@ public class TheCaptureMethod
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2023-12-25T10:30:45\u002B00:00"
                          }
@@ -762,6 +818,7 @@ public class TheCaptureMethod
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
+                             "$is_server": true,
                              "$feature/local-flag": true,
                              "$feature/another-local-flag": true,
                              "$active_feature_flags": [
@@ -828,7 +885,8 @@ public class TheCaptureMethod
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          }
@@ -890,7 +948,8 @@ public class TheCaptureMethod
                              "distinct_id": "test-distinct-id",
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
-                             "$geoip_disable": true
+                             "$geoip_disable": true,
+                             "$is_server": true
                            },
                            "timestamp": "2024-01-21T19:08:23\u002B00:00"
                          }
@@ -925,6 +984,7 @@ public class TheCaptureExceptionMethod
             Assert.Equal("System.DivideByZeroException", props.GetProperty("$exception_type").GetString());
             Assert.Contains("divide by zero", props.GetProperty("$exception_message").GetString(), StringComparison.OrdinalIgnoreCase);
             Assert.Equal("posthog-dotnet", props.GetProperty("$lib").GetString());
+            Assert.True(props.GetProperty("$is_server").GetBoolean());
             Assert.Equal(VersionConstants.Version, props.GetProperty("$lib_version").GetString());
 
             var firstException = GetFirstException(props);

@@ -285,6 +285,12 @@ internal sealed class PostHogApiClient : IDisposable
 
         properties.Merge(_options.Value.SuperProperties);
 
+        // Stamp $is_server last so a super property can't override the SDK's server/client classification.
+        if (_options.Value.IsServer)
+        {
+            properties[PostHogProperties.IsServer] = true;
+        }
+
         payload["properties"] = properties;
 
         // Only set timestamp if one isn't already provided in properties

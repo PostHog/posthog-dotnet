@@ -16,6 +16,11 @@ public static class PostHogProperties
     public const string Lib = "$lib";
 
     /// <summary>
+    /// The property name indicating that the event was captured by a server-side SDK.
+    /// </summary>
+    public const string IsServer = "$is_server";
+
+    /// <summary>
     /// The property name for the client library version.
     /// </summary>
     public const string LibVersion = "$lib_version";

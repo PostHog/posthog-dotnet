@@ -313,6 +313,12 @@ public sealed class PostHogClient : IPostHogClient
 
         capturedEvent.Properties.Merge(_options.Value.SuperProperties);
 
+        // Stamp $is_server last so a super property can't override the SDK's server/client classification.
+        if (_options.Value.IsServer)
+        {
+            capturedEvent.Properties[PostHogProperties.IsServer] = true;
+        }
+
         var batchItem = new BatchItem<CapturedEvent, CapturedEventBatchContext>(BatchTask);
 
         if (_asyncBatchHandler.Enqueue(batchItem))

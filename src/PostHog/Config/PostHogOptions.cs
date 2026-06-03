@@ -68,6 +68,20 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public IReadOnlyList<string>? EvaluationContexts { get; set; }
 
     /// <summary>
+    /// Whether captured events are attributed to a server. (Default: true)
+    /// </summary>
+    /// <remarks>
+    /// When <c>true</c> (the default), every captured event includes the <c>$is_server</c> property set to
+    /// <c>true</c> so PostHog identifies the event as server-side. Set this to <c>false</c> when using the SDK
+    /// as a client or CLI so the device's operating system is attributed normally instead of being treated as a
+    /// server. When <c>false</c>, the <c>$is_server</c> property is omitted entirely.
+    /// <code>
+    /// var options = new PostHogOptions { ProjectToken = "phc_...", IsServer = false };
+    /// </code>
+    /// </remarks>
+    public bool IsServer { get; set; } = true;
+
+    /// <summary>
     /// Whether this client is disabled and should no-op instead of sending data to PostHog. (Default: false)
     /// </summary>
     /// <remarks>
