@@ -16,7 +16,7 @@ public class TheTryParseMethod
     [InlineData("v0.0.1", 0, 0, 1)]
     // Whitespace handling
     [InlineData("  1.2.3  ", 1, 2, 3)]
-    [InlineData("	1.2.3	", 1, 2, 3)]
+    [InlineData("\t1.2.3\t", 1, 2, 3)]
     [InlineData("  v1.2.3  ", 1, 2, 3)]
     // Pre-release and build metadata stripping
     [InlineData("1.2.3-alpha", 1, 2, 3)]
@@ -152,9 +152,7 @@ public class TheVersionRangeBoundsMethods
         Assert.NotNull(expectedLowerVersion);
         Assert.NotNull(expectedUpperVersion);
 
-        var (lower, upper) = kind == "tilde"
-            ? version.Value.GetTildeBounds()
-            : version.Value.GetCaretBounds();
+        var (lower, upper) = GetBounds(kind, version.Value);
 
         Assert.Equal(expectedLowerVersion.Value, lower);
         Assert.Equal(expectedUpperVersion.Value, upper);
@@ -195,13 +193,19 @@ public class TheVersionRangeBoundsMethods
         Assert.NotNull(baseVer);
         Assert.NotNull(testVer);
 
-        var (lower, upper) = kind == "tilde"
-            ? baseVer.Value.GetTildeBounds()
-            : baseVer.Value.GetCaretBounds();
+        var (lower, upper) = GetBounds(kind, baseVer.Value);
         var inRange = testVer.Value.IsInRange(lower, upper);
 
         Assert.Equal(expectedInRange, inRange);
     }
+
+    static (SemanticVersion Lower, SemanticVersion Upper) GetBounds(string kind, SemanticVersion version)
+        => kind switch
+        {
+            "tilde" => version.GetTildeBounds(),
+            "caret" => version.GetCaretBounds(),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
 }
 
 public class TheTryParseWildcardMethod
@@ -321,7 +325,8 @@ public class TheOperatorOverloads
             "<" => leftVersion.Value < rightVersion.Value,
             "<=" => leftVersion.Value <= rightVersion.Value,
             ">" => leftVersion.Value > rightVersion.Value,
-            _ => leftVersion.Value >= rightVersion.Value
+            ">=" => leftVersion.Value >= rightVersion.Value,
+            _ => throw new ArgumentOutOfRangeException(nameof(operatorName), operatorName, null)
         };
         Assert.Equal(expected, actual);
     }
