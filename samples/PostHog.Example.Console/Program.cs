@@ -149,14 +149,20 @@ static string Prompt(string message)
     return Console.ReadLine()?.Trim() ?? string.Empty;
 }
 
-static async Task RunCaptureExamples(PostHogClient posthog)
+static string StartExampleSection(string title)
 {
     Console.WriteLine("\n" + new string('=', 60));
-    Console.WriteLine("CAPTURE EVENTS");
+    Console.WriteLine(title);
     Console.WriteLine(new string('=', 60));
 
     var distinctId = $"user_{Guid.NewGuid():N}";
     Console.WriteLine($"\nUsing distinct ID: {distinctId}");
+    return distinctId;
+}
+
+static async Task RunCaptureExamples(PostHogClient posthog)
+{
+    var distinctId = StartExampleSection("CAPTURE EVENTS");
 
     // Simple capture
     Console.WriteLine("\n📤 Capturing 'page_view' event…");
@@ -191,12 +197,7 @@ static async Task RunCaptureExamples(PostHogClient posthog)
 
 static async Task RunIdentifyExamples(PostHogClient posthog)
 {
-    Console.WriteLine("\n" + new string('=', 60));
-    Console.WriteLine("IDENTIFY USERS");
-    Console.WriteLine(new string('=', 60));
-
-    var distinctId = $"user_{Guid.NewGuid():N}";
-    Console.WriteLine($"\nUsing distinct ID: {distinctId}");
+    var distinctId = StartExampleSection("IDENTIFY USERS");
 
     // Identify with properties
     Console.WriteLine("\n👤 Identifying user with properties…");
@@ -232,12 +233,7 @@ static async Task RunIdentifyExamples(PostHogClient posthog)
 
 static async Task RunFeatureFlagExamples(PostHogClient posthog)
 {
-    Console.WriteLine("\n" + new string('=', 60));
-    Console.WriteLine("FEATURE FLAGS");
-    Console.WriteLine(new string('=', 60));
-
-    var distinctId = $"user_{Guid.NewGuid():N}";
-    Console.WriteLine($"\nUsing distinct ID: {distinctId}");
+    var distinctId = StartExampleSection("FEATURE FLAGS");
 
     // Check a simple boolean flag
     Console.WriteLine("\n🚩 Checking feature flag 'new-dashboard'…");

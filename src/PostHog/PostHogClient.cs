@@ -216,22 +216,7 @@ public sealed class PostHogClient : IPostHogClient
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-    {
-        if (CheckDisabledAndLog(nameof(GroupIdentifyAsync)))
-        {
-            return NoOpApiResult;
-        }
-
-        try
-        {
-            return await _apiClient.GroupIdentifyAsync(type, key, properties, cancellationToken);
-        }
-        catch (Exception e) when (e is not ArgumentException and not NullReferenceException and not OperationCanceledException)
-        {
-            _logger.LogErrorApiCallFailed(e, nameof(GroupIdentifyAsync));
-            return NoOpApiResult;
-        }
-    }
+        => await GroupIdentifyCoreAsync(type, key, properties, distinctId: null, cancellationToken);
 
     /// <inheritdoc/>
     public async Task<ApiResult> GroupIdentifyAsync(
@@ -239,6 +224,14 @@ public sealed class PostHogClient : IPostHogClient
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
+        CancellationToken cancellationToken)
+        => await GroupIdentifyCoreAsync(type, key, properties, distinctId, cancellationToken);
+
+    async Task<ApiResult> GroupIdentifyCoreAsync(
+        string type,
+        StringOrValue<int> key,
+        Dictionary<string, object>? properties,
+        string? distinctId,
         CancellationToken cancellationToken)
     {
         if (CheckDisabledAndLog(nameof(GroupIdentifyAsync)))

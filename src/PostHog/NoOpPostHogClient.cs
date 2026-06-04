@@ -9,6 +9,7 @@ namespace PostHog.Sdk;
 internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluationsHost
 {
     static readonly IReadOnlyDictionary<string, FeatureFlag> EmptyFeatureFlags = new Dictionary<string, FeatureFlag>();
+    static readonly Task<ApiResult> NoOpApiResultTask = Task.FromResult(new ApiResult(0));
 
     NoOpPostHogClient()
     {
@@ -17,21 +18,21 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
     internal static NoOpPostHogClient Instance { get; } = new();
 
     public Task<ApiResult> AliasAsync(string previousId, string newId, CancellationToken cancellationToken)
-        => Task.FromResult(new ApiResult(0));
+        => NoOpApiResultTask;
 
     public Task<ApiResult> IdentifyAsync(
         string distinctId,
         Dictionary<string, object>? personPropertiesToSet,
         Dictionary<string, object>? personPropertiesToSetOnce,
         CancellationToken cancellationToken)
-        => Task.FromResult(new ApiResult(0));
+        => NoOpApiResultTask;
 
     public Task<ApiResult> GroupIdentifyAsync(
         string type,
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-        => Task.FromResult(new ApiResult(0));
+        => GroupIdentifyAsync(string.Empty, type, key, properties, cancellationToken);
 
     public Task<ApiResult> GroupIdentifyAsync(
         string distinctId,
@@ -39,7 +40,7 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-        => Task.FromResult(new ApiResult(0));
+        => NoOpApiResultTask;
 
     public bool Capture(
         string distinctId,
@@ -48,7 +49,7 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
         GroupCollection? groups,
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
-        => false;
+        => Capture(distinctId, eventName, properties, groups, flags: null, timestamp);
 
     public bool Capture(
         string distinctId,
@@ -66,7 +67,7 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
         GroupCollection? groups,
         bool sendFeatureFlags,
         DateTimeOffset? timestamp = null)
-        => false;
+        => CaptureException(exception, distinctId, properties, groups, flags: null, timestamp);
 
     public bool CaptureException(
         Exception exception,
@@ -75,7 +76,7 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null)
-        => false;
+        => Capture(distinctId, exception?.GetType().FullName ?? string.Empty, properties, groups, flags, timestamp);
 
     public Task<bool> IsFeatureEnabledAsync(
         string featureKey,
