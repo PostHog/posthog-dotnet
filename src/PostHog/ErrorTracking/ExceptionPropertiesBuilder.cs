@@ -103,6 +103,7 @@ internal class ExceptionPropertiesBuilder
 
             var method = frame.GetMethod();
             var fileName = frame.GetFileName();
+            var moduleName = method?.DeclaringType?.FullName ?? "";
             var lineNumber = frame.GetFileLineNumber();
             var columnNumber = frame.GetFileColumnNumber();
 
@@ -112,8 +113,8 @@ internal class ExceptionPropertiesBuilder
                 ["lang"] = "dotnet",
                 ["filename"] = Path.GetFileName(fileName) ?? "",
                 ["abs_path"] = fileName ?? "",
-                ["function"] = method?.Name ?? "",
-                ["module"] = method?.DeclaringType?.FullName ?? "",
+                ["function"] = BuildFunctionName(method?.Name, moduleName, fileName),
+                ["module"] = moduleName,
                 ["lineno"] = lineNumber,
                 ["colno"] = columnNumber
             };
@@ -135,6 +136,21 @@ internal class ExceptionPropertiesBuilder
         }
 
         return stackFrames;
+    }
+
+    private static string BuildFunctionName(string? methodName, string moduleName, string? fileName)
+    {
+        if (string.IsNullOrEmpty(methodName))
+        {
+            return "";
+        }
+
+        if (!string.IsNullOrEmpty(fileName) || string.IsNullOrEmpty(moduleName))
+        {
+            return methodName;
+        }
+
+        return $"{moduleName}.{methodName}";
     }
 
     private static SourceCodeContext BuildSourceCodeContext(

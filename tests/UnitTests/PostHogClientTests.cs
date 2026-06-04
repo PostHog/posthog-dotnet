@@ -1279,6 +1279,71 @@ public class TheCaptureExceptionMethod
     // This test is pretty expensive because it dynamically compiles and loads an assembly.
     // Consider alternatives.
     [Fact]
+    public async Task CaptureExceptionWithoutSourceInfoQualifiesFunctionName()
+    {
+        var (_, requestHandler, client) = CreateClient();
+
+        var code =
+            """
+            using System;
+            namespace SourceLessFrames;
+
+            public static class Thrower
+            {
+                public static void Boom()
+                {
+                    throw new InvalidOperationException("No source info");
+                }
+            }
+            """;
+
+        var tree = CSharpSyntaxTree.ParseText(SourceText.From(code, Encoding.UTF8));
+        var trustedPlatformAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
+
+        var refs = trustedPlatformAssemblies
+            .Where(p => p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => MetadataReference.CreateFromFile(g.First()));
+
+        var comp = CSharpCompilation.Create(
+            $"ThrowerAsm{Guid.NewGuid():N}",
+            [tree],
+            refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release));
+
+        using var pe = new MemoryStream();
+        var emit = comp.Emit(pe);
+        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+
+        pe.Position = 0;
+
+        var assemblyLoadContext = new AssemblyLoadContext($"ThrowerCtx{Guid.NewGuid():N}", isCollectible: true);
+        var assembly = assemblyLoadContext.LoadFromStream(pe);
+        var boom = assembly.GetType("SourceLessFrames.Thrower")!.GetMethod("Boom", BindingFlags.Public | BindingFlags.Static)!;
+
+        try
+        {
+            boom.Invoke(null, null);
+        }
+        catch (TargetInvocationException tie) when (tie.InnerException is InvalidOperationException ex)
+        {
+            client.CaptureException(ex, "some-distinct-id");
+            await client.FlushAsync();
+
+            var (_, batchItem, props) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: true));
+            var invalidOperationException = GetExceptionOfType(props, "System.InvalidOperationException");
+            var frames = GetStackFrames(invalidOperationException);
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal("", frames[0].GetProperty("filename").GetString());
+            Assert.Equal("", frames[0].GetProperty("abs_path").GetString());
+            Assert.Equal("SourceLessFrames.Thrower", frames[0].GetProperty("module").GetString());
+            Assert.Equal("SourceLessFrames.Thrower.Boom", frames[0].GetProperty("function").GetString());
+            Assert.Equal(0, frames[0].GetProperty("lineno").GetInt32());
+        }
+    }
+
+    [Fact]
     public async Task CaptureExceptionWithInvalidFilePathInStackFrame()
     {
         var (_, requestHandler, client) = CreateClient();
@@ -1338,10 +1403,13 @@ public class TheCaptureExceptionMethod
 
             var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
             var frames = GetStackFrames(divideByZeroException);
+            var sourceFrame = frames.FirstOrDefault(f =>
+                f.TryGetProperty("filename", out var filename) &&
+                string.Equals(filename.GetString(), fakePath, StringComparison.Ordinal));
 
             Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
-            Assert.Equal(fakePath, frames[0].GetProperty("filename").GetString());
-            AssertContextEmpty(frames[0]);
+            Assert.NotEqual(JsonValueKind.Undefined, sourceFrame.ValueKind);
+            AssertContextEmpty(sourceFrame);
         }
     }
 
