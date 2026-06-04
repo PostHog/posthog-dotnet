@@ -146,6 +146,15 @@ internal record FeatureFlagFilters
     public int? AggregationGroupTypeIndex { get; init; }
 
     /// <summary>
+    /// When <c>true</c>, local condition evaluation stops and returns a definitive disabled result
+    /// as soon as a condition group's property filters match (or the group has no property filters)
+    /// but the rollout percentage excludes the user, instead of falling through to later condition
+    /// groups. Mirrors the server-side Rust evaluation engine. Defaults to <c>false</c> when absent.
+    /// </summary>
+    [JsonPropertyName("early_exit")]
+    public bool EarlyExit { get; init; }
+
+    /// <summary>
     /// Compares this instance to another <see cref="FeatureFlagFilters"/> for equality.
     /// </summary>
     /// <remarks>
@@ -168,14 +177,15 @@ internal record FeatureFlagFilters
         return Groups.ListsAreEqual(other.Groups)
                && Payloads.DictionariesAreEqual(other.Payloads)
                && Multivariate == other.Multivariate
-               && AggregationGroupTypeIndex == other.AggregationGroupTypeIndex;
+               && AggregationGroupTypeIndex == other.AggregationGroupTypeIndex
+               && EarlyExit == other.EarlyExit;
     }
 
     /// <summary>
     /// Serves as the default hash function.
     /// </summary>
     /// <returns>A hash code for the current object.</returns>
-    public override int GetHashCode() => HashCode.Combine(Groups, Payloads, Multivariate, AggregationGroupTypeIndex);
+    public override int GetHashCode() => HashCode.Combine(Groups, Payloads, Multivariate, AggregationGroupTypeIndex, EarlyExit);
 }
 
 /// <summary>

@@ -263,6 +263,7 @@ internal sealed class LocalEvaluator
         var filters = flag.Filters;
         var flagConditions = filters?.Groups ?? [];
         var flagAggregation = filters?.AggregationGroupTypeIndex;
+        var earlyExit = filters?.EarlyExit ?? false;
         var isInconclusive = false;
         var flagVariants = filters?.Multivariate?.Variants ?? [];
 
@@ -298,10 +299,20 @@ internal sealed class LocalEvaluator
                     effectiveBucketingId = group.GroupKey;
                 }
 
-                // if any one condition resolves to True, we can short circuit and return
-                // the matching variant
-                if (!IsConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups))
+                var conditionResult = EvaluateConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups);
+
+                if (conditionResult != ConditionMatchResult.Match)
                 {
+                    // When early_exit is enabled and the condition's property filters matched (or
+                    // there were none) but the rollout excluded the user, stop evaluating later
+                    // condition groups and return a definitive disabled result. Mirrors the
+                    // server-side Rust evaluation engine. A pure property-filter mismatch always
+                    // falls through to the next condition group, even when early_exit is enabled.
+                    if (earlyExit && conditionResult == ConditionMatchResult.OutOfRolloutBound)
+                    {
+                        return false;
+                    }
+
                     continue;
                 }
 
@@ -338,7 +349,33 @@ internal sealed class LocalEvaluator
         return false;
     }
 
-    bool IsConditionMatch(
+    /// <summary>
+    /// The tri-state outcome of evaluating a single condition group, mirroring the server-side
+    /// Rust evaluation engine. Used to distinguish a property-filter mismatch from a
+    /// rollout-percentage exclusion so that the <c>early_exit</c> behavior can short-circuit
+    /// only on the latter.
+    /// </summary>
+    enum ConditionMatchResult
+    {
+        /// <summary>
+        /// Property filters matched (or there were none) AND the rollout included the user.
+        /// </summary>
+        Match,
+
+        /// <summary>
+        /// A property filter did not match. Always falls through to the next condition group,
+        /// even when <c>early_exit</c> is enabled.
+        /// </summary>
+        NoMatch,
+
+        /// <summary>
+        /// Property filters matched (or there were none) but the rollout excluded the user.
+        /// When <c>early_exit</c> is enabled, this produces a definitive disabled result.
+        /// </summary>
+        OutOfRolloutBound
+    }
+
+    ConditionMatchResult EvaluateConditionMatch(
         LocalFeatureFlag flag,
         string distinctId,
         FeatureFlagGroup condition,
@@ -356,17 +393,20 @@ internal sealed class LocalEvaluator
                     _ => MatchProperty(property, distinctId, properties)
                 }).Any(isMatch => !isMatch))
             {
-                return false;
+                return ConditionMatchResult.NoMatch;
             }
         }
 
+        // Property filters matched (or there were none). Now check the rollout percentage.
         if (rolloutPercentage is 100)
         {
-            return true;
+            return ConditionMatchResult.Match;
         }
 
         var hashValue = Hash(flag.Key, distinctId);
-        return !(hashValue > rolloutPercentage / 100.0);
+        return hashValue > rolloutPercentage / 100.0
+            ? ConditionMatchResult.OutOfRolloutBound
+            : ConditionMatchResult.Match;
     }
 
     static string? GetMatchingVariant(LocalFeatureFlag flag, string distinctId)
