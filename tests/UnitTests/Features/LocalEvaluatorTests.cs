@@ -2705,9 +2705,9 @@ public class TheEarlyExitBehavior
     }
 
     [Theory]
-    [InlineData(true,  "tyrion@example.com",  false)] // matching props + rollout 0 => OUT_OF_ROLLOUT_BOUND, early-exits
-    [InlineData(false, "tyrion@example.com",  true)]  // earlyExit=false => falls through to second group
-    [InlineData(true,  "nobody@example.com",  true)]  // property mismatch => NO_MATCH, always falls through
+    [InlineData(true, "tyrion@example.com", false)] // matching props + rollout 0 => OUT_OF_ROLLOUT_BOUND, early-exits
+    [InlineData(false, "tyrion@example.com", true)]  // earlyExit=false => falls through to second group
+    [InlineData(true, "nobody@example.com", true)]  // property mismatch => NO_MATCH, always falls through
     public void EarlyExitReturnsExpectedResult(bool earlyExit, string firstGroupEmailFilter, bool expected)
     {
         var flags = CreateFlags(
