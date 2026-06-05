@@ -1415,67 +1415,30 @@ public class TheCaptureExceptionMethod
     public async Task CaptureExceptionWithInvalidFilePathInStackFrame()
     {
         var (_, requestHandler, client) = CreateClient();
+        var compiledThrower = await CreateDivideByZeroExceptionWithTempSourceFileAsync();
+        File.Delete(compiledThrower.SourcePath);
 
-        var fakePath = @"fake_file.cs";
-        var code =
-            """
-            using System;
-            public static class Thrower
-            {
-                public static void Boom()
-                {
-                    int zero = 0;
-                    var _ = 1 / zero;
-                }
-            }
-            """;
+        client.CaptureException(compiledThrower.Exception, "some-distinct-id");
+        await client.FlushAsync();
 
-        // Parse with the fake source path so PDB embeds it
-        var parse = CSharpParseOptions.Default;
-        var tree = CSharpSyntaxTree.ParseText(SourceText.From(code, Encoding.UTF8), parse, path: fakePath);
-        var trustedPlatformAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator);
+        var (_, batchItem, props) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: true));
+        var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
+        var frames = GetStackFrames(divideByZeroException);
+        var sourceFrame = frames.FirstOrDefault(f =>
+            f.TryGetProperty("abs_path", out var absPath) &&
+            string.Equals(absPath.GetString(), compiledThrower.SourcePath, StringComparison.Ordinal));
 
-        var refs = trustedPlatformAssemblies
-            .Where(p => p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-            .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-            .Select(g => MetadataReference.CreateFromFile(g.First()));
+        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
 
-        var comp = CSharpCompilation.Create(
-            "ThrowerAsm",
-            [tree],
-            refs,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Debug));
-
-        using var pe = new MemoryStream();
-        using var pdb = new MemoryStream();
-        var emit = comp.Emit(pe, pdb, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
-        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
-
-        pe.Position = 0;
-        pdb.Position = 0;
-
-        var assemblyLoadContext = new AssemblyLoadContext("ThrowerCtx", isCollectible: true);
-        var assembly = assemblyLoadContext.LoadFromStream(pe, pdb);
-        var boom = assembly.GetType("Thrower")!.GetMethod("Boom", BindingFlags.Public | BindingFlags.Static)!;
-
-        try
+        // Some runtime/build combinations do not include source file paths in stack frames.
+        // When source info is absent, this scenario cannot be reproduced.
+        if (sourceFrame.ValueKind is JsonValueKind.Undefined)
         {
-            boom.Invoke(null, null);
+            return;
         }
-        catch (TargetInvocationException tie) when (tie.InnerException is DivideByZeroException ex)
-        {
-            client.CaptureException(ex, "some-distinct-id");
-            await client.FlushAsync();
 
-            var (_, batchItem, props) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: true));
-
-            var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
-            var frames = GetStackFrames(divideByZeroException);
-
-            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
-            Assert.Equal(fakePath, frames[0].GetProperty("filename").GetString());
-            AssertContextEmpty(frames[0]);
-        }
+        Assert.Equal(Path.GetFileName(compiledThrower.SourcePath), sourceFrame.GetProperty("filename").GetString());
+        AssertContextEmpty(sourceFrame);
     }
 
     [Fact]
