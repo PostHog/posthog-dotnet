@@ -301,18 +301,18 @@ internal sealed class LocalEvaluator
 
                 var conditionResult = EvaluateConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups);
 
+                // When early_exit is enabled and the condition's property filters matched (or
+                // there were none) but the rollout excluded the user, stop evaluating later
+                // condition groups and return a definitive disabled result. Mirrors the
+                // server-side Rust evaluation engine. A pure property-filter mismatch always
+                // falls through to the next condition group, even when early_exit is enabled.
+                if (earlyExit && conditionResult == ConditionMatchResult.OutOfRolloutBound)
+                {
+                    return false;
+                }
+
                 if (conditionResult != ConditionMatchResult.Match)
                 {
-                    // When early_exit is enabled and the condition's property filters matched (or
-                    // there were none) but the rollout excluded the user, stop evaluating later
-                    // condition groups and return a definitive disabled result. Mirrors the
-                    // server-side Rust evaluation engine. A pure property-filter mismatch always
-                    // falls through to the next condition group, even when early_exit is enabled.
-                    if (earlyExit && conditionResult == ConditionMatchResult.OutOfRolloutBound)
-                    {
-                        return false;
-                    }
-
                     continue;
                 }
 

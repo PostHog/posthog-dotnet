@@ -2776,4 +2776,25 @@ public class TheEarlyExitBehavior
 
         Assert.True(result.Value);
     }
+
+    // distinctId "1234" with key "early-exit" hashes to ~0.518, so rollout values 0 and 50
+    // both exclude this user, confirming the trigger is rollout exclusion, not rollout == 0.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(50)]
+    public void EarlyExitsForAnyRolloutThatExcludesUser(int firstGroupRollout)
+    {
+        var flags = CreateFlags(
+            earlyExit: true,
+            firstGroupRolloutPercentage: firstGroupRollout,
+            firstGroupEmailFilter: "tyrion@example.com");
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
+
+        Assert.False(result.Value);
+    }
 }
