@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
+using PostHog.Sdk;
 using PostHog.Versioning;
 using UnitTests.Fakes;
 
@@ -243,6 +244,65 @@ public class TheIdentifyGroupAsyncMethod
                        """, received);
     }
 
+    [Fact]
+    public async Task CancellationTokenOverloadOverwritesNameProperty()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
+        var client = container.Activate<PostHogClient>();
+        var properties = new Dictionary<string, object>
+        {
+            ["name"] = "Old Name",
+            ["tier"] = "enterprise"
+        };
+
+        var result = await client.GroupIdentifyAsync(
+            type: "organization",
+            key: "id:5",
+            name: "PostHog",
+            properties,
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Status);
+        Assert.Equal("PostHog", properties["name"]);
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var root = document.RootElement;
+        var groupSet = root.GetProperty("properties").GetProperty("$group_set");
+        Assert.Equal("$organization_id:5", root.GetProperty("distinct_id").GetString());
+        Assert.Equal("PostHog", groupSet.GetProperty("name").GetString());
+        Assert.Equal("enterprise", groupSet.GetProperty("tier").GetString());
+    }
+
+    [Fact]
+    public async Task DistinctIdCancellationTokenOverloadOverwritesNameProperty()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
+        var client = container.Activate<PostHogClient>();
+        var properties = new Dictionary<string, object>
+        {
+            ["name"] = "Old Name",
+            ["tier"] = "enterprise"
+        };
+
+        var result = await client.GroupIdentifyAsync(
+            distinctId: "custom_distinct_id",
+            type: "organization",
+            key: "id:5",
+            name: "PostHog",
+            properties,
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Status);
+        Assert.Equal("PostHog", properties["name"]);
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var root = document.RootElement;
+        var groupSet = root.GetProperty("properties").GetProperty("$group_set");
+        Assert.Equal("custom_distinct_id", root.GetProperty("distinct_id").GetString());
+        Assert.Equal("PostHog", groupSet.GetProperty("name").GetString());
+        Assert.Equal("enterprise", groupSet.GetProperty("tier").GetString());
+    }
+
     [Fact] // Ported from PostHog/posthog-python test_basic_group_identify
     public async Task SendsCorrectPayloadWithUserProvidedDistinctId()
     {
@@ -277,6 +337,79 @@ public class TheIdentifyGroupAsyncMethod
                          "timestamp": "2024-01-21T19:08:23\u002B00:00"
                        }
                        """, received);
+    }
+}
+
+public class TheCapturePageViewMethod
+{
+    [Fact]
+    public async Task SendFeatureFlagsFalseUsesPageViewPayloadWithoutFeatureFlagProperties()
+    {
+        var container = new TestContainer();
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var captured = client.CapturePageView(
+            distinctId: "distinct-id",
+            pagePath: "/pricing",
+            properties: new Dictionary<string, object> { ["source"] = "test" },
+            sendFeatureFlags: false);
+
+        Assert.True(captured);
+        await client.FlushAsync();
+        var batchItem = GetOnlyBatchItem(batchHandler);
+        var properties = batchItem.GetProperty("properties");
+        Assert.Equal("$pageview", batchItem.GetProperty("event").GetString());
+        Assert.Equal("distinct-id", batchItem.GetProperty("distinct_id").GetString());
+        Assert.Equal("/pricing", properties.GetProperty("$current_url").GetString());
+        Assert.Equal("test", properties.GetProperty("source").GetString());
+        Assert.False(properties.TryGetProperty("$active_feature_flags", out _));
+        Assert.False(properties.TryGetProperty("$feature/flag1", out _));
+    }
+
+    [Fact]
+    public async Task SendFeatureFlagsTrueAddsFeatureFlagPropertiesToPageViewPayload()
+    {
+        var container = new TestContainer();
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "featureFlags": {
+                    "flag1": true,
+                    "flag2": false,
+                    "flag3": "variant"
+                }
+            }
+            """);
+        var client = container.Activate<PostHogClient>();
+
+        var captured = client.CapturePageView(
+            distinctId: "distinct-id",
+            pagePath: "/pricing",
+            properties: new Dictionary<string, object> { ["source"] = "test" },
+            sendFeatureFlags: true);
+
+        Assert.True(captured);
+        await client.FlushAsync();
+        Assert.Single(flagsHandler.ReceivedRequests);
+        var properties = GetOnlyBatchItem(batchHandler).GetProperty("properties");
+        Assert.Equal("/pricing", properties.GetProperty("$current_url").GetString());
+        Assert.True(properties.GetProperty("$feature/flag1").GetBoolean());
+        Assert.False(properties.GetProperty("$feature/flag2").GetBoolean());
+        Assert.Equal("variant", properties.GetProperty("$feature/flag3").GetString());
+        Assert.Contains(
+            properties.GetProperty("$active_feature_flags").EnumerateArray(),
+            flag => flag.GetString() == "flag1");
+        Assert.Contains(
+            properties.GetProperty("$active_feature_flags").EnumerateArray(),
+            flag => flag.GetString() == "flag3");
+    }
+
+    static JsonElement GetOnlyBatchItem(FakeHttpMessageHandler.RequestHandler batchHandler)
+    {
+        using var document = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        return document.RootElement.GetProperty("batch").EnumerateArray().Single().Clone();
     }
 }
 
@@ -1526,6 +1659,61 @@ public class TheCaptureExceptionMethod
         Assert.Equal("[]", frame.GetProperty("pre_context").ToString());
         Assert.Equal("", frame.GetProperty("context_line").GetString());
         Assert.Equal("[]", frame.GetProperty("post_context").ToString());
+    }
+}
+
+public class TheNoOpPostHogClient
+{
+    [Fact]
+    public async Task RefactoredApiMethodsReturnNoOpResults()
+    {
+        var client = NoOpPostHogClient.Instance;
+
+        var aliasResult = await client.AliasAsync("previous-id", "new-id", CancellationToken.None);
+        var identifyResult = await client.IdentifyAsync("distinct-id", null, null, CancellationToken.None);
+        var groupResult = await client.GroupIdentifyAsync("organization", "id:5", null, CancellationToken.None);
+        var groupWithDistinctIdResult = await client.GroupIdentifyAsync("distinct-id", "organization", "id:5", null, CancellationToken.None);
+
+        Assert.Equal(0, aliasResult.Status);
+        Assert.Equal(0, identifyResult.Status);
+        Assert.Equal(0, groupResult.Status);
+        Assert.Equal(0, groupWithDistinctIdResult.Status);
+    }
+
+    [Fact]
+    public void RefactoredCaptureMethodsReturnFalseWithoutThrowing()
+    {
+        var client = NoOpPostHogClient.Instance;
+
+        var capturedWithBooleanFlags = client.Capture(
+            "distinct-id",
+            "event-name",
+            properties: null,
+            groups: null,
+            sendFeatureFlags: true);
+        var capturedWithSnapshot = client.Capture(
+            "distinct-id",
+            "event-name",
+            properties: null,
+            groups: null,
+            flags: null);
+        var capturedExceptionWithBooleanFlags = client.CaptureException(
+            null!,
+            "distinct-id",
+            properties: null,
+            groups: null,
+            sendFeatureFlags: true);
+        var capturedExceptionWithSnapshot = client.CaptureException(
+            null!,
+            "distinct-id",
+            properties: null,
+            groups: null,
+            flags: null);
+
+        Assert.False(capturedWithBooleanFlags);
+        Assert.False(capturedWithSnapshot);
+        Assert.False(capturedExceptionWithBooleanFlags);
+        Assert.False(capturedExceptionWithSnapshot);
     }
 }
 
