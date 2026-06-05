@@ -2704,15 +2704,16 @@ public class TheEarlyExitBehavior
         return JsonSerializer.Deserialize<LocalEvaluationApiResult>(json, JsonSerializerHelper.Options)!;
     }
 
-    [Fact]
-    public void ReturnsFalseWithoutEvaluatingLaterMatchingGroupWhenEarlyExitEnabled()
+    [Theory]
+    [InlineData(true,  "tyrion@example.com",  false)] // matching props + rollout 0 => OUT_OF_ROLLOUT_BOUND, early-exits
+    [InlineData(false, "tyrion@example.com",  true)]  // earlyExit=false => falls through to second group
+    [InlineData(true,  "nobody@example.com",  true)]  // property mismatch => NO_MATCH, always falls through
+    public void EarlyExitReturnsExpectedResult(bool earlyExit, string firstGroupEmailFilter, bool expected)
     {
-        // First group: matching properties but rollout 0 => OUT_OF_ROLLOUT_BOUND.
-        // Second group: matching properties + rollout 100 => would match if reached.
         var flags = CreateFlags(
-            earlyExit: true,
+            earlyExit: earlyExit,
             firstGroupRolloutPercentage: 0,
-            firstGroupEmailFilter: "tyrion@example.com");
+            firstGroupEmailFilter: firstGroupEmailFilter);
         var localEvaluator = new LocalEvaluator(flags);
 
         var result = localEvaluator.EvaluateFeatureFlag(
@@ -2720,7 +2721,7 @@ public class TheEarlyExitBehavior
             distinctId: "1234",
             personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
 
-        Assert.False(result.Value);
+        Assert.Equal(expected, result.Value);
     }
 
     [Fact]
@@ -2731,42 +2732,6 @@ public class TheEarlyExitBehavior
         var flags = CreateFlagsWithoutEarlyExitField(
             firstGroupRolloutPercentage: 0,
             firstGroupEmailFilter: "tyrion@example.com");
-        var localEvaluator = new LocalEvaluator(flags);
-
-        var result = localEvaluator.EvaluateFeatureFlag(
-            key: "early-exit",
-            distinctId: "1234",
-            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
-
-        Assert.True(result.Value);
-    }
-
-    [Fact]
-    public void FallsThroughToLaterMatchingGroupWhenEarlyExitExplicitlyFalse()
-    {
-        var flags = CreateFlags(
-            earlyExit: false,
-            firstGroupRolloutPercentage: 0,
-            firstGroupEmailFilter: "tyrion@example.com");
-        var localEvaluator = new LocalEvaluator(flags);
-
-        var result = localEvaluator.EvaluateFeatureFlag(
-            key: "early-exit",
-            distinctId: "1234",
-            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
-
-        Assert.True(result.Value);
-    }
-
-    [Fact]
-    public void DoesNotEarlyExitOnPropertyFilterFailureEvenWhenEnabled()
-    {
-        // First group: NON-matching properties (rollout 0) => NO_MATCH, which always falls
-        // through, even when early_exit is enabled. Second group matches => flag enabled.
-        var flags = CreateFlags(
-            earlyExit: true,
-            firstGroupRolloutPercentage: 0,
-            firstGroupEmailFilter: "nobody@example.com");
         var localEvaluator = new LocalEvaluator(flags);
 
         var result = localEvaluator.EvaluateFeatureFlag(
