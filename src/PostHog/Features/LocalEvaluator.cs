@@ -308,6 +308,10 @@ internal sealed class LocalEvaluator
                 // falls through to the next condition group, even when early_exit is enabled.
                 if (earlyExit && conditionResult == ConditionMatchResult.OutOfRolloutBound)
                 {
+                    if (isInconclusive)
+                    {
+                        throw new InconclusiveMatchException("Can't determine if feature flag is enabled or not with given properties");
+                    }
                     return false;
                 }
 

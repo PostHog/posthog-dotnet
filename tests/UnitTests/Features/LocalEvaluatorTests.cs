@@ -2762,4 +2762,71 @@ public class TheEarlyExitBehavior
 
         Assert.False(result.Value);
     }
+
+    [Fact]
+    public void ThrowsInconclusiveWhenEarlyExitMasksInconclusiveCondition()
+    {
+        // Regression: if an earlier condition is inconclusive (missing property) and a later
+        // condition hits OutOfRolloutBound with early_exit=true, the early-exit must not
+        // swallow the prior inconclusive state — it must still fall back to server evaluation.
+        var flags = new LocalEvaluationApiResult
+        {
+            Flags =
+            [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = "early-exit-feature-flag",
+                    Key = "early-exit",
+                    Filters = new FeatureFlagFilters
+                    {
+                        EarlyExit = true,
+                        Groups =
+                        [
+                            // Condition 1: requires a property the caller does not supply
+                            // → InconclusiveMatchException (missing property)
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "missing_property",
+                                        Value = new PropertyFilterValue("some_value"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            // Condition 2: property matches but rollout excludes the user
+                            // → OutOfRolloutBound (rollout 0, distinctId "1234")
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("tyrion@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 0
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" }));
+    }
 }
