@@ -338,7 +338,14 @@ internal sealed class LocalEvaluator
             catch (InconclusiveMatchException)
             {
                 // Evaluation error (bad regex, invalid date, missing property, etc.)
-                // Track that we had an inconclusive match, but try other conditions
+                // If early_exit is enabled and a prior condition was already inconclusive,
+                // we cannot safely skip to later groups — re-throw so the caller falls back
+                // to the server, which mirrors what would have happened had the rollout
+                // boundary short-circuited first.
+                if (earlyExit && isInconclusive)
+                {
+                    throw new InconclusiveMatchException("Can't determine if feature flag is enabled or not with given properties");
+                }
                 isInconclusive = true;
             }
         }
