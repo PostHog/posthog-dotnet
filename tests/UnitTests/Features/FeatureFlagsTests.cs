@@ -3912,172 +3912,121 @@ public class FeatureFlagErrorTracking
 {
     [Fact]
     public async Task IncludesFlagMissingErrorWhenFlagNotInResponse()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("missing-flag", "distinct-id");
-
-        Assert.False(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"flag_missing\"", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponse("""{"featureFlags": {}}"""),
+            featureKey: "missing-flag",
+            expectedResult: false,
+            expectedError: "flag_missing");
 
     [Fact]
     public async Task IncludesErrorsWhileComputingFlagsErrorWhenErrorsWhileComputingFlagsIsTrue()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponse(
-            """
-            {
-                "featureFlags": {"some-flag": true},
-                "errorsWhileComputingFlags": true
-            }
-            """
-        );
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
-
-        Assert.True(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags\"", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponse(
+                """
+                {
+                    "featureFlags": {"some-flag": true},
+                    "errorsWhileComputingFlags": true
+                }
+                """),
+            featureKey: "some-flag",
+            expectedResult: true,
+            expectedError: "errors_while_computing_flags");
 
     [Fact]
     public async Task IncludesQuotaLimitedErrorWhenQuotaLimitedContainsFeatureFlags()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponse(
-            """
-            {
-                "featureFlags": {},
-                "quotaLimited": ["feature_flags"]
-            }
-            """
-        );
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
-
-        Assert.False(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"quota_limited,flag_missing\"", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponse(
+                """
+                {
+                    "featureFlags": {},
+                    "quotaLimited": ["feature_flags"]
+                }
+                """),
+            featureKey: "some-flag",
+            expectedResult: false,
+            expectedError: "quota_limited,flag_missing");
 
     [Fact]
     public async Task IncludesUnknownErrorWhenUnexpectedExceptionOccurs()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponseException(new InvalidOperationException("Unexpected error"));
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
-
-        Assert.False(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"unknown_error\"", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponseException(new InvalidOperationException("Unexpected error")),
+            featureKey: "some-flag",
+            expectedResult: false,
+            expectedError: "unknown_error");
 
     [Fact]
     public async Task JoinsMultipleErrorsWithCommas()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponse(
-            """
-            {
-                "featureFlags": {},
-                "errorsWhileComputingFlags": true
-            }
-            """
-        );
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("missing-flag", "distinct-id");
-
-        Assert.False(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags,flag_missing\"", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponse(
+                """
+                {
+                    "featureFlags": {},
+                    "errorsWhileComputingFlags": true
+                }
+                """),
+            featureKey: "missing-flag",
+            expectedResult: false,
+            expectedError: "errors_while_computing_flags,flag_missing");
 
     [Fact]
     public async Task DoesNotIncludeErrorPropertyWhenNoErrors()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponse(
-            """
-            {"featureFlags": {"some-flag": true}}
-            """
-        );
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
-
-        Assert.True(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.DoesNotContain("$feature_flag_error", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponse("""{"featureFlags": {"some-flag": true}}"""),
+            featureKey: "some-flag",
+            expectedResult: true,
+            expectedError: null);
 
     [Fact]
     public async Task IncludesTimeoutErrorWhenRequestTimesOut()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponseException(new TaskCanceledException("Request timed out"));
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
-
-        Assert.False(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"timeout\"", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponseException(new TaskCanceledException("Request timed out")),
+            featureKey: "some-flag",
+            expectedResult: false,
+            expectedError: "timeout");
 
     [Fact]
     public async Task IncludesConnectionErrorWhenNetworkFails()
-    {
-        var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponseException(new HttpRequestException("Network error"));
-        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
-
-        Assert.False(result);
-        await client.FlushAsync();
-        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"connection_error\"", received, StringComparison.Ordinal);
-    }
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponseException(new HttpRequestException("Network error")),
+            featureKey: "some-flag",
+            expectedResult: false,
+            expectedError: "connection_error");
 
     [Fact]
     public async Task IncludesApiErrorWithStatusCodeWhenApiFails()
+        => await AssertCapturedFeatureFlagErrorAsync(
+            handler => handler.AddFlagsResponseException(
+                new ApiException(null, System.Net.HttpStatusCode.InternalServerError, null)),
+            featureKey: "some-flag",
+            expectedResult: false,
+            expectedError: "api_error_500");
+
+    static async Task AssertCapturedFeatureFlagErrorAsync(
+        Action<FakeHttpMessageHandler> arrangeFlagsResponse,
+        string featureKey,
+        bool expectedResult,
+        string? expectedError)
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponseException(
-            new ApiException(null, System.Net.HttpStatusCode.InternalServerError, null));
+        arrangeFlagsResponse(container.FakeHttpMessageHandler);
         var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+        var result = await client.GetFeatureFlagAsync(featureKey, "distinct-id");
 
-        Assert.False(result);
+        Assert.NotNull(result);
+        Assert.Equal(expectedResult, result.IsEnabled);
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"api_error_500\"", received, StringComparison.Ordinal);
+
+        if (expectedError is null)
+        {
+            Assert.DoesNotContain("$feature_flag_error", received, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains($"\"$feature_flag_error\": \"{expectedError}\"", received, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

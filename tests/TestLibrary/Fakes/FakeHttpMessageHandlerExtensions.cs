@@ -12,14 +12,16 @@ internal static class FakeHttpMessageHandlerExtensions
     static readonly Uri FlagsUrl = new("https://us.i.posthog.com/flags/?v=2");
 
     public static FakeHttpMessageHandler.RequestHandler AddCaptureResponse(this FakeHttpMessageHandler handler) =>
-        handler.AddResponse(
-            new Uri("https://us.i.posthog.com/capture"),
-            HttpMethod.Post,
-            responseBody: new { status = 1 });
+        handler.AddIngestionResponse("capture");
 
     public static FakeHttpMessageHandler.RequestHandler AddBatchResponse(this FakeHttpMessageHandler handler) =>
+        handler.AddIngestionResponse("batch");
+
+    static FakeHttpMessageHandler.RequestHandler AddIngestionResponse(
+        this FakeHttpMessageHandler handler,
+        string endpoint) =>
         handler.AddResponse(
-            new Uri("https://us.i.posthog.com/batch"),
+            new Uri($"https://us.i.posthog.com/{endpoint}"),
             HttpMethod.Post,
             responseBody: new { status = 1 });
 
@@ -156,10 +158,7 @@ internal static class FakeHttpMessageHandlerExtensions
         this FakeHttpMessageHandler handler,
         string key,
         string responseBody) =>
-        handler.AddResponse(
-            new Uri($"https://us.i.posthog.com/api/projects/@current/feature_flags/{key}/remote_config?token=fake-project-token"),
-            HttpMethod.Get,
-            responseBody: responseBody);
+        handler.AddRemoteConfigResponse(key, responseBody);
 
     static T Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, JsonSerializerHelper.Options)
         ?? throw new ArgumentException("Json is invalid and deserializes to null", nameof(json));

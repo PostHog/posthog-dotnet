@@ -25,11 +25,7 @@ public static class GroupIdentifyAsyncExtensions
         StringOrValue<int> key,
         string name,
         Dictionary<string, object>? properties)
-    {
-        properties ??= new Dictionary<string, object>();
-        properties["name"] = name;
-        return await NotNull(client).GroupIdentifyAsync(type, key, properties, CancellationToken.None);
-    }
+        => await client.GroupIdentifyAsync(type, key, name, properties, CancellationToken.None);
 
     /// <summary>
     /// Sets a groups properties, which allows asking questions like "Who are the most active companies"
@@ -49,11 +45,7 @@ public static class GroupIdentifyAsyncExtensions
         StringOrValue<int> key,
         string name,
         Dictionary<string, object>? properties)
-    {
-        properties ??= new Dictionary<string, object>();
-        properties["name"] = name;
-        return await NotNull(client).GroupIdentifyAsync(distinctId, type, key, properties, CancellationToken.None);
-    }
+        => await client.GroupIdentifyAsync(distinctId, type, key, name, properties, CancellationToken.None);
 
     /// <summary>
     /// Sets a groups properties, which allows asking questions like "Who are the most active companies"
@@ -73,11 +65,7 @@ public static class GroupIdentifyAsyncExtensions
         string name,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-    {
-        properties ??= new Dictionary<string, object>();
-        properties["name"] = name;
-        return await NotNull(client).GroupIdentifyAsync(type, key, properties, cancellationToken);
-    }
+        => await GroupIdentifyWithNameAsync(NotNull(client), distinctId: null, type, key, name, properties, cancellationToken);
 
     /// <summary>
     /// Sets a groups properties, which allows asking questions like "Who are the most active companies"
@@ -99,11 +87,7 @@ public static class GroupIdentifyAsyncExtensions
         string name,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-    {
-        properties ??= new Dictionary<string, object>();
-        properties["name"] = name;
-        return await NotNull(client).GroupIdentifyAsync(distinctId, type, key, properties, cancellationToken);
-    }
+        => await GroupIdentifyWithNameAsync(NotNull(client), distinctId, type, key, name, properties, cancellationToken);
 
     /// <summary>
     /// Sets a groups properties, which allows asking questions like "Who are the most active companies"
@@ -147,4 +131,21 @@ public static class GroupIdentifyAsyncExtensions
             key,
             name,
             properties: new Dictionary<string, object>());
+
+    static async Task<ApiResult> GroupIdentifyWithNameAsync(
+        IPostHogClient client,
+        string? distinctId,
+        string type,
+        StringOrValue<int> key,
+        string name,
+        Dictionary<string, object>? properties,
+        CancellationToken cancellationToken)
+    {
+        properties ??= new Dictionary<string, object>();
+        properties["name"] = name;
+
+        return distinctId is null
+            ? await client.GroupIdentifyAsync(type, key, properties, cancellationToken)
+            : await client.GroupIdentifyAsync(distinctId, type, key, properties, cancellationToken);
+    }
 }

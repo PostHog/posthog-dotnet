@@ -10,50 +10,14 @@ public class TheTryParseMethod
     [InlineData("0.0.0", 0, 0, 0)]
     [InlineData("10.20.30", 10, 20, 30)]
     [InlineData("999.999.999", 999, 999, 999)]
-    public void ParsesValidVersions(string input, int expectedMajor, int expectedMinor, int expectedPatch)
-    {
-        var result = SemanticVersion.TryParse(input, out var version);
-
-        Assert.True(result);
-        Assert.NotNull(version);
-        Assert.Equal(expectedMajor, version.Value.Major);
-        Assert.Equal(expectedMinor, version.Value.Minor);
-        Assert.Equal(expectedPatch, version.Value.Patch);
-    }
-
-    [Theory]
     // v-prefix handling
     [InlineData("v1.2.3", 1, 2, 3)]
     [InlineData("V1.2.3", 1, 2, 3)]
     [InlineData("v0.0.1", 0, 0, 1)]
-    public void StripsVPrefix(string input, int expectedMajor, int expectedMinor, int expectedPatch)
-    {
-        var result = SemanticVersion.TryParse(input, out var version);
-
-        Assert.True(result);
-        Assert.NotNull(version);
-        Assert.Equal(expectedMajor, version.Value.Major);
-        Assert.Equal(expectedMinor, version.Value.Minor);
-        Assert.Equal(expectedPatch, version.Value.Patch);
-    }
-
-    [Theory]
     // Whitespace handling
     [InlineData("  1.2.3  ", 1, 2, 3)]
     [InlineData("\t1.2.3\t", 1, 2, 3)]
     [InlineData("  v1.2.3  ", 1, 2, 3)]
-    public void StripsWhitespace(string input, int expectedMajor, int expectedMinor, int expectedPatch)
-    {
-        var result = SemanticVersion.TryParse(input, out var version);
-
-        Assert.True(result);
-        Assert.NotNull(version);
-        Assert.Equal(expectedMajor, version.Value.Major);
-        Assert.Equal(expectedMinor, version.Value.Minor);
-        Assert.Equal(expectedPatch, version.Value.Patch);
-    }
-
-    [Theory]
     // Pre-release and build metadata stripping
     [InlineData("1.2.3-alpha", 1, 2, 3)]
     [InlineData("1.2.3-alpha.1", 1, 2, 3)]
@@ -62,57 +26,21 @@ public class TheTryParseMethod
     [InlineData("1.2.3-alpha+build", 1, 2, 3)]
     [InlineData("1.2.3-beta.2+build.456", 1, 2, 3)]
     [InlineData("v1.2.3-rc1", 1, 2, 3)]
-    public void StripsPreReleaseAndBuildMetadata(string input, int expectedMajor, int expectedMinor, int expectedPatch)
-    {
-        var result = SemanticVersion.TryParse(input, out var version);
-
-        Assert.True(result);
-        Assert.NotNull(version);
-        Assert.Equal(expectedMajor, version.Value.Major);
-        Assert.Equal(expectedMinor, version.Value.Minor);
-        Assert.Equal(expectedPatch, version.Value.Patch);
-    }
-
-    [Theory]
     // Partial versions (missing components default to 0)
     [InlineData("1", 1, 0, 0)]
     [InlineData("1.2", 1, 2, 0)]
     [InlineData("v1", 1, 0, 0)]
     [InlineData("v1.2", 1, 2, 0)]
-    public void DefaultsMissingComponentsToZero(string input, int expectedMajor, int expectedMinor, int expectedPatch)
-    {
-        var result = SemanticVersion.TryParse(input, out var version);
-
-        Assert.True(result);
-        Assert.NotNull(version);
-        Assert.Equal(expectedMajor, version.Value.Major);
-        Assert.Equal(expectedMinor, version.Value.Minor);
-        Assert.Equal(expectedPatch, version.Value.Patch);
-    }
-
-    [Theory]
     // Extra components beyond the third are ignored
     [InlineData("1.2.3.4", 1, 2, 3)]
     [InlineData("1.2.3.4.5", 1, 2, 3)]
     [InlineData("1.2.3.4.5.6", 1, 2, 3)]
-    public void IgnoresExtraComponents(string input, int expectedMajor, int expectedMinor, int expectedPatch)
-    {
-        var result = SemanticVersion.TryParse(input, out var version);
-
-        Assert.True(result);
-        Assert.NotNull(version);
-        Assert.Equal(expectedMajor, version.Value.Major);
-        Assert.Equal(expectedMinor, version.Value.Minor);
-        Assert.Equal(expectedPatch, version.Value.Patch);
-    }
-
-    [Theory]
     // Literal "0" components are valid per semver 2.0.0
     [InlineData("0.0.1", 0, 0, 1)]
     [InlineData("0.1.0", 0, 1, 0)]
     [InlineData("1.0.0", 1, 0, 0)]
     [InlineData("1.2.0", 1, 2, 0)]
-    public void ParsesLiteralZeroComponents(string input, int expectedMajor, int expectedMinor, int expectedPatch)
+    public void ParsesValidInputs(string input, int expectedMajor, int expectedMinor, int expectedPatch)
     {
         var result = SemanticVersion.TryParse(input, out var version);
 
@@ -171,52 +99,30 @@ public class TheCompareToMethod
     [InlineData("0.0.0", "0.0.0", 0)]
     [InlineData("v1.2.3", "1.2.3", 0)]
     [InlineData("1.2.3-alpha", "1.2.3", 0)] // Pre-release stripped, so equal
-    public void ReturnsZeroForEqualVersions(string left, string right, int expected)
-    {
-        Assert.True(SemanticVersion.TryParse(left, out var leftVersion));
-        Assert.True(SemanticVersion.TryParse(right, out var rightVersion));
-
-        Assert.NotNull(leftVersion);
-        Assert.NotNull(rightVersion);
-        Assert.Equal(expected, leftVersion.Value.CompareTo(rightVersion.Value));
-    }
-
-    [Theory]
     // Greater than comparisons
     [InlineData("2.0.0", "1.0.0", 1)]
     [InlineData("1.2.0", "1.1.0", 1)]
     [InlineData("1.2.4", "1.2.3", 1)]
     [InlineData("2.0.0", "1.9.9", 1)]
     [InlineData("1.0.0", "0.9.9", 1)]
-    public void ReturnsPositiveWhenLeftIsGreater(string left, string right, int expected)
-    {
-        Assert.True(SemanticVersion.TryParse(left, out var leftVersion));
-        Assert.True(SemanticVersion.TryParse(right, out var rightVersion));
-
-        Assert.NotNull(leftVersion);
-        Assert.NotNull(rightVersion);
-        Assert.Equal(expected, Math.Sign(leftVersion.Value.CompareTo(rightVersion.Value)));
-    }
-
-    [Theory]
     // Less than comparisons
     [InlineData("1.0.0", "2.0.0", -1)]
     [InlineData("1.1.0", "1.2.0", -1)]
     [InlineData("1.2.3", "1.2.4", -1)]
     [InlineData("1.9.9", "2.0.0", -1)]
     [InlineData("0.9.9", "1.0.0", -1)]
-    public void ReturnsNegativeWhenLeftIsLess(string left, string right, int expected)
+    public void ComparesVersions(string left, string right, int expectedSign)
     {
         Assert.True(SemanticVersion.TryParse(left, out var leftVersion));
         Assert.True(SemanticVersion.TryParse(right, out var rightVersion));
 
         Assert.NotNull(leftVersion);
         Assert.NotNull(rightVersion);
-        Assert.Equal(expected, Math.Sign(leftVersion.Value.CompareTo(rightVersion.Value)));
+        Assert.Equal(expectedSign, Math.Sign(leftVersion.Value.CompareTo(rightVersion.Value)));
     }
 }
 
-public class TheGetTildeBoundsMethod
+public class TheGetTildeBoundsMethod : RangeBoundsMethodTests
 {
     [Theory]
     // ~X.Y.Z means >=X.Y.Z and <X.Y+1.0
@@ -224,95 +130,72 @@ public class TheGetTildeBoundsMethod
     [InlineData("1.0.0", "1.0.0", "1.1.0")]
     [InlineData("0.2.3", "0.2.3", "0.3.0")]
     [InlineData("0.0.1", "0.0.1", "0.1.0")]
-    public void CalculatesCorrectTildeBounds(string input, string expectedLower, string expectedUpper)
-    {
-        Assert.True(SemanticVersion.TryParse(input, out var version));
-        Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
-        Assert.True(SemanticVersion.TryParse(expectedUpper, out var expectedUpperVersion));
-
-        Assert.NotNull(version);
-        Assert.NotNull(expectedLowerVersion);
-        Assert.NotNull(expectedUpperVersion);
-
-        var (lower, upper) = version.Value.GetTildeBounds();
-
-        Assert.Equal(expectedLowerVersion.Value, lower);
-        Assert.Equal(expectedUpperVersion.Value, upper);
-    }
+    public void CalculatesCorrectBounds(string input, string expectedLower, string expectedUpper)
+        => AssertBounds(input, expectedLower, expectedUpper);
 
     [Theory]
-    // Test range matching for tilde
-    [InlineData("1.2.3", "1.2.3", true)]  // At lower bound
-    [InlineData("1.2.3", "1.2.4", true)]  // Within range
-    [InlineData("1.2.3", "1.2.99", true)] // Within range
-    [InlineData("1.2.3", "1.3.0", false)] // At upper bound (exclusive)
-    [InlineData("1.2.3", "1.2.2", false)] // Below range
-    [InlineData("1.2.3", "2.0.0", false)] // Above range
-    public void TildeBoundsMatchCorrectly(string baseVersion, string testVersion, bool expectedInRange)
-    {
-        Assert.True(SemanticVersion.TryParse(baseVersion, out var baseVer));
-        Assert.True(SemanticVersion.TryParse(testVersion, out var testVer));
+    // Tilde range matching
+    [InlineData("1.2.3", "1.2.3", true)]
+    [InlineData("1.2.3", "1.2.4", true)]
+    [InlineData("1.2.3", "1.2.99", true)]
+    [InlineData("1.2.3", "1.3.0", false)]
+    [InlineData("1.2.3", "1.2.2", false)]
+    [InlineData("1.2.3", "2.0.0", false)]
+    public void BoundsMatchCorrectly(string baseVersion, string testVersion, bool expectedInRange)
+        => AssertInRange(baseVersion, testVersion, expectedInRange);
 
-        Assert.NotNull(baseVer);
-        Assert.NotNull(testVer);
-
-        var (lower, upper) = baseVer.Value.GetTildeBounds();
-        var inRange = testVer.Value.IsInRange(lower, upper);
-
-        Assert.Equal(expectedInRange, inRange);
-    }
+    private protected override (SemanticVersion Lower, SemanticVersion Upper) GetBounds(SemanticVersion version)
+        => version.GetTildeBounds();
 }
 
-public class TheGetCaretBoundsMethod
+public class TheGetCaretBoundsMethod : RangeBoundsMethodTests
 {
     [Theory]
     // ^X.Y.Z where X > 0 → >=X.Y.Z <X+1.0.0
     [InlineData("1.2.3", "1.2.3", "2.0.0")]
     [InlineData("1.0.0", "1.0.0", "2.0.0")]
     [InlineData("2.5.10", "2.5.10", "3.0.0")]
-    public void CalculatesCorrectCaretBoundsForMajorGreaterThanZero(string input, string expectedLower, string expectedUpper)
-    {
-        Assert.True(SemanticVersion.TryParse(input, out var version));
-        Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
-        Assert.True(SemanticVersion.TryParse(expectedUpper, out var expectedUpperVersion));
-
-        Assert.NotNull(version);
-        Assert.NotNull(expectedLowerVersion);
-        Assert.NotNull(expectedUpperVersion);
-
-        var (lower, upper) = version.Value.GetCaretBounds();
-
-        Assert.Equal(expectedLowerVersion.Value, lower);
-        Assert.Equal(expectedUpperVersion.Value, upper);
-    }
-
-    [Theory]
     // ^0.Y.Z where Y > 0 → >=0.Y.Z <0.Y+1.0
     [InlineData("0.2.3", "0.2.3", "0.3.0")]
     [InlineData("0.1.0", "0.1.0", "0.2.0")]
     [InlineData("0.5.10", "0.5.10", "0.6.0")]
-    public void CalculatesCorrectCaretBoundsForMajorZeroMinorGreaterThanZero(string input, string expectedLower, string expectedUpper)
-    {
-        Assert.True(SemanticVersion.TryParse(input, out var version));
-        Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
-        Assert.True(SemanticVersion.TryParse(expectedUpper, out var expectedUpperVersion));
-
-        Assert.NotNull(version);
-        Assert.NotNull(expectedLowerVersion);
-        Assert.NotNull(expectedUpperVersion);
-
-        var (lower, upper) = version.Value.GetCaretBounds();
-
-        Assert.Equal(expectedLowerVersion.Value, lower);
-        Assert.Equal(expectedUpperVersion.Value, upper);
-    }
-
-    [Theory]
     // ^0.0.Z → >=0.0.Z <0.0.Z+1
     [InlineData("0.0.3", "0.0.3", "0.0.4")]
     [InlineData("0.0.0", "0.0.0", "0.0.1")]
     [InlineData("0.0.10", "0.0.10", "0.0.11")]
-    public void CalculatesCorrectCaretBoundsForMajorAndMinorZero(string input, string expectedLower, string expectedUpper)
+    public void CalculatesCorrectBounds(string input, string expectedLower, string expectedUpper)
+        => AssertBounds(input, expectedLower, expectedUpper);
+
+    [Theory]
+    // Caret range matching with major > 0
+    [InlineData("1.2.3", "1.2.3", true)]
+    [InlineData("1.2.3", "1.2.4", true)]
+    [InlineData("1.2.3", "1.9.9", true)]
+    [InlineData("1.2.3", "2.0.0", false)]
+    [InlineData("1.2.3", "1.2.2", false)]
+    [InlineData("1.2.3", "3.0.0", false)]
+    // Caret range matching with major = 0, minor > 0
+    [InlineData("0.2.3", "0.2.3", true)]
+    [InlineData("0.2.3", "0.2.4", true)]
+    [InlineData("0.2.3", "0.2.99", true)]
+    [InlineData("0.2.3", "0.3.0", false)]
+    [InlineData("0.2.3", "0.2.2", false)]
+    [InlineData("0.2.3", "1.0.0", false)]
+    // Caret range matching with major = 0, minor = 0
+    [InlineData("0.0.3", "0.0.3", true)]
+    [InlineData("0.0.3", "0.0.4", false)]
+    [InlineData("0.0.3", "0.0.2", false)]
+    [InlineData("0.0.3", "0.1.0", false)]
+    public void BoundsMatchCorrectly(string baseVersion, string testVersion, bool expectedInRange)
+        => AssertInRange(baseVersion, testVersion, expectedInRange);
+
+    private protected override (SemanticVersion Lower, SemanticVersion Upper) GetBounds(SemanticVersion version)
+        => version.GetCaretBounds();
+}
+
+public abstract class RangeBoundsMethodTests
+{
+    protected void AssertBounds(string input, string expectedLower, string expectedUpper)
     {
         Assert.True(SemanticVersion.TryParse(input, out var version));
         Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
@@ -322,21 +205,13 @@ public class TheGetCaretBoundsMethod
         Assert.NotNull(expectedLowerVersion);
         Assert.NotNull(expectedUpperVersion);
 
-        var (lower, upper) = version.Value.GetCaretBounds();
+        var (lower, upper) = GetBounds(version.Value);
 
         Assert.Equal(expectedLowerVersion.Value, lower);
         Assert.Equal(expectedUpperVersion.Value, upper);
     }
 
-    [Theory]
-    // Test range matching for caret with major > 0
-    [InlineData("1.2.3", "1.2.3", true)]   // At lower bound
-    [InlineData("1.2.3", "1.2.4", true)]   // Within range
-    [InlineData("1.2.3", "1.9.9", true)]   // Within range
-    [InlineData("1.2.3", "2.0.0", false)]  // At upper bound (exclusive)
-    [InlineData("1.2.3", "1.2.2", false)]  // Below range
-    [InlineData("1.2.3", "3.0.0", false)]  // Above range
-    public void CaretBoundsMatchCorrectlyForMajorGreaterThanZero(string baseVersion, string testVersion, bool expectedInRange)
+    protected void AssertInRange(string baseVersion, string testVersion, bool expectedInRange)
     {
         Assert.True(SemanticVersion.TryParse(baseVersion, out var baseVer));
         Assert.True(SemanticVersion.TryParse(testVersion, out var testVer));
@@ -344,53 +219,13 @@ public class TheGetCaretBoundsMethod
         Assert.NotNull(baseVer);
         Assert.NotNull(testVer);
 
-        var (lower, upper) = baseVer.Value.GetCaretBounds();
+        var (lower, upper) = GetBounds(baseVer.Value);
         var inRange = testVer.Value.IsInRange(lower, upper);
 
         Assert.Equal(expectedInRange, inRange);
     }
 
-    [Theory]
-    // Test range matching for caret with major = 0, minor > 0
-    [InlineData("0.2.3", "0.2.3", true)]   // At lower bound
-    [InlineData("0.2.3", "0.2.4", true)]   // Within range
-    [InlineData("0.2.3", "0.2.99", true)]  // Within range
-    [InlineData("0.2.3", "0.3.0", false)]  // At upper bound (exclusive)
-    [InlineData("0.2.3", "0.2.2", false)]  // Below range
-    [InlineData("0.2.3", "1.0.0", false)]  // Above range
-    public void CaretBoundsMatchCorrectlyForMajorZeroMinorGreaterThanZero(string baseVersion, string testVersion, bool expectedInRange)
-    {
-        Assert.True(SemanticVersion.TryParse(baseVersion, out var baseVer));
-        Assert.True(SemanticVersion.TryParse(testVersion, out var testVer));
-
-        Assert.NotNull(baseVer);
-        Assert.NotNull(testVer);
-
-        var (lower, upper) = baseVer.Value.GetCaretBounds();
-        var inRange = testVer.Value.IsInRange(lower, upper);
-
-        Assert.Equal(expectedInRange, inRange);
-    }
-
-    [Theory]
-    // Test range matching for caret with major = 0, minor = 0
-    [InlineData("0.0.3", "0.0.3", true)]   // At lower bound
-    [InlineData("0.0.3", "0.0.4", false)]  // At upper bound (exclusive)
-    [InlineData("0.0.3", "0.0.2", false)]  // Below range
-    [InlineData("0.0.3", "0.1.0", false)]  // Above range
-    public void CaretBoundsMatchCorrectlyForMajorAndMinorZero(string baseVersion, string testVersion, bool expectedInRange)
-    {
-        Assert.True(SemanticVersion.TryParse(baseVersion, out var baseVer));
-        Assert.True(SemanticVersion.TryParse(testVersion, out var testVer));
-
-        Assert.NotNull(baseVer);
-        Assert.NotNull(testVer);
-
-        var (lower, upper) = baseVer.Value.GetCaretBounds();
-        var inRange = testVer.Value.IsInRange(lower, upper);
-
-        Assert.Equal(expectedInRange, inRange);
-    }
+    private protected abstract (SemanticVersion Lower, SemanticVersion Upper) GetBounds(SemanticVersion version);
 }
 
 public class TheTryParseWildcardMethod
@@ -401,66 +236,18 @@ public class TheTryParseWildcardMethod
     [InlineData("2.*", "2.0.0", "3.0.0")]
     [InlineData("0.*", "0.0.0", "1.0.0")]
     [InlineData("v1.*", "1.0.0", "2.0.0")]
-    public void ParsesXWildcardPattern(string pattern, string expectedLower, string expectedUpper)
-    {
-        var result = SemanticVersion.TryParseWildcard(pattern, out var lower, out var upper);
-
-        Assert.True(result);
-        Assert.NotNull(lower);
-        Assert.NotNull(upper);
-
-        Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
-        Assert.True(SemanticVersion.TryParse(expectedUpper, out var expectedUpperVersion));
-
-        Assert.Equal(expectedLowerVersion!.Value, lower.Value);
-        Assert.Equal(expectedUpperVersion!.Value, upper.Value);
-    }
-
-    [Theory]
     // "X.Y.*" pattern → >=X.Y.0 <X.Y+1.0
     [InlineData("1.2.*", "1.2.0", "1.3.0")]
     [InlineData("1.0.*", "1.0.0", "1.1.0")]
     [InlineData("0.2.*", "0.2.0", "0.3.0")]
     [InlineData("v1.2.*", "1.2.0", "1.3.0")]
-    public void ParsesXYWildcardPattern(string pattern, string expectedLower, string expectedUpper)
-    {
-        var result = SemanticVersion.TryParseWildcard(pattern, out var lower, out var upper);
-
-        Assert.True(result);
-        Assert.NotNull(lower);
-        Assert.NotNull(upper);
-
-        Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
-        Assert.True(SemanticVersion.TryParse(expectedUpper, out var expectedUpperVersion));
-
-        Assert.Equal(expectedLowerVersion!.Value, lower.Value);
-        Assert.Equal(expectedUpperVersion!.Value, upper.Value);
-    }
-
-    [Theory]
     // "X" pattern (without explicit wildcard) → >=X.0.0 <X+1.0.0
     [InlineData("1", "1.0.0", "2.0.0")]
     [InlineData("2", "2.0.0", "3.0.0")]
-    public void ParsesImplicitMajorWildcard(string pattern, string expectedLower, string expectedUpper)
-    {
-        var result = SemanticVersion.TryParseWildcard(pattern, out var lower, out var upper);
-
-        Assert.True(result);
-        Assert.NotNull(lower);
-        Assert.NotNull(upper);
-
-        Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
-        Assert.True(SemanticVersion.TryParse(expectedUpper, out var expectedUpperVersion));
-
-        Assert.Equal(expectedLowerVersion!.Value, lower.Value);
-        Assert.Equal(expectedUpperVersion!.Value, upper.Value);
-    }
-
-    [Theory]
     // "X.Y" pattern (without explicit wildcard) → >=X.Y.0 <X.Y+1.0
     [InlineData("1.2", "1.2.0", "1.3.0")]
     [InlineData("0.5", "0.5.0", "0.6.0")]
-    public void ParsesImplicitMinorWildcard(string pattern, string expectedLower, string expectedUpper)
+    public void ParsesWildcardPatterns(string pattern, string expectedLower, string expectedUpper)
     {
         var result = SemanticVersion.TryParseWildcard(pattern, out var lower, out var upper);
 
@@ -533,59 +320,35 @@ public class TheTryParseWildcardMethod
 public class TheOperatorOverloads
 {
     [Theory]
-    [InlineData("1.2.3", "1.2.4", true)]
-    [InlineData("1.2.3", "1.2.3", false)]
-    [InlineData("1.2.4", "1.2.3", false)]
-    public void LessThanOperatorWorks(string left, string right, bool expected)
+    [InlineData("<", "1.2.3", "1.2.4", true)]
+    [InlineData("<", "1.2.3", "1.2.3", false)]
+    [InlineData("<", "1.2.4", "1.2.3", false)]
+    [InlineData("<=", "1.2.3", "1.2.4", true)]
+    [InlineData("<=", "1.2.3", "1.2.3", true)]
+    [InlineData("<=", "1.2.4", "1.2.3", false)]
+    [InlineData(">", "1.2.4", "1.2.3", true)]
+    [InlineData(">", "1.2.3", "1.2.3", false)]
+    [InlineData(">", "1.2.3", "1.2.4", false)]
+    [InlineData(">=", "1.2.4", "1.2.3", true)]
+    [InlineData(">=", "1.2.3", "1.2.3", true)]
+    [InlineData(">=", "1.2.3", "1.2.4", false)]
+    public void ComparisonOperatorsWork(string operatorName, string left, string right, bool expected)
     {
         Assert.True(SemanticVersion.TryParse(left, out var leftVersion));
         Assert.True(SemanticVersion.TryParse(right, out var rightVersion));
 
         Assert.NotNull(leftVersion);
         Assert.NotNull(rightVersion);
-        Assert.Equal(expected, leftVersion.Value < rightVersion.Value);
-    }
 
-    [Theory]
-    [InlineData("1.2.3", "1.2.4", true)]
-    [InlineData("1.2.3", "1.2.3", true)]
-    [InlineData("1.2.4", "1.2.3", false)]
-    public void LessThanOrEqualOperatorWorks(string left, string right, bool expected)
-    {
-        Assert.True(SemanticVersion.TryParse(left, out var leftVersion));
-        Assert.True(SemanticVersion.TryParse(right, out var rightVersion));
-
-        Assert.NotNull(leftVersion);
-        Assert.NotNull(rightVersion);
-        Assert.Equal(expected, leftVersion.Value <= rightVersion.Value);
-    }
-
-    [Theory]
-    [InlineData("1.2.4", "1.2.3", true)]
-    [InlineData("1.2.3", "1.2.3", false)]
-    [InlineData("1.2.3", "1.2.4", false)]
-    public void GreaterThanOperatorWorks(string left, string right, bool expected)
-    {
-        Assert.True(SemanticVersion.TryParse(left, out var leftVersion));
-        Assert.True(SemanticVersion.TryParse(right, out var rightVersion));
-
-        Assert.NotNull(leftVersion);
-        Assert.NotNull(rightVersion);
-        Assert.Equal(expected, leftVersion.Value > rightVersion.Value);
-    }
-
-    [Theory]
-    [InlineData("1.2.4", "1.2.3", true)]
-    [InlineData("1.2.3", "1.2.3", true)]
-    [InlineData("1.2.3", "1.2.4", false)]
-    public void GreaterThanOrEqualOperatorWorks(string left, string right, bool expected)
-    {
-        Assert.True(SemanticVersion.TryParse(left, out var leftVersion));
-        Assert.True(SemanticVersion.TryParse(right, out var rightVersion));
-
-        Assert.NotNull(leftVersion);
-        Assert.NotNull(rightVersion);
-        Assert.Equal(expected, leftVersion.Value >= rightVersion.Value);
+        var actual = operatorName switch
+        {
+            "<" => leftVersion.Value < rightVersion.Value,
+            "<=" => leftVersion.Value <= rightVersion.Value,
+            ">" => leftVersion.Value > rightVersion.Value,
+            ">=" => leftVersion.Value >= rightVersion.Value,
+            _ => throw new ArgumentOutOfRangeException(nameof(operatorName), operatorName, null)
+        };
+        Assert.Equal(expected, actual);
     }
 }
 

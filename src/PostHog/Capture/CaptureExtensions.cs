@@ -331,15 +331,22 @@ public static class CaptureExtensions
         string pagePath,
         Dictionary<string, object>? properties,
         bool sendFeatureFlags)
+    {
+        if (!sendFeatureFlags)
+        {
+            return client.CapturePageView(distinctId, pagePath, properties);
+        }
+
 #pragma warning disable CS0618
-        => NotNull(client).CaptureSpecialEvent(
+        return NotNull(client).CaptureSpecialEvent(
             distinctId,
             eventName: "$pageview",
             eventPropertyName: "$current_url",
             eventPropertyValue: pagePath,
             properties,
-            sendFeatureFlags);
+            sendFeatureFlags: true);
 #pragma warning restore CS0618
+    }
 
     /// <summary>
     /// Captures a Page View ($pageview) event.
@@ -516,12 +523,15 @@ public static class CaptureExtensions
         string distinctId,
         string surveyId,
         Dictionary<string, object>? properties)
-        => NotNull(client).CaptureSpecialEvent(
+    {
+        const string eventName = "survey dismissed";
+        return NotNull(client).CaptureSpecialEvent(
             distinctId,
-            eventName: "survey dismissed",
+            eventName,
             eventPropertyName: "$survey_id",
             eventPropertyValue: surveyId,
             properties);
+    }
 
     static bool CaptureSpecialEvent(
         this IPostHogClient client,
