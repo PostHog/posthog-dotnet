@@ -32,7 +32,7 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
         StringOrValue<int> key,
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
-        => GroupIdentifyAsync(string.Empty, type, key, properties, cancellationToken);
+        => NoOpApiResultTask;
 
     public Task<ApiResult> GroupIdentifyAsync(
         string distinctId,
@@ -76,7 +76,7 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
         GroupCollection? groups,
         FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp = null)
-        => Capture(distinctId, exception?.GetType().FullName ?? string.Empty, properties, groups, flags, timestamp);
+        => false;
 
     public Task<bool> IsFeatureEnabledAsync(
         string featureKey,

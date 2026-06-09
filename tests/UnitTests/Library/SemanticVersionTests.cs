@@ -122,27 +122,80 @@ public class TheCompareToMethod
     }
 }
 
-public class TheVersionRangeBoundsMethods
+public class TheGetTildeBoundsMethod : RangeBoundsMethodTests
 {
     [Theory]
     // ~X.Y.Z means >=X.Y.Z and <X.Y+1.0
-    [InlineData("tilde", "1.2.3", "1.2.3", "1.3.0")]
-    [InlineData("tilde", "1.0.0", "1.0.0", "1.1.0")]
-    [InlineData("tilde", "0.2.3", "0.2.3", "0.3.0")]
-    [InlineData("tilde", "0.0.1", "0.0.1", "0.1.0")]
+    [InlineData("1.2.3", "1.2.3", "1.3.0")]
+    [InlineData("1.0.0", "1.0.0", "1.1.0")]
+    [InlineData("0.2.3", "0.2.3", "0.3.0")]
+    [InlineData("0.0.1", "0.0.1", "0.1.0")]
+    public void CalculatesCorrectBounds(string input, string expectedLower, string expectedUpper)
+        => AssertBounds(input, expectedLower, expectedUpper);
+
+    [Theory]
+    // Tilde range matching
+    [InlineData("1.2.3", "1.2.3", true)]
+    [InlineData("1.2.3", "1.2.4", true)]
+    [InlineData("1.2.3", "1.2.99", true)]
+    [InlineData("1.2.3", "1.3.0", false)]
+    [InlineData("1.2.3", "1.2.2", false)]
+    [InlineData("1.2.3", "2.0.0", false)]
+    public void BoundsMatchCorrectly(string baseVersion, string testVersion, bool expectedInRange)
+        => AssertInRange(baseVersion, testVersion, expectedInRange);
+
+    private protected override (SemanticVersion Lower, SemanticVersion Upper) GetBounds(SemanticVersion version)
+        => version.GetTildeBounds();
+}
+
+public class TheGetCaretBoundsMethod : RangeBoundsMethodTests
+{
+    [Theory]
     // ^X.Y.Z where X > 0 → >=X.Y.Z <X+1.0.0
-    [InlineData("caret", "1.2.3", "1.2.3", "2.0.0")]
-    [InlineData("caret", "1.0.0", "1.0.0", "2.0.0")]
-    [InlineData("caret", "2.5.10", "2.5.10", "3.0.0")]
+    [InlineData("1.2.3", "1.2.3", "2.0.0")]
+    [InlineData("1.0.0", "1.0.0", "2.0.0")]
+    [InlineData("2.5.10", "2.5.10", "3.0.0")]
     // ^0.Y.Z where Y > 0 → >=0.Y.Z <0.Y+1.0
-    [InlineData("caret", "0.2.3", "0.2.3", "0.3.0")]
-    [InlineData("caret", "0.1.0", "0.1.0", "0.2.0")]
-    [InlineData("caret", "0.5.10", "0.5.10", "0.6.0")]
+    [InlineData("0.2.3", "0.2.3", "0.3.0")]
+    [InlineData("0.1.0", "0.1.0", "0.2.0")]
+    [InlineData("0.5.10", "0.5.10", "0.6.0")]
     // ^0.0.Z → >=0.0.Z <0.0.Z+1
-    [InlineData("caret", "0.0.3", "0.0.3", "0.0.4")]
-    [InlineData("caret", "0.0.0", "0.0.0", "0.0.1")]
-    [InlineData("caret", "0.0.10", "0.0.10", "0.0.11")]
-    public void CalculatesCorrectBounds(string kind, string input, string expectedLower, string expectedUpper)
+    [InlineData("0.0.3", "0.0.3", "0.0.4")]
+    [InlineData("0.0.0", "0.0.0", "0.0.1")]
+    [InlineData("0.0.10", "0.0.10", "0.0.11")]
+    public void CalculatesCorrectBounds(string input, string expectedLower, string expectedUpper)
+        => AssertBounds(input, expectedLower, expectedUpper);
+
+    [Theory]
+    // Caret range matching with major > 0
+    [InlineData("1.2.3", "1.2.3", true)]
+    [InlineData("1.2.3", "1.2.4", true)]
+    [InlineData("1.2.3", "1.9.9", true)]
+    [InlineData("1.2.3", "2.0.0", false)]
+    [InlineData("1.2.3", "1.2.2", false)]
+    [InlineData("1.2.3", "3.0.0", false)]
+    // Caret range matching with major = 0, minor > 0
+    [InlineData("0.2.3", "0.2.3", true)]
+    [InlineData("0.2.3", "0.2.4", true)]
+    [InlineData("0.2.3", "0.2.99", true)]
+    [InlineData("0.2.3", "0.3.0", false)]
+    [InlineData("0.2.3", "0.2.2", false)]
+    [InlineData("0.2.3", "1.0.0", false)]
+    // Caret range matching with major = 0, minor = 0
+    [InlineData("0.0.3", "0.0.3", true)]
+    [InlineData("0.0.3", "0.0.4", false)]
+    [InlineData("0.0.3", "0.0.2", false)]
+    [InlineData("0.0.3", "0.1.0", false)]
+    public void BoundsMatchCorrectly(string baseVersion, string testVersion, bool expectedInRange)
+        => AssertInRange(baseVersion, testVersion, expectedInRange);
+
+    private protected override (SemanticVersion Lower, SemanticVersion Upper) GetBounds(SemanticVersion version)
+        => version.GetCaretBounds();
+}
+
+public abstract class RangeBoundsMethodTests
+{
+    protected void AssertBounds(string input, string expectedLower, string expectedUpper)
     {
         Assert.True(SemanticVersion.TryParse(input, out var version));
         Assert.True(SemanticVersion.TryParse(expectedLower, out var expectedLowerVersion));
@@ -152,40 +205,13 @@ public class TheVersionRangeBoundsMethods
         Assert.NotNull(expectedLowerVersion);
         Assert.NotNull(expectedUpperVersion);
 
-        var (lower, upper) = GetBounds(kind, version.Value);
+        var (lower, upper) = GetBounds(version.Value);
 
         Assert.Equal(expectedLowerVersion.Value, lower);
         Assert.Equal(expectedUpperVersion.Value, upper);
     }
 
-    [Theory]
-    // Tilde range matching
-    [InlineData("tilde", "1.2.3", "1.2.3", true)]
-    [InlineData("tilde", "1.2.3", "1.2.4", true)]
-    [InlineData("tilde", "1.2.3", "1.2.99", true)]
-    [InlineData("tilde", "1.2.3", "1.3.0", false)]
-    [InlineData("tilde", "1.2.3", "1.2.2", false)]
-    [InlineData("tilde", "1.2.3", "2.0.0", false)]
-    // Caret range matching with major > 0
-    [InlineData("caret", "1.2.3", "1.2.3", true)]
-    [InlineData("caret", "1.2.3", "1.2.4", true)]
-    [InlineData("caret", "1.2.3", "1.9.9", true)]
-    [InlineData("caret", "1.2.3", "2.0.0", false)]
-    [InlineData("caret", "1.2.3", "1.2.2", false)]
-    [InlineData("caret", "1.2.3", "3.0.0", false)]
-    // Caret range matching with major = 0, minor > 0
-    [InlineData("caret", "0.2.3", "0.2.3", true)]
-    [InlineData("caret", "0.2.3", "0.2.4", true)]
-    [InlineData("caret", "0.2.3", "0.2.99", true)]
-    [InlineData("caret", "0.2.3", "0.3.0", false)]
-    [InlineData("caret", "0.2.3", "0.2.2", false)]
-    [InlineData("caret", "0.2.3", "1.0.0", false)]
-    // Caret range matching with major = 0, minor = 0
-    [InlineData("caret", "0.0.3", "0.0.3", true)]
-    [InlineData("caret", "0.0.3", "0.0.4", false)]
-    [InlineData("caret", "0.0.3", "0.0.2", false)]
-    [InlineData("caret", "0.0.3", "0.1.0", false)]
-    public void BoundsMatchCorrectly(string kind, string baseVersion, string testVersion, bool expectedInRange)
+    protected void AssertInRange(string baseVersion, string testVersion, bool expectedInRange)
     {
         Assert.True(SemanticVersion.TryParse(baseVersion, out var baseVer));
         Assert.True(SemanticVersion.TryParse(testVersion, out var testVer));
@@ -193,19 +219,13 @@ public class TheVersionRangeBoundsMethods
         Assert.NotNull(baseVer);
         Assert.NotNull(testVer);
 
-        var (lower, upper) = GetBounds(kind, baseVer.Value);
+        var (lower, upper) = GetBounds(baseVer.Value);
         var inRange = testVer.Value.IsInRange(lower, upper);
 
         Assert.Equal(expectedInRange, inRange);
     }
 
-    static (SemanticVersion Lower, SemanticVersion Upper) GetBounds(string kind, SemanticVersion version)
-        => kind switch
-        {
-            "tilde" => version.GetTildeBounds(),
-            "caret" => version.GetCaretBounds(),
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-        };
+    private protected abstract (SemanticVersion Lower, SemanticVersion Upper) GetBounds(SemanticVersion version);
 }
 
 public class TheTryParseWildcardMethod
