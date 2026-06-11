@@ -13,7 +13,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -52,6 +52,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    # Run tests independently so build, test, and format feedback can complete in parallel.
     steps:
       - name: Checkout main branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
