@@ -2250,3 +2250,439 @@ public class TheMatchesDependencyValueMethod
         Assert.Equal(shouldMatch, result);
     }
 }
+
+public class TheEarlyExitBehavior
+{
+    // Builds a flag with two condition groups. The first group's rollout and property value
+    // are parameterized so we can model OUT_OF_ROLLOUT_BOUND (rollout 0, matching props) vs.
+    // NO_MATCH (rollout 0, non-matching props). The second group always has matching
+    // properties and rollout 100, so it matches if reached.
+    static LocalEvaluationApiResult CreateFlags(
+        bool earlyExit,
+        int firstGroupRolloutPercentage,
+        string firstGroupEmailFilter)
+    {
+        return new LocalEvaluationApiResult
+        {
+            Flags =
+            [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = "early-exit-feature-flag",
+                    Key = "early-exit",
+                    Filters = new FeatureFlagFilters
+                    {
+                        EarlyExit = earlyExit,
+                        Groups =
+                        [
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue(firstGroupEmailFilter),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = firstGroupRolloutPercentage
+                            },
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("tyrion@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+    }
+
+    static LocalEvaluationApiResult CreateFlagsWithoutEarlyExitField(
+        int firstGroupRolloutPercentage,
+        string firstGroupEmailFilter)
+    {
+        // Round-trips through JSON without an `early_exit` field present, exercising the
+        // default (absent) deserialization path.
+        var json = $$"""
+        {
+            "flags": [
+                {
+                    "id": 42,
+                    "team_id": 23,
+                    "name": "early-exit-feature-flag",
+                    "key": "early-exit",
+                    "active": true,
+                    "filters": {
+                        "groups": [
+                            {
+                                "properties": [
+                                    { "type": "person", "key": "email", "value": "{{firstGroupEmailFilter}}", "operator": "exact" }
+                                ],
+                                "rollout_percentage": {{firstGroupRolloutPercentage}}
+                            },
+                            {
+                                "properties": [
+                                    { "type": "person", "key": "email", "value": "tyrion@example.com", "operator": "exact" }
+                                ],
+                                "rollout_percentage": 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            "group_type_mapping": {}
+        }
+        """;
+
+        return JsonSerializer.Deserialize<LocalEvaluationApiResult>(json, JsonSerializerHelper.Options)!;
+    }
+
+    [Theory]
+    [InlineData(true, "tyrion@example.com", false)] // matching props + rollout 0 => OUT_OF_ROLLOUT_BOUND, early-exits
+    [InlineData(false, "tyrion@example.com", true)]  // earlyExit=false => falls through to second group
+    [InlineData(true, "nobody@example.com", true)]  // property mismatch => NO_MATCH, always falls through
+    public void EarlyExitReturnsExpectedResult(bool earlyExit, string firstGroupEmailFilter, bool expected)
+    {
+        var flags = CreateFlags(
+            earlyExit: earlyExit,
+            firstGroupRolloutPercentage: 0,
+            firstGroupEmailFilter: firstGroupEmailFilter);
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
+
+        Assert.Equal(expected, result.Value);
+    }
+
+    [Fact]
+    public void EarlyExitDeserializesFromJsonAndEarlyExits()
+    {
+        // Verifies that "early_exit": true round-trips through JSON correctly. A typo in the
+        // [JsonPropertyName] attribute would silently deserialize to false and disable the
+        // feature in production while all object-initializer tests still pass.
+        var json = """
+        {
+            "flags": [
+                {
+                    "id": 42,
+                    "team_id": 23,
+                    "name": "early-exit-feature-flag",
+                    "key": "early-exit",
+                    "active": true,
+                    "filters": {
+                        "early_exit": true,
+                        "groups": [
+                            {
+                                "properties": [
+                                    { "type": "person", "key": "email", "value": "tyrion@example.com", "operator": "exact" }
+                                ],
+                                "rollout_percentage": 0
+                            },
+                            {
+                                "properties": [
+                                    { "type": "person", "key": "email", "value": "tyrion@example.com", "operator": "exact" }
+                                ],
+                                "rollout_percentage": 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            "group_type_mapping": {}
+        }
+        """;
+
+        var flags = JsonSerializer.Deserialize<LocalEvaluationApiResult>(json, JsonSerializerHelper.Options)!;
+        var localEvaluator = new LocalEvaluator(flags);
+
+        // early_exit=true + rollout 0 on first group (OUT_OF_ROLLOUT_BOUND) must short-circuit
+        // and return false, never reaching the second group with rollout 100.
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
+
+        Assert.False(result.Value);
+    }
+
+    [Fact]
+    public void FallsThroughToLaterMatchingGroupWhenEarlyExitUnset()
+    {
+        // Regression: with no `early_exit` field present, existing behavior is preserved and
+        // the second matching group makes the flag enabled.
+        var flags = CreateFlagsWithoutEarlyExitField(
+            firstGroupRolloutPercentage: 0,
+            firstGroupEmailFilter: "tyrion@example.com");
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
+
+        Assert.True(result.Value);
+    }
+
+    // distinctId "1234" with key "early-exit" hashes to ~0.518, so rollout values 0 and 50
+    // both exclude this user, confirming the trigger is rollout exclusion, not rollout == 0.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(50)]
+    public void EarlyExitsForAnyRolloutThatExcludesUser(int firstGroupRollout)
+    {
+        var flags = CreateFlags(
+            earlyExit: true,
+            firstGroupRolloutPercentage: firstGroupRollout,
+            firstGroupEmailFilter: "tyrion@example.com");
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
+
+        Assert.False(result.Value);
+    }
+
+    [Fact]
+    public void ThrowsInconclusiveWhenEarlyExitMasksInconclusiveCondition()
+    {
+        // Regression: if an earlier condition is inconclusive (missing property) and a later
+        // condition hits OutOfRolloutBound with early_exit=true, the early-exit must not
+        // swallow the prior inconclusive state — it must still fall back to server evaluation.
+        var flags = new LocalEvaluationApiResult
+        {
+            Flags =
+            [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = "early-exit-feature-flag",
+                    Key = "early-exit",
+                    Filters = new FeatureFlagFilters
+                    {
+                        EarlyExit = true,
+                        Groups =
+                        [
+                            // Condition 1: requires a property the caller does not supply
+                            // → InconclusiveMatchException (missing property)
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "missing_property",
+                                        Value = new PropertyFilterValue("some_value"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            // Condition 2: property matches but rollout excludes the user
+                            // → OutOfRolloutBound (rollout 0, distinctId "1234")
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("tyrion@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 0
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" }));
+    }
+
+    [Fact]
+    public void ThrowsInconclusiveWhenEarlyExitOutOfRolloutHasLaterMatchingGroup()
+    {
+        var flags = new LocalEvaluationApiResult
+        {
+            Flags =
+            [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = "early-exit-feature-flag",
+                    Key = "early-exit",
+                    Filters = new FeatureFlagFilters
+                    {
+                        EarlyExit = true,
+                        Groups =
+                        [
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "missing_property",
+                                        Value = new PropertyFilterValue("some_value"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("tyrion@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 0
+                            },
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("tyrion@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" }));
+    }
+
+    [Fact]
+    public void ReturnsMatchWhenMultipleInconclusiveGroupsPrecedeMatchingGroup()
+    {
+        // earlyExit only short-circuits on OutOfRolloutBound — multiple inconclusive groups
+        // followed by a definitive match should still return true.
+        var flags = new LocalEvaluationApiResult
+        {
+            Flags =
+            [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = "early-exit-feature-flag",
+                    Key = "early-exit",
+                    Filters = new FeatureFlagFilters
+                    {
+                        EarlyExit = true,
+                        Groups =
+                        [
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "missing_property_1",
+                                        Value = new PropertyFilterValue("some_value"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "missing_property_2",
+                                        Value = new PropertyFilterValue("some_value"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("tyrion@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+
+        var localEvaluator = new LocalEvaluator(flags);
+
+        // Two inconclusive groups never hit a rollout boundary, so earlyExit doesn't
+        // short-circuit — the third group matches and returns true.
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
+
+        Assert.True(result.Value);
+    }
+}

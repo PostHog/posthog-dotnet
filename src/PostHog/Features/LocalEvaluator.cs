@@ -263,57 +263,44 @@ internal sealed class LocalEvaluator
         var filters = flag.Filters;
         var flagConditions = filters?.Groups ?? [];
         var flagAggregation = filters?.AggregationGroupTypeIndex;
+        var earlyExit = filters?.EarlyExit ?? false;
         var isInconclusive = false;
         var flagVariants = filters?.Multivariate?.Variants ?? [];
 
         foreach (var condition in flagConditions)
         {
-            try
+            // Per-condition aggregation overrides only when the condition explicitly
+            // sets its own AggregationGroupTypeIndex (mixed targeting). When absent,
+            // fall back to the flag-level aggregation so existing pure person and
+            // pure group flags keep their original behavior.
+            var conditionAggregation = condition.AggregationGroupTypeIndex ?? flagAggregation;
+
+            var effectiveProperties = properties;
+            var effectiveBucketingId = distinctId;
+
+            // The condition explicitly sets its own aggregation, different from the
+            // flag level. Re-resolve properties and bucketing id from the condition's
+            // group so this condition evaluates against that group.
+            // conditionAggregation is non-null here: if it were null and flagAggregation
+            // were also null they'd be equal, and the only way conditionAggregation can
+            // be null at all (after the ?? above) is that case.
+            if (conditionAggregation != flagAggregation)
             {
-                // Per-condition aggregation overrides only when the condition explicitly
-                // sets its own AggregationGroupTypeIndex (mixed targeting). When absent,
-                // fall back to the flag-level aggregation so existing pure person and
-                // pure group flags keep their original behavior.
-                var conditionAggregation = condition.AggregationGroupTypeIndex ?? flagAggregation;
-
-                var effectiveProperties = properties;
-                var effectiveBucketingId = distinctId;
-
-                // The condition explicitly sets its own aggregation, different from the
-                // flag level. Re-resolve properties and bucketing id from the condition's
-                // group so this condition evaluates against that group.
-                // conditionAggregation is non-null here: if it were null and flagAggregation
-                // were also null they'd be equal, and the only way conditionAggregation can
-                // be null at all (after the ?? above) is that case.
-                if (conditionAggregation != flagAggregation)
+                if (!_groupTypeMapping.TryGetValue(conditionAggregation!.Value, out var groupType)
+                    || groups is null
+                    || !groups.TryGetGroup(groupType, out var group))
                 {
-                    if (!_groupTypeMapping.TryGetValue(conditionAggregation!.Value, out var groupType)
-                        || groups is null
-                        || !groups.TryGetGroup(groupType, out var group))
-                    {
-                        // Skip this condition: group type unknown or not passed in.
-                        continue;
-                    }
-                    effectiveProperties = group.Properties;
-                    effectiveBucketingId = group.GroupKey;
-                }
-
-                // if any one condition resolves to True, we can short circuit and return
-                // the matching variant
-                if (!IsConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups))
-                {
+                    // Skip this condition: group type unknown or not passed in.
                     continue;
                 }
+                effectiveProperties = group.Properties;
+                effectiveBucketingId = group.GroupKey;
+            }
 
-                var variantOverride = condition.Variant;
-                var variant = variantOverride is not null
-                              && flagVariants.Select(v => v.Key).Contains(variantOverride)
-                    ? variantOverride
-                    : GetMatchingVariant(flag, effectiveBucketingId);
-
-                return variant is not null
-                    ? new StringOrValue<bool>(variant)
-                    : true;
+            ConditionMatchResult? conditionResult = null;
+            try
+            {
+                conditionResult = EvaluateConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups);
             }
             catch (RequiresServerEvaluationException)
             {
@@ -326,6 +313,43 @@ internal sealed class LocalEvaluator
                 // Track that we had an inconclusive match, but try other conditions
                 isInconclusive = true;
             }
+
+            if (conditionResult is null)
+            {
+                // EvaluateConditionMatch threw InconclusiveMatchException above.
+                continue;
+            }
+
+            // When early_exit is enabled and the condition's property filters matched (or
+            // there were none) but the rollout excluded the user, stop evaluating later
+            // condition groups and return a definitive disabled result. Mirrors the
+            // server-side Rust evaluation engine. A pure property-filter mismatch always
+            // falls through to the next condition group, even when early_exit is enabled.
+            // This check is intentionally outside the try-catch so the throw propagates
+            // to the caller and isn't re-caught as a regular inconclusive match.
+            if (earlyExit && conditionResult == ConditionMatchResult.OutOfRolloutBound)
+            {
+                if (isInconclusive)
+                {
+                    throw new InconclusiveMatchException("Can't determine if feature flag is enabled or not with given properties");
+                }
+                return false;
+            }
+
+            if (conditionResult != ConditionMatchResult.Match)
+            {
+                continue;
+            }
+
+            var variantOverride = condition.Variant;
+            var variant = variantOverride is not null
+                          && flagVariants.Select(v => v.Key).Contains(variantOverride)
+                ? variantOverride
+                : GetMatchingVariant(flag, effectiveBucketingId);
+
+            return variant is not null
+                ? new StringOrValue<bool>(variant)
+                : true;
         }
 
         if (isInconclusive)
@@ -338,7 +362,33 @@ internal sealed class LocalEvaluator
         return false;
     }
 
-    bool IsConditionMatch(
+    /// <summary>
+    /// The tri-state outcome of evaluating a single condition group, mirroring the server-side
+    /// Rust evaluation engine. Used to distinguish a property-filter mismatch from a
+    /// rollout-percentage exclusion so that the <c>early_exit</c> behavior can short-circuit
+    /// only on the latter.
+    /// </summary>
+    enum ConditionMatchResult
+    {
+        /// <summary>
+        /// Property filters matched (or there were none) AND the rollout included the user.
+        /// </summary>
+        Match,
+
+        /// <summary>
+        /// A property filter did not match. Always falls through to the next condition group,
+        /// even when <c>early_exit</c> is enabled.
+        /// </summary>
+        NoMatch,
+
+        /// <summary>
+        /// Property filters matched (or there were none) but the rollout excluded the user.
+        /// When <c>early_exit</c> is enabled, this produces a definitive disabled result.
+        /// </summary>
+        OutOfRolloutBound
+    }
+
+    ConditionMatchResult EvaluateConditionMatch(
         LocalFeatureFlag flag,
         string distinctId,
         FeatureFlagGroup condition,
@@ -356,17 +406,20 @@ internal sealed class LocalEvaluator
                     _ => MatchProperty(property, distinctId, properties)
                 }).Any(isMatch => !isMatch))
             {
-                return false;
+                return ConditionMatchResult.NoMatch;
             }
         }
 
+        // Property filters matched (or there were none). Now check the rollout percentage.
         if (rolloutPercentage is 100)
         {
-            return true;
+            return ConditionMatchResult.Match;
         }
 
         var hashValue = Hash(flag.Key, distinctId);
-        return !(hashValue > rolloutPercentage / 100.0);
+        return hashValue > rolloutPercentage / 100.0
+            ? ConditionMatchResult.OutOfRolloutBound
+            : ConditionMatchResult.Match;
     }
 
     static string? GetMatchingVariant(LocalFeatureFlag flag, string distinctId)
