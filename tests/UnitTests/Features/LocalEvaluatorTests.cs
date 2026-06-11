@@ -2955,4 +2955,85 @@ public class TheEarlyExitBehavior
             distinctId: "1234",
             personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" }));
     }
+
+    [Fact]
+    public void ReturnsMatchWhenMultipleInconclusiveGroupsPrecedeMatchingGroup()
+    {
+        // earlyExit only short-circuits on OutOfRolloutBound — multiple inconclusive groups
+        // followed by a definitive match should still return true.
+        var flags = new LocalEvaluationApiResult
+        {
+            Flags =
+            [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = "early-exit-feature-flag",
+                    Key = "early-exit",
+                    Filters = new FeatureFlagFilters
+                    {
+                        EarlyExit = true,
+                        Groups =
+                        [
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "missing_property_1",
+                                        Value = new PropertyFilterValue("some_value"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "missing_property_2",
+                                        Value = new PropertyFilterValue("some_value"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            },
+                            new FeatureFlagGroup
+                            {
+                                Properties =
+                                [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "email",
+                                        Value = new PropertyFilterValue("tyrion@example.com"),
+                                        Operator = ComparisonOperator.Exact
+                                    }
+                                ],
+                                RolloutPercentage = 100
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+
+        var localEvaluator = new LocalEvaluator(flags);
+
+        // Two inconclusive groups never hit a rollout boundary, so earlyExit doesn't
+        // short-circuit — the third group matches and returns true.
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "early-exit",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
+
+        Assert.True(result.Value);
+    }
 }
