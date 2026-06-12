@@ -51,5 +51,11 @@
         Someday we'll use resource strings.
         -->
         <NoWarn>CA1303; $(NoWarn)</NoWarn>
+
+        <!-- Existing public API contains multiple optional-parameter overloads; keep PublicAPI baseline checks focused on local API diffs. -->
+        <NoWarn>RS0026; $(NoWarn)</NoWarn>
+
+        <!-- Existing public API contains multiple optional-parameter overloads; keep PublicAPI baseline checks focused on local API diffs. -->
+        <NoWarn>RS0026; $(NoWarn)</NoWarn>
     </PropertyGroup>
 </Project>

@@ -1,0 +1,58 @@
+#nullable enable
+PostHog.AspNetCore.PostHogRequestContextExtensions
+PostHog.Cache.HttpContextFeatureFlagCache
+PostHog.Cache.HttpContextFeatureFlagCache.GetAndCacheFeatureFlagsAsync(string! distinctId, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+PostHog.Cache.HttpContextFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? personProperties, PostHog.GroupCollection? groups, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+PostHog.Cache.HttpContextFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+PostHog.Cache.HttpContextFeatureFlagCache.HttpContextFeatureFlagCache(Microsoft.AspNetCore.Http.IHttpContextAccessor! httpContextAccessor) -> void
+PostHog.Cache.HttpContextFeatureFlagCache.HttpContextFeatureFlagCache(Microsoft.AspNetCore.Http.IHttpContextAccessor! httpContextAccessor, Microsoft.Extensions.Logging.ILogger<PostHog.Cache.HttpContextFeatureFlagCache!>! logger) -> void
+PostHog.Config.IPostHogAspNetCoreConfigurationBuilder
+PostHog.Config.IPostHogAspNetCoreConfigurationBuilder.Configuration.get -> Microsoft.Extensions.Configuration.IConfiguration!
+PostHog.Config.PostHogConfigurationBuilderExtensions
+PostHog.FeatureManagement.IPostHogFeatureFlagContextProvider
+PostHog.FeatureManagement.IPostHogFeatureFlagContextProvider.GetContextAsync() -> System.Threading.Tasks.ValueTask<PostHog.FeatureManagement.PostHogFeatureFlagContext!>
+PostHog.FeatureManagement.IPostHogFeatureManagementBuilder
+PostHog.FeatureManagement.IPostHogFeatureManagementBuilder.AddSessionManager<T>() -> PostHog.FeatureManagement.IPostHogFeatureManagementBuilder!
+PostHog.FeatureManagement.IPostHogFeatureManagementBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+PostHog.FeatureManagement.PostHogFeatureDefinitionProvider
+PostHog.FeatureManagement.PostHogFeatureDefinitionProvider.GetAllFeatureDefinitionsAsync() -> System.Collections.Generic.IAsyncEnumerable<Microsoft.FeatureManagement.FeatureDefinition!>!
+PostHog.FeatureManagement.PostHogFeatureDefinitionProvider.GetFeatureDefinitionAsync(string! featureName) -> System.Threading.Tasks.Task<Microsoft.FeatureManagement.FeatureDefinition?>!
+PostHog.FeatureManagement.PostHogFeatureDefinitionProvider.PostHogFeatureDefinitionProvider(PostHog.IPostHogClient! posthog) -> void
+PostHog.FeatureManagement.PostHogFeatureFilter
+PostHog.FeatureManagement.PostHogFeatureFilter.EvaluateAsync(Microsoft.FeatureManagement.FeatureFilterEvaluationContext? context) -> System.Threading.Tasks.Task<bool>!
+PostHog.FeatureManagement.PostHogFeatureFilter.PostHogFeatureFilter(Microsoft.FeatureManagement.IVariantFeatureManager! variantFeatureManager, Microsoft.Extensions.Logging.ILogger<PostHog.FeatureManagement.PostHogFeatureFilter!>! logger) -> void
+PostHog.FeatureManagement.PostHogFeatureFlagContext
+PostHog.FeatureManagement.PostHogFeatureFlagContext.DistinctId.get -> string?
+PostHog.FeatureManagement.PostHogFeatureFlagContext.DistinctId.init -> void
+PostHog.FeatureManagement.PostHogFeatureFlagContext.PostHogFeatureFlagContext() -> void
+PostHog.FeatureManagement.PostHogFeatureFlagContextProvider
+PostHog.FeatureManagement.PostHogFeatureFlagContextProvider.GetContextAsync() -> System.Threading.Tasks.ValueTask<PostHog.FeatureManagement.PostHogFeatureFlagContext!>
+PostHog.FeatureManagement.PostHogFeatureFlagContextProvider.PostHogFeatureFlagContextProvider() -> void
+PostHog.FeatureManagement.PostHogVariantFeatureManager
+PostHog.FeatureManagement.PostHogVariantFeatureManager.GetFeatureNamesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<string!>!
+PostHog.FeatureManagement.PostHogVariantFeatureManager.GetVariantAsync(string! feature, Microsoft.FeatureManagement.FeatureFilters.ITargetingContext? context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.FeatureManagement.Variant!>
+PostHog.FeatureManagement.PostHogVariantFeatureManager.GetVariantAsync(string! feature, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Microsoft.FeatureManagement.Variant!>
+PostHog.FeatureManagement.PostHogVariantFeatureManager.IsEnabledAsync(string! feature, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+PostHog.FeatureManagement.PostHogVariantFeatureManager.IsEnabledAsync<TContext>(string! feature, TContext context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+PostHog.FeatureManagement.PostHogVariantFeatureManager.PostHogVariantFeatureManager(PostHog.IPostHogClient! posthog, Microsoft.FeatureManagement.FeatureFilters.ITargetingContextAccessor! targetingContextAccessor, Microsoft.Extensions.Logging.ILogger<PostHog.FeatureManagement.PostHogVariantFeatureManager!>! logger) -> void
+PostHog.PostHogRequestContextMiddlewareExtensions
+PostHog.PostHogRequestContextOptions
+PostHog.PostHogRequestContextOptions.CaptureExceptions.get -> bool
+PostHog.PostHogRequestContextOptions.CaptureExceptions.set -> void
+PostHog.PostHogRequestContextOptions.PostHogRequestContextOptions() -> void
+PostHog.PostHogRequestContextOptions.UseTracingHeaders.get -> bool
+PostHog.PostHogRequestContextOptions.UseTracingHeaders.set -> void
+PostHog.Registration
+abstract PostHog.FeatureManagement.PostHogFeatureFlagContextProvider.GetDistinctId() -> string?
+static PostHog.AspNetCore.PostHogRequestContextExtensions.Capture(this PostHog.IPostHogClient! client, string! eventName) -> bool
+static PostHog.AspNetCore.PostHogRequestContextExtensions.Capture(this PostHog.IPostHogClient! client, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.AspNetCore.PostHogRequestContextExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, System.Collections.Generic.Dictionary<string!, object!>? properties = null) -> bool
+static PostHog.AspNetCore.PostHogRequestContextExtensions.EvaluateFlagsAsync(this PostHog.IPostHogClient! client) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlagEvaluations!>!
+static PostHog.AspNetCore.PostHogRequestContextExtensions.EvaluateFlagsAsync(this PostHog.IPostHogClient! client, PostHog.AllFeatureFlagsOptions! options) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlagEvaluations!>!
+static PostHog.Config.PostHogConfigurationBuilderExtensions.UseAspNetCore(this PostHog.Config.IPostHogConfigurationBuilder! builder) -> PostHog.Config.IPostHogConfigurationBuilder!
+static PostHog.Config.PostHogConfigurationBuilderExtensions.UseFeatureManagement<TContextProvider>(this PostHog.Config.IPostHogConfigurationBuilder! builder) -> PostHog.Config.IPostHogConfigurationBuilder!
+static PostHog.Config.PostHogConfigurationBuilderExtensions.UseFeatureManagement<TContextProvider>(this PostHog.Config.IPostHogConfigurationBuilder! builder, System.Action<PostHog.FeatureManagement.IPostHogFeatureManagementBuilder!>? configure) -> PostHog.Config.IPostHogConfigurationBuilder!
+static PostHog.PostHogRequestContextMiddlewareExtensions.UsePostHogRequestContext(this Microsoft.AspNetCore.Builder.IApplicationBuilder! app, System.Action<PostHog.PostHogRequestContextOptions!>? configure = null) -> Microsoft.AspNetCore.Builder.IApplicationBuilder!
+static PostHog.Registration.AddPostHog(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+static PostHog.Registration.AddPostHog(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, System.Action<PostHog.Config.IPostHogConfigurationBuilder!>? options) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!
+virtual PostHog.FeatureManagement.PostHogFeatureFlagContextProvider.GetFeatureFlagOptionsAsync() -> System.Threading.Tasks.ValueTask<PostHog.FeatureFlagOptions!>

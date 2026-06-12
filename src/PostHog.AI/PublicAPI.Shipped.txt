@@ -1,0 +1,49 @@
+#nullable enable
+PostHog.AI.PostHogAIContext
+PostHog.AI.PostHogAIContext.DistinctId.get -> string?
+PostHog.AI.PostHogAIContext.Groups.get -> System.Collections.Generic.Dictionary<string!, object!>?
+PostHog.AI.PostHogAIContext.ParentId.get -> string?
+PostHog.AI.PostHogAIContext.PrivacyMode.get -> bool?
+PostHog.AI.PostHogAIContext.Properties.get -> System.Collections.Generic.Dictionary<string!, object!>?
+PostHog.AI.PostHogAIContext.SessionId.get -> string?
+PostHog.AI.PostHogAIContext.SpanId.get -> string?
+PostHog.AI.PostHogAIContext.SpanName.get -> string?
+PostHog.AI.PostHogAIContext.TraceId.get -> string?
+PostHog.AI.PostHogAIExtensions
+PostHog.AI.PostHogAIFieldNames
+PostHog.AI.PostHogOpenAIHandler
+PostHog.AI.PostHogOpenAIHandler.PostHogOpenAIHandler(PostHog.IPostHogClient! postHogClient, Microsoft.Extensions.Logging.ILogger<PostHog.AI.PostHogOpenAIHandler!>! logger) -> void
+const PostHog.AI.PostHogAIFieldNames.BaseUrl = "$ai_base_url" -> string!
+const PostHog.AI.PostHogAIFieldNames.CacheCreationInputTokens = "$ai_cache_creation_input_tokens" -> string!
+const PostHog.AI.PostHogAIFieldNames.CacheReadInputTokens = "$ai_cache_read_input_tokens" -> string!
+const PostHog.AI.PostHogAIFieldNames.Embedding = "$ai_embedding" -> string!
+const PostHog.AI.PostHogAIFieldNames.Error = "$ai_error" -> string!
+const PostHog.AI.PostHogAIFieldNames.Generation = "$ai_generation" -> string!
+const PostHog.AI.PostHogAIFieldNames.HttpStatus = "$ai_http_status" -> string!
+const PostHog.AI.PostHogAIFieldNames.Input = "$ai_input" -> string!
+const PostHog.AI.PostHogAIFieldNames.InputTokens = "$ai_input_tokens" -> string!
+const PostHog.AI.PostHogAIFieldNames.IsError = "$ai_is_error" -> string!
+const PostHog.AI.PostHogAIFieldNames.Latency = "$ai_latency" -> string!
+const PostHog.AI.PostHogAIFieldNames.Lib = "$ai_lib" -> string!
+const PostHog.AI.PostHogAIFieldNames.MaxTokens = "$ai_max_tokens" -> string!
+const PostHog.AI.PostHogAIFieldNames.Model = "$ai_model" -> string!
+const PostHog.AI.PostHogAIFieldNames.ModelParameters = "$ai_model_parameters" -> string!
+const PostHog.AI.PostHogAIFieldNames.OutputChoices = "$ai_output_choices" -> string!
+const PostHog.AI.PostHogAIFieldNames.OutputTokens = "$ai_output_tokens" -> string!
+const PostHog.AI.PostHogAIFieldNames.ParentId = "$ai_parent_id" -> string!
+const PostHog.AI.PostHogAIFieldNames.Provider = "$ai_provider" -> string!
+const PostHog.AI.PostHogAIFieldNames.RequestUrl = "$ai_request_url" -> string!
+const PostHog.AI.PostHogAIFieldNames.SessionId = "$ai_session_id" -> string!
+const PostHog.AI.PostHogAIFieldNames.SpanId = "$ai_span_id" -> string!
+const PostHog.AI.PostHogAIFieldNames.SpanName = "$ai_span_name" -> string!
+const PostHog.AI.PostHogAIFieldNames.Stream = "$ai_stream" -> string!
+const PostHog.AI.PostHogAIFieldNames.Temperature = "$ai_temperature" -> string!
+const PostHog.AI.PostHogAIFieldNames.Tools = "$ai_tools" -> string!
+const PostHog.AI.PostHogAIFieldNames.TotalTokens = "$ai_total_tokens" -> string!
+const PostHog.AI.PostHogAIFieldNames.TraceId = "$ai_trace_id" -> string!
+override PostHog.AI.PostHogOpenAIHandler.SendAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!
+static PostHog.AI.PostHogAIContext.BeginScope(string? distinctId = null, string? traceId = null, string? sessionId = null, string? spanId = null, string? spanName = null, string? parentId = null, System.Collections.Generic.Dictionary<string!, object!>? properties = null, System.Collections.Generic.Dictionary<string!, object!>? groups = null, bool? privacyMode = null) -> System.IDisposable!
+static PostHog.AI.PostHogAIContext.Current.get -> PostHog.AI.PostHogAIContext?
+static PostHog.AI.PostHogAIExtensions.AddPostHogAI(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static PostHog.AI.PostHogAIExtensions.AddPostHogOpenAIClient(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! apiKey, System.Action<OpenAI.OpenAIClientOptions!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+static PostHog.AI.PostHogAIExtensions.AddPostHogOpenAIHandler(this Microsoft.Extensions.DependencyInjection.IHttpClientBuilder! builder) -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
