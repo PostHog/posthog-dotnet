@@ -97,7 +97,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.FeatureManagement": "[4.0.0, )",
-          "PostHog": "[2.4.1, )"
+          "PostHog": "[2.7.1, )"
         }
       },
       "Microsoft.Bcl.TimeProvider": {
