@@ -16,7 +16,6 @@ SDK usage examples and code snippets live in the official documentation so they 
 
 - [.NET library docs](https://posthog.com/docs/libraries/dotnet)
 - [.NET error tracking docs](https://posthog.com/docs/error-tracking/installation/dotnet)
-- [AI observability docs](https://posthog.com/docs/ai-observability)
 
 ## Contributing
 
