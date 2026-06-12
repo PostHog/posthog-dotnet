@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has-changesets: ${{ steps.check.outputs.has-changesets }}
+      has-release-commit: ${{ steps.check.outputs.has-release-commit }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -41,6 +42,19 @@ jobs:
             echo "No changesets to release"
           fi
 
+          has_release_commit=false
+          if [ "${GITHUB_RUN_ATTEMPT:-1}" != "1" ] && \
+            git rev-parse HEAD^ >/dev/null 2>&1 && \
+            git show -s --format=%s HEAD | grep -Fq '[version bump]' && \
+            ! git diff --quiet HEAD^ HEAD -- \
+              "src/PostHog/package.json" \
+              "src/PostHog.AspNetCore/package.json" \
+              "src/PostHog.AI/package.json"; then
+            has_release_commit=true
+            echo "HEAD already looks like a release commit"
+          fi
+          echo "has-release-commit=$has_release_commit" >> "$GITHUB_OUTPUT"
+
   notify-approval-needed:
     name: Notify Slack - Approval Needed
     needs: check-changesets
@@ -53,23 +67,25 @@ jobs:
       slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
       posthog_project_api_key: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
 
-  version-bump:
-    name: Bump versions and commit to main
+  release:
+    name: Release packages
     needs: [check-changesets, notify-approval-needed]
     runs-on: ubuntu-latest
-    if: always() && needs.check-changesets.outputs.has-changesets == 'true'
+    if: always() && (needs.check-changesets.outputs.has-changesets == 'true' || needs.check-changesets.outputs.has-release-commit == 'true')
     environment: Release
     permissions:
       contents: write
       actions: write
       id-token: write
     outputs:
-      committed: ${{ steps.version-bump-outputs.outputs.committed }}
-      commit-sha: ${{ steps.version-bump-outputs.outputs.commit-sha }}
+      has-release-commit: ${{ steps.release-outputs.outputs.has-release-commit }}
+      release-commit-sha: ${{ steps.release-outputs.outputs.release-commit-sha }}
+      packages-released: ${{ steps.publish-packages.outputs.packages-released }}
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_NOLOGO: true
       DOTNET_VERSION: "9.0.102"
+      PackageDirectory: ${{ github.workspace }}/build/packages/Release
     steps:
       - name: Notify Slack - Approved
         if: needs.notify-approval-needed.outputs.slack_ts != ''
@@ -78,7 +94,7 @@ jobs:
           slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
           slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
           thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-          message: "✅ Release approved! Version bump in progress..."
+          message: "✅ Release approved! Release in progress..."
           emoji_reaction: "white_check_mark"
 
       - name: Get GitHub App token
@@ -168,184 +184,161 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
 
-      - name: Set version bump outputs
-        id: version-bump-outputs
+      - name: Set release outputs
+        id: release-outputs
         env:
           HAS_CHANGES: ${{ steps.check-changes.outputs.has-changes }}
           COMMIT_HASH: ${{ steps.commit-version-bump.outputs.commit-hash }}
         run: |
-          if [ "$HAS_CHANGES" = "true" ]; then
-            echo "committed=true" >> "$GITHUB_OUTPUT"
-            echo "commit-sha=$COMMIT_HASH" >> "$GITHUB_OUTPUT"
-          else
-            echo "committed=false" >> "$GITHUB_OUTPUT"
-            echo "commit-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Send failure event to PostHog
-        if: failure()
-        uses: PostHog/posthog-github-action@58dea254b598fb5d469c0699c98af8288a7f7650 # v1.2.0
-        with:
-          posthog-token: "${{ secrets.POSTHOG_PROJECT_API_KEY }}"
-          event: "posthog-dotnet-github-release-workflow-failure"
-          properties: >-
-            {
-              "commitSha": "${{ github.sha }}",
-              "jobStatus": "${{ job.status }}",
-              "ref": "${{ github.ref }}",
-              "phase": "version-bump"
-            }
-
-      - name: Notify Slack - Failed
-        if: failure() && needs.notify-approval-needed.outputs.slack_ts != ''
-        uses: posthog/.github/.github/actions/slack-thread-reply@5fc4680761e8ac29a61b212756230eba0e276d8c
-        with:
-          slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
-          slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
-          thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-          message: "❌ Failed to bump versions for `posthog-dotnet`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
-          emoji_reaction: "x"
-
-  publish:
-    name: Publish packages
-    needs: [version-bump, notify-approval-needed]
-    runs-on: ubuntu-latest
-    if: always() && needs.version-bump.outputs.committed == 'true'
-    permissions:
-      contents: write
-      actions: write
-      id-token: write
-    env:
-      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
-      DOTNET_NOLOGO: true
-      DOTNET_VERSION: "9.0.102"
-      PackageDirectory: ${{ github.workspace }}/build/packages/Release
-    strategy:
-      # If any package fails to publish, stop immediately. PostHog must publish before dependents.
-      fail-fast: true
-      max-parallel: 1
-      matrix:
-        package:
-          - name: PostHog
-            path: src/PostHog
-            project: src/PostHog/PostHog.csproj
-            changelog: src/PostHog/CHANGELOG.md
-          - name: PostHog.AspNetCore
-            path: src/PostHog.AspNetCore
-            project: src/PostHog.AspNetCore/PostHog.AspNetCore.csproj
-            changelog: src/PostHog.AspNetCore/CHANGELOG.md
-          - name: PostHog.AI
-            path: src/PostHog.AI
-            project: src/PostHog.AI/PostHog.AI.csproj
-            changelog: src/PostHog.AI/CHANGELOG.md
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ needs.version-bump.outputs.commit-sha }}
-          fetch-depth: 0
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Fetch tags
-        run: git fetch --tags --force
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: 24
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Detect version change for ${{ matrix.package.name }}
-        id: detect-version
-        run: |
           set -euo pipefail
 
-          PACKAGE_JSON="${{ matrix.package.path }}/package.json"
-          CURRENT_VERSION=$(node -p "require('./${PACKAGE_JSON}').version")
-          RELEASE_TAG="${{ matrix.package.name }}-v${CURRENT_VERSION}"
+          looks_like_release_commit() {
+            local commit="$1"
+            git rev-parse "${commit}^" >/dev/null 2>&1 && \
+              git show -s --format=%s "$commit" | grep -Fq '[version bump]' && \
+              ! git diff --quiet "${commit}^" "$commit" -- \
+                "src/PostHog/package.json" \
+                "src/PostHog.AspNetCore/package.json" \
+                "src/PostHog.AI/package.json"
+          }
 
-          if git diff --quiet HEAD^ HEAD -- "$PACKAGE_JSON"; then
-            echo "${{ matrix.package.name }} version did not change in the version-bump commit"
-            echo "has-new-version=false" >> "$GITHUB_OUTPUT"
-          elif git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Tag $RELEASE_TAG already exists - no new version to release"
-            echo "has-new-version=false" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_CHANGES" = "true" ]; then
+            release_commit="$COMMIT_HASH"
+            has_release_commit=true
           else
-            echo "New ${{ matrix.package.name }} version detected: $CURRENT_VERSION"
-            echo "has-new-version=true" >> "$GITHUB_OUTPUT"
-            echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
-            echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+            release_commit="$(git rev-parse HEAD)"
+            if [ "${GITHUB_RUN_ATTEMPT:-1}" != "1" ] && looks_like_release_commit "$release_commit"; then
+              echo "No new version bump changes, but HEAD already looks like a release commit"
+              has_release_commit=true
+            else
+              echo "No release commit to publish from"
+              has_release_commit=false
+            fi
           fi
 
-      - name: Restore NuGet packages
-        if: steps.detect-version.outputs.has-new-version == 'true'
-        run: dotnet restore --locked-mode
+          echo "has-release-commit=$has_release_commit" >> "$GITHUB_OUTPUT"
+          echo "release-commit-sha=$release_commit" >> "$GITHUB_OUTPUT"
 
-      - name: Build and pack ${{ matrix.package.name }}
-        if: steps.detect-version.outputs.has-new-version == 'true'
-        run: dotnet build "${{ matrix.package.project }}" --configuration Release --no-restore
+      - name: Sync checkout to release commit
+        if: steps.release-outputs.outputs.has-release-commit == 'true'
+        env:
+          RELEASE_COMMIT: ${{ steps.release-outputs.outputs.release-commit-sha }}
+        run: |
+          git fetch origin main
+          git reset --hard "$RELEASE_COMMIT"
+
+      - name: Fetch tags
+        if: steps.release-outputs.outputs.has-release-commit == 'true'
+        run: git fetch --tags --force
 
       - name: NuGet login
-        if: steps.detect-version.outputs.has-new-version == 'true'
+        if: steps.release-outputs.outputs.has-release-commit == 'true'
         uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1.1.0
         id: login
         with:
           user: PostHog-Engineering
 
-      - name: Publish ${{ matrix.package.name }} to NuGet
-        if: steps.detect-version.outputs.has-new-version == 'true'
-        env:
-          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-          PACKAGE_NAME: ${{ matrix.package.name }}
-          PACKAGE_VERSION: ${{ steps.detect-version.outputs.version }}
-        run: |
-          package_file="${{ env.PackageDirectory }}/${PACKAGE_NAME}.${PACKAGE_VERSION}.nupkg"
-          if [ ! -f "$package_file" ]; then
-            echo "Package file not found: $package_file" >&2
-            find "${{ env.PackageDirectory }}" -type f -name '*.nupkg' -print >&2 || true
-            exit 1
-          fi
-          dotnet nuget push "$package_file" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
-
-      - name: Tag and push ${{ matrix.package.name }}
-        if: steps.detect-version.outputs.has-new-version == 'true'
-        env:
-          RELEASE_TAG: ${{ steps.detect-version.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.detect-version.outputs.version }}
-          PACKAGE_NAME: ${{ matrix.package.name }}
-        run: |
-          git tag -a "$RELEASE_TAG" -m "$PACKAGE_NAME $RELEASE_VERSION"
-          git push origin "$RELEASE_TAG"
-
-      - name: Create GitHub release for ${{ matrix.package.name }}
-        if: steps.detect-version.outputs.has-new-version == 'true'
+      - name: Publish packages
+        id: publish-packages
+        if: steps.release-outputs.outputs.has-release-commit == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.detect-version.outputs.tag }}
-          CHANGELOG_FILE: ${{ matrix.package.changelog }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+          RELEASE_COMMIT: ${{ steps.release-outputs.outputs.release-commit-sha }}
         run: |
-          if [ -f "$CHANGELOG_FILE" ]; then
-            awk -v defText="See $CHANGELOG_FILE" '
-              /^## / { if (found_version) exit; found_version=1; next }
-              found_version { print }
-              END { if (!found_version) print defText }
-            ' "$CHANGELOG_FILE" | sed '/[^[:space:]]/,$!d' | tac | sed '/[^[:space:]]/,$!d' | tac > release-notes.md
-          else
-            echo "See $CHANGELOG_FILE" > release-notes.md
-          fi
+          set -euo pipefail
 
-          gh release create "$RELEASE_TAG" \
-            --target "${{ needs.version-bump.outputs.commit-sha }}" \
-            --title "$RELEASE_TAG" \
-            --notes-file release-notes.md
+          packages_released=false
+
+          write_release_notes() {
+            local changelog_file="$1"
+
+            if [ -f "$changelog_file" ]; then
+              awk -v defText="See $changelog_file" '
+                /^## / { if (found_version) exit; found_version=1; next }
+                found_version { print }
+                END { if (!found_version) print defText }
+              ' "$changelog_file" | sed '/[^[:space:]]/,$!d' | tac | sed '/[^[:space:]]/,$!d' | tac > release-notes.md
+            else
+              echo "See $changelog_file" > release-notes.md
+            fi
+          }
+
+          create_github_release_if_missing() {
+            local release_tag="$1"
+            local changelog_file="$2"
+
+            if gh release view "$release_tag" >/dev/null 2>&1; then
+              echo "GitHub release $release_tag already exists"
+              return 0
+            fi
+
+            echo "Creating GitHub release $release_tag"
+            write_release_notes "$changelog_file"
+            gh release create "$release_tag" \
+              --target "$RELEASE_COMMIT" \
+              --title "$release_tag" \
+              --notes-file release-notes.md
+
+            packages_released=true
+          }
+
+          release_package() {
+            local package_name="$1"
+            local package_path="$2"
+            local project_file="$3"
+            local changelog_file="$4"
+
+            local package_json="$package_path/package.json"
+            local current_version
+            local release_tag
+
+            current_version=$(node -p "require('./${package_json}').version")
+            release_tag="${package_name}-v${current_version}"
+
+            {
+              echo "CURRENT_PACKAGE_NAME=$package_name"
+              echo "CURRENT_PACKAGE_VERSION=$current_version"
+              echo "CURRENT_RELEASE_TAG=$release_tag"
+            } >> "$GITHUB_ENV"
+
+            if git diff --quiet HEAD^ HEAD -- "$package_json"; then
+              echo "$package_name version did not change in the release commit"
+              return 0
+            fi
+
+            if git rev-parse "$release_tag" >/dev/null 2>&1; then
+              echo "Tag $release_tag already exists"
+              create_github_release_if_missing "$release_tag" "$changelog_file"
+              return 0
+            fi
+
+            echo "New $package_name version detected: $current_version"
+
+            dotnet restore --locked-mode
+            dotnet build "$project_file" --configuration Release --no-restore
+
+            local package_file="${PackageDirectory}/${package_name}.${current_version}.nupkg"
+            if [ ! -f "$package_file" ]; then
+              echo "Package file not found: $package_file" >&2
+              find "${PackageDirectory}" -type f -name '*.nupkg' -print >&2 || true
+              exit 1
+            fi
+
+            dotnet nuget push "$package_file" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+            git tag -a "$release_tag" -m "$package_name $current_version"
+            git push origin "$release_tag"
+
+            create_github_release_if_missing "$release_tag" "$changelog_file"
+          }
+
+          # Package order matters. PostHog must be published before dependents.
+          release_package "PostHog" "src/PostHog" "src/PostHog/PostHog.csproj" "src/PostHog/CHANGELOG.md"
+          release_package "PostHog.AspNetCore" "src/PostHog.AspNetCore" "src/PostHog.AspNetCore/PostHog.AspNetCore.csproj" "src/PostHog.AspNetCore/CHANGELOG.md"
+          release_package "PostHog.AI" "src/PostHog.AI" "src/PostHog.AI/PostHog.AI.csproj" "src/PostHog.AI/CHANGELOG.md"
+
+          echo "packages-released=$packages_released" >> "$GITHUB_OUTPUT"
 
       - name: Send failure event to PostHog
         if: failure()
@@ -358,9 +351,10 @@ jobs:
               "commitSha": "${{ github.sha }}",
               "jobStatus": "${{ job.status }}",
               "ref": "${{ github.ref }}",
-              "phase": "publish",
-              "packageName": "${{ matrix.package.name }}",
-              "packageVersion": "${{ steps.detect-version.outputs.version }}"
+              "phase": "release",
+              "packageName": "${{ env.CURRENT_PACKAGE_NAME }}",
+              "packageVersion": "${{ env.CURRENT_PACKAGE_VERSION }}",
+              "releaseTag": "${{ env.CURRENT_RELEASE_TAG }}"
             }
 
       - name: Notify Slack - Failed
@@ -370,14 +364,14 @@ jobs:
           slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
           slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
           thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-          message: "❌ Failed to release `${{ matrix.package.name }}@${{ steps.detect-version.outputs.version }}`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+          message: "❌ Failed to release `posthog-dotnet`! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
           emoji_reaction: "x"
 
   notify-rejected:
     name: Notify Slack - Rejected
-    needs: [version-bump, notify-approval-needed]
+    needs: [release, notify-approval-needed]
     runs-on: ubuntu-latest
-    if: always() && (needs.version-bump.result == 'failure' || needs.version-bump.result == 'skipped') && needs.notify-approval-needed.outputs.slack_ts != ''
+    if: always() && (needs.release.result == 'failure' || needs.release.result == 'skipped') && needs.notify-approval-needed.outputs.slack_ts != ''
     steps:
       - name: Check for rejection
         id: check-rejection
@@ -417,9 +411,9 @@ jobs:
 
   notify-released:
     name: Notify Slack - Released
-    needs: [notify-approval-needed, publish]
+    needs: [notify-approval-needed, release]
     runs-on: ubuntu-latest
-    if: always() && needs.publish.result == 'success' && needs.notify-approval-needed.outputs.slack_ts != ''
+    if: always() && needs.release.result == 'success' && needs.release.outputs.packages-released == 'true' && needs.notify-approval-needed.outputs.slack_ts != ''
     steps:
       - name: Notify Slack - Released
         uses: posthog/.github/.github/actions/slack-thread-reply@5fc4680761e8ac29a61b212756230eba0e276d8c
