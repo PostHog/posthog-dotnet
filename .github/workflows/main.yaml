@@ -49,6 +49,36 @@ jobs:
         run: dotnet build --configuration Release --no-restore --nologo
         shell: bash
 
+  package:
+    name: Package (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: PostHog
+            project: src/PostHog/PostHog.csproj
+          - name: PostHog.AI
+            project: src/PostHog.AI/PostHog.AI.csproj
+          - name: PostHog.AspNetCore
+            project: src/PostHog.AspNetCore/PostHog.AspNetCore.csproj
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore NuGet Packages
+        run: dotnet restore --locked-mode
+        shell: bash
+
+      - name: Pack ${{ matrix.name }}
+        run: dotnet pack "${{ matrix.project }}" --configuration Release --no-restore --nologo --output "${{ env.PackageDirectory }}" /p:GeneratePackageOnBuild=false
+        shell: bash
+
   test:
     name: Test
     runs-on: ubuntu-latest
