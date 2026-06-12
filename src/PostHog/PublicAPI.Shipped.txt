@@ -1,0 +1,501 @@
+#nullable enable
+PostHog.AllFeatureFlagsOptions
+PostHog.AllFeatureFlagsOptions.AllFeatureFlagsOptions() -> void
+PostHog.AllFeatureFlagsOptions.FlagKeysToEvaluate.get -> System.Collections.Generic.IReadOnlyList<string!>!
+PostHog.AllFeatureFlagsOptions.FlagKeysToEvaluate.init -> void
+PostHog.AllFeatureFlagsOptions.Groups.get -> PostHog.GroupCollection?
+PostHog.AllFeatureFlagsOptions.Groups.init -> void
+PostHog.AllFeatureFlagsOptions.OnlyEvaluateLocally.get -> bool
+PostHog.AllFeatureFlagsOptions.OnlyEvaluateLocally.init -> void
+PostHog.AllFeatureFlagsOptions.PersonProperties.get -> System.Collections.Generic.Dictionary<string!, object?>?
+PostHog.AllFeatureFlagsOptions.PersonProperties.init -> void
+PostHog.Api.ApiErrorResult
+PostHog.Api.ApiErrorResult.ApiErrorResult(PostHog.Api.ApiErrorResult! original) -> void
+PostHog.Api.ApiErrorResult.ApiErrorResult(string! Type, string! Code, string! Detail, string? Attr) -> void
+PostHog.Api.ApiErrorResult.Attr.get -> string?
+PostHog.Api.ApiErrorResult.Attr.init -> void
+PostHog.Api.ApiErrorResult.Code.get -> string!
+PostHog.Api.ApiErrorResult.Code.init -> void
+PostHog.Api.ApiErrorResult.Deconstruct(out string! Type, out string! Code, out string! Detail, out string? Attr) -> void
+PostHog.Api.ApiErrorResult.Detail.get -> string!
+PostHog.Api.ApiErrorResult.Detail.init -> void
+PostHog.Api.ApiErrorResult.Type.get -> string!
+PostHog.Api.ApiErrorResult.Type.init -> void
+PostHog.Api.ApiResult
+PostHog.Api.ApiResult.ApiResult(PostHog.Api.ApiResult! original) -> void
+PostHog.Api.ApiResult.ApiResult(PostHog.Json.StringOrValue<int> Status) -> void
+PostHog.Api.ApiResult.Deconstruct(out PostHog.Json.StringOrValue<int> Status) -> void
+PostHog.Api.ApiResult.Status.get -> PostHog.Json.StringOrValue<int>
+PostHog.Api.ApiResult.Status.init -> void
+PostHog.Api.CapturedEvent
+PostHog.Api.CapturedEvent.CapturedEvent(string! eventName, string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? properties, System.DateTimeOffset timestamp) -> void
+PostHog.Api.CapturedEvent.DistinctId.get -> string!
+PostHog.Api.CapturedEvent.EventName.get -> string!
+PostHog.Api.CapturedEvent.Properties.get -> System.Collections.Generic.Dictionary<string!, object!>!
+PostHog.Api.CapturedEvent.Timestamp.get -> System.DateTimeOffset
+PostHog.Api.CapturedEvent.Uuid.get -> string!
+PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.ContainsIgnoreCase = 9 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.DoesNotContainIgnoreCase = 10 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.Exact = 1 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.FlagEvaluatesTo = 15 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.GreaterThan = 5 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.GreaterThanOrEquals = 7 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.In = 0 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.IsDateAfter = 14 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.IsDateBefore = 13 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.IsNot = 2 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.IsNotSet = 4 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.IsSet = 3 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.LessThan = 6 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.LessThanOrEquals = 8 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.NotRegex = 12 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.Regex = 11 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverCaret = 23 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverEquals = 16 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverGreaterThan = 18 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverGreaterThanOrEquals = 19 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverLessThan = 20 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverLessThanOrEquals = 21 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverNotEquals = 17 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverTilde = 22 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.SemverWildcard = 24 -> PostHog.Api.ComparisonOperator
+PostHog.Api.FilterType
+PostHog.Api.FilterType.And = 4 -> PostHog.Api.FilterType
+PostHog.Api.FilterType.Cohort = 2 -> PostHog.Api.FilterType
+PostHog.Api.FilterType.Flag = 5 -> PostHog.Api.FilterType
+PostHog.Api.FilterType.Group = 1 -> PostHog.Api.FilterType
+PostHog.Api.FilterType.Or = 3 -> PostHog.Api.FilterType
+PostHog.Api.FilterType.Person = 0 -> PostHog.Api.FilterType
+PostHog.Api.FlagsResult
+PostHog.Api.FlagsResult.ErrorsWhileComputingFlags.get -> bool
+PostHog.Api.FlagsResult.ErrorsWhileComputingFlags.init -> void
+PostHog.Api.FlagsResult.EvaluatedAt.get -> long?
+PostHog.Api.FlagsResult.EvaluatedAt.init -> void
+PostHog.Api.FlagsResult.Flags.get -> System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!
+PostHog.Api.FlagsResult.Flags.init -> void
+PostHog.Api.FlagsResult.FlagsResult() -> void
+PostHog.Api.FlagsResult.FlagsResult(PostHog.Api.FlagsResult! original) -> void
+PostHog.Api.FlagsResult.QuotaLimited.get -> System.Collections.Generic.IReadOnlyList<string!>!
+PostHog.Api.FlagsResult.QuotaLimited.init -> void
+PostHog.Api.FlagsResult.RequestId.get -> string?
+PostHog.Api.FlagsResult.RequestId.init -> void
+PostHog.Api.PostHogProperties
+PostHog.CaptureExceptionExtensions
+PostHog.CaptureExtensions
+PostHog.Config.IPostHogConfigurationBuilder
+PostHog.Config.IPostHogConfigurationBuilder.ConfigureHttpClient(System.Action<Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!>! configureHttpClient) -> PostHog.Config.IPostHogConfigurationBuilder!
+PostHog.Config.IPostHogConfigurationBuilder.Use(System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>! configurationAction) -> PostHog.Config.IPostHogConfigurationBuilder!
+PostHog.Config.PostHogConfigurationBuilder
+PostHog.Config.PostHogConfigurationBuilder.Build() -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+PostHog.Config.PostHogConfigurationBuilder.ConfigureHttpClient(System.Action<Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!>! configureHttpClient) -> PostHog.Config.IPostHogConfigurationBuilder!
+PostHog.Config.PostHogConfigurationBuilder.PostHogConfigurationBuilder(Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> void
+PostHog.Config.PostHogConfigurationBuilder.Use(System.Action<Microsoft.Extensions.DependencyInjection.IServiceCollection!>? configurationAction) -> PostHog.Config.IPostHogConfigurationBuilder!
+PostHog.Config.PostHogConfigurationBuilderExtensions
+PostHog.Config.ServiceCollectionExtensions
+PostHog.Examples
+PostHog.Exceptions.RequiresServerEvaluationException
+PostHog.Exceptions.RequiresServerEvaluationException.RequiresServerEvaluationException() -> void
+PostHog.Exceptions.RequiresServerEvaluationException.RequiresServerEvaluationException(string! message) -> void
+PostHog.Exceptions.RequiresServerEvaluationException.RequiresServerEvaluationException(string! message, System.Exception! innerException) -> void
+PostHog.FeatureFlagExtensions
+PostHog.FeatureFlagOptions
+PostHog.FeatureFlagOptions.FeatureFlagOptions() -> void
+PostHog.FeatureFlagOptions.SendFeatureFlagEvents.get -> bool
+PostHog.FeatureFlagOptions.SendFeatureFlagEvents.init -> void
+PostHog.Features.FallbackFeatureFlagCache
+PostHog.Features.FallbackFeatureFlagCache.FallbackFeatureFlagCache(PostHog.IFeatureFlagCache! primary, PostHog.IFeatureFlagCache! fallback) -> void
+PostHog.Features.FeatureFlag
+PostHog.Features.FeatureFlag.FeatureFlag() -> void
+PostHog.Features.FeatureFlag.FeatureFlag(PostHog.Features.FeatureFlag! original) -> void
+PostHog.Features.FeatureFlag.IsEnabled.get -> bool
+PostHog.Features.FeatureFlag.IsEnabled.init -> void
+PostHog.Features.FeatureFlag.Key.get -> string!
+PostHog.Features.FeatureFlag.Key.init -> void
+PostHog.Features.FeatureFlag.Payload.get -> System.Text.Json.JsonDocument?
+PostHog.Features.FeatureFlag.Payload.init -> void
+PostHog.Features.FeatureFlag.VariantKey.get -> string?
+PostHog.Features.FeatureFlag.VariantKey.init -> void
+PostHog.Features.FeatureFlagCacheBase
+PostHog.Features.FeatureFlagCacheBase.FeatureFlagCacheBase() -> void
+PostHog.Features.FeatureFlagCacheBase.GetAndCacheFeatureFlagsAsync(string! distinctId, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+PostHog.Features.FeatureFlagCacheBase.GetAndCacheFlagsAsync(string! distinctId, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+PostHog.Features.FeatureFlagEvaluations
+PostHog.Features.FeatureFlagEvaluations.DistinctId.get -> string!
+PostHog.Features.FeatureFlagEvaluations.EvaluatedAt.get -> long?
+PostHog.Features.FeatureFlagEvaluations.FlagDefinitionsLoadedAt.get -> long?
+PostHog.Features.FeatureFlagEvaluations.GetFlag(string! key) -> PostHog.Features.FeatureFlag?
+PostHog.Features.FeatureFlagEvaluations.GetFlagPayload(string! key) -> System.Text.Json.JsonDocument?
+PostHog.Features.FeatureFlagEvaluations.IsEnabled(string! key) -> bool
+PostHog.Features.FeatureFlagEvaluations.Keys.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+PostHog.Features.FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable<string!>! keys) -> PostHog.Features.FeatureFlagEvaluations!
+PostHog.Features.FeatureFlagEvaluations.Only(params string![]! keys) -> PostHog.Features.FeatureFlagEvaluations!
+PostHog.Features.FeatureFlagEvaluations.OnlyAccessed() -> PostHog.Features.FeatureFlagEvaluations!
+PostHog.Features.FeatureFlagEvaluations.RequestId.get -> string?
+PostHog.Group
+PostHog.Group.AddProperty(string! name, object! value) -> PostHog.Group!
+PostHog.Group.Group() -> void
+PostHog.Group.Group(PostHog.Group! original) -> void
+PostHog.Group.Group(System.Collections.Generic.IReadOnlyDictionary<string!, object?>! properties) -> void
+PostHog.Group.Group(string! groupType, string! groupKey) -> void
+PostHog.Group.Group(string! groupType, string! groupKey, System.Collections.Generic.IReadOnlyDictionary<string!, object?>! properties) -> void
+PostHog.Group.GroupKey.get -> string!
+PostHog.Group.GroupKey.init -> void
+PostHog.Group.GroupType.get -> string!
+PostHog.Group.GroupType.init -> void
+PostHog.Group.Properties.get -> System.Collections.Generic.Dictionary<string!, object?>!
+PostHog.Group.this[string! name].get -> object!
+PostHog.Group.this[string! name].set -> void
+PostHog.GroupCollection
+PostHog.GroupCollection.Add(PostHog.Group! group) -> void
+PostHog.GroupCollection.Add(string! groupType, string! groupKey) -> void
+PostHog.GroupCollection.Clear() -> void
+PostHog.GroupCollection.Contains(PostHog.Group! group) -> bool
+PostHog.GroupCollection.Contains(string! groupType) -> bool
+PostHog.GroupCollection.CopyTo(PostHog.Group![]! array, int arrayIndex) -> void
+PostHog.GroupCollection.Count.get -> int
+PostHog.GroupCollection.GetEnumerator() -> System.Collections.Generic.IEnumerator<PostHog.Group!>!
+PostHog.GroupCollection.GroupCollection() -> void
+PostHog.GroupCollection.IsReadOnly.get -> bool
+PostHog.GroupCollection.Remove(PostHog.Group! group) -> bool
+PostHog.GroupCollection.Remove(string! groupType) -> bool
+PostHog.GroupCollection.TryAdd(PostHog.Group! group) -> bool
+PostHog.GroupCollection.TryAdd(string! groupType, string! groupKey) -> bool
+PostHog.GroupCollection.TryGetGroup(string! groupType, out PostHog.Group? group) -> bool
+PostHog.GroupCollection.this[string! groupType].get -> PostHog.Group!
+PostHog.GroupCollection.this[string! groupType].set -> void
+PostHog.GroupIdentifyAsyncExtensions
+PostHog.IFeatureFlagCache
+PostHog.IFeatureFlagCache.GetAndCacheFeatureFlagsAsync(string! distinctId, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+PostHog.IFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? personProperties, PostHog.GroupCollection? groups, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+PostHog.IFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+PostHog.IPostHogClient
+PostHog.IPostHogClient.AliasAsync(string! previousId, string! newId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.IPostHogClient.Capture(string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, PostHog.Features.FeatureFlagEvaluations? flags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.IPostHogClient.Capture(string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.IPostHogClient.CaptureException(System.Exception! exception, string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, PostHog.Features.FeatureFlagEvaluations? flags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.IPostHogClient.CaptureException(System.Exception! exception, string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.IPostHogClient.EvaluateFlagsAsync(string! distinctId, PostHog.AllFeatureFlagsOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlagEvaluations!>!
+PostHog.IPostHogClient.FlushAsync() -> System.Threading.Tasks.Task!
+PostHog.IPostHogClient.GetAllFeatureFlagsAsync(string! distinctId, PostHog.AllFeatureFlagsOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+PostHog.IPostHogClient.GetFeatureFlagAsync(string! featureKey, string! distinctId, PostHog.FeatureFlagOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+PostHog.IPostHogClient.GetRemoteConfigPayloadAsync(string! key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Text.Json.JsonDocument?>!
+PostHog.IPostHogClient.GroupIdentifyAsync(string! distinctId, string! type, PostHog.Json.StringOrValue<int> key, System.Collections.Generic.Dictionary<string!, object!>? properties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.IPostHogClient.GroupIdentifyAsync(string! type, PostHog.Json.StringOrValue<int> key, System.Collections.Generic.Dictionary<string!, object!>? properties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.IPostHogClient.IdentifyAsync(string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSet, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSetOnce, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.IPostHogClient.IsFeatureEnabledAsync(string! featureKey, string! distinctId, PostHog.FeatureFlagOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+PostHog.IPostHogClient.LoadFeatureFlagsAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+PostHog.IPostHogClient.Version.get -> string!
+PostHog.IdentifyPersonAsyncExtensions
+PostHog.Json.InconclusiveMatchException
+PostHog.Json.InconclusiveMatchException.InconclusiveMatchException() -> void
+PostHog.Json.InconclusiveMatchException.InconclusiveMatchException(string! message) -> void
+PostHog.Json.InconclusiveMatchException.InconclusiveMatchException(string! message, System.Exception! innerException) -> void
+PostHog.Json.JsonStringEnumMemberNameAttribute
+PostHog.Json.JsonStringEnumMemberNameAttribute.JsonStringEnumMemberNameAttribute(string! name) -> void
+PostHog.Json.JsonStringEnumMemberNameAttribute.Name.get -> string!
+PostHog.Json.PropertyFilterValue
+PostHog.Json.PropertyFilterValue.BooleanValue.get -> bool?
+PostHog.Json.PropertyFilterValue.CohortId.get -> long?
+PostHog.Json.PropertyFilterValue.CompareSemver(object? overrideValue) -> int
+PostHog.Json.PropertyFilterValue.CompareTo(object? overrideValue) -> int
+PostHog.Json.PropertyFilterValue.Equals(PostHog.Json.PropertyFilterValue? other) -> bool
+PostHog.Json.PropertyFilterValue.IsContainedBy(object? other, System.StringComparison stringComparison) -> bool
+PostHog.Json.PropertyFilterValue.IsDateBefore(object? overrideValue, System.DateTimeOffset now) -> bool
+PostHog.Json.PropertyFilterValue.IsExactMatch(object? overrideValue) -> bool
+PostHog.Json.PropertyFilterValue.IsRegexMatch(object? input) -> bool
+PostHog.Json.PropertyFilterValue.IsSemverCaretMatch(object? overrideValue) -> bool
+PostHog.Json.PropertyFilterValue.IsSemverTildeMatch(object? overrideValue) -> bool
+PostHog.Json.PropertyFilterValue.IsSemverWildcardMatch(object? overrideValue) -> bool
+PostHog.Json.PropertyFilterValue.ListOfStrings.get -> System.Collections.Generic.IReadOnlyList<string!>?
+PostHog.Json.PropertyFilterValue.PropertyFilterValue(System.Collections.Generic.IReadOnlyList<string!>! listOfStrings) -> void
+PostHog.Json.PropertyFilterValue.PropertyFilterValue(bool booleanValue) -> void
+PostHog.Json.PropertyFilterValue.PropertyFilterValue(long cohortId) -> void
+PostHog.Json.PropertyFilterValue.PropertyFilterValue(string! stringValue) -> void
+PostHog.Json.PropertyFilterValue.StringValue.get -> string?
+PostHog.Json.ReadonlyDictionaryJsonConverter<TKey, TValue>
+PostHog.Json.ReadonlyDictionaryJsonConverter<TKey, TValue>.ReadonlyDictionaryJsonConverter() -> void
+PostHog.Json.StringOrValue<T>
+PostHog.Json.StringOrValue<T>.Equals(PostHog.Json.StringOrValue<T> other) -> bool
+PostHog.Json.StringOrValue<T>.Equals(T? obj) -> bool
+PostHog.Json.StringOrValue<T>.IsString.get -> bool
+PostHog.Json.StringOrValue<T>.IsValue.get -> bool
+PostHog.Json.StringOrValue<T>.StringOrValue() -> void
+PostHog.Json.StringOrValue<T>.StringOrValue(T value) -> void
+PostHog.Json.StringOrValue<T>.StringOrValue(string! stringValue) -> void
+PostHog.Json.StringOrValue<T>.StringValue.get -> string?
+PostHog.Json.StringOrValue<T>.ToStringOrValue() -> PostHog.Json.StringOrValue<T>
+PostHog.Json.StringOrValue<T>.Value.get -> T?
+PostHog.Library.ApiException
+PostHog.Library.ApiException.ApiException() -> void
+PostHog.Library.ApiException.ApiException(PostHog.Api.ApiErrorResult? error, System.Net.HttpStatusCode statusCode, System.Exception? innerException) -> void
+PostHog.Library.ApiException.ApiException(string! message) -> void
+PostHog.Library.ApiException.ApiException(string! message, System.Exception! innerException) -> void
+PostHog.Library.ApiException.Attr.get -> string?
+PostHog.Library.ApiException.Code.get -> string?
+PostHog.Library.ApiException.ErrorType.get -> string?
+PostHog.Library.ApiException.Status.get -> System.Net.HttpStatusCode
+PostHog.Library.ITaskScheduler
+PostHog.Library.ITaskScheduler.Run(System.Action! action, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+PostHog.Library.ITaskScheduler.Run(System.Func<System.Threading.Tasks.Task!>! task, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PostHog.Library.OperatingSystemInfo
+PostHog.Library.TaskRunTaskScheduler
+PostHog.Library.TaskRunTaskScheduler.Run(System.Action! action, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+PostHog.Library.TaskRunTaskScheduler.Run(System.Func<System.Threading.Tasks.Task!>! task, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+PostHog.Library.TaskRunTaskScheduler.TaskRunTaskScheduler() -> void
+PostHog.MemoryFeatureFlagCache
+PostHog.MemoryFeatureFlagCache.Dispose() -> void
+PostHog.MemoryFeatureFlagCache.MemoryFeatureFlagCache(System.TimeProvider! timeProvider, int sizeLimit, double compactPercentage) -> void
+PostHog.NullFeatureFlagCache
+PostHog.NullFeatureFlagCache.GetAndCacheFeatureFlagsAsync(string! distinctId, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+PostHog.NullFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? personProperties, PostHog.GroupCollection? groups, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+PostHog.NullFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+PostHog.PostHogClient
+PostHog.PostHogClient.AliasAsync(string! previousId, string! newId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.PostHogClient.Capture(string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, PostHog.Features.FeatureFlagEvaluations? flags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.PostHogClient.Capture(string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.PostHogClient.CaptureException(System.Exception! exception, string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, PostHog.Features.FeatureFlagEvaluations? flags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.PostHogClient.CaptureException(System.Exception! exception, string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags, System.DateTimeOffset? timestamp = null) -> bool
+PostHog.PostHogClient.ClearLocalFlagsCache() -> void
+PostHog.PostHogClient.Dispose() -> void
+PostHog.PostHogClient.DisposeAsync() -> System.Threading.Tasks.ValueTask
+PostHog.PostHogClient.EvaluateFlagsAsync(string! distinctId, PostHog.AllFeatureFlagsOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlagEvaluations!>!
+PostHog.PostHogClient.FlushAsync() -> System.Threading.Tasks.Task!
+PostHog.PostHogClient.GetAllFeatureFlagsAsync(string! distinctId, PostHog.AllFeatureFlagsOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+PostHog.PostHogClient.GetFeatureFlagAsync(string! featureKey, string! distinctId, PostHog.FeatureFlagOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+PostHog.PostHogClient.GetRemoteConfigPayloadAsync(string! key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Text.Json.JsonDocument?>!
+PostHog.PostHogClient.GroupIdentifyAsync(string! distinctId, string! type, PostHog.Json.StringOrValue<int> key, System.Collections.Generic.Dictionary<string!, object!>? properties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.PostHogClient.GroupIdentifyAsync(string! type, PostHog.Json.StringOrValue<int> key, System.Collections.Generic.Dictionary<string!, object!>? properties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.PostHogClient.IdentifyAsync(string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSet, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSetOnce, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+PostHog.PostHogClient.IsFeatureEnabledAsync(string! featureKey, string! distinctId, PostHog.FeatureFlagOptions? options, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+PostHog.PostHogClient.LoadFeatureFlagsAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+PostHog.PostHogClient.PostHogClient(Microsoft.Extensions.Options.IOptions<PostHog.PostHogOptions!>! options, PostHog.IFeatureFlagCache? featureFlagsCache = null, System.Net.Http.IHttpClientFactory? httpClientFactory = null, PostHog.Library.ITaskScheduler? taskScheduler = null, System.TimeProvider? timeProvider = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null) -> void
+PostHog.PostHogClient.Version.get -> string!
+PostHog.PostHogOptions
+PostHog.PostHogOptions.Disabled.get -> bool
+PostHog.PostHogOptions.Disabled.set -> void
+PostHog.PostHogOptions.EnableCompression.get -> bool
+PostHog.PostHogOptions.EnableCompression.set -> void
+PostHog.PostHogOptions.EvaluationContexts.get -> System.Collections.Generic.IReadOnlyList<string!>?
+PostHog.PostHogOptions.EvaluationContexts.set -> void
+PostHog.PostHogOptions.FeatureFlagPollInterval.get -> System.TimeSpan
+PostHog.PostHogOptions.FeatureFlagPollInterval.set -> void
+PostHog.PostHogOptions.FeatureFlagSentCacheCompactionPercentage.get -> double
+PostHog.PostHogOptions.FeatureFlagSentCacheCompactionPercentage.set -> void
+PostHog.PostHogOptions.FeatureFlagSentCacheSizeLimit.get -> long
+PostHog.PostHogOptions.FeatureFlagSentCacheSizeLimit.set -> void
+PostHog.PostHogOptions.FeatureFlagSentCacheSlidingExpiration.get -> System.TimeSpan
+PostHog.PostHogOptions.FeatureFlagSentCacheSlidingExpiration.set -> void
+PostHog.PostHogOptions.FeatureFlagsLogWarnings.get -> bool
+PostHog.PostHogOptions.FeatureFlagsLogWarnings.set -> void
+PostHog.PostHogOptions.FlushAt.get -> int
+PostHog.PostHogOptions.FlushAt.set -> void
+PostHog.PostHogOptions.FlushInterval.get -> System.TimeSpan
+PostHog.PostHogOptions.FlushInterval.set -> void
+PostHog.PostHogOptions.HostUrl.get -> System.Uri!
+PostHog.PostHogOptions.HostUrl.set -> void
+PostHog.PostHogOptions.InitialRetryDelay.get -> System.TimeSpan
+PostHog.PostHogOptions.InitialRetryDelay.set -> void
+PostHog.PostHogOptions.IsServer.get -> bool
+PostHog.PostHogOptions.IsServer.set -> void
+PostHog.PostHogOptions.MaxBatchSize.get -> int
+PostHog.PostHogOptions.MaxBatchSize.set -> void
+PostHog.PostHogOptions.MaxQueueSize.get -> int
+PostHog.PostHogOptions.MaxQueueSize.set -> void
+PostHog.PostHogOptions.MaxRetries.get -> int
+PostHog.PostHogOptions.MaxRetries.set -> void
+PostHog.PostHogOptions.MaxRetryDelay.get -> System.TimeSpan
+PostHog.PostHogOptions.MaxRetryDelay.set -> void
+PostHog.PostHogOptions.PersonalApiKey.get -> string?
+PostHog.PostHogOptions.PersonalApiKey.set -> void
+PostHog.PostHogOptions.PostHogOptions() -> void
+PostHog.PostHogOptions.ProjectApiKey.get -> string?
+PostHog.PostHogOptions.ProjectApiKey.set -> void
+PostHog.PostHogOptions.ProjectToken.get -> string?
+PostHog.PostHogOptions.ProjectToken.set -> void
+PostHog.PostHogOptions.SuperProperties.get -> System.Collections.Generic.Dictionary<string!, object!>!
+PostHog.PostHogOptions.SuperProperties.init -> void
+PostHog.RemoteConfigExtensions
+PostHog.Sdk.PostHogSdk
+PostHog.Versioning.VersionConstants
+abstract PostHog.Features.FeatureFlagCacheBase.GetAndCacheFlagsAsync(string! distinctId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? personProperties, PostHog.GroupCollection? groups, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+const PostHog.Api.PostHogProperties.Architecture = "$arch" -> string!
+const PostHog.Api.PostHogProperties.CurrentUrl = "$current_url" -> string!
+const PostHog.Api.PostHogProperties.DistinctId = "distinct_id" -> string!
+const PostHog.Api.PostHogProperties.Framework = "$framework" -> string!
+const PostHog.Api.PostHogProperties.GeoIpDisable = "$geoip_disable" -> string!
+const PostHog.Api.PostHogProperties.Ip = "$ip" -> string!
+const PostHog.Api.PostHogProperties.IsServer = "$is_server" -> string!
+const PostHog.Api.PostHogProperties.Lib = "$lib" -> string!
+const PostHog.Api.PostHogProperties.LibVersion = "$lib_version" -> string!
+const PostHog.Api.PostHogProperties.Os = "$os" -> string!
+const PostHog.Api.PostHogProperties.ProcessPersonProfile = "$process_person_profile" -> string!
+const PostHog.Api.PostHogProperties.RequestMethod = "$request_method" -> string!
+const PostHog.Api.PostHogProperties.RequestPath = "$request_path" -> string!
+const PostHog.Api.PostHogProperties.ResponseStatusCode = "$response_status_code" -> string!
+const PostHog.Api.PostHogProperties.SessionId = "$session_id" -> string!
+const PostHog.Api.PostHogProperties.UserAgent = "$user_agent" -> string!
+const PostHog.Versioning.VersionConstants.Version = "2.7.1" -> string!
+override PostHog.Api.ApiErrorResult.Equals(object? obj) -> bool
+override PostHog.Api.ApiErrorResult.GetHashCode() -> int
+override PostHog.Api.ApiErrorResult.ToString() -> string!
+override PostHog.Api.ApiResult.Equals(object? obj) -> bool
+override PostHog.Api.ApiResult.GetHashCode() -> int
+override PostHog.Api.ApiResult.ToString() -> string!
+override PostHog.Api.FlagsResult.Equals(object? obj) -> bool
+override PostHog.Api.FlagsResult.GetHashCode() -> int
+override PostHog.Api.FlagsResult.ToString() -> string!
+override PostHog.Features.FallbackFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? personProperties, PostHog.GroupCollection? groups, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+override PostHog.Features.FeatureFlag.Equals(object? obj) -> bool
+override PostHog.Features.FeatureFlag.GetHashCode() -> int
+override PostHog.Features.FeatureFlag.ToString() -> string!
+override PostHog.Group.Equals(object? obj) -> bool
+override PostHog.Group.GetHashCode() -> int
+override PostHog.Group.ToString() -> string!
+override PostHog.Json.PropertyFilterValue.Equals(object? obj) -> bool
+override PostHog.Json.PropertyFilterValue.GetHashCode() -> int
+override PostHog.Json.PropertyFilterValue.ToString() -> string!
+override PostHog.Json.ReadonlyDictionaryJsonConverter<TKey, TValue>.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>?
+override PostHog.Json.ReadonlyDictionaryJsonConverter<TKey, TValue>.Write(System.Text.Json.Utf8JsonWriter! writer, System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>! value, System.Text.Json.JsonSerializerOptions! options) -> void
+override PostHog.Json.StringOrValue<T>.Equals(object? obj) -> bool
+override PostHog.Json.StringOrValue<T>.GetHashCode() -> int
+override PostHog.Json.StringOrValue<T>.ToString() -> string!
+override PostHog.MemoryFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? personProperties, PostHog.GroupCollection? groups, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
+static PostHog.Api.ApiErrorResult.operator !=(PostHog.Api.ApiErrorResult? left, PostHog.Api.ApiErrorResult? right) -> bool
+static PostHog.Api.ApiErrorResult.operator ==(PostHog.Api.ApiErrorResult? left, PostHog.Api.ApiErrorResult? right) -> bool
+static PostHog.Api.ApiResult.operator !=(PostHog.Api.ApiResult? left, PostHog.Api.ApiResult? right) -> bool
+static PostHog.Api.ApiResult.operator ==(PostHog.Api.ApiResult? left, PostHog.Api.ApiResult? right) -> bool
+static PostHog.Api.FlagsResult.operator !=(PostHog.Api.FlagsResult? left, PostHog.Api.FlagsResult? right) -> bool
+static PostHog.Api.FlagsResult.operator ==(PostHog.Api.FlagsResult? left, PostHog.Api.FlagsResult? right) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, System.DateTimeOffset timestamp) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, System.DateTimeOffset timestamp, PostHog.GroupCollection! groups) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, System.DateTimeOffset timestamp, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, System.DateTimeOffset timestamp, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, System.DateTimeOffset timestamp, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, System.DateTimeOffset timestamp, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExceptionExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, string! distinctId, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, PostHog.GroupCollection! groups) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>! personPropertiesToSet, System.Collections.Generic.Dictionary<string!, object!>! personPropertiesToSetOnce) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties, System.Collections.Generic.Dictionary<string!, object!>! personPropertiesToSet, System.Collections.Generic.Dictionary<string!, object!>! personPropertiesToSetOnce) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.DateTimeOffset timestamp) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.DateTimeOffset timestamp, PostHog.GroupCollection! groups) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.DateTimeOffset timestamp, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.DateTimeOffset timestamp, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.DateTimeOffset timestamp, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, System.DateTimeOffset timestamp, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExtensions.Capture(this PostHog.IPostHogClient! client, string! distinctId, string! eventName, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExtensions.CapturePageView(this PostHog.IPostHogClient! client, string! distinctId, string! pagePath) -> bool
+static PostHog.CaptureExtensions.CapturePageView(this PostHog.IPostHogClient! client, string! distinctId, string! pagePath, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExtensions.CapturePageView(this PostHog.IPostHogClient! client, string! distinctId, string! pagePath, System.Collections.Generic.Dictionary<string!, object!>? properties, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExtensions.CapturePageView(this PostHog.IPostHogClient! client, string! distinctId, string! pagePath, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExtensions.CaptureScreenView(this PostHog.IPostHogClient! client, string! distinctId, string! screenName) -> bool
+static PostHog.CaptureExtensions.CaptureScreenView(this PostHog.IPostHogClient! client, string! distinctId, string! screenName, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExtensions.CaptureScreenView(this PostHog.IPostHogClient! client, string! distinctId, string! screenName, System.Collections.Generic.Dictionary<string!, object!>? properties, bool sendFeatureFlags) -> bool
+static PostHog.CaptureExtensions.CaptureSurveyDismissed(this PostHog.IPostHogClient! client, string! distinctId, string! surveyId, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExtensions.CaptureSurveyResponse(this PostHog.IPostHogClient! client, string! distinctId, string! surveyId, string! surveyResponse, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExtensions.CaptureSurveyResponses(this PostHog.IPostHogClient! client, string! distinctId, string! surveyId, System.Collections.Generic.IReadOnlyList<string!>! surveyResponses, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.CaptureExtensions.CaptureSurveyShown(this PostHog.IPostHogClient! client, string! distinctId, string! surveyId, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.Config.PostHogConfigurationBuilderExtensions.PostConfigure(this PostHog.Config.IPostHogConfigurationBuilder! builder, System.Action<PostHog.PostHogOptions!>! options) -> PostHog.Config.IPostHogConfigurationBuilder!
+static PostHog.Config.PostHogConfigurationBuilderExtensions.UseConfigurationSection(this PostHog.Config.IPostHogConfigurationBuilder! builder, Microsoft.Extensions.Configuration.IConfigurationSection! section) -> PostHog.Config.IPostHogConfigurationBuilder!
+static PostHog.Config.ServiceCollectionExtensions.AddPostHog(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static PostHog.Config.ServiceCollectionExtensions.AddPostHog(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<PostHog.Config.IPostHogConfigurationBuilder!>! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static PostHog.Examples.Main() -> System.Threading.Tasks.Task!
+static PostHog.FeatureFlagExtensions.EvaluateFlagsAsync(this PostHog.IPostHogClient! client, string! distinctId) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlagEvaluations!>!
+static PostHog.FeatureFlagExtensions.EvaluateFlagsAsync(this PostHog.IPostHogClient! client, string! distinctId, PostHog.AllFeatureFlagsOptions! options) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlagEvaluations!>!
+static PostHog.FeatureFlagExtensions.EvaluateFlagsAsync(this PostHog.IPostHogClient! client, string! distinctId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlagEvaluations!>!
+static PostHog.FeatureFlagExtensions.GetAllFeatureFlagsAsync(this PostHog.IPostHogClient! client, string! distinctId) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+static PostHog.FeatureFlagExtensions.GetAllFeatureFlagsAsync(this PostHog.IPostHogClient! client, string! distinctId, PostHog.AllFeatureFlagsOptions! options) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+static PostHog.FeatureFlagExtensions.GetFeatureFlagAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+static PostHog.FeatureFlagExtensions.GetFeatureFlagAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, PostHog.FeatureFlagOptions! options) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+static PostHog.FeatureFlagExtensions.GetFeatureFlagAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, System.Collections.Generic.Dictionary<string!, object?>! personProperties) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+static PostHog.FeatureFlagExtensions.GetFeatureFlagAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, System.Collections.Generic.Dictionary<string!, object?>! personProperties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+static PostHog.FeatureFlagExtensions.GetFeatureFlagAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+static PostHog.FeatureFlagExtensions.IsFeatureEnabledAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId) -> System.Threading.Tasks.Task<bool>!
+static PostHog.FeatureFlagExtensions.IsFeatureEnabledAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, PostHog.FeatureFlagOptions? options) -> System.Threading.Tasks.Task<bool>!
+static PostHog.FeatureFlagExtensions.IsFeatureEnabledAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, System.Collections.Generic.Dictionary<string!, object?>! personProperties) -> System.Threading.Tasks.Task<bool?>!
+static PostHog.FeatureFlagExtensions.IsFeatureEnabledAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, System.Collections.Generic.Dictionary<string!, object?>! personProperties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool?>!
+static PostHog.FeatureFlagExtensions.IsFeatureEnabledAsync(this PostHog.IPostHogClient! client, string! featureKey, string! distinctId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+static PostHog.FeatureFlagExtensions.LoadFeatureFlagsAsync(this PostHog.IPostHogClient! client) -> System.Threading.Tasks.Task!
+static PostHog.Features.FeatureFlag.implicit operator bool(PostHog.Features.FeatureFlag? flag) -> bool
+static PostHog.Features.FeatureFlag.implicit operator string!(PostHog.Features.FeatureFlag? flag) -> string!
+static PostHog.Features.FeatureFlag.operator !=(PostHog.Features.FeatureFlag? left, PostHog.Features.FeatureFlag? right) -> bool
+static PostHog.Features.FeatureFlag.operator ==(PostHog.Features.FeatureFlag? left, PostHog.Features.FeatureFlag? right) -> bool
+static PostHog.Group.operator !=(PostHog.Group? left, PostHog.Group? right) -> bool
+static PostHog.Group.operator ==(PostHog.Group? left, PostHog.Group? right) -> bool
+static PostHog.GroupIdentifyAsyncExtensions.GroupIdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string! type, PostHog.Json.StringOrValue<int> key, string! name) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.GroupIdentifyAsyncExtensions.GroupIdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string! type, PostHog.Json.StringOrValue<int> key, string! name, System.Collections.Generic.Dictionary<string!, object!>? properties) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.GroupIdentifyAsyncExtensions.GroupIdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string! type, PostHog.Json.StringOrValue<int> key, string! name, System.Collections.Generic.Dictionary<string!, object!>? properties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.GroupIdentifyAsyncExtensions.GroupIdentifyAsync(this PostHog.IPostHogClient! client, string! type, PostHog.Json.StringOrValue<int> key, string! name) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.GroupIdentifyAsyncExtensions.GroupIdentifyAsync(this PostHog.IPostHogClient! client, string! type, PostHog.Json.StringOrValue<int> key, string! name, System.Collections.Generic.Dictionary<string!, object!>? properties) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.GroupIdentifyAsyncExtensions.GroupIdentifyAsync(this PostHog.IPostHogClient! client, string! type, PostHog.Json.StringOrValue<int> key, string! name, System.Collections.Generic.Dictionary<string!, object!>? properties, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.AliasAsync(this PostHog.IPostHogClient! client, string! previousId, string! newId) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string? email, string? name) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string? email, string? name, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSet) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string? email, string? name, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSet, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSetOnce) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string? email, string? name, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSet, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSetOnce, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string? email, string? name, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSet, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.IdentifyPersonAsyncExtensions.IdentifyAsync(this PostHog.IPostHogClient! client, string! distinctId, string? email, string? name, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.Json.PropertyFilterValue.Create(System.Text.Json.JsonElement jsonElement) -> PostHog.Json.PropertyFilterValue?
+static PostHog.Json.PropertyFilterValue.operator <(PostHog.Json.PropertyFilterValue? left, object? right) -> bool
+static PostHog.Json.PropertyFilterValue.operator <=(PostHog.Json.PropertyFilterValue! left, object? right) -> bool
+static PostHog.Json.PropertyFilterValue.operator >(PostHog.Json.PropertyFilterValue! left, object? right) -> bool
+static PostHog.Json.PropertyFilterValue.operator >=(PostHog.Json.PropertyFilterValue! left, object? right) -> bool
+static PostHog.Json.StringOrValue<T>.implicit operator PostHog.Json.StringOrValue<T>(T value) -> PostHog.Json.StringOrValue<T>
+static PostHog.Json.StringOrValue<T>.implicit operator PostHog.Json.StringOrValue<T>(string! stringValue) -> PostHog.Json.StringOrValue<T>
+static PostHog.Json.StringOrValue<T>.operator !=(PostHog.Json.StringOrValue<T> left, PostHog.Json.StringOrValue<T> right) -> bool
+static PostHog.Json.StringOrValue<T>.operator !=(PostHog.Json.StringOrValue<T> left, T right) -> bool
+static PostHog.Json.StringOrValue<T>.operator !=(PostHog.Json.StringOrValue<T>? left, T right) -> bool
+static PostHog.Json.StringOrValue<T>.operator ==(PostHog.Json.StringOrValue<T> left, PostHog.Json.StringOrValue<T> right) -> bool
+static PostHog.Json.StringOrValue<T>.operator ==(PostHog.Json.StringOrValue<T> left, T right) -> bool
+static PostHog.Json.StringOrValue<T>.operator ==(PostHog.Json.StringOrValue<T>? left, T right) -> bool
+static PostHog.Library.OperatingSystemInfo.Name.get -> string!
+static PostHog.Library.OperatingSystemInfo.Version.get -> string!
+static PostHog.RemoteConfigExtensions.GetRemoteConfigPayloadAsync(this PostHog.IPostHogClient! client, string! key) -> System.Threading.Tasks.Task<System.Text.Json.JsonDocument?>!
+static PostHog.Sdk.PostHogSdk.AliasAsync(string! previousId, string! newId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.Sdk.PostHogSdk.Capture(string! distinctId, string! eventName) -> bool
+static PostHog.Sdk.PostHogSdk.Capture(string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
+static PostHog.Sdk.PostHogSdk.Capture(string! distinctId, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags, System.DateTimeOffset? timestamp = null) -> bool
+static PostHog.Sdk.PostHogSdk.CaptureException(System.Exception! exception, string! distinctId) -> bool
+static PostHog.Sdk.PostHogSdk.CaptureException(System.Exception! exception, string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? properties, PostHog.GroupCollection? groups, bool sendFeatureFlags, System.DateTimeOffset? timestamp = null) -> bool
+static PostHog.Sdk.PostHogSdk.DefaultClient.get -> PostHog.IPostHogClient?
+static PostHog.Sdk.PostHogSdk.DefaultClient.set -> void
+static PostHog.Sdk.PostHogSdk.FlushAsync() -> System.Threading.Tasks.Task!
+static PostHog.Sdk.PostHogSdk.GetAllFeatureFlagsAsync(string! distinctId, PostHog.AllFeatureFlagsOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
+static PostHog.Sdk.PostHogSdk.GetFeatureFlagAsync(string! featureKey, string! distinctId, PostHog.FeatureFlagOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Features.FeatureFlag?>!
+static PostHog.Sdk.PostHogSdk.GetRemoteConfigPayloadAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.JsonDocument?>!
+static PostHog.Sdk.PostHogSdk.GroupIdentifyAsync(string! distinctId, string! type, PostHog.Json.StringOrValue<int> key, System.Collections.Generic.Dictionary<string!, object!>? properties = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.Sdk.PostHogSdk.GroupIdentifyAsync(string! type, PostHog.Json.StringOrValue<int> key, System.Collections.Generic.Dictionary<string!, object!>? properties = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.Sdk.PostHogSdk.IdentifyAsync(string! distinctId, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSet = null, System.Collections.Generic.Dictionary<string!, object!>? personPropertiesToSetOnce = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Api.ApiResult!>!
+static PostHog.Sdk.PostHogSdk.Init(PostHog.PostHogOptions! options) -> PostHog.IPostHogClient!
+static PostHog.Sdk.PostHogSdk.IsFeatureEnabledAsync(string! featureKey, string! distinctId, PostHog.FeatureFlagOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+static PostHog.Sdk.PostHogSdk.LoadFeatureFlagsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static PostHog.Sdk.PostHogSdk.LoggerFactory.get -> Microsoft.Extensions.Logging.ILoggerFactory!
+static PostHog.Sdk.PostHogSdk.LoggerFactory.set -> void
+static PostHog.Sdk.PostHogSdk.ShutdownAsync() -> System.Threading.Tasks.ValueTask
+static readonly PostHog.NullFeatureFlagCache.Instance -> PostHog.NullFeatureFlagCache!
+virtual PostHog.Api.ApiErrorResult.<Clone>$() -> PostHog.Api.ApiErrorResult!
+virtual PostHog.Api.ApiErrorResult.EqualityContract.get -> System.Type!
+virtual PostHog.Api.ApiErrorResult.Equals(PostHog.Api.ApiErrorResult? other) -> bool
+virtual PostHog.Api.ApiErrorResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
+virtual PostHog.Api.ApiResult.<Clone>$() -> PostHog.Api.ApiResult!
+virtual PostHog.Api.ApiResult.EqualityContract.get -> System.Type!
+virtual PostHog.Api.ApiResult.Equals(PostHog.Api.ApiResult? other) -> bool
+virtual PostHog.Api.ApiResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
+virtual PostHog.Api.FlagsResult.<Clone>$() -> PostHog.Api.FlagsResult!
+virtual PostHog.Api.FlagsResult.EqualityContract.get -> System.Type!
+virtual PostHog.Api.FlagsResult.Equals(PostHog.Api.FlagsResult? other) -> bool
+virtual PostHog.Api.FlagsResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
+virtual PostHog.Features.FeatureFlag.<Clone>$() -> PostHog.Features.FeatureFlag!
+virtual PostHog.Features.FeatureFlag.EqualityContract.get -> System.Type!
+virtual PostHog.Features.FeatureFlag.Equals(PostHog.Features.FeatureFlag? other) -> bool
+virtual PostHog.Features.FeatureFlag.PrintMembers(System.Text.StringBuilder! builder) -> bool
+virtual PostHog.Group.<Clone>$() -> PostHog.Group!
+virtual PostHog.Group.EqualityContract.get -> System.Type!
+virtual PostHog.Group.Equals(PostHog.Group? other) -> bool
+virtual PostHog.Group.PrintMembers(System.Text.StringBuilder! builder) -> bool

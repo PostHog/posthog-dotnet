@@ -44,7 +44,9 @@ jobs:
         run: dotnet restore --locked-mode
         shell: bash
 
-      # This not only builds the solution, but also creates the NuGet packages
+      # This builds the solution, creates NuGet packages, and runs PublicApiAnalyzers.
+      # If a public API change is intentional, run `dotnet build --configuration Release`
+      # locally and commit the relevant PublicAPI.Shipped.txt/PublicAPI.Unshipped.txt updates.
       - name: Build
         run: dotnet build --configuration Release --no-restore --nologo
         shell: bash

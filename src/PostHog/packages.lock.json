@@ -17,6 +17,12 @@
           "Microsoft.Bcl.AsyncInterfaces": "8.0.0"
         }
       },
+      "Microsoft.CodeAnalysis.PublicApiAnalyzers": {
+        "type": "Direct",
+        "requested": "[4.14.0, )",
+        "resolved": "4.14.0",
+        "contentHash": "5zBDSa8D1pfn5VyDzRekcYdVx/DGAzwegblVJhzdN0kvPt97TPr12haA6ZG0wS2WgBb1W42GeZJRiRtlNaoY1w=="
+      },
       "Microsoft.Extensions.Caching.Memory": {
         "type": "Direct",
         "requested": "[8.0.1, )",
@@ -256,6 +262,12 @@
           "Microsoft.Bcl.AsyncInterfaces": "8.0.0"
         }
       },
+      "Microsoft.CodeAnalysis.PublicApiAnalyzers": {
+        "type": "Direct",
+        "requested": "[4.14.0, )",
+        "resolved": "4.14.0",
+        "contentHash": "5zBDSa8D1pfn5VyDzRekcYdVx/DGAzwegblVJhzdN0kvPt97TPr12haA6ZG0wS2WgBb1W42GeZJRiRtlNaoY1w=="
+      },
       "Microsoft.Extensions.Caching.Memory": {
         "type": "Direct",
         "requested": "[8.0.1, )",
@@ -459,6 +471,12 @@
       }
     },
     "net8.0": {
+      "Microsoft.CodeAnalysis.PublicApiAnalyzers": {
+        "type": "Direct",
+        "requested": "[4.14.0, )",
+        "resolved": "4.14.0",
+        "contentHash": "5zBDSa8D1pfn5VyDzRekcYdVx/DGAzwegblVJhzdN0kvPt97TPr12haA6ZG0wS2WgBb1W42GeZJRiRtlNaoY1w=="
+      },
       "Microsoft.Extensions.Caching.Memory": {
         "type": "Direct",
         "requested": "[8.0.1, )",
