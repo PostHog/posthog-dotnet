@@ -78,7 +78,7 @@ jobs:
         shell: bash
 
       - name: Pack ${{ matrix.name }}
-        run: dotnet pack "${{ matrix.project }}" --configuration Release --no-restore --nologo --output "${{ env.PackageDirectory }}"
+        run: dotnet pack "${{ matrix.project }}" --configuration Release --no-restore --nologo --output "${{ env.PackageDirectory }}" /p:GeneratePackageOnBuild=false
         shell: bash
 
   test:
