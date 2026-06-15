@@ -9,6 +9,11 @@ namespace PostHog;
 /// </summary>
 public static class Examples
 {
+    /// <summary>
+    /// Test-only public API marker used to verify baseline checks.
+    /// </summary>
+    public const string PublicApiBaselineProbe = "public-api-baseline-probe";
+
     internal static readonly PostHogClient PostHog = new(new PostHogOptions
     {
         ProjectToken = "<ph_project_token>",
