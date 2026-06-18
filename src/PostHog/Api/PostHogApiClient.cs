@@ -71,7 +71,7 @@ internal sealed class PostHogApiClient : IDisposable
         {
             // PostHog's ingestion API still expects the project token under the wire name `api_key`.
             ["api_key"] = ProjectToken,
-            ["historical_migrations"] = false,
+            ["historical_migration"] = false,
             ["batch"] = events.ToReadOnlyList()
         };
 
