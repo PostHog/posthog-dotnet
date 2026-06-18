@@ -181,7 +181,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             $$"""
               {
                 "api_key": "fake-project-token",
-                "historical_migrations": false,
+                "historical_migration": false,
                 "batch": [
                   {
                     "uuid": "00000000-0000-0000-0000-000000000000",
@@ -279,7 +279,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             $$"""
               {
                 "api_key": "fake-project-token",
-                "historical_migrations": false,
+                "historical_migration": false,
                 "batch": [
                   {
                     "uuid": "00000000-0000-0000-0000-000000000000",
@@ -488,7 +488,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             $$"""
               {
                 "api_key": "fake-project-token",
-                "historical_migrations": false,
+                "historical_migration": false,
                 "batch": [
                   {
                     "uuid": "00000000-0000-0000-0000-000000000000",
@@ -540,7 +540,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             $$"""
               {
                 "api_key": "fake-project-token",
-                "historical_migrations": false,
+                "historical_migration": false,
                 "batch": [
                   {
                     "uuid": "00000000-0000-0000-0000-000000000000",
@@ -593,7 +593,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             $$"""
               {
                 "api_key": "fake-project-token",
-                "historical_migrations": false,
+                "historical_migration": false,
                 "batch": [
                   {
                     "uuid": "00000000-0000-0000-0000-000000000000",
@@ -719,7 +719,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
             $$"""
               {
                 "api_key": "fake-project-token",
-                "historical_migrations": false,
+                "historical_migration": false,
                 "batch": [
                   {
                     "uuid": "00000000-0000-0000-0000-000000000000",
@@ -2451,7 +2451,7 @@ public class TheGetFeatureFlagAsyncMethod
         JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "fake-project-token",
-                         "historical_migrations": false,
+                         "historical_migration": false,
                          "batch": [
                            {
                              "uuid": "00000000-0000-0000-0000-000000000000",
@@ -2501,7 +2501,7 @@ public class TheGetFeatureFlagAsyncMethod
         JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "fake-project-token",
-                         "historical_migrations": false,
+                         "historical_migration": false,
                          "batch": [
                            {
                              "uuid": "00000000-0000-0000-0000-000000000000",
@@ -2567,7 +2567,7 @@ public class TheGetFeatureFlagAsyncMethod
         JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "fake-project-token",
-                         "historical_migrations": false,
+                         "historical_migration": false,
                          "batch": [
                            {
                              "uuid": "00000000-0000-0000-0000-000000000000",
@@ -2675,7 +2675,7 @@ public class TheGetFeatureFlagAsyncMethod
         JsonAssert.EqualIgnoringUuids($$"""
                        {
                          "api_key": "test-api-key",
-                         "historical_migrations": false,
+                         "historical_migration": false,
                          "batch": [
                            {
                              "uuid": "00000000-0000-0000-0000-000000000000",
