@@ -1,5 +1,6 @@
 using System.Threading;
 using PostHog.Api;
+using PostHog.Library;
 
 namespace PostHog;
 
@@ -138,7 +139,7 @@ internal static class PostHogContextHelper
             return new PostHogCaptureIdentity(contextDistinctId!, IsPersonless: false);
         }
 
-        return new PostHogCaptureIdentity(Guid.NewGuid().ToString(), IsPersonless: true);
+        return new PostHogCaptureIdentity(UuidV7.NewString(), IsPersonless: true);
     }
 
     static Dictionary<string, object>? ApplyContextProperties(

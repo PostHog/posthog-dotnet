@@ -154,6 +154,7 @@ public class ThePostHogContext
         var context = PostHogContextHelper.ResolveCaptureContext(distinctId: null, properties: properties);
 
         Assert.True(Guid.TryParse(context.DistinctId, out _));
+        Assert.Equal('7', context.DistinctId[14]);
         Assert.True(context.IsPersonless);
         Assert.NotNull(context.Properties);
         Assert.Equal(expectedValue, (bool)context.Properties["$process_person_profile"]);

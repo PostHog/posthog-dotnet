@@ -4,3 +4,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("UnitTests.AspNetCore")]
 [assembly: InternalsVisibleTo("TestLibrary")]
 [assembly: InternalsVisibleTo("PostHog.AspNetCore")]
+[assembly: InternalsVisibleTo("PostHog.AI")]
