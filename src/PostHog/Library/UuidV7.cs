@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Cryptography;
 
 namespace PostHog.Library;
@@ -8,16 +9,20 @@ internal static class UuidV7
     static readonly RandomNumberGenerator Random = RandomNumberGenerator.Create();
     static readonly char[] Hex = "0123456789abcdef".ToCharArray();
     static readonly byte[] LastRandom = new byte[10];
+    static readonly Func<Guid>? PlatformCreateVersion7 = CreatePlatformCreateVersion7();
 
     static long LastTimestamp = -1;
 
     public static string NewString()
+        => PlatformCreateVersion7?.Invoke().ToString() ?? NewFallbackString();
+
+    internal static string NewFallbackString(Func<long>? timestampProvider = null)
     {
         var bytes = new byte[16];
 
         lock (Sync)
         {
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var timestamp = timestampProvider?.Invoke() ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             if (timestamp <= LastTimestamp)
             {
                 timestamp = LastTimestamp;
@@ -43,6 +48,20 @@ internal static class UuidV7
         bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
 
         return Format(bytes);
+    }
+
+    static Func<Guid>? CreatePlatformCreateVersion7()
+    {
+        var method = typeof(Guid).GetMethod(
+            "CreateVersion7",
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null);
+
+        return method?.ReturnType == typeof(Guid)
+            ? (Func<Guid>)Delegate.CreateDelegate(typeof(Func<Guid>), method)
+            : null;
     }
 
     static void IncrementRandom()
