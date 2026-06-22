@@ -13,7 +13,6 @@ PostHog.AI.PostHogAIExtensions
 PostHog.AI.PostHogAIFieldNames
 PostHog.AI.PostHogOpenAIHandler
 PostHog.AI.PostHogOpenAIHandler.PostHogOpenAIHandler(PostHog.IPostHogClient! postHogClient, Microsoft.Extensions.Logging.ILogger<PostHog.AI.PostHogOpenAIHandler!>! logger) -> void
-PostHog.AI.Versioning.VersionConstants
 const PostHog.AI.PostHogAIFieldNames.BaseUrl = "$ai_base_url" -> string!
 const PostHog.AI.PostHogAIFieldNames.CacheCreationInputTokens = "$ai_cache_creation_input_tokens" -> string!
 const PostHog.AI.PostHogAIFieldNames.CacheReadInputTokens = "$ai_cache_read_input_tokens" -> string!
@@ -42,7 +41,6 @@ const PostHog.AI.PostHogAIFieldNames.Temperature = "$ai_temperature" -> string!
 const PostHog.AI.PostHogAIFieldNames.Tools = "$ai_tools" -> string!
 const PostHog.AI.PostHogAIFieldNames.TotalTokens = "$ai_total_tokens" -> string!
 const PostHog.AI.PostHogAIFieldNames.TraceId = "$ai_trace_id" -> string!
-const PostHog.AI.Versioning.VersionConstants.Version = "<version>" -> string!
 override PostHog.AI.PostHogOpenAIHandler.SendAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!
 static PostHog.AI.PostHogAIContext.BeginScope(string? distinctId = null, string? traceId = null, string? sessionId = null, string? spanId = null, string? spanName = null, string? parentId = null, System.Collections.Generic.Dictionary<string!, object!>? properties = null, System.Collections.Generic.Dictionary<string!, object!>? groups = null, bool? privacyMode = null) -> System.IDisposable!
 static PostHog.AI.PostHogAIContext.Current.get -> PostHog.AI.PostHogAIContext?
