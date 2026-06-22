@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.3
+
+### Patch Changes
+
+- 2f5bded: Document public APIs and make `GroupCollection.TryAdd(Group)` store entries by group type instead of group key, matching the collection's one-group-per-type behavior.
+
 ## 0.1.2
 
 ### Patch Changes
