@@ -3,6 +3,7 @@ WORKDIR /app
 
 # Copy the solution and project files
 COPY Directory.Build.props ./
+COPY Directory.Build.targets ./
 COPY Directory.Packages.props ./
 COPY src/PostHog/PostHog.csproj src/PostHog/
 COPY src/PostHog/packages.lock.json src/PostHog/
