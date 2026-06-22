@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.8.1
+
+### Patch Changes
+
+- 60a2194: Preserve per-capture GeoIP override properties when super properties are configured.
+
 ## 2.8.0
 
 ### Minor Changes
