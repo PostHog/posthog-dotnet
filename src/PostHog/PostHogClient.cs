@@ -292,6 +292,10 @@ public sealed class PostHogClient : IPostHogClient
         }
 
         var captureContext = PostHogContextHelper.ResolveCaptureContext(distinctId, properties);
+        object? geoIpDisableOverride = null;
+        var hasGeoIpDisableOverride = captureContext.Properties?.TryGetValue(
+            PostHogProperties.GeoIpDisable,
+            out geoIpDisableOverride) == true;
 
         var capturedEvent = new CapturedEvent(
             eventName,
@@ -305,6 +309,11 @@ public sealed class PostHogClient : IPostHogClient
         }
 
         capturedEvent.Properties.Merge(_options.Value.SuperProperties);
+
+        if (hasGeoIpDisableOverride)
+        {
+            capturedEvent.Properties[PostHogProperties.GeoIpDisable] = geoIpDisableOverride!;
+        }
 
         // Stamp $is_server last so a super property can't override the SDK's server/client classification.
         if (_options.Value.IsServer)

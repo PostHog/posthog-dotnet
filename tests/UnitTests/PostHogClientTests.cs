@@ -416,6 +416,35 @@ public class TheCapturePageViewMethod
 public class TheCaptureMethod
 {
     [Fact]
+    public async Task CapturePropertiesOverrideConfiguredGeoIpDisable()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties["$geoip_disable"] = true;
+        }));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        client.Capture(
+            "test-user",
+            "geoip-event",
+            new Dictionary<string, object>
+            {
+                ["$geoip_disable"] = false,
+                ["$ip"] = "203.0.113.42"
+            });
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement
+            .GetProperty("batch")[0]
+            .GetProperty("properties");
+
+        Assert.False(properties.GetProperty("$geoip_disable").GetBoolean());
+        Assert.Equal("203.0.113.42", properties.GetProperty("$ip").GetString());
+    }
+
+    [Fact]
     public async Task SendsEnrichedCapturedEventsWhenSendFeatureFlagsTrueButDoesNotMakeSameDecideCallTwice()
     {
         var container = new TestContainer();
