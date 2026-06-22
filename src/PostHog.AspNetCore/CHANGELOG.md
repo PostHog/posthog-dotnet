@@ -1,5 +1,16 @@
 # PostHog.AspNetCore
 
+## 2.7.0
+
+### Minor Changes
+
+- 788d9e0: Add feature flag evaluation contexts via `PostHogOptions.EvaluationContexts`. `/flags` requests now send `evaluation_contexts` when configured.
+- 788d9e0: Add request-scoped server request context support for tracing headers and ASP.NET Core metadata.
+
+### Patch Changes
+
+- 788d9e0: Document public APIs and make `GroupCollection.TryAdd(Group)` store entries by group type instead of group key, matching the collection's one-group-per-type behavior.
+
 ## 2.6.3
 
 ### Patch Changes
