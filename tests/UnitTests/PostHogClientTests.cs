@@ -415,12 +415,14 @@ public class TheCapturePageViewMethod
 
 public class TheCaptureMethod
 {
-    [Fact]
-    public async Task CapturePropertiesOverrideConfiguredGeoIpDisable()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task CapturePropertiesOverrideConfiguredGeoIpDisable(bool superValue, bool perCaptureValue)
     {
         var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
         {
-            options.SuperProperties["$geoip_disable"] = true;
+            options.SuperProperties["$geoip_disable"] = superValue;
         }));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
@@ -430,7 +432,7 @@ public class TheCaptureMethod
             "geoip-event",
             new Dictionary<string, object>
             {
-                ["$geoip_disable"] = false,
+                ["$geoip_disable"] = perCaptureValue,
                 ["$ip"] = "203.0.113.42"
             });
         await client.FlushAsync();
@@ -440,7 +442,7 @@ public class TheCaptureMethod
             .GetProperty("batch")[0]
             .GetProperty("properties");
 
-        Assert.False(properties.GetProperty("$geoip_disable").GetBoolean());
+        Assert.Equal(perCaptureValue, properties.GetProperty("$geoip_disable").GetBoolean());
         Assert.Equal("203.0.113.42", properties.GetProperty("$ip").GetString());
     }
 
