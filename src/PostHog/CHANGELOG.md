@@ -1,23 +1,5 @@
 # PostHog
 
-## 2.8.0
-
-### Minor Changes
-
-- b3150eb: Support the `early_exit` filter option in local feature flag evaluation, mirroring the server-side evaluation engine. When a flag's `filters.early_exit` is `true` and a condition group's property filters match (or the group has none) but the rollout percentage excludes the user, evaluation stops and the flag returns a definitive disabled result instead of falling through to later condition groups. A pure property-filter mismatch always falls through, even when `early_exit` is enabled. When the field is absent or `false`, existing behavior is preserved.
-- 9ea2412: Add feature flag evaluation contexts via `PostHogOptions.EvaluationContexts`. `/flags` requests now send `evaluation_contexts` when configured.
-- bd768fd: Add a configurable `$is_server` event property (default `true`) so PostHog can identify server-side events. Set `PostHogOptions.IsServer` to `false` when using the SDK as a client/CLI so the device OS is attributed normally.
-- 479f5ca: Add request-scoped server request context support for tracing headers and ASP.NET Core metadata.
-
-### Patch Changes
-
-- 2367f9b: Refactor duplicate internal SDK code paths without changing public API behavior.
-- 2f5bded: Document public APIs and make `GroupCollection.TryAdd(Group)` store entries by group type instead of group key, matching the collection's one-group-per-type behavior.
-- f0b7308: Include group context in the `$feature_flag_called` dedupe cache key so group-scoped flags fire a separate event for each group a user is evaluated under, instead of being dedup-ed against the first group context the same `(distinctId, featureKey, response)` was seen under. The groups are canonicalized order-independently (`OrderBy(GroupType, StringComparer.Ordinal)`) so two equal collections built in different insertion orders still dedupe.
-- 48fcc1c: Return no-op results instead of throwing from public APIs when PostHog API calls fail.
-- 2caf86e: Reject semver values with leading zeros in local flag evaluation. Per semver 2.0.0 §2, numeric identifiers must not include leading zeros — values like `1.07.3` are not valid semver and should not match targeting conditions. Both override values and flag values are now validated; invalid inputs cause `SemanticVersion.TryParse` to return false so the condition does not match.
-- 620bc67: Use the correct historical_migration wire field for batch capture payloads.
-
 ## 2.7.1
 
 ### Patch Changes
