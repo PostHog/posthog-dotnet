@@ -6,7 +6,6 @@
             <SourceFile ParameterType="System.String" Required="true" />
             <OutputFile ParameterType="System.String" Required="true" />
             <Version ParameterType="System.String" Required="true" />
-            <PackageId ParameterType="System.String" Required="true" />
         </ParameterGroup>
         <Task>
             <Using Namespace="System.IO" />
@@ -17,15 +16,13 @@ if (!string.IsNullOrEmpty(directory))
     Directory.CreateDirectory(directory);
 }
 
-var text = File.ReadAllText(SourceFile)
-    .Replace("<version>", Version)
-    .Replace($"<{PackageId}.version>", Version);
+var text = File.ReadAllText(SourceFile).Replace("<version>", Version);
 File.WriteAllText(OutputFile, text);
             ]]></Code>
         </Task>
     </UsingTask>
 
-    <!-- Render every package's PublicAPI snapshots through a template step so version constants can use <version>. -->
+    <!-- Render PublicAPI snapshots through a template step so version constants can use <version>. -->
     <Target Name="PreparePublicApiSnapshots"
             BeforeTargets="CoreCompile"
             Condition="Exists('$(MSBuildProjectDirectory)\PublicAPI.Shipped.txt') Or Exists('$(MSBuildProjectDirectory)\PublicAPI.Unshipped.txt')">
@@ -36,12 +33,10 @@ File.WriteAllText(OutputFile, text);
         <RenderPublicApiSnapshot SourceFile="$(MSBuildProjectDirectory)\PublicAPI.Shipped.txt"
                                  OutputFile="$(_PublicApiSnapshotOutputDir)PublicAPI.Shipped.txt"
                                  Version="$(Version)"
-                                 PackageId="$(PackageId)"
                                  Condition="Exists('$(MSBuildProjectDirectory)\PublicAPI.Shipped.txt')" />
         <RenderPublicApiSnapshot SourceFile="$(MSBuildProjectDirectory)\PublicAPI.Unshipped.txt"
                                  OutputFile="$(_PublicApiSnapshotOutputDir)PublicAPI.Unshipped.txt"
                                  Version="$(Version)"
-                                 PackageId="$(PackageId)"
                                  Condition="Exists('$(MSBuildProjectDirectory)\PublicAPI.Unshipped.txt')" />
 
         <ItemGroup>
