@@ -335,7 +335,7 @@ const PostHog.Api.PostHogProperties.RequestPath = "$request_path" -> string!
 const PostHog.Api.PostHogProperties.ResponseStatusCode = "$response_status_code" -> string!
 const PostHog.Api.PostHogProperties.SessionId = "$session_id" -> string!
 const PostHog.Api.PostHogProperties.UserAgent = "$user_agent" -> string!
-const PostHog.Versioning.VersionConstants.Version = "2.7.1" -> string!
+const PostHog.Versioning.VersionConstants.Version = "<version>" -> string!
 override PostHog.Api.ApiErrorResult.Equals(object? obj) -> bool
 override PostHog.Api.ApiErrorResult.GetHashCode() -> int
 override PostHog.Api.ApiErrorResult.ToString() -> string!
