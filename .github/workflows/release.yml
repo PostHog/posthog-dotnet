@@ -211,7 +211,6 @@ jobs:
     needs: [version-bump, notify-approval-needed]
     runs-on: ubuntu-latest
     if: always() && needs.version-bump.outputs.committed == 'true'
-    environment: Release
     permissions:
       contents: write
       actions: write
