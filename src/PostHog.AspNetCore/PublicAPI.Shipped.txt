@@ -1,5 +1,6 @@
 #nullable enable
 PostHog.AspNetCore.PostHogRequestContextExtensions
+PostHog.AspNetCore.Versioning.VersionConstants
 PostHog.Cache.HttpContextFeatureFlagCache
 PostHog.Cache.HttpContextFeatureFlagCache.GetAndCacheFeatureFlagsAsync(string! distinctId, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.FeatureFlag!>!>!
 PostHog.Cache.HttpContextFeatureFlagCache.GetAndCacheFlagsAsync(string! distinctId, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? personProperties, PostHog.GroupCollection? groups, System.Func<string!, System.Threading.CancellationToken, System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!>! fetcher, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<PostHog.Api.FlagsResult!>!
@@ -44,6 +45,7 @@ PostHog.PostHogRequestContextOptions.UseTracingHeaders.get -> bool
 PostHog.PostHogRequestContextOptions.UseTracingHeaders.set -> void
 PostHog.Registration
 abstract PostHog.FeatureManagement.PostHogFeatureFlagContextProvider.GetDistinctId() -> string?
+const PostHog.AspNetCore.Versioning.VersionConstants.Version = "<version>" -> string!
 static PostHog.AspNetCore.PostHogRequestContextExtensions.Capture(this PostHog.IPostHogClient! client, string! eventName) -> bool
 static PostHog.AspNetCore.PostHogRequestContextExtensions.Capture(this PostHog.IPostHogClient! client, string! eventName, System.Collections.Generic.Dictionary<string!, object!>? properties) -> bool
 static PostHog.AspNetCore.PostHogRequestContextExtensions.CaptureException(this PostHog.IPostHogClient! client, System.Exception! exception, System.Collections.Generic.Dictionary<string!, object!>? properties = null) -> bool
