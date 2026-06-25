@@ -142,9 +142,11 @@ internal sealed class PostHogApiClient : IDisposable
 
         PrepareAndMutatePayload(payload);
 
-        return await _httpClient.PostJsonAsync<FlagsApiResult>(
+        return await _httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             endpointUrl,
             payload,
+            _timeProvider,
+            _options.Value,
             cancellationToken);
     }
 

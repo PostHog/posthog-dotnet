@@ -43,6 +43,61 @@ internal static class HttpClientExtensions
     }
 
     /// <summary>
+    /// Sends a POST request with retry logic only for network/transport failures and timeouts.
+    /// Non-successful HTTP responses are not retried.
+    /// </summary>
+    public static async Task<TBody?> PostJsonWithNetworkRetryAsync<TBody>(
+        this HttpClient httpClient,
+        Uri requestUri,
+        object content,
+        TimeProvider timeProvider,
+        PostHogOptions options,
+        CancellationToken cancellationToken)
+    {
+        var maxRetries = options.MaxRetries;
+        var currentDelay = options.InitialRetryDelay;
+        var maxDelay = options.MaxRetryDelay;
+        var attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await httpClient.PostAsJsonAsync(
+                    requestUri,
+                    content,
+                    JsonSerializerHelper.Options,
+                    cancellationToken);
+            }
+            catch (HttpRequestException) when (attempt <= maxRetries)
+            {
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt <= maxRetries)
+            {
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
+
+            using (response)
+            {
+                await response.EnsureSuccessfulApiCall(cancellationToken);
+
+                var result = await response.Content.ReadAsStreamAsync(cancellationToken);
+                return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
+                    result,
+                    cancellationToken: cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
     /// Sends a POST request with retry logic for transient failures.
     /// Retries on 5xx, 408 (Request Timeout), and 429 (Too Many Requests) status codes.
     /// Optionally compresses the request body with gzip.

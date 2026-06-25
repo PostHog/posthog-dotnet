@@ -549,6 +549,99 @@ public class ThePostJsonWithRetryAsyncMethod
 #endif
 }
 
+public class ThePostJsonWithNetworkRetryAsyncMethod
+{
+    static readonly Uri FlagsUrl = new("https://us.i.posthog.com/flags/?v=2");
+
+    static PostHogOptions CreateOptions(int maxRetries = 3) => new()
+    {
+        ProjectToken = "test-api-key",
+        MaxRetries = maxRetries,
+        InitialRetryDelay = TimeSpan.FromMilliseconds(1),
+        MaxRetryDelay = TimeSpan.FromSeconds(30)
+    };
+
+    static HttpClient CreateHttpClient(FakeRetryHttpMessageHandler handler)
+        => new(handler) { BaseAddress = new Uri("https://us.i.posthog.com") };
+
+    [Fact]
+    public async Task RetriesOnHttpRequestExceptionThenSucceeds()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddException(new HttpRequestException("Network error"));
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions();
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        await handler.WaitForRequestCountAsync(1);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task RetriesOnTaskCanceledExceptionFromTimeoutThenSucceeds()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddException(new TaskCanceledException("The request timed out."));
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions();
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        await handler.WaitForRequestCountAsync(1);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout)] // 408
+    [InlineData(HttpStatusCode.TooManyRequests)] // 429
+    [InlineData(HttpStatusCode.InternalServerError)] // 500
+    [InlineData(HttpStatusCode.BadGateway)] // 502
+    [InlineData(HttpStatusCode.ServiceUnavailable)] // 503
+    [InlineData(HttpStatusCode.GatewayTimeout)] // 504
+    public async Task DoesNotRetryOnHttpErrorStatusCodes(HttpStatusCode statusCode)
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } }); // Should never be reached
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions();
+        var timeProvider = new FakeTimeProvider();
+
+        await Assert.ThrowsAsync<ApiException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                CancellationToken.None));
+
+        Assert.Equal(1, handler.RequestCount);
+    }
+}
+
 public class ThePostCompressedJsonAsyncMethod
 {
     static readonly Uri BatchUrl = new("https://us.i.posthog.com/batch");
