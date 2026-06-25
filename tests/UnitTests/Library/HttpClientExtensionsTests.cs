@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
@@ -565,10 +566,10 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         => new(handler) { BaseAddress = new Uri("https://us.i.posthog.com") };
 
     [Fact]
-    public async Task RetriesOnHttpRequestExceptionThenSucceeds()
+    public async Task RetriesOnConnectionResetThenSucceeds()
     {
         var handler = new FakeRetryHttpMessageHandler();
-        handler.AddException(new HttpRequestException("Network error"));
+        handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
         handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions();
@@ -587,6 +588,27 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
 
         Assert.NotNull(result);
         Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task DoesNotRetryConnectionRefused()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddException(new HttpRequestException("Connection refused", new SocketException((int)SocketError.ConnectionRefused)));
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions();
+        var timeProvider = new FakeTimeProvider();
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                CancellationToken.None));
+
+        Assert.Equal(1, handler.RequestCount);
     }
 
     [Fact]

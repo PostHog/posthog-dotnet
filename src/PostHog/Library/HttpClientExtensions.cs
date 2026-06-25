@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
@@ -72,7 +73,7 @@ internal static class HttpClientExtensions
                     JsonSerializerHelper.Options,
                     cancellationToken);
             }
-            catch (HttpRequestException) when (attempt <= maxRetries)
+            catch (HttpRequestException e) when (attempt <= maxRetries && IsRetryableFlagsHttpRequestException(e))
             {
                 await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
                 currentDelay = DoubleWithCap(currentDelay, maxDelay);
@@ -95,6 +96,26 @@ internal static class HttpClientExtensions
                     cancellationToken: cancellationToken);
             }
         }
+    }
+
+    static bool IsRetryableFlagsHttpRequestException(HttpRequestException exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is SocketException socketException)
+            {
+                return socketException.SocketErrorCode is SocketError.ConnectionReset
+                    or SocketError.NetworkReset
+                    or SocketError.TimedOut;
+            }
+
+            if (current is EndOfStreamException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
