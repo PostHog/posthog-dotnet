@@ -591,6 +591,28 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
     }
 
     [Fact]
+    public async Task DoesNotRetryWhenFeatureFlagRequestMaxRetriesIsZero()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions();
+        options.FeatureFlagRequestMaxRetries = 0;
+        var timeProvider = new FakeTimeProvider();
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                CancellationToken.None));
+
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task DoesNotRetryConnectionRefused()
     {
         var handler = new FakeRetryHttpMessageHandler();

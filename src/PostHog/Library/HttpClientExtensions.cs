@@ -55,7 +55,7 @@ internal static class HttpClientExtensions
         PostHogOptions options,
         CancellationToken cancellationToken)
     {
-        var maxRetries = options.MaxRetries;
+        var maxRetries = options.FeatureFlagRequestMaxRetries;
         var currentDelay = options.InitialRetryDelay;
         var maxDelay = options.MaxRetryDelay;
         var attempt = 0;
