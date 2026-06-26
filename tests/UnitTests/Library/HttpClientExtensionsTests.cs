@@ -554,14 +554,18 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
 {
     static readonly Uri FlagsUrl = new("https://us.i.posthog.com/flags/?v=2");
 
-    static PostHogOptions CreateOptions(int maxRetries = 3) => new()
+    static PostHogOptions CreateOptions(int maxRetries = 3, TimeSpan? maxRetryDelay = null)
     {
-        ProjectToken = "test-api-key",
-        MaxRetries = maxRetries,
-        FeatureFlagRequestMaxRetries = maxRetries,
-        InitialRetryDelay = TimeSpan.FromMilliseconds(1),
-        MaxRetryDelay = TimeSpan.FromSeconds(30)
-    };
+        HttpClientExtensions.ResetFeatureFlagCircuitBreakerForTests();
+        return new PostHogOptions
+        {
+            ProjectToken = "test-api-key",
+            MaxRetries = maxRetries,
+            FeatureFlagRequestMaxRetries = maxRetries,
+            InitialRetryDelay = TimeSpan.FromMilliseconds(1),
+            MaxRetryDelay = maxRetryDelay ?? TimeSpan.FromSeconds(30)
+        };
+    }
 
     static HttpClient CreateHttpClient(FakeRetryHttpMessageHandler handler)
         => new(handler) { BaseAddress = new Uri("https://us.i.posthog.com") };
@@ -584,7 +588,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             CancellationToken.None);
 
         await handler.WaitForRequestCountAsync(1);
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        timeProvider.Advance(TimeSpan.FromMilliseconds(299));
+        Assert.Equal(1, handler.RequestCount);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         var result = await task;
 
         Assert.NotNull(result);
@@ -613,7 +619,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         for (var i = 1; i <= 4 && !task.IsCompleted; i++)
         {
             await handler.WaitForRequestCountAsync(i);
-            timeProvider.Advance(TimeSpan.FromMilliseconds(50));
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
         }
 
         var result = await task;
@@ -644,11 +650,91 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         for (var i = 1; i <= 4 && !task.IsCompleted; i++)
         {
             await handler.WaitForRequestCountAsync(i);
-            timeProvider.Advance(TimeSpan.FromMilliseconds(50));
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
         }
 
         await Assert.ThrowsAsync<HttpRequestException>(() => task);
         Assert.Equal(4, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task OpensCircuitAfterConsecutiveTransientFailuresAndFailsFast()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        for (var i = 0; i < 5; i++)
+        {
+            handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        }
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        {
+            await handler.WaitForRequestCountAsync(i);
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        }
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => task);
+        Assert.Equal(5, handler.RequestCount);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                CancellationToken.None));
+
+        Assert.Equal(5, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task HalfOpenProbeClosesCircuitAfterCooldown()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        for (var i = 0; i < 5; i++)
+        {
+            handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        }
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        {
+            await handler.WaitForRequestCountAsync(i);
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        }
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => task);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        var result = await httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(6, handler.RequestCount);
     }
 
     [Fact]
