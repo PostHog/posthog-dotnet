@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PostHog;
+using PostHog.Features;
 using PostHog.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -102,6 +103,41 @@ app.MapPost("/capture", (CaptureRequest request) =>
     return Results.Ok(new { success = true });
 });
 
+app.MapPost("/get_feature_flag", async (GetFeatureFlagRequest request, CancellationToken cancellationToken) =>
+{
+    if (state.Client is null)
+    {
+        return Results.BadRequest(new { error = "SDK not initialized" });
+    }
+
+    if (string.IsNullOrEmpty(request.Key) || string.IsNullOrEmpty(request.DistinctId))
+    {
+        return Results.BadRequest(new { error = "key and distinct_id are required" });
+    }
+
+    var options = new FeatureFlagOptions
+    {
+        PersonProperties = request.PersonProperties,
+        Groups = BuildGroupCollection(request.Groups, request.GroupProperties),
+        FlagKeysToEvaluate = [request.Key],
+        DisableGeoip = request.DisableGeoip ?? false
+    };
+
+#pragma warning disable CS0618 // Compliance adapter exercises the deprecated single-flag API contract.
+    var flag = await state.Client.GetFeatureFlagAsync(
+        request.Key,
+        request.DistinctId,
+        options,
+        cancellationToken);
+#pragma warning restore CS0618
+
+    // Flush the side-effect $feature_flag_called event immediately so adapter resets do not
+    // dispose a later client and leak the previous test's pending event into the next mock state.
+    await state.Client.FlushAsync();
+
+    return Results.Ok(new { success = true, value = ToFeatureFlagValue(flag) });
+});
+
 app.MapPost("/flush", async () =>
 {
     if (state.Client is null)
@@ -143,6 +179,30 @@ app.MapPost("/reset", async () =>
     return Results.Ok(new { success = true });
 });
 
+static GroupCollection? BuildGroupCollection(
+    Dictionary<string, string>? groups,
+    Dictionary<string, Dictionary<string, object?>>? groupProperties)
+{
+    if (groups is null or { Count: 0 })
+    {
+        return null;
+    }
+
+    var collection = new GroupCollection();
+    foreach (var (groupType, groupKey) in groups)
+    {
+        var properties = groupProperties?.GetValueOrDefault(groupType) ?? [];
+        collection.Add(new Group(groupType, groupKey, properties));
+    }
+
+    return collection;
+}
+
+static object ToFeatureFlagValue(FeatureFlag? flag) =>
+    flag is null
+        ? "undefined"
+        : flag.VariantKey ?? (object)flag.IsEnabled;
+
 app.Run();
 
 // --- Models ---
@@ -168,6 +228,16 @@ record CaptureRequest(
     [property: JsonPropertyName("event")] string Event,
     [property: JsonPropertyName("properties")] Dictionary<string, object>? Properties = null,
     [property: JsonPropertyName("timestamp")] string? Timestamp = null
+);
+
+record GetFeatureFlagRequest(
+    [property: JsonPropertyName("key")] string Key,
+    [property: JsonPropertyName("distinct_id")] string DistinctId,
+    [property: JsonPropertyName("person_properties")] Dictionary<string, object?>? PersonProperties = null,
+    [property: JsonPropertyName("groups")] Dictionary<string, string>? Groups = null,
+    [property: JsonPropertyName("group_properties")] Dictionary<string, Dictionary<string, object?>>? GroupProperties = null,
+    [property: JsonPropertyName("disable_geoip")] bool? DisableGeoip = null,
+    [property: JsonPropertyName("force_remote")] bool? ForceRemote = null
 );
 
 record StateResponse(

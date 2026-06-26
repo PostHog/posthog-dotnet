@@ -86,6 +86,9 @@ internal static class HttpClientExtensions
                 continue;
             }
 
+            // Response processing is outside the try-catch so that exceptions from
+            // EnsureSuccessfulApiCall (which may return HttpRequestException for 404s) won't
+            // be caught by the retry logic above.
             using (response)
             {
                 await response.EnsureSuccessfulApiCall(cancellationToken);

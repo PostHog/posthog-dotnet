@@ -39,6 +39,11 @@ public class AllFeatureFlagsOptions
     public Dictionary<string, object?>? PersonProperties { get; init; }
 
     /// <summary>
+    /// Whether to disable GeoIP lookup for this feature flag request. Defaults to <c>false</c>.
+    /// </summary>
+    public bool DisableGeoip { get; init; }
+
+    /// <summary>
     /// A list of the currently active groups. Required if the flag depends on groups. Each group can optionally
     /// include properties that override what's on PostHog's server when evaluating feature flags.
     /// Specifying properties for each group is required if <see cref="OnlyEvaluateLocally"/> is <c>true</c>.

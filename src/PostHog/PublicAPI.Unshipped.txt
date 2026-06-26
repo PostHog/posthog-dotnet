@@ -1,3 +1,5 @@
 #nullable enable
+PostHog.AllFeatureFlagsOptions.DisableGeoip.get -> bool
+PostHog.AllFeatureFlagsOptions.DisableGeoip.init -> void
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void

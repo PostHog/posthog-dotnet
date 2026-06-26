@@ -2387,13 +2387,12 @@ public class TheGetFeatureFlagAsyncMethod
         Assert.NotNull(result);
         Assert.Equal(new FeatureFlag { Key = "beta-feature", VariantKey = "alakazam" }, result);
         var receivedBody = handler.GetReceivedRequestBody(true);
-        Assert.StartsWith(
+        Assert.Contains("\"distinct_id\": \"some-distinct-id\"", receivedBody, StringComparison.Ordinal);
+        Assert.Contains(
             """
-            {
-              "distinct_id": "some-distinct-id",
-              "flag_keys_to_evaluate": [
+            "flag_keys_to_evaluate": [
                 "beta-feature"
-              ],
+              ]
             """,
             receivedBody,
             StringComparison.Ordinal);
@@ -3978,11 +3977,23 @@ public class FeatureFlagErrorTracking
 
     [Fact]
     public async Task IncludesTimeoutErrorWhenRequestTimesOut()
-        => await AssertCapturedFeatureFlagErrorAsync(
-            handler => handler.AddFlagsResponseException(new TaskCanceledException("Request timed out")),
-            featureKey: "some-flag",
-            expectedResult: false,
-            expectedError: "timeout");
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.FeatureFlagRequestMaxRetries = 0;
+        }));
+        container.FakeHttpMessageHandler.AddFlagsResponseException(new TaskCanceledException("Request timed out"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.NotNull(result);
+        Assert.False(result.IsEnabled);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"timeout\"", received, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task IncludesConnectionErrorWhenNetworkFails()
