@@ -2387,12 +2387,13 @@ public class TheGetFeatureFlagAsyncMethod
         Assert.NotNull(result);
         Assert.Equal(new FeatureFlag { Key = "beta-feature", VariantKey = "alakazam" }, result);
         var receivedBody = handler.GetReceivedRequestBody(true);
-        Assert.Contains("\"distinct_id\": \"some-distinct-id\"", receivedBody, StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.StartsWith(
             """
-            "flag_keys_to_evaluate": [
+            {
+              "distinct_id": "some-distinct-id",
+              "flag_keys_to_evaluate": [
                 "beta-feature"
-              ]
+              ],
             """,
             receivedBody,
             StringComparison.Ordinal);
