@@ -2,7 +2,7 @@
   "name": "posthog-dotnet",
   "private": true,
   "description": "Release metadata and changesets for the PostHog .NET SDK",
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@11.7.0",
   "scripts": {
     "changeset": "changeset"
   },
