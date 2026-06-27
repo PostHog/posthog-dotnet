@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 using PostHog;
 using PostHog.Versioning;
 
+const int StaleEventDrainDelayMs = 100;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure JSON options for consistent serialization
@@ -135,9 +137,10 @@ app.MapPost("/get_feature_flag", async (FeatureFlagRequest request) =>
 
         // Feature-flag evaluation captures a documented $feature_flag_called side-effect event.
         // Flush it in the same adapter action so a later /reset does not send stale events into
-        // the next harness test's freshly-reset mock server.
+        // the next harness test's freshly-reset mock server. Keep a named drain delay aligned with
+        // the /flush endpoint so async send completion timing is explicit and tunable.
         await state.Client.FlushAsync();
-        await Task.Delay(50);
+        await Task.Delay(StaleEventDrainDelayMs);
 
         return Results.Ok(new
         {
@@ -164,8 +167,8 @@ app.MapPost("/flush", async () =>
     {
         await state.Client.FlushAsync();
 
-        // Wait a bit for any pending requests to complete
-        await Task.Delay(100);
+        // Wait a bit for any pending requests to complete.
+        await Task.Delay(StaleEventDrainDelayMs);
     }
     catch (Exception ex)
     {
