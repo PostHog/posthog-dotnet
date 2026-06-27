@@ -14,7 +14,6 @@ namespace PostHog.Library;
 internal static class HttpClientExtensions
 {
     static readonly TimeSpan FeatureFlagInitialRetryDelay = TimeSpan.FromMilliseconds(300);
-    static readonly FeatureFlagRequestCircuitBreaker FeatureFlagCircuitBreaker = new();
 
     /// <summary>
     /// Sends a POST request to the specified Uri containing the value serialized as JSON in the request body.
@@ -56,16 +55,24 @@ internal static class HttpClientExtensions
         object content,
         TimeProvider timeProvider,
         PostHogOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        FeatureFlagRequestCircuitBreaker? circuitBreaker = null)
     {
         var maxRetries = options.FeatureFlagRequestMaxRetries;
         var currentDelay = FeatureFlagInitialRetryDelay;
         var maxDelay = options.MaxRetryDelay;
         var attempt = 0;
+        circuitBreaker ??= new FeatureFlagRequestCircuitBreaker();
 
-        if (!FeatureFlagCircuitBreaker.TryEnter(timeProvider, out var isHalfOpenProbe))
+        if (!circuitBreaker.TryEnter(timeProvider, out var isHalfOpenProbe))
         {
             throw new HttpRequestException("Feature flag request circuit breaker is open.");
+        }
+
+        async Task DelayBeforeRetry()
+        {
+            await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+            currentDelay = DoubleWithCap(currentDelay, maxDelay);
         }
 
         while (true)
@@ -83,36 +90,42 @@ internal static class HttpClientExtensions
             }
             catch (HttpRequestException e) when (IsRetryableFlagsHttpRequestException(e))
             {
-                if (attempt > maxRetries ||
-                    !FeatureFlagCircuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe))
+                var circuitClosed = circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe);
+                if (attempt > maxRetries || !circuitClosed)
                 {
                     throw;
                 }
 
-                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
-                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                await DelayBeforeRetry();
                 continue;
             }
             catch (HttpRequestException)
             {
-                FeatureFlagCircuitBreaker.RecordNonTransientFailure(isHalfOpenProbe);
+                if (isHalfOpenProbe)
+                {
+                    circuitBreaker.RecordResponseReceived();
+                }
                 throw;
             }
             catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                if (attempt > maxRetries ||
-                    !FeatureFlagCircuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe))
+                var circuitClosed = circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe);
+                if (attempt > maxRetries || !circuitClosed)
                 {
                     throw;
                 }
 
-                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
-                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                await DelayBeforeRetry();
                 continue;
+            }
+            catch (OperationCanceledException) when (isHalfOpenProbe && cancellationToken.IsCancellationRequested)
+            {
+                circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe: true);
+                throw;
             }
             catch (Exception) when (isHalfOpenProbe)
             {
-                FeatureFlagCircuitBreaker.RecordNonTransientFailure(isHalfOpenProbe);
+                circuitBreaker.RecordResponseReceived();
                 throw;
             }
 
@@ -121,7 +134,10 @@ internal static class HttpClientExtensions
             // be caught by the retry logic above.
             using (response)
             {
-                FeatureFlagCircuitBreaker.RecordResponseReceived();
+                if (isHalfOpenProbe || response.IsSuccessStatusCode)
+                {
+                    circuitBreaker.RecordResponseReceived();
+                }
 
                 await response.EnsureSuccessfulApiCall(cancellationToken);
 
@@ -132,9 +148,6 @@ internal static class HttpClientExtensions
             }
         }
     }
-
-    internal static void ResetFeatureFlagCircuitBreakerForTests()
-        => FeatureFlagCircuitBreaker.Reset();
 
     static bool IsRetryableFlagsHttpRequestException(HttpRequestException exception)
     {
@@ -469,26 +482,6 @@ sealed class FeatureFlagRequestCircuitBreaker
     }
 
     public void RecordResponseReceived()
-    {
-        lock (_lock)
-        {
-            _state = State.Closed;
-            _consecutiveFailures = 0;
-            _openUntil = default;
-        }
-    }
-
-    public void RecordNonTransientFailure(bool isHalfOpenProbe)
-    {
-        if (!isHalfOpenProbe)
-        {
-            return;
-        }
-
-        RecordResponseReceived();
-    }
-
-    public void Reset()
     {
         lock (_lock)
         {
