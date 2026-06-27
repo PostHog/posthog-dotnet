@@ -2390,10 +2390,14 @@ public class TheGetFeatureFlagAsyncMethod
         Assert.StartsWith(
             """
             {
+              "token": "fake-project-token",
               "distinct_id": "some-distinct-id",
+              "groups": {},
+              "group_properties": {},
+              "geoip_disable": false,
               "flag_keys_to_evaluate": [
                 "beta-feature"
-              ],
+              ]
             """,
             receivedBody,
             StringComparison.Ordinal);

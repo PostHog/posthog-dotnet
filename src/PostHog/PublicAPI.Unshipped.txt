@@ -1,1 +1,3 @@
 #nullable enable
+PostHog.AllFeatureFlagsOptions.DisableGeoIp.get -> bool
+PostHog.AllFeatureFlagsOptions.DisableGeoIp.init -> void
