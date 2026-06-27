@@ -554,14 +554,17 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
 {
     static readonly Uri FlagsUrl = new("https://us.i.posthog.com/flags/?v=2");
 
-    static PostHogOptions CreateOptions(int maxRetries = 3, TimeSpan? maxRetryDelay = null) => new()
-    {
-        ProjectToken = "test-api-key",
-        MaxRetries = maxRetries,
-        FeatureFlagRequestMaxRetries = maxRetries,
-        InitialRetryDelay = TimeSpan.FromMilliseconds(1),
-        MaxRetryDelay = maxRetryDelay ?? TimeSpan.FromSeconds(30)
-    };
+    static PostHogOptions CreateOptions(
+        int maxRetries = 3,
+        TimeSpan? initialRetryDelay = null,
+        TimeSpan? maxRetryDelay = null) => new()
+        {
+            ProjectToken = "test-api-key",
+            MaxRetries = maxRetries,
+            FeatureFlagRequestMaxRetries = maxRetries,
+            InitialRetryDelay = initialRetryDelay ?? TimeSpan.FromMilliseconds(1),
+            MaxRetryDelay = maxRetryDelay ?? TimeSpan.FromSeconds(30)
+        };
 
     static HttpClient CreateHttpClient(FakeRetryHttpMessageHandler handler)
         => new(handler) { BaseAddress = new Uri("https://us.i.posthog.com") };
@@ -584,13 +587,45 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             CancellationToken.None);
 
         await handler.WaitForRequestCountAsync(1);
-        timeProvider.Advance(TimeSpan.FromMilliseconds(299));
         Assert.Equal(1, handler.RequestCount);
         timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         var result = await task;
 
         Assert.NotNull(result);
         Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task UsesInitialRetryDelayAndDoublesForFeatureFlagRetries()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 2, initialRetryDelay: TimeSpan.FromMilliseconds(10));
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            CancellationToken.None);
+
+        await handler.WaitForRequestCountAsync(1);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(9));
+        Assert.Equal(1, handler.RequestCount);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        await handler.WaitForRequestCountAsync(2);
+
+        timeProvider.Advance(TimeSpan.FromMilliseconds(19));
+        Assert.Equal(2, handler.RequestCount);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.Equal(3, handler.RequestCount);
     }
 
     [Fact]

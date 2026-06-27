@@ -13,8 +13,6 @@ namespace PostHog.Library;
 /// </summary>
 internal static class HttpClientExtensions
 {
-    static readonly TimeSpan FeatureFlagInitialRetryDelay = TimeSpan.FromMilliseconds(300);
-
     /// <summary>
     /// Sends a POST request to the specified Uri containing the value serialized as JSON in the request body.
     /// Returns the response body deserialized as <typeparamref name="TBody"/>.
@@ -59,7 +57,7 @@ internal static class HttpClientExtensions
         FeatureFlagRequestCircuitBreaker? circuitBreaker = null)
     {
         var maxRetries = options.FeatureFlagRequestMaxRetries;
-        var currentDelay = FeatureFlagInitialRetryDelay;
+        var currentDelay = options.InitialRetryDelay;
         var maxDelay = options.MaxRetryDelay;
         var attempt = 0;
         circuitBreaker ??= new FeatureFlagRequestCircuitBreaker();
