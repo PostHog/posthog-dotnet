@@ -606,6 +606,56 @@ public class ThePostCompressedJsonAsyncMethod
     }
 
     [Fact]
+    public async Task FallsBackToUncompressedRequestWhenCompressionFails()
+    {
+        string? capturedBody = null;
+        IEnumerable<string>? capturedContentEncoding = null;
+
+        var handler = new LambdaHttpMessageHandler(async request =>
+        {
+            capturedContentEncoding = request.Content?.Headers.ContentEncoding;
+            if (request.Content != null)
+            {
+                capturedBody = await request.Content.ReadAsStringAsync();
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"status\": 1}")
+            };
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var options = new PostHogOptions
+        {
+            ProjectToken = "test-api-key",
+            EnableCompression = true
+        };
+        var timeProvider = new FakeTimeProvider();
+        var payload = new { api_key = "test", batch = new[] { new { @event = "test-event" } } };
+        var originalCompressor = HttpClientExtensions.CreateCompressedJsonContent;
+        HttpClientExtensions.CreateCompressedJsonContent = _ => throw new IOException("gzip failed");
+
+        try
+        {
+            await httpClient.PostJsonWithRetryAsync<ApiResult>(
+                BatchUrl,
+                payload,
+                timeProvider,
+                options,
+                CancellationToken.None);
+        }
+        finally
+        {
+            HttpClientExtensions.CreateCompressedJsonContent = originalCompressor;
+        }
+
+        Assert.Empty(capturedContentEncoding ?? Enumerable.Empty<string>());
+        Assert.NotNull(capturedBody);
+        Assert.Contains("test-event", capturedBody, StringComparison.Ordinal);
+        Assert.Contains("api_key", capturedBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DoesNotCompressWhenCompressionDisabled()
     {
         IEnumerable<string>? capturedContentEncoding = null;

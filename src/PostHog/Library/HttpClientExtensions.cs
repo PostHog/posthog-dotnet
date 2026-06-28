@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
@@ -12,6 +13,7 @@ namespace PostHog.Library;
 /// </summary>
 internal static class HttpClientExtensions
 {
+    internal static Func<byte[], ByteArrayContent> CreateCompressedJsonContent = CreateGzipJsonContent;
     /// <summary>
     /// Sends a POST request to the specified Uri containing the value serialized as JSON in the request body.
     /// Returns the response body deserialized as <typeparamref name="TBody"/>.
@@ -274,7 +276,8 @@ internal static class HttpClientExtensions
         object content,
         CancellationToken cancellationToken)
     {
-        var compressedContent = await TryCreateCompressedJsonContentAsync(content, cancellationToken);
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(content, JsonSerializerHelper.Options);
+        var compressedContent = TryCreateCompressedJsonContent(jsonBytes);
         if (compressedContent is null)
         {
             return await httpClient.PostAsJsonAsync(
@@ -290,36 +293,35 @@ internal static class HttpClientExtensions
         }
     }
 
-    static async Task<ByteArrayContent?> TryCreateCompressedJsonContentAsync(
-        object content,
-        CancellationToken cancellationToken)
+    static ByteArrayContent? TryCreateCompressedJsonContent(byte[] jsonBytes)
     {
         try
         {
-            // Stream JSON directly into gzip to avoid intermediate allocation
-            using var memoryStream = new MemoryStream(4096);
-            using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
-            {
-                await JsonSerializer.SerializeAsync(gzipStream, content, JsonSerializerHelper.Options, cancellationToken);
-            }
-
-            // Use TryGetBuffer to avoid ToArray() copy when possible
-            var compressedContent = memoryStream.TryGetBuffer(out var buffer)
-                ? new ByteArrayContent(buffer.Array!, buffer.Offset, buffer.Count)
-                : new ByteArrayContent(memoryStream.ToArray());
-
-            compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            compressedContent.Headers.ContentEncoding.Add("gzip");
-            return compressedContent;
+            return CreateCompressedJsonContent(jsonBytes);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or ObjectDisposedException)
         {
+            Debug.WriteLine($"Failed to gzip request body, sending uncompressed: {ex}");
             return null;
         }
-        catch (InvalidDataException)
+    }
+
+    static ByteArrayContent CreateGzipJsonContent(byte[] jsonBytes)
+    {
+        using var memoryStream = new MemoryStream(4096);
+        using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
         {
-            return null;
+            gzipStream.Write(jsonBytes, 0, jsonBytes.Length);
         }
+
+        // Use TryGetBuffer to avoid ToArray() copy when possible
+        var compressedContent = memoryStream.TryGetBuffer(out var buffer)
+            ? new ByteArrayContent(buffer.Array!, buffer.Offset, buffer.Count)
+            : new ByteArrayContent(memoryStream.ToArray());
+
+        compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        compressedContent.Headers.ContentEncoding.Add("gzip");
+        return compressedContent;
     }
 
     public static async Task EnsureSuccessfulApiCall(
