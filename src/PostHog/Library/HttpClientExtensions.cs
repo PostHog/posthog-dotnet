@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
@@ -12,6 +14,7 @@ namespace PostHog.Library;
 /// </summary>
 internal static class HttpClientExtensions
 {
+    internal static Func<object, CancellationToken, Task<ByteArrayContent>> CreateCompressedJsonContentAsync = CreateGzipJsonContentAsync;
     /// <summary>
     /// Sends a POST request to the specified Uri containing the value serialized as JSON in the request body.
     /// Returns the response body deserialized as <typeparamref name="TBody"/>.
@@ -43,6 +46,84 @@ internal static class HttpClientExtensions
     }
 
     /// <summary>
+    /// Sends a POST request with retry logic only for network/transport failures and timeouts.
+    /// Non-successful HTTP responses are not retried.
+    /// </summary>
+    public static async Task<TBody?> PostJsonWithNetworkRetryAsync<TBody>(
+        this HttpClient httpClient,
+        Uri requestUri,
+        object content,
+        TimeProvider timeProvider,
+        PostHogOptions options,
+        CancellationToken cancellationToken)
+    {
+        var maxRetries = options.FeatureFlagRequestMaxRetries;
+        var currentDelay = options.InitialRetryDelay;
+        var maxDelay = options.MaxRetryDelay;
+        var attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await httpClient.PostAsJsonAsync(
+                    requestUri,
+                    content,
+                    JsonSerializerHelper.Options,
+                    cancellationToken);
+            }
+            catch (HttpRequestException e) when (attempt <= maxRetries && IsRetryableFlagsHttpRequestException(e))
+            {
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt <= maxRetries)
+            {
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
+
+            // Response processing is outside the try-catch so that exceptions from
+            // EnsureSuccessfulApiCall (which may return HttpRequestException for 404s) won't
+            // be caught by the retry logic above.
+            using (response)
+            {
+                await response.EnsureSuccessfulApiCall(cancellationToken);
+
+                var result = await response.Content.ReadAsStreamAsync(cancellationToken);
+                return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
+                    result,
+                    cancellationToken: cancellationToken);
+            }
+        }
+    }
+
+    static bool IsRetryableFlagsHttpRequestException(HttpRequestException exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is SocketException socketException)
+            {
+                return socketException.SocketErrorCode is SocketError.ConnectionReset
+                    or SocketError.NetworkReset
+                    or SocketError.TimedOut;
+            }
+
+            if (current is EndOfStreamException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Sends a POST request with retry logic for transient failures.
     /// Retries on 5xx, 408 (Request Timeout), and 429 (Too Many Requests) status codes.
     /// Optionally compresses the request body with gzip.
@@ -69,7 +150,7 @@ internal static class HttpClientExtensions
             try
             {
                 response = enableCompression
-                    ? await PostCompressedJsonAsync(httpClient, requestUri, content, cancellationToken)
+                    ? await PostCompressedJsonWithFallbackAsync(httpClient, requestUri, content, cancellationToken)
                     : await httpClient.PostAsJsonAsync(
                         requestUri,
                         content,
@@ -268,13 +349,48 @@ internal static class HttpClientExtensions
 #endif
     }
 
-    static async Task<HttpResponseMessage> PostCompressedJsonAsync(
+    static async Task<HttpResponseMessage> PostCompressedJsonWithFallbackAsync(
         HttpClient httpClient,
         Uri requestUri,
         object content,
         CancellationToken cancellationToken)
     {
-        // Stream JSON directly into gzip to avoid intermediate allocation
+        var compressedContent = await TryCreateCompressedJsonContentAsync(content, cancellationToken);
+        if (compressedContent is null)
+        {
+            return await httpClient.PostAsJsonAsync(
+                requestUri,
+                content,
+                JsonSerializerHelper.Options,
+                cancellationToken);
+        }
+
+        using (compressedContent)
+        {
+            return await httpClient.PostAsync(requestUri, compressedContent, cancellationToken);
+        }
+    }
+
+    static async Task<ByteArrayContent?> TryCreateCompressedJsonContentAsync(
+        object content,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CreateCompressedJsonContentAsync(content, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or ObjectDisposedException)
+        {
+            Debug.WriteLine($"Failed to gzip request body, sending uncompressed: {ex}");
+            return null;
+        }
+    }
+
+    static async Task<ByteArrayContent> CreateGzipJsonContentAsync(
+        object content,
+        CancellationToken cancellationToken)
+    {
+        // Stream JSON directly into gzip to avoid intermediate allocation and honor cancellation during serialization.
         using var memoryStream = new MemoryStream(4096);
         using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
         {
@@ -286,13 +402,9 @@ internal static class HttpClientExtensions
             ? new ByteArrayContent(buffer.Array!, buffer.Offset, buffer.Count)
             : new ByteArrayContent(memoryStream.ToArray());
 
-        using (compressedContent)
-        {
-            compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            compressedContent.Headers.ContentEncoding.Add("gzip");
-
-            return await httpClient.PostAsync(requestUri, compressedContent, cancellationToken);
-        }
+        compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        compressedContent.Headers.ContentEncoding.Add("gzip");
+        return compressedContent;
     }
 
     public static async Task EnsureSuccessfulApiCall(

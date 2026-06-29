@@ -1,5 +1,17 @@
 # PostHog
 
+## 2.8.3
+
+### Patch Changes
+
+- 7bab8dc: Fall back to uncompressed batch uploads when local gzip compression fails.
+
+## 2.8.2
+
+### Patch Changes
+
+- 0da29c6: Retry feature flag requests after transient network errors only. The feature flag request retry count defaults to 1 and can be set to 0 to disable retries.
+
 ## 2.8.1
 
 ### Patch Changes

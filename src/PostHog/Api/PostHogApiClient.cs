@@ -149,9 +149,13 @@ internal sealed class PostHogApiClient : IDisposable
 
         groupProperties?.AddToPayload(payload);
 
-        return await _httpClient.PostJsonAsync<FlagsApiResult>(
+        PrepareAndMutatePayload(payload);
+
+        return await _httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             endpointUrl,
             payload,
+            _timeProvider,
+            _options.Value,
             cancellationToken);
     }
 

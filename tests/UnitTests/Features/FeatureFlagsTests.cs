@@ -3985,11 +3985,23 @@ public class FeatureFlagErrorTracking
 
     [Fact]
     public async Task IncludesTimeoutErrorWhenRequestTimesOut()
-        => await AssertCapturedFeatureFlagErrorAsync(
-            handler => handler.AddFlagsResponseException(new TaskCanceledException("Request timed out")),
-            featureKey: "some-flag",
-            expectedResult: false,
-            expectedError: "timeout");
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.FeatureFlagRequestMaxRetries = 0;
+        }));
+        container.FakeHttpMessageHandler.AddFlagsResponseException(new TaskCanceledException("Request timed out"));
+        var captureRequestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync("some-flag", "distinct-id");
+
+        Assert.NotNull(result);
+        Assert.False(result.IsEnabled);
+        await client.FlushAsync();
+        var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
+        Assert.Contains("\"$feature_flag_error\": \"timeout\"", received, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task IncludesConnectionErrorWhenNetworkFails()

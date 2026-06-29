@@ -174,6 +174,12 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public int MaxRetries { get; set; } = 3;
 
     /// <summary>
+    /// The maximum number of retries for feature flag requests after transient network errors. (Default: 1)
+    /// Set to 0 to disable feature flag request retries.
+    /// </summary>
+    public int FeatureFlagRequestMaxRetries { get; set; } = 1;
+
+    /// <summary>
     /// The initial delay between retries. (Default: 1 second)
     /// </summary>
     /// <remarks>
