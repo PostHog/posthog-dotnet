@@ -605,8 +605,17 @@ public class ThePostCompressedJsonAsyncMethod
         Assert.Contains("api_key", decompressedJson, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task FallsBackToUncompressedRequestWhenCompressionFails()
+    public static IEnumerable<object[]> CompressionFailureExceptions()
+    {
+        yield return [new IOException("gzip failed")];
+        yield return [new InvalidDataException("gzip failed")];
+        yield return [new NotSupportedException("gzip failed")];
+        yield return [new ObjectDisposedException("gzip")];
+    }
+
+    [Theory]
+    [MemberData(nameof(CompressionFailureExceptions))]
+    public async Task FallsBackToUncompressedRequestWhenCompressionFails(Exception compressionException)
     {
         string? capturedBody = null;
         IEnumerable<string>? capturedContentEncoding = null;
@@ -632,8 +641,8 @@ public class ThePostCompressedJsonAsyncMethod
         };
         var timeProvider = new FakeTimeProvider();
         var payload = new { api_key = "test", batch = new[] { new { @event = "test-event" } } };
-        var originalCompressor = HttpClientExtensions.CreateCompressedJsonContent;
-        HttpClientExtensions.CreateCompressedJsonContent = _ => throw new IOException("gzip failed");
+        var originalCompressor = HttpClientExtensions.CreateCompressedJsonContentAsync;
+        HttpClientExtensions.CreateCompressedJsonContentAsync = (_, _) => Task.FromException<ByteArrayContent>(compressionException);
 
         try
         {
@@ -646,7 +655,7 @@ public class ThePostCompressedJsonAsyncMethod
         }
         finally
         {
-            HttpClientExtensions.CreateCompressedJsonContent = originalCompressor;
+            HttpClientExtensions.CreateCompressedJsonContentAsync = originalCompressor;
         }
 
         Assert.Empty(capturedContentEncoding ?? Enumerable.Empty<string>());

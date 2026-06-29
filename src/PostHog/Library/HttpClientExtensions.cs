@@ -13,7 +13,7 @@ namespace PostHog.Library;
 /// </summary>
 internal static class HttpClientExtensions
 {
-    internal static Func<byte[], ByteArrayContent> CreateCompressedJsonContent = CreateGzipJsonContent;
+    internal static Func<object, CancellationToken, Task<ByteArrayContent>> CreateCompressedJsonContentAsync = CreateGzipJsonContentAsync;
     /// <summary>
     /// Sends a POST request to the specified Uri containing the value serialized as JSON in the request body.
     /// Returns the response body deserialized as <typeparamref name="TBody"/>.
@@ -276,8 +276,7 @@ internal static class HttpClientExtensions
         object content,
         CancellationToken cancellationToken)
     {
-        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(content, JsonSerializerHelper.Options);
-        var compressedContent = TryCreateCompressedJsonContent(jsonBytes);
+        var compressedContent = await TryCreateCompressedJsonContentAsync(content, cancellationToken);
         if (compressedContent is null)
         {
             return await httpClient.PostAsJsonAsync(
@@ -293,11 +292,13 @@ internal static class HttpClientExtensions
         }
     }
 
-    static ByteArrayContent? TryCreateCompressedJsonContent(byte[] jsonBytes)
+    static async Task<ByteArrayContent?> TryCreateCompressedJsonContentAsync(
+        object content,
+        CancellationToken cancellationToken)
     {
         try
         {
-            return CreateCompressedJsonContent(jsonBytes);
+            return await CreateCompressedJsonContentAsync(content, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or ObjectDisposedException)
         {
@@ -306,12 +307,15 @@ internal static class HttpClientExtensions
         }
     }
 
-    static ByteArrayContent CreateGzipJsonContent(byte[] jsonBytes)
+    static async Task<ByteArrayContent> CreateGzipJsonContentAsync(
+        object content,
+        CancellationToken cancellationToken)
     {
+        // Stream JSON directly into gzip to avoid intermediate allocation and honor cancellation during serialization.
         using var memoryStream = new MemoryStream(4096);
         using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
         {
-            gzipStream.Write(jsonBytes, 0, jsonBytes.Length);
+            await JsonSerializer.SerializeAsync(gzipStream, content, JsonSerializerHelper.Options, cancellationToken);
         }
 
         // Use TryGetBuffer to avoid ToArray() copy when possible
