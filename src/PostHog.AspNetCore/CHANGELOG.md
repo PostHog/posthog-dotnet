@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.7.1
+
+### Patch Changes
+
+- 7bab8dc: Fall back to uncompressed batch uploads when local gzip compression fails.
+
 ## 2.7.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.8.3
+
+### Patch Changes
+
+- 7bab8dc: Fall back to uncompressed batch uploads when local gzip compression fails.
+
 ## 2.8.2
 
 ### Patch Changes
