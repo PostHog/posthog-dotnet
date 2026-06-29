@@ -2397,7 +2397,7 @@ public class TheGetFeatureFlagAsyncMethod
         Assert.Equal(new FeatureFlag { Key = "beta-feature", VariantKey = "alakazam" }, result);
         using var document = JsonDocument.Parse(handler.GetReceivedRequestBody(indented: false));
         var root = document.RootElement;
-        Assert.Equal("fake-project-token", root.GetProperty("token").GetString());
+        Assert.Equal("fake-project-token", root.GetProperty("api_key").GetString());
         Assert.Equal("some-distinct-id", root.GetProperty("distinct_id").GetString());
         Assert.Empty(root.GetProperty("groups").EnumerateObject());
         Assert.Empty(root.GetProperty("group_properties").EnumerateObject());

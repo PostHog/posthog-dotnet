@@ -122,7 +122,7 @@ internal sealed class PostHogApiClient : IDisposable
 
         var payload = new Dictionary<string, object>
         {
-            ["token"] = ProjectToken,
+            ["api_key"] = ProjectToken,
             ["distinct_id"] = distinctUserId,
             ["groups"] = new Dictionary<string, string>(),
             ["group_properties"] = new Dictionary<string, Dictionary<string, object?>>(),
