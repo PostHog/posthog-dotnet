@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using PostHog.Api;
 using PostHog.Json;
@@ -40,6 +41,84 @@ internal static class HttpClientExtensions
         return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
             result,
             cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends a POST request with retry logic only for network/transport failures and timeouts.
+    /// Non-successful HTTP responses are not retried.
+    /// </summary>
+    public static async Task<TBody?> PostJsonWithNetworkRetryAsync<TBody>(
+        this HttpClient httpClient,
+        Uri requestUri,
+        object content,
+        TimeProvider timeProvider,
+        PostHogOptions options,
+        CancellationToken cancellationToken)
+    {
+        var maxRetries = options.FeatureFlagRequestMaxRetries;
+        var currentDelay = options.InitialRetryDelay;
+        var maxDelay = options.MaxRetryDelay;
+        var attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await httpClient.PostAsJsonAsync(
+                    requestUri,
+                    content,
+                    JsonSerializerHelper.Options,
+                    cancellationToken);
+            }
+            catch (HttpRequestException e) when (attempt <= maxRetries && IsRetryableFlagsHttpRequestException(e))
+            {
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt <= maxRetries)
+            {
+                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                continue;
+            }
+
+            // Response processing is outside the try-catch so that exceptions from
+            // EnsureSuccessfulApiCall (which may return HttpRequestException for 404s) won't
+            // be caught by the retry logic above.
+            using (response)
+            {
+                await response.EnsureSuccessfulApiCall(cancellationToken);
+
+                var result = await response.Content.ReadAsStreamAsync(cancellationToken);
+                return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
+                    result,
+                    cancellationToken: cancellationToken);
+            }
+        }
+    }
+
+    static bool IsRetryableFlagsHttpRequestException(HttpRequestException exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is SocketException socketException)
+            {
+                return socketException.SocketErrorCode is SocketError.ConnectionReset
+                    or SocketError.NetworkReset
+                    or SocketError.TimedOut;
+            }
+
+            if (current is EndOfStreamException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

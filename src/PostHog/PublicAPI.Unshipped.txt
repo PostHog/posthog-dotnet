@@ -1,1 +1,3 @@
 #nullable enable
+PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
+PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void
