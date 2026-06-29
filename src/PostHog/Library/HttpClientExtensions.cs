@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
@@ -13,6 +14,7 @@ namespace PostHog.Library;
 /// </summary>
 internal static class HttpClientExtensions
 {
+    internal static Func<object, CancellationToken, Task<ByteArrayContent>> CreateCompressedJsonContentAsync = CreateGzipJsonContentAsync;
     /// <summary>
     /// Sends a POST request to the specified Uri containing the value serialized as JSON in the request body.
     /// Returns the response body deserialized as <typeparamref name="TBody"/>.
@@ -148,7 +150,7 @@ internal static class HttpClientExtensions
             try
             {
                 response = enableCompression
-                    ? await PostCompressedJsonAsync(httpClient, requestUri, content, cancellationToken)
+                    ? await PostCompressedJsonWithFallbackAsync(httpClient, requestUri, content, cancellationToken)
                     : await httpClient.PostAsJsonAsync(
                         requestUri,
                         content,
@@ -347,13 +349,48 @@ internal static class HttpClientExtensions
 #endif
     }
 
-    static async Task<HttpResponseMessage> PostCompressedJsonAsync(
+    static async Task<HttpResponseMessage> PostCompressedJsonWithFallbackAsync(
         HttpClient httpClient,
         Uri requestUri,
         object content,
         CancellationToken cancellationToken)
     {
-        // Stream JSON directly into gzip to avoid intermediate allocation
+        var compressedContent = await TryCreateCompressedJsonContentAsync(content, cancellationToken);
+        if (compressedContent is null)
+        {
+            return await httpClient.PostAsJsonAsync(
+                requestUri,
+                content,
+                JsonSerializerHelper.Options,
+                cancellationToken);
+        }
+
+        using (compressedContent)
+        {
+            return await httpClient.PostAsync(requestUri, compressedContent, cancellationToken);
+        }
+    }
+
+    static async Task<ByteArrayContent?> TryCreateCompressedJsonContentAsync(
+        object content,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CreateCompressedJsonContentAsync(content, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or ObjectDisposedException)
+        {
+            Debug.WriteLine($"Failed to gzip request body, sending uncompressed: {ex}");
+            return null;
+        }
+    }
+
+    static async Task<ByteArrayContent> CreateGzipJsonContentAsync(
+        object content,
+        CancellationToken cancellationToken)
+    {
+        // Stream JSON directly into gzip to avoid intermediate allocation and honor cancellation during serialization.
         using var memoryStream = new MemoryStream(4096);
         using (var gzipStream = new GZipStream(memoryStream, CompressionLevel.Fastest, leaveOpen: true))
         {
@@ -365,13 +402,9 @@ internal static class HttpClientExtensions
             ? new ByteArrayContent(buffer.Array!, buffer.Offset, buffer.Count)
             : new ByteArrayContent(memoryStream.ToArray());
 
-        using (compressedContent)
-        {
-            compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            compressedContent.Headers.ContentEncoding.Add("gzip");
-
-            return await httpClient.PostAsync(requestUri, compressedContent, cancellationToken);
-        }
+        compressedContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        compressedContent.Headers.ContentEncoding.Add("gzip");
+        return compressedContent;
     }
 
     public static async Task EnsureSuccessfulApiCall(
