@@ -131,10 +131,13 @@ internal sealed class PostHogApiClient : IDisposable
 
         if (personProperties is { Count: > 0 })
         {
-            payload["person_properties"] = new Dictionary<string, object?>(personProperties)
+            var mergedPersonProperties = new Dictionary<string, object?>(personProperties);
+            if (!mergedPersonProperties.ContainsKey("distinct_id"))
             {
-                ["distinct_id"] = distinctUserId
-            };
+                mergedPersonProperties["distinct_id"] = distinctUserId;
+            }
+
+            payload["person_properties"] = mergedPersonProperties;
         }
 
         if (flagKeysToEvaluate is { Count: > 0 })

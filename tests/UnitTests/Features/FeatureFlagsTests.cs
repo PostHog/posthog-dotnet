@@ -2407,6 +2407,38 @@ public class TheGetFeatureFlagAsyncMethod
     }
 
     [Fact]
+    public async Task PreservesExplicitPersonPropertiesDistinctId()
+    {
+        var container = new TestContainer();
+        var handler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {"featureFlags": {"beta-feature": true}}
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync(
+            "beta-feature",
+            "top-level-distinct-id",
+            new FeatureFlagOptions
+            {
+                PersonProperties = new()
+                {
+                    ["distinct_id"] = "person-property-distinct-id",
+                    ["email"] = "test@posthog.com"
+                }
+            });
+
+        Assert.True(result);
+        using var document = JsonDocument.Parse(handler.GetReceivedRequestBody(indented: false));
+        var root = document.RootElement;
+        Assert.Equal("top-level-distinct-id", root.GetProperty("distinct_id").GetString());
+        var personProperties = root.GetProperty("person_properties");
+        Assert.Equal("person-property-distinct-id", personProperties.GetProperty("distinct_id").GetString());
+        Assert.Equal("test@posthog.com", personProperties.GetProperty("email").GetString());
+    }
+
+    [Fact]
     public async Task ReturnsFalseWhenFlagDoesNotExist()
     {
         var container = new TestContainer();
