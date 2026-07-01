@@ -22,33 +22,95 @@ env:
 permissions:
   checks: write
   contents: read
+  pull-requests: read
 
 jobs:
-  detect-markdown-only:
-    uses: PostHog/.github/.github/workflows/detect-markdown-only.yml@ec25337d9fae0100622cbfea1bd5bd88284ac10b
-    permissions:
-      pull-requests: read
+  classify-changes:
+    name: Classify changed files
+    runs-on: ubuntu-latest
+    outputs:
+      skip_heavy: ${{ steps.classify.outputs.skip_heavy }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - name: Classify changes for required CI
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          skip_heavy=false
+          reason="heavy CI runs by default"
+
+          if [[ "${EVENT_NAME}" != "pull_request" ]]; then
+            reason="${EVENT_NAME} event runs heavy CI"
+          elif [[ -z "${PR_NUMBER}" ]]; then
+            reason="missing pull request number; running heavy CI"
+          else
+            changed_files="$(mktemp)"
+            if ! gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename' > "${changed_files}"; then
+              reason="failed to list changed files; running heavy CI"
+            elif [[ ! -s "${changed_files}" ]]; then
+              reason="no changed files detected; running heavy CI"
+            else
+              echo "Changed files:"
+              sed 's/^/  - /' "${changed_files}"
+
+              skip_heavy=true
+              reason="all changed files are non-impacting docs, release metadata, or unrelated workflow files"
+
+              while IFS= read -r file; do
+                case "${file}" in
+                  .changeset/*.md|.changeset/config.json|.github/workflows/release.yml|.github/workflows/stale.yaml|.github/workflows/lint-pr.yml|.github/workflows/call-flags-project-board.yml|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|.npmrc|.nvmrc)
+                    ;;
+                  *.md)
+                    case "${file}" in
+                      src/*|tests/*|samples/*|sdk_compliance_adapter/*|bin/*)
+                        skip_heavy=false
+                        reason="at least one source, build, package, test, or config file changed"
+                        break
+                        ;;
+                      *)
+                        ;;
+                    esac
+                    ;;
+                  *)
+                    skip_heavy=false
+                    reason="at least one source, build, package, test, config, unknown, or main CI file changed"
+                    break
+                    ;;
+                esac
+              done < "${changed_files}"
+            fi
+          fi
+
+          echo "skip_heavy=${skip_heavy}" >> "${GITHUB_OUTPUT}"
+          echo "reason=${reason}" >> "${GITHUB_OUTPUT}"
+          echo "skip_heavy=${skip_heavy} (${reason})"
 
   build:
-    needs: detect-markdown-only
+    needs: classify-changes
     name: Build and package
     runs-on: ubuntu-latest
     steps:
-      - name: Complete markdown-only PR check
-        if: needs.detect-markdown-only.outputs.markdown_only == 'true'
-        run: echo "Only Markdown files changed; no additional work is required for this check."
+      - name: Complete non-impacting change check
+        if: needs.classify-changes.outputs.skip_heavy == 'true'
+        run: echo "Skipping heavy build/package work because ${{ needs.classify-changes.outputs.reason }}."
       - name: Checkout main branch
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup .NET Core
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore NuGet Packages
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: dotnet restore --locked-mode
         shell: bash
 
@@ -56,12 +118,12 @@ jobs:
       # If a public API change is intentional, run `dotnet build --configuration Release`
       # locally and commit the relevant PublicAPI.Shipped.txt/PublicAPI.Unshipped.txt updates.
       - name: Build
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: dotnet build --configuration Release --no-restore --nologo
         shell: bash
 
   package:
-    needs: detect-markdown-only
+    needs: classify-changes
     name: Package (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
@@ -75,60 +137,60 @@ jobs:
           - name: PostHog.AspNetCore
             project: src/PostHog.AspNetCore/PostHog.AspNetCore.csproj
     steps:
-      - name: Complete markdown-only PR check
-        if: needs.detect-markdown-only.outputs.markdown_only == 'true'
-        run: echo "Only Markdown files changed; no additional work is required for this check."
+      - name: Complete non-impacting change check
+        if: needs.classify-changes.outputs.skip_heavy == 'true'
+        run: echo "Skipping heavy package work because ${{ needs.classify-changes.outputs.reason }}."
       - name: Checkout main branch
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup .NET Core
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore NuGet Packages
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: dotnet restore --locked-mode
         shell: bash
 
       - name: Pack ${{ matrix.name }}
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: dotnet pack "${{ matrix.project }}" --configuration Release --no-restore --nologo --output "${{ env.PackageDirectory }}" /p:GeneratePackageOnBuild=false
         shell: bash
 
   test:
-    needs: detect-markdown-only
+    needs: classify-changes
     name: Test
     runs-on: ubuntu-latest
     # Run tests independently so build, test, and format feedback can complete in parallel.
     steps:
-      - name: Complete markdown-only PR check
-        if: needs.detect-markdown-only.outputs.markdown_only == 'true'
-        run: echo "Only Markdown files changed; no additional work is required for this check."
+      - name: Complete non-impacting change check
+        if: needs.classify-changes.outputs.skip_heavy == 'true'
+        run: echo "Skipping heavy test work because ${{ needs.classify-changes.outputs.reason }}."
       - name: Checkout main branch
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup .NET Core
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore NuGet Packages
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: dotnet restore --locked-mode
         shell: bash
 
       - name: Run Tests
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: dotnet test --logger "trx;LogFileName=test-results.trx" --configuration Release --no-restore --nologo
         shell: bash
 
       - name: Collect Test Results
-        if: ${{ needs.detect-markdown-only.outputs.markdown_only != 'true' && (github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) }}
+        if: ${{ needs.classify-changes.outputs.skip_heavy != 'true' && (github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) }}
         uses: dorny/test-reporter@d61b558e8df85cb60d09ca3e5b09653b4477cea7 # v1
         with:
           name: "xUnit Tests"
@@ -136,7 +198,7 @@ jobs:
           reporter: 'dotnet-trx'
 
       - name: Upload Test Snapshots
-        if: ${{ needs.detect-markdown-only.outputs.markdown_only != 'true' && (failure()) }}
+        if: ${{ needs.classify-changes.outputs.skip_heavy != 'true' && (failure()) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verify-test-results
@@ -145,34 +207,34 @@ jobs:
             **/*.received.*
 
   format:
-    needs: detect-markdown-only
+    needs: classify-changes
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - name: Complete markdown-only PR check
-        if: needs.detect-markdown-only.outputs.markdown_only == 'true'
-        run: echo "Only Markdown files changed; no additional work is required for this check."
+      - name: Complete non-impacting change check
+        if: needs.classify-changes.outputs.skip_heavy == 'true'
+        run: echo "Skipping heavy format work because ${{ needs.classify-changes.outputs.reason }}."
       - name: Checkout main branch
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup .NET
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore NuGet Packages
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: dotnet restore --locked-mode
         shell: bash
 
       - name: Set up dotnet-format problem matcher
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: echo "::add-matcher::$GITHUB_WORKSPACE/.github/problemMatchers/dotnet-format.json"
         shell: bash
 
       - name: Format!
-        if: needs.detect-markdown-only.outputs.markdown_only != 'true'
+        if: needs.classify-changes.outputs.skip_heavy != 'true'
         run: bin/fmt --check
         shell: bash

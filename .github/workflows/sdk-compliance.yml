@@ -7,9 +7,25 @@ permissions:
 
 on:
   pull_request:
+    paths:
+      - 'src/PostHog/**'
+      - 'sdk_compliance_adapter/**'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - '.github/workflows/sdk-compliance.yml'
+      - 'bin/sdk-compliance'
   push:
     branches:
       - main
+    paths:
+      - 'src/PostHog/**'
+      - 'sdk_compliance_adapter/**'
+      - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'Directory.Packages.props'
+      - '.github/workflows/sdk-compliance.yml'
+      - 'bin/sdk-compliance'
 
 jobs:
   compliance:
