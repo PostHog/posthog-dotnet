@@ -55,14 +55,13 @@ internal static class HttpClientExtensions
         object content,
         TimeProvider timeProvider,
         PostHogOptions options,
-        CancellationToken cancellationToken,
-        FeatureFlagRequestCircuitBreaker? circuitBreaker = null)
+        FeatureFlagRequestCircuitBreaker circuitBreaker,
+        CancellationToken cancellationToken)
     {
         var maxRetries = options.FeatureFlagRequestMaxRetries;
         var currentDelay = options.InitialRetryDelay;
         var maxDelay = options.MaxRetryDelay;
         var attempt = 0;
-        circuitBreaker ??= new FeatureFlagRequestCircuitBreaker();
 
         if (!circuitBreaker.TryEnter(timeProvider, out var isHalfOpenProbe))
         {

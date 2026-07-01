@@ -160,8 +160,8 @@ internal sealed class PostHogApiClient : IDisposable
             payload,
             _timeProvider,
             _options.Value,
-            cancellationToken,
-            _featureFlagRequestCircuitBreaker);
+            _featureFlagRequestCircuitBreaker,
+            cancellationToken);
     }
 
     /// <summary>

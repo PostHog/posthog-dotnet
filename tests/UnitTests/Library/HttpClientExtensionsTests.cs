@@ -584,6 +584,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
+            new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
         await handler.WaitForRequestCountAsync(1);
@@ -611,6 +612,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
+            new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
         await handler.WaitForRequestCountAsync(1);
@@ -645,6 +647,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
+            new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
         for (var i = 1; i <= 4 && !task.IsCompleted; i++)
@@ -676,6 +679,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
+            new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
         for (var i = 1; i <= 4 && !task.IsCompleted; i++)
@@ -706,8 +710,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
-            CancellationToken.None,
-            circuitBreaker);
+            circuitBreaker,
+            CancellationToken.None);
 
         for (var i = 1; i <= 5 && !task.IsCompleted; i++)
         {
@@ -724,8 +728,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
-                CancellationToken.None,
-                circuitBreaker));
+                circuitBreaker,
+                CancellationToken.None));
 
         Assert.Equal(5, handler.RequestCount);
     }
@@ -751,8 +755,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                     new { api_key = "test", distinct_id = "user-1" },
                     timeProvider,
                     options,
-                    CancellationToken.None,
-                    circuitBreaker));
+                    circuitBreaker,
+                    CancellationToken.None));
             Assert.Equal(i, handler.RequestCount);
         }
 
@@ -762,8 +766,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
-                CancellationToken.None,
-                circuitBreaker));
+                circuitBreaker,
+                CancellationToken.None));
         Assert.Equal(5, handler.RequestCount);
     }
 
@@ -786,8 +790,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
-            CancellationToken.None,
-            circuitBreaker);
+            circuitBreaker,
+            CancellationToken.None);
 
         for (var i = 1; i <= 5 && !task.IsCompleted; i++)
         {
@@ -804,8 +808,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
-            CancellationToken.None,
-            circuitBreaker);
+            circuitBreaker,
+            CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal(6, handler.RequestCount);
@@ -829,8 +833,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
-            CancellationToken.None,
-            circuitBreaker);
+            circuitBreaker,
+            CancellationToken.None);
 
         for (var i = 1; i <= 5 && !task.IsCompleted; i++)
         {
@@ -847,8 +851,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
-                CancellationToken.None,
-                circuitBreaker));
+                circuitBreaker,
+                CancellationToken.None));
         Assert.Equal(6, handler.RequestCount);
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
@@ -857,8 +861,8 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
-                CancellationToken.None,
-                circuitBreaker));
+                circuitBreaker,
+                CancellationToken.None));
         Assert.Equal(6, handler.RequestCount);
     }
 
@@ -878,6 +882,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
+                new FeatureFlagRequestCircuitBreaker(),
                 CancellationToken.None));
 
         Assert.Equal(1, handler.RequestCount);
@@ -902,6 +907,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
+                new FeatureFlagRequestCircuitBreaker(),
                 cts.Token));
 
         Assert.Equal(1, handler.RequestCount);
@@ -924,6 +930,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
+                new FeatureFlagRequestCircuitBreaker(),
                 CancellationToken.None));
 
         Assert.Equal(1, handler.RequestCount);
@@ -944,6 +951,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new { api_key = "test", distinct_id = "user-1" },
             timeProvider,
             options,
+            new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
         await handler.WaitForRequestCountAsync(1);
@@ -976,6 +984,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
                 new { api_key = "test", distinct_id = "user-1" },
                 timeProvider,
                 options,
+                new FeatureFlagRequestCircuitBreaker(),
                 CancellationToken.None));
 
         Assert.Equal(1, handler.RequestCount);
