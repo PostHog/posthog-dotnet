@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.8.4
+
+### Patch Changes
+
+- 211aa24: Add a feature flag request option for disabling GeoIP enrichment.
+
 ## 2.8.3
 
 ### Patch Changes

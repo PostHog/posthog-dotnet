@@ -1146,6 +1146,7 @@ public sealed class PostHogClient : IPostHogClient
                 options?.PersonProperties,
                 options?.Groups,
                 options?.FlagKeysToEvaluate,
+                options?.DisableGeoIp ?? false,
                 ctx);
             return results.ToFlagsResult();
         }
