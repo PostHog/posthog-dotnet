@@ -51,38 +51,50 @@ jobs:
             reason="missing pull request number; running heavy CI"
           else
             changed_files="$(mktemp)"
-            if ! gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename' > "${changed_files}"; then
+            if ! gh api --paginate "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[] | .filename, (.previous_filename // empty)' > "${changed_files}"; then
               reason="failed to list changed files; running heavy CI"
             elif [[ ! -s "${changed_files}" ]]; then
               reason="no changed files detected; running heavy CI"
             else
-              echo "Changed files:"
+              echo "Changed and previous files:"
               sed 's/^/  - /' "${changed_files}"
 
-              skip_heavy=true
-              reason="all changed files are non-impacting docs, release metadata, or unrelated workflow files"
+              is_safe_file() {
+                local file="$1"
 
-              while IFS= read -r file; do
                 case "${file}" in
-                  .changeset/*.md|.changeset/config.json|.github/workflows/release.yml|.github/workflows/stale.yaml|.github/workflows/lint-pr.yml|.github/workflows/call-flags-project-board.yml|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|.npmrc|.nvmrc)
+                  *.md|docs/*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE/*|.github/pull_request_template.md|.github/CODEOWNERS|CODEOWNERS|.github/dependabot.yml)
+                    return 0
                     ;;
-                  *.md)
-                    case "${file}" in
-                      src/*|tests/*|samples/*|sdk_compliance_adapter/*|bin/*)
-                        skip_heavy=false
-                        reason="at least one source, build, package, test, or config file changed"
-                        break
-                        ;;
-                      *)
-                        ;;
-                    esac
+                  .github/workflows/release.yml|.github/workflows/release.yaml|\
+                  .github/workflows/publish.yml|.github/workflows/publish.yaml|\
+                  .github/workflows/stale.yml|.github/workflows/stale.yaml|\
+                  .github/workflows/lint-pr.yml|.github/workflows/lint-pr.yaml|\
+                  .github/workflows/call-flags-project-board.yml|.github/workflows/call-flags-project-board.yaml|\
+                  .github/workflows/changeset-hygiene.yml|.github/workflows/changeset-hygiene.yaml|\
+                  .github/workflows/dependabot-changeset.yml|.github/workflows/dependabot-changeset.yaml|\
+                  .github/workflows/validate-versioning.yml|.github/workflows/validate-versioning.yaml|\
+                  .github/workflows/new-pr.yml|.github/workflows/new-pr.yaml|\
+                  .github/workflows/generated-files-notice.yml|.github/workflows/generated-files-notice.yaml|\
+                  .github/workflows/posthog-upgrade.yml|.github/workflows/posthog-upgrade.yaml|\
+                  .github/workflows/posthog-watcher-*.yml|.github/workflows/posthog-watcher-*.yaml)
+                    return 0
                     ;;
                   *)
-                    skip_heavy=false
-                    reason="at least one source, build, package, test, config, unknown, or main CI file changed"
-                    break
+                    return 1
                     ;;
                 esac
+              }
+
+              skip_heavy=true
+              reason="all changed filenames and previous filenames are globally safe"
+
+              while IFS= read -r file; do
+                if ! is_safe_file "${file}"; then
+                  skip_heavy=false
+                  reason="at least one filename or previous filename requires heavy CI"
+                  break
+                fi
               done < "${changed_files}"
             fi
           fi
