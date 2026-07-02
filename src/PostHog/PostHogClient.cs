@@ -1414,7 +1414,7 @@ internal static partial class PostHogClientLoggerExtensions
     [LoggerMessage(
         EventId = 21,
         Level = LogLevel.Warning,
-        Message = "PostHog personal_api_key is not configured; {MethodName} is a no-op.")]
+        Message = "PostHog secret_key is not configured; {MethodName} is a no-op.")]
     public static partial void LogWarningPersonalApiKeyMissing(this ILogger<PostHogClient> logger, string methodName);
 
     [LoggerMessage(

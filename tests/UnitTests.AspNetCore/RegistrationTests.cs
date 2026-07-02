@@ -41,6 +41,30 @@ public class TheAddPostHogMethod
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
     }
 
+    [Fact]
+    public void ReadsSecretKeyFromPostHogConfigurationSection()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Host.UseDefaultServiceProvider((_, options) =>
+        {
+            options.ValidateScopes = true;
+            options.ValidateOnBuild = true;
+        });
+        var services = builder.Services;
+        var configuration = builder.Configuration;
+        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["PostHog:SecretKey"] = "fake-secret",
+            ["PostHog:ProjectToken"] = "fake-not-so-secret",
+        });
+
+        builder.AddPostHog();
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
+        Assert.Equal("fake-secret", options.SecretKey);
+        Assert.Equal("fake-not-so-secret", options.ProjectToken);
+    }
 
     [Fact]
     public void ReadsLegacyProjectApiKeyFromPostHogConfigurationSection()

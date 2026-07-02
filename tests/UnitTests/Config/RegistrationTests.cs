@@ -89,6 +89,35 @@ public class TheAddPostHogMethod
     }
 
     [Fact]
+    public void CanReadSecretKeyConfiguration()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PostHogTest:SecretKey"] = "fake-secret-key",
+                ["PostHogTest:ProjectToken"] = "fake-public-project-token",
+            })
+            .Build();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddPostHog(options =>
+        {
+            options.UseConfigurationSection(configuration.GetSection("PostHogTest"));
+        });
+
+        var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
+
+        Assert.Equal("fake-secret-key", options.SecretKey);
+        Assert.Equal("fake-public-project-token", options.ProjectToken);
+    }
+
+    [Fact]
     public void CanReadLegacyProjectApiKeyConfiguration()
     {
         var services = new ServiceCollection();
