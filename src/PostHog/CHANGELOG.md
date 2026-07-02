@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.8.5
+
+### Patch Changes
+
+- 256d2df: Add a per-client circuit breaker for feature flag requests after consecutive transient network failures, temporarily failing fast before probing for recovery.
+
 ## 2.8.4
 
 ### Patch Changes
