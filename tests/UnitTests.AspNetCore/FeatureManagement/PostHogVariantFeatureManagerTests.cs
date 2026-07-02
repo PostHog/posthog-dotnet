@@ -16,7 +16,7 @@ public class TheGetFeatureNamesAsyncMethod
         {
             var builder = new PostHogConfigurationBuilder(sp);
             builder.UseFeatureManagement<FakePostHogFeatureFlagContextProvider>();
-            builder.PostConfigure(o => o.PersonalApiKey = "fake-personal-api-key");
+            builder.PostConfigure(o => o.SecretKey = "fake-personal-api-key");
         });
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
             """
@@ -72,7 +72,7 @@ public class TheIsEnabledAsyncMethod
         {
             var builder = new PostHogConfigurationBuilder(sp);
             builder.UseFeatureManagement<FakePostHogFeatureFlagContextProvider>();
-            builder.PostConfigure(o => o.PersonalApiKey = "fake-personal-api-key");
+            builder.PostConfigure(o => o.SecretKey = "fake-personal-api-key");
         });
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
             """
@@ -130,7 +130,7 @@ public class TheGetVariantAsyncMethod
         {
             var builder = new PostHogConfigurationBuilder(sp);
             builder.UseFeatureManagement<FakePostHogFeatureFlagContextProvider>();
-            builder.PostConfigure(o => o.PersonalApiKey = "fake-personal-api-key");
+            builder.PostConfigure(o => o.SecretKey = "fake-personal-api-key");
         });
         var contextProvider = container.GetRequiredService<IPostHogFeatureFlagContextProvider>() as FakePostHogFeatureFlagContextProvider;
         Assert.NotNull(contextProvider);

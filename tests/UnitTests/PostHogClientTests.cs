@@ -1727,7 +1727,7 @@ public class TheDisabledClient
             services.Configure<PostHogOptions>(options =>
             {
                 options.ProjectToken = projectToken;
-                options.PersonalApiKey = "fake-personal-api-key";
+                options.SecretKey = "fake-personal-api-key";
             });
         });
         var captureHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
@@ -1843,7 +1843,7 @@ public class TheDisabledClient
             services.Configure<PostHogOptions>(options =>
             {
                 options.ProjectToken = null;
-                options.PersonalApiKey = "fake-personal-api-key";
+                options.SecretKey = "fake-personal-api-key";
 #pragma warning disable CS0618
                 options.ProjectApiKey = projectApiKey;
 #pragma warning restore CS0618
@@ -2026,7 +2026,7 @@ public class ThePersonalApiKeyProtectedMethods
         var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
         var matches = warningLogs.Count(log =>
             log.EventId.Id == 21
-            && log.Message == $"PostHog personal_api_key is not configured; {methodName} is a no-op.");
+            && log.Message == $"PostHog secret_key is not configured; {methodName} is a no-op.");
         Assert.Equal(1, matches);
     }
 }
@@ -2061,7 +2061,7 @@ public class TheLoadFeatureFlagsAsyncMethod
 
         var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
         Assert.Contains(warningLogs, log =>
-            log.Message?.Contains("personal_api_key is not configured", StringComparison.Ordinal) == true
+            log.Message?.Contains("secret_key is not configured", StringComparison.Ordinal) == true
             && log.Message.Contains(nameof(PostHogClient.LoadFeatureFlagsAsync), StringComparison.Ordinal));
     }
 
@@ -2075,7 +2075,7 @@ public class TheLoadFeatureFlagsAsyncMethod
 
         var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
         Assert.Contains(warningLogs, log =>
-            log.Message?.Contains("personal_api_key is not configured", StringComparison.Ordinal) == true
+            log.Message?.Contains("secret_key is not configured", StringComparison.Ordinal) == true
             && log.Message.Contains(nameof(PostHogClient.LoadFeatureFlagsAsync), StringComparison.Ordinal));
     }
 

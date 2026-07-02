@@ -132,7 +132,7 @@ public sealed class PostHogClient : IPostHogClient
 
     bool CheckPersonalApiKeyMissingAndLog(string methodName)
     {
-        if (_options.Value.PersonalApiKey is not null)
+        if (_options.Value.SecretKey is not null)
         {
             return false;
         }
@@ -934,7 +934,7 @@ public sealed class PostHogClient : IPostHogClient
 
         // 1. Local pass.
         var fallbackToRemote = true;
-        if (_options.Value.PersonalApiKey is not null)
+        if (_options.Value.SecretKey is not null)
         {
             try
             {
@@ -1063,7 +1063,7 @@ public sealed class PostHogClient : IPostHogClient
             return EmptyFeatureFlags;
         }
 
-        if (_options.Value.PersonalApiKey is not null)
+        if (_options.Value.SecretKey is not null)
         {
             // Attempt to load local feature flags.
             try
@@ -1415,7 +1415,7 @@ internal static partial class PostHogClientLoggerExtensions
     [LoggerMessage(
         EventId = 21,
         Level = LogLevel.Warning,
-        Message = "PostHog personal_api_key is not configured; {MethodName} is a no-op.")]
+        Message = "PostHog secret_key is not configured; {MethodName} is a no-op.")]
     public static partial void LogWarningPersonalApiKeyMissing(this ILogger<PostHogClient> logger, string methodName);
 
     [LoggerMessage(

@@ -35,12 +35,36 @@ public class TheAddPostHogMethod
         var provider = services.BuildServiceProvider();
         Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
-        Assert.Equal("fake-secret", options.PersonalApiKey);
+        Assert.Equal("fake-secret", options.SecretKey);
         Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
     }
 
+    [Fact]
+    public void ReadsSecretKeyFromPostHogConfigurationSection()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Host.UseDefaultServiceProvider((_, options) =>
+        {
+            options.ValidateScopes = true;
+            options.ValidateOnBuild = true;
+        });
+        var services = builder.Services;
+        var configuration = builder.Configuration;
+        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["PostHog:SecretKey"] = "fake-secret",
+            ["PostHog:ProjectToken"] = "fake-not-so-secret",
+        });
+
+        builder.AddPostHog();
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
+        Assert.Equal("fake-secret", options.SecretKey);
+        Assert.Equal("fake-not-so-secret", options.ProjectToken);
+    }
 
     [Fact]
     public void ReadsLegacyProjectApiKeyFromPostHogConfigurationSection()
@@ -98,7 +122,7 @@ public class TheAddPostHogMethod
         var provider = services.BuildServiceProvider();
         Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
-        Assert.Equal("fake-secret", options.PersonalApiKey);
+        Assert.Equal("fake-secret", options.SecretKey);
         Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://local-test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(20), options.FeatureFlagPollInterval);

@@ -217,9 +217,9 @@ internal sealed class PostHogApiClient : IDisposable
     async Task<T?> GetAuthenticatedResponseAsync<T>(string relativeUrl, CancellationToken cancellationToken)
     {
         var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
-        var personalApiKey = options.PersonalApiKey
+        var personalApiKey = options.SecretKey
                              ?? throw new InvalidOperationException(
-                                 "This API requires that a Personal API Key is set.");
+                                 "This API requires that a SecretKey (Personal API Key or Project Secret API Key) is set.");
 
         var endpointUrl = new Uri(HostUrl, relativeUrl);
 
@@ -242,9 +242,9 @@ internal sealed class PostHogApiClient : IDisposable
         where T : LocalEvaluationApiResult
     {
         var options = _options.Value ?? throw new InvalidOperationException(nameof(_options));
-        var personalApiKey = options.PersonalApiKey
+        var personalApiKey = options.SecretKey
                              ?? throw new InvalidOperationException(
-                                 "This API requires that a Personal API Key is set.");
+                                 "This API requires that a SecretKey (Personal API Key or Project Secret API Key) is set.");
 
         var endpointUrl = new Uri(HostUrl, relativeUrl);
 

@@ -66,7 +66,7 @@ Console.WriteLine();
 var options = new PostHogOptions
 {
     ProjectToken = projectToken,
-    PersonalApiKey = personalApiKey,
+    SecretKey = personalApiKey,
     HostUrl = new Uri(endpoint),
     FlushAt = 1, // Flush immediately for demo purposes
     FlushInterval = TimeSpan.FromSeconds(1)
