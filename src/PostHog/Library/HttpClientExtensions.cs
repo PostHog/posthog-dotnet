@@ -46,8 +46,8 @@ internal static class HttpClientExtensions
     }
 
     /// <summary>
-    /// Sends a POST request with retry logic only for network/transport failures and timeouts.
-    /// Non-successful HTTP responses are not retried.
+    /// Sends a POST request with retry logic only for network/transport failures, timeouts,
+    /// and HTTP 502/504 responses.
     /// </summary>
     public static async Task<TBody?> PostJsonWithNetworkRetryAsync<TBody>(
         this HttpClient httpClient,
@@ -141,7 +141,13 @@ internal static class HttpClientExtensions
             // be caught by the retry logic above.
             using (response)
             {
-                if (isHalfOpenProbe || response.IsSuccessStatusCode)
+                var isRetryableFlagsStatusCode = ShouldRetryFlagsStatusCode(response.StatusCode);
+                if (isRetryableFlagsStatusCode && await ShouldRetryAfterTransientFailure())
+                {
+                    continue;
+                }
+
+                if ((isHalfOpenProbe && !isRetryableFlagsStatusCode) || response.IsSuccessStatusCode)
                 {
                     circuitBreaker.Close();
                 }
@@ -155,6 +161,9 @@ internal static class HttpClientExtensions
             }
         }
     }
+
+    static bool ShouldRetryFlagsStatusCode(HttpStatusCode statusCode)
+        => statusCode is HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout;
 
     static bool IsRetryableFlagsHttpRequestException(HttpRequestException exception)
     {

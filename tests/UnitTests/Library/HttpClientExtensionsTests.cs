@@ -1154,13 +1154,67 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.BadGateway)] // 502
+    [InlineData(HttpStatusCode.GatewayTimeout)] // 504
+    public async Task RetriesOnGatewayHttpStatusCodeThenSucceeds(HttpStatusCode statusCode)
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
+        handler.AddResponse(HttpStatusCode.OK, new { featureFlags = new { retry_flag = true } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions();
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            new FeatureFlagRequestCircuitBreaker(),
+            CancellationToken.None);
+
+        await handler.WaitForRequestCountAsync(1);
+        Assert.Equal(1, handler.RequestCount);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        var result = await task;
+
+        Assert.NotNull(result);
+        Assert.NotNull(result!.FeatureFlags);
+        Assert.True(result.FeatureFlags!.TryGetValue("retry_flag", out var retryFlag));
+        Assert.True(retryFlag == true);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadGateway)] // 502
+    [InlineData(HttpStatusCode.GatewayTimeout)] // 504
+    public async Task DoesNotRetryGatewayHttpStatusCodeWhenFeatureFlagRequestMaxRetriesIsZero(HttpStatusCode statusCode)
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
+        handler.AddResponse(HttpStatusCode.OK, new { featureFlags = new { retry_flag = true } }); // Should never be reached
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 0);
+        var timeProvider = new FakeTimeProvider();
+
+        await Assert.ThrowsAsync<ApiException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                new FeatureFlagRequestCircuitBreaker(),
+                CancellationToken.None));
+
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.RequestTimeout)] // 408
     [InlineData(HttpStatusCode.TooManyRequests)] // 429
     [InlineData(HttpStatusCode.InternalServerError)] // 500
-    [InlineData(HttpStatusCode.BadGateway)] // 502
     [InlineData(HttpStatusCode.ServiceUnavailable)] // 503
-    [InlineData(HttpStatusCode.GatewayTimeout)] // 504
-    public async Task DoesNotRetryOnHttpErrorStatusCodes(HttpStatusCode statusCode)
+    public async Task DoesNotRetryOnOtherHttpErrorStatusCodes(HttpStatusCode statusCode)
     {
         var handler = new FakeRetryHttpMessageHandler();
         handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
