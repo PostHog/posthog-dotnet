@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.7.2
+
+### Patch Changes
+
+- 256d2df: Add a per-client circuit breaker for feature flag requests after consecutive transient network failures, temporarily failing fast before probing for recovery.
+
 ## 2.7.1
 
 ### Patch Changes
