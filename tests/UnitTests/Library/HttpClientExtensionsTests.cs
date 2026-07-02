@@ -1210,6 +1210,39 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.BadGateway)] // 502
+    [InlineData(HttpStatusCode.GatewayTimeout)] // 504
+    public async Task ThrowsAfterFeatureFlagRequestMaxRetriesWhenGatewayHttpStatusCodesKeepFailing(
+        HttpStatusCode statusCode)
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
+        handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
+        handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 2);
+        var timeProvider = new FakeTimeProvider();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            new FeatureFlagRequestCircuitBreaker(),
+            CancellationToken.None);
+
+        for (var i = 1; i <= 3 && !task.IsCompleted; i++)
+        {
+            await handler.WaitForRequestCountAsync(i);
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        var exception = await Assert.ThrowsAsync<ApiException>(() => task);
+        Assert.Equal(statusCode, exception.Status);
+        Assert.Equal(3, handler.RequestCount);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.RequestTimeout)] // 408
     [InlineData(HttpStatusCode.TooManyRequests)] // 429
     [InlineData(HttpStatusCode.InternalServerError)] // 500
