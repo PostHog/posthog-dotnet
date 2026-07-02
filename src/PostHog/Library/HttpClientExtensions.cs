@@ -74,6 +74,18 @@ internal static class HttpClientExtensions
             currentDelay = DoubleWithCap(currentDelay, maxDelay);
         }
 
+        async Task<bool> ShouldRetryAfterTransientFailure()
+        {
+            var circuitClosed = circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe);
+            if (attempt > maxRetries || !circuitClosed)
+            {
+                return false;
+            }
+
+            await DelayBeforeRetry();
+            return true;
+        }
+
         while (true)
         {
             attempt++;
@@ -89,32 +101,28 @@ internal static class HttpClientExtensions
             }
             catch (HttpRequestException e) when (IsRetryableFlagsHttpRequestException(e))
             {
-                var circuitClosed = circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe);
-                if (attempt > maxRetries || !circuitClosed)
+                if (!await ShouldRetryAfterTransientFailure())
                 {
                     throw;
                 }
 
-                await DelayBeforeRetry();
                 continue;
             }
             catch (HttpRequestException)
             {
                 if (isHalfOpenProbe)
                 {
-                    circuitBreaker.RecordResponseReceived();
+                    circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe: true);
                 }
                 throw;
             }
             catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                var circuitClosed = circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe);
-                if (attempt > maxRetries || !circuitClosed)
+                if (!await ShouldRetryAfterTransientFailure())
                 {
                     throw;
                 }
 
-                await DelayBeforeRetry();
                 continue;
             }
             catch (OperationCanceledException) when (isHalfOpenProbe && cancellationToken.IsCancellationRequested)
@@ -124,7 +132,7 @@ internal static class HttpClientExtensions
             }
             catch (Exception) when (isHalfOpenProbe)
             {
-                circuitBreaker.RecordResponseReceived();
+                circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe: true);
                 throw;
             }
 
@@ -135,7 +143,7 @@ internal static class HttpClientExtensions
             {
                 if (isHalfOpenProbe || response.IsSuccessStatusCode)
                 {
-                    circuitBreaker.RecordResponseReceived();
+                    circuitBreaker.Close();
                 }
 
                 await response.EnsureSuccessfulApiCall(cancellationToken);
@@ -511,7 +519,7 @@ sealed class FeatureFlagRequestCircuitBreaker
         }
     }
 
-    public void RecordResponseReceived()
+    public void Close()
     {
         lock (_lock)
         {

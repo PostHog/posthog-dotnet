@@ -597,6 +597,74 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
     }
 
     [Fact]
+    public async Task SuccessfulResponseResetsConsecutiveFailures()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        for (var i = 0; i < 4; i++)
+        {
+            handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        }
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        for (var i = 0; i < 4; i++)
+        {
+            handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        }
+        handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 0);
+        var timeProvider = new FakeTimeProvider();
+        var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
+
+        for (var i = 1; i <= 4; i++)
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() =>
+                httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                    FlagsUrl,
+                    new { api_key = "test", distinct_id = "user-1" },
+                    timeProvider,
+                    options,
+                    circuitBreaker,
+                    CancellationToken.None));
+            Assert.Equal(i, handler.RequestCount);
+        }
+
+        var firstSuccess = await httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            circuitBreaker,
+            CancellationToken.None);
+
+        Assert.NotNull(firstSuccess);
+        Assert.Equal(5, handler.RequestCount);
+
+        for (var i = 6; i <= 9; i++)
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() =>
+                httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                    FlagsUrl,
+                    new { api_key = "test", distinct_id = "user-1" },
+                    timeProvider,
+                    options,
+                    circuitBreaker,
+                    CancellationToken.None));
+            Assert.Equal(i, handler.RequestCount);
+        }
+
+        var secondSuccess = await httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            circuitBreaker,
+            CancellationToken.None);
+
+        Assert.NotNull(secondSuccess);
+        Assert.Equal(10, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task UsesInitialRetryDelayAndDoublesForFeatureFlagRetries()
     {
         var handler = new FakeRetryHttpMessageHandler();
@@ -816,6 +884,25 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
     }
 
     [Fact]
+    public void AllowsOnlyOneHalfOpenProbeDuringRecovery()
+    {
+        var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
+        var timeProvider = new FakeTimeProvider();
+
+        for (var i = 0; i < 5; i++)
+        {
+            circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe: false);
+        }
+
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        Assert.True(circuitBreaker.TryEnter(timeProvider, out var firstProbe));
+        Assert.True(firstProbe);
+        Assert.False(circuitBreaker.TryEnter(timeProvider, out var secondProbe));
+        Assert.False(secondProbe);
+    }
+
+    [Fact]
     public async Task HalfOpenProbeReopensCircuitWhenItFails()
     {
         var handler = new FakeRetryHttpMessageHandler();
@@ -846,6 +933,110 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         timeProvider.Advance(TimeSpan.FromSeconds(31));
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                circuitBreaker,
+                CancellationToken.None));
+        Assert.Equal(6, handler.RequestCount);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                circuitBreaker,
+                CancellationToken.None));
+        Assert.Equal(6, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task HalfOpenProbeReopensCircuitWhenNonRetryableTransportFailureOccurs()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        for (var i = 0; i < 5; i++)
+        {
+            handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        }
+        handler.AddException(new HttpRequestException("Connection refused", new SocketException((int)SocketError.ConnectionRefused)));
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
+        var timeProvider = new FakeTimeProvider();
+        var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            circuitBreaker,
+            CancellationToken.None);
+
+        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        {
+            await handler.WaitForRequestCountAsync(i);
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        }
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => task);
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                circuitBreaker,
+                CancellationToken.None));
+        Assert.Equal(6, handler.RequestCount);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+                FlagsUrl,
+                new { api_key = "test", distinct_id = "user-1" },
+                timeProvider,
+                options,
+                circuitBreaker,
+                CancellationToken.None));
+        Assert.Equal(6, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task HalfOpenProbeReopensCircuitWhenUnexpectedExceptionOccurs()
+    {
+        var handler = new FakeRetryHttpMessageHandler();
+        for (var i = 0; i < 5; i++)
+        {
+            handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
+        }
+        handler.AddException(new InvalidOperationException("Unexpected transport failure"));
+        using var httpClient = CreateHttpClient(handler);
+        var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
+        var timeProvider = new FakeTimeProvider();
+        var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
+
+        var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
+            FlagsUrl,
+            new { api_key = "test", distinct_id = "user-1" },
+            timeProvider,
+            options,
+            circuitBreaker,
+            CancellationToken.None);
+
+        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        {
+            await handler.WaitForRequestCountAsync(i);
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        }
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => task);
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
             httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
                 FlagsUrl,
                 new { api_key = "test", distinct_id = "user-1" },
