@@ -35,7 +35,7 @@ public class TheAddPostHogMethod
         var provider = services.BuildServiceProvider();
         Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
-        Assert.Equal("fake-secret", options.PersonalApiKey);
+        Assert.Equal("fake-secret", options.SecretKey);
         Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
@@ -98,7 +98,7 @@ public class TheAddPostHogMethod
         var provider = services.BuildServiceProvider();
         Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
-        Assert.Equal("fake-secret", options.PersonalApiKey);
+        Assert.Equal("fake-secret", options.SecretKey);
         Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://local-test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(20), options.FeatureFlagPollInterval);

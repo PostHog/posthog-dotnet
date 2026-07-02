@@ -3433,7 +3433,7 @@ public class TheGetAllFeatureFlagsAsyncMethod
             services.Configure<PostHogOptions>(options =>
             {
                 options.ProjectToken = "fake-project-token";
-                options.PersonalApiKey = "fake-personal-api-key";
+                options.SecretKey = "fake-personal-api-key";
                 options.FeatureFlagPollInterval = TimeSpan.FromSeconds(30);
             });
         });

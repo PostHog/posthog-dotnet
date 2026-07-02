@@ -16,7 +16,7 @@ public class TheGetAllFeatureDefinitionsAsyncMethod
         {
             var builder = new PostHogConfigurationBuilder(sp);
             builder.UseFeatureManagement<FakePostHogFeatureFlagContextProvider>();
-            builder.PostConfigure(o => o.PersonalApiKey = "fake-personal-api-key");
+            builder.PostConfigure(o => o.SecretKey = "fake-personal-api-key");
         });
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
             """
@@ -76,7 +76,7 @@ public class TheGetFeatureDefinitionAsyncMethod
         {
             var builder = new PostHogConfigurationBuilder(sp);
             builder.UseFeatureManagement<FakePostHogFeatureFlagContextProvider>();
-            builder.PostConfigure(o => o.PersonalApiKey = "fake-personal-api-key");
+            builder.PostConfigure(o => o.SecretKey = "fake-personal-api-key");
         });
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
             """

@@ -10,6 +10,8 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
 {
     string? _projectToken;
     string? _projectApiKey;
+    string? _secretKey;
+    string? _personalApiKey;
 
     /// <summary>
     /// The PostHog project token that identifies which project this client works with.
@@ -31,7 +33,8 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     {
         _projectToken = _projectToken.NullIfEmpty();
         _projectApiKey = _projectApiKey.NullIfEmpty();
-        PersonalApiKey = PersonalApiKey.NullIfEmpty();
+        _secretKey = _secretKey.NullIfEmpty();
+        _personalApiKey = _personalApiKey.NullIfEmpty();
         HostUrl = HostUrl.NormalizeHostUrl();
     }
 
@@ -46,17 +49,34 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     }
 
     /// <summary>
-    /// Optional personal API key for local feature flag evaluation.
+    /// Optional secret key used for local feature flag evaluation and remote config. Accepts either a Personal
+    /// API Key (<c>phx_...</c>) or a Project Secret API Key (<c>phs_...</c>).
     /// </summary>
     /// <remarks>
-    /// You can find this https://us.posthog.com/project/{YOUR_PROJECT_ID}/settings/user-api-keys
+    /// You can find these at https://us.posthog.com/project/{YOUR_PROJECT_ID}/settings/user-api-keys
     /// When developing an ASP.NET Core project locally, we recommend setting this in your user secrets.
     /// <c>
-    /// dotnet user-secrets --project your/project/path.csproj set PostHog:PersonalApiKey YOUR_PERSONAL_API_KEY
+    /// dotnet user-secrets --project your/project/path.csproj set PostHog:SecretKey YOUR_SECRET_KEY
     /// </c>
     /// In other cases, use an appropriate secrets manager, configuration provider, or environment variable.
+    /// When both <see cref="SecretKey"/> and the deprecated <see cref="PersonalApiKey"/> are set,
+    /// <see cref="SecretKey"/> takes precedence.
     /// </remarks>
-    public string? PersonalApiKey { get; set; }
+    public string? SecretKey
+    {
+        get => _secretKey ?? _personalApiKey;
+        set => _secretKey = value;
+    }
+
+    /// <summary>
+    /// Obsolete alias for <see cref="SecretKey"/>.
+    /// </summary>
+    [Obsolete("Use SecretKey instead. SecretKey accepts a Personal API Key or a Project Secret API Key.")]
+    public string? PersonalApiKey
+    {
+        get => _secretKey ?? _personalApiKey;
+        set => _personalApiKey = value;
+    }
 
     /// <summary>
     /// Evaluation contexts for feature flags.
@@ -102,7 +122,7 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public Dictionary<string, object> SuperProperties { get; init; } = new();
 
     /// <summary>
-    /// When <see cref="PersonalApiKey"/> is set, this is the interval to poll for feature flags used in
+    /// When <see cref="SecretKey"/> is set, this is the interval to poll for feature flags used in
     /// local evaluation. Default is 30 seconds.
     /// </summary>
     public TimeSpan FeatureFlagPollInterval { get; set; } = TimeSpan.FromSeconds(30);

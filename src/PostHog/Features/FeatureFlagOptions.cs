@@ -25,14 +25,14 @@ public class AllFeatureFlagsOptions
     /// Whether to only evaluate the flag locally. Defaults to <c>false</c>.
     /// </summary>
     /// <remarks>
-    /// Local evaluation requires that <see cref="PostHogOptions.PersonalApiKey"/> is set.
+    /// Local evaluation requires that <see cref="PostHogOptions.SecretKey"/> is set.
     /// </remarks>
     public bool OnlyEvaluateLocally { get; init; }
 
     /// <summary>
     /// The set of person properties used to evaluate feature flags. Required for both local and remote evaluation
     /// when feature flags have conditions based on person properties.
-    /// For local evaluation (when <see cref="PostHogOptions.PersonalApiKey"/> is present and
+    /// For local evaluation (when <see cref="PostHogOptions.SecretKey"/> is present and
     /// <see cref="OnlyEvaluateLocally"/> is <c>true</c>), these properties are used directly.
     /// For remote evaluation, these properties are sent to PostHog's servers and can override stored person properties.
     /// </summary>

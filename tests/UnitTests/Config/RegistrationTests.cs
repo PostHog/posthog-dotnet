@@ -70,7 +70,7 @@ public class TheAddPostHogMethod
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
 
         Assert.Equal("fake-public-project-token", options.ProjectToken);
-        Assert.Equal("fake-secret-personal-api-key", options.PersonalApiKey);
+        Assert.Equal("fake-secret-personal-api-key", options.SecretKey);
         Assert.Equal(new Uri("https://test-host/"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
         Assert.Equal(10, options.FlushAt);
@@ -136,6 +136,28 @@ public class TheAddPostHogMethod
     }
 
     [Fact]
+    public void SecretKeyResolvesFromSecretKeyThenPersonalApiKey()
+    {
+        var options = new PostHogOptions { SecretKey = "phx_secret" };
+
+        Assert.Equal("phx_secret", options.SecretKey);
+
+#pragma warning disable CS0618
+        options = new PostHogOptions { PersonalApiKey = "phx_personal" };
+
+        Assert.Equal("phx_personal", options.SecretKey);
+
+        options = new PostHogOptions
+        {
+            SecretKey = "phx_secret",
+            PersonalApiKey = "phx_personal"
+        };
+#pragma warning restore CS0618
+
+        Assert.Equal("phx_secret", options.SecretKey);
+    }
+
+    [Fact]
     public void AllowsOverridingConfiguration()
     {
         var services = new ServiceCollection();
@@ -176,7 +198,7 @@ public class TheAddPostHogMethod
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
 
         Assert.Equal("fake-public-project-token", options.ProjectToken);
-        Assert.Equal("fake-secret-personal-api-key", options.PersonalApiKey);
+        Assert.Equal("fake-secret-personal-api-key", options.SecretKey);
         Assert.Equal(new Uri("https://test-host/"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
         Assert.Equal(42, options.FlushAt);

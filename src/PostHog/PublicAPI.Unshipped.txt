@@ -1,3 +1,5 @@
 #nullable enable
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void
+PostHog.PostHogOptions.SecretKey.get -> string?
+PostHog.PostHogOptions.SecretKey.set -> void

@@ -13,7 +13,7 @@ public static class Examples
     {
         ProjectToken = "<ph_project_token>",
         HostUrl = new Uri("<ph_client_api_host>"),
-        PersonalApiKey = Environment.GetEnvironmentVariable("PostHog__PersonalApiKey"),
+        SecretKey = Environment.GetEnvironmentVariable("PostHog__SecretKey"),
     });
 
     /// <summary>

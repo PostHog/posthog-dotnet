@@ -1727,7 +1727,7 @@ public class TheDisabledClient
             services.Configure<PostHogOptions>(options =>
             {
                 options.ProjectToken = projectToken;
-                options.PersonalApiKey = "fake-personal-api-key";
+                options.SecretKey = "fake-personal-api-key";
             });
         });
         var captureHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
@@ -1843,7 +1843,7 @@ public class TheDisabledClient
             services.Configure<PostHogOptions>(options =>
             {
                 options.ProjectToken = null;
-                options.PersonalApiKey = "fake-personal-api-key";
+                options.SecretKey = "fake-personal-api-key";
 #pragma warning disable CS0618
                 options.ProjectApiKey = projectApiKey;
 #pragma warning restore CS0618
