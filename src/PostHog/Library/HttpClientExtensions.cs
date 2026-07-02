@@ -55,12 +55,36 @@ internal static class HttpClientExtensions
         object content,
         TimeProvider timeProvider,
         PostHogOptions options,
+        FeatureFlagRequestCircuitBreaker circuitBreaker,
         CancellationToken cancellationToken)
     {
         var maxRetries = options.FeatureFlagRequestMaxRetries;
         var currentDelay = options.InitialRetryDelay;
         var maxDelay = options.MaxRetryDelay;
         var attempt = 0;
+
+        if (!circuitBreaker.TryEnter(timeProvider, out var isHalfOpenProbe))
+        {
+            throw new HttpRequestException("Feature flag request circuit breaker is open.");
+        }
+
+        async Task DelayBeforeRetry()
+        {
+            await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
+            currentDelay = DoubleWithCap(currentDelay, maxDelay);
+        }
+
+        async Task<bool> ShouldRetryAfterTransientFailure()
+        {
+            var circuitClosed = circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe);
+            if (attempt > maxRetries || !circuitClosed)
+            {
+                return false;
+            }
+
+            await DelayBeforeRetry();
+            return true;
+        }
 
         while (true)
         {
@@ -75,17 +99,41 @@ internal static class HttpClientExtensions
                     JsonSerializerHelper.Options,
                     cancellationToken);
             }
-            catch (HttpRequestException e) when (attempt <= maxRetries && IsRetryableFlagsHttpRequestException(e))
+            catch (HttpRequestException e) when (IsRetryableFlagsHttpRequestException(e))
             {
-                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
-                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                if (!await ShouldRetryAfterTransientFailure())
+                {
+                    throw;
+                }
+
                 continue;
             }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt <= maxRetries)
+            catch (HttpRequestException)
             {
-                await Delay(timeProvider, currentDelay > maxDelay ? maxDelay : currentDelay, cancellationToken);
-                currentDelay = DoubleWithCap(currentDelay, maxDelay);
+                if (isHalfOpenProbe)
+                {
+                    circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe: true);
+                }
+                throw;
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                if (!await ShouldRetryAfterTransientFailure())
+                {
+                    throw;
+                }
+
                 continue;
+            }
+            catch (OperationCanceledException) when (isHalfOpenProbe && cancellationToken.IsCancellationRequested)
+            {
+                circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe: true);
+                throw;
+            }
+            catch (Exception) when (isHalfOpenProbe)
+            {
+                circuitBreaker.RecordTransientFailure(timeProvider, isHalfOpenProbe: true);
+                throw;
             }
 
             // Response processing is outside the try-catch so that exceptions from
@@ -93,6 +141,11 @@ internal static class HttpClientExtensions
             // be caught by the retry logic above.
             using (response)
             {
+                if (isHalfOpenProbe || response.IsSuccessStatusCode)
+                {
+                    circuitBreaker.Close();
+                }
+
                 await response.EnsureSuccessfulApiCall(cancellationToken);
 
                 var result = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -417,5 +470,76 @@ internal static class HttpClientExtensions
         }
 
         throw await CreateApiException(response, cancellationToken);
+    }
+}
+
+sealed class FeatureFlagRequestCircuitBreaker
+{
+    const int FailureThreshold = 5;
+    static readonly TimeSpan OpenDuration = TimeSpan.FromSeconds(30);
+
+    readonly object _lock = new();
+    State _state;
+    int _consecutiveFailures;
+    DateTimeOffset _openUntil;
+
+    public bool TryEnter(TimeProvider timeProvider, out bool isHalfOpenProbe)
+    {
+        lock (_lock)
+        {
+            isHalfOpenProbe = false;
+
+            if (_state == State.Open && timeProvider.GetUtcNow() < _openUntil)
+            {
+                return false;
+            }
+
+            if (_state == State.Open)
+            {
+                _state = State.HalfOpen;
+                isHalfOpenProbe = true;
+                return true;
+            }
+
+            return _state != State.HalfOpen;
+        }
+    }
+
+    public bool RecordTransientFailure(TimeProvider timeProvider, bool isHalfOpenProbe)
+    {
+        lock (_lock)
+        {
+            if (isHalfOpenProbe || ++_consecutiveFailures >= FailureThreshold)
+            {
+                Open(timeProvider);
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    public void Close()
+    {
+        lock (_lock)
+        {
+            _state = State.Closed;
+            _consecutiveFailures = 0;
+            _openUntil = default;
+        }
+    }
+
+    void Open(TimeProvider timeProvider)
+    {
+        _state = State.Open;
+        _consecutiveFailures = 0;
+        _openUntil = timeProvider.GetUtcNow() + OpenDuration;
+    }
+
+    enum State
+    {
+        Closed,
+        Open,
+        HalfOpen
     }
 }

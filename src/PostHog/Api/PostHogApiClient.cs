@@ -23,6 +23,7 @@ internal sealed class PostHogApiClient : IDisposable
     readonly HttpClient _httpClient;
     readonly IOptions<PostHogOptions> _options;
     readonly ILogger<PostHogApiClient> _logger;
+    readonly FeatureFlagRequestCircuitBreaker _featureFlagRequestCircuitBreaker = new();
 
     /// <summary>
     /// Initialize a new PostHog client
@@ -153,6 +154,7 @@ internal sealed class PostHogApiClient : IDisposable
             payload,
             _timeProvider,
             _options.Value,
+            _featureFlagRequestCircuitBreaker,
             cancellationToken);
     }
 
