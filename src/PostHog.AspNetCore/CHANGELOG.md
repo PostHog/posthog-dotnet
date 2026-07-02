@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.7.4
+
+### Patch Changes
+
+- 048601e: Stop duplicating `distinct_id` inside `/flags` person properties.
+
 ## 2.7.3
 
 ### Patch Changes

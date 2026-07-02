@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.8.7
+
+### Patch Changes
+
+- 048601e: Stop duplicating `distinct_id` inside `/flags` person properties.
+
 ## 2.8.6
 
 ### Patch Changes
