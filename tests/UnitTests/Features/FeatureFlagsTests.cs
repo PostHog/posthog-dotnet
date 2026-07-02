@@ -2283,7 +2283,7 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task BooleanFeatureFlagPayloadsFromDecide()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponse(
+        var handler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"person-flag": true}, "featureFlagPayloads": {"person-flag": "300"}}
             """
@@ -2295,6 +2295,10 @@ public class TheGetFeatureFlagAsyncMethod
             PersonProperties = new() { ["region"] = "USA" }
         });
         JsonAssert.Equal(300, result?.Payload);
+        using var document = JsonDocument.Parse(handler.GetReceivedRequestBody(indented: false));
+        var personProperties = document.RootElement.GetProperty("person_properties");
+        Assert.Equal("USA", personProperties.GetProperty("region").GetString());
+        Assert.False(personProperties.TryGetProperty("distinct_id", out _));
     }
 
     [Fact] // Ported from PostHog/posthog-python test_multivariate_feature_flag_payloads
@@ -2400,6 +2404,7 @@ public class TheGetFeatureFlagAsyncMethod
         Assert.Equal("fake-project-token", root.GetProperty("api_key").GetString());
         Assert.Equal("some-distinct-id", root.GetProperty("distinct_id").GetString());
         Assert.Empty(root.GetProperty("groups").EnumerateObject());
+        Assert.False(root.TryGetProperty("person_properties", out _));
         Assert.Empty(root.GetProperty("group_properties").EnumerateObject());
         Assert.Equal(disableGeoIp, root.GetProperty("geoip_disable").GetBoolean());
         var flagKey = Assert.Single(root.GetProperty("flag_keys_to_evaluate").EnumerateArray());
