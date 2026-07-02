@@ -31,16 +31,25 @@ public class PostHogFeatureDefinitionProvider(IPostHogClient posthog) : IFeature
         {
             foreach (var flag in localEvaluator.LocalEvaluationApiResult.Flags)
             {
-                yield return CreateFeatureDefinition(flag);
+                yield return CreateFeatureDefinition(flag.Key);
             }
+            yield break;
+        }
+
+        // Fallback: no PersonalApiKey means no local-evaluation flag list. Poll /flags with a stable
+        // sentinel distinct_id and use the returned keys as the enumeration source. We only care about
+        // keys; the values for the sentinel are discarded. See PostHog/posthog-dotnet#64.
+        foreach (var key in await FeatureEnumerationFallback.GetFeatureKeysAsync(posthog, CancellationToken.None))
+        {
+            yield return CreateFeatureDefinition(key);
         }
     }
 
-    static FeatureDefinition CreateFeatureDefinition(LocalFeatureFlag flag)
+    static FeatureDefinition CreateFeatureDefinition(string key)
     {
         return new FeatureDefinition
         {
-            Name = flag.Key,
+            Name = key,
             EnabledFor = [new FeatureFilterConfiguration { Name = "PostHog" }],
             RequirementType = RequirementType.Any
         };

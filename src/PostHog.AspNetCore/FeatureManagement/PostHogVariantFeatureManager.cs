@@ -23,13 +23,20 @@ public class PostHogVariantFeatureManager(
         [EnumeratorCancellation] CancellationToken cancellationToken = new())
     {
         var localEvaluator = await posthog.GetLocalEvaluatorAsync(cancellationToken);
-        if (localEvaluator is null)
+        if (localEvaluator is not null)
         {
+            foreach (var flag in localEvaluator.LocalEvaluationApiResult.Flags)
+            {
+                yield return flag.Key;
+            }
             yield break;
         }
-        foreach (var flag in localEvaluator.LocalEvaluationApiResult.Flags)
+
+        // Fallback: no PersonalApiKey means no local-evaluation flag list. Poll /flags with a stable
+        // sentinel distinct_id and yield the returned keys. See PostHog/posthog-dotnet#64.
+        foreach (var key in await FeatureEnumerationFallback.GetFeatureKeysAsync(posthog, cancellationToken))
         {
-            yield return flag.Key;
+            yield return key;
         }
     }
 
