@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.8.6
+
+### Patch Changes
+
+- c631799: Retry remote feature flag requests after transient 502 and 504 responses.
+
 ## 2.8.5
 
 ### Patch Changes

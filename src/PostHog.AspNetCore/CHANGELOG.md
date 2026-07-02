@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.7.3
+
+### Patch Changes
+
+- c631799: Retry remote feature flag requests after transient 502 and 504 responses.
+
 ## 2.7.2
 
 ### Patch Changes
