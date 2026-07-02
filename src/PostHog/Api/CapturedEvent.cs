@@ -22,7 +22,7 @@ public class CapturedEvent
         Dictionary<string, object>? properties,
         DateTimeOffset timestamp)
     {
-        Uuid = Guid.NewGuid().ToString();
+        Uuid = UuidV7.NewString();
         EventName = eventName;
         DistinctId = distinctId;
         Timestamp = timestamp;

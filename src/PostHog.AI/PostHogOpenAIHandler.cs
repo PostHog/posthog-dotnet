@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
+using PostHog.Library;
 
 namespace PostHog.AI;
 
@@ -424,7 +425,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 eventProperties[PostHogAIFieldNames.Model] = model ?? "unknown";
 
             // Context integration
-            var traceId = context?.TraceId ?? Guid.NewGuid().ToString();
+            var traceId = context?.TraceId ?? UuidV7.NewString();
             eventProperties[PostHogAIFieldNames.TraceId] = traceId;
 
             var distinctId = context?.DistinctId ?? traceId;

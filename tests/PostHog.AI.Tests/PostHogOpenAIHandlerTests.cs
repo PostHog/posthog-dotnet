@@ -309,6 +309,14 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             || (string)provider != "openai"
         )
             return false;
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.TraceId, out var traceId)
+            || traceId is not string traceIdString
+            || traceIdString.Length != 36
+            || !Guid.TryParse(traceIdString, out _)
+            || traceIdString[14] != '7'
+        )
+            return false;
         return true;
     }
 

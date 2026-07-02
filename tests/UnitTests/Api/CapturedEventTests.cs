@@ -23,6 +23,7 @@ public class TheConstructor
 
         Assert.True(Guid.TryParse(capturedEvent.Uuid, out var guid), "UUID should be valid GUID format");
         Assert.NotEqual(Guid.Empty, guid);
+        Assert.Equal('7', capturedEvent.Uuid[14]);
     }
 
     [Fact]
