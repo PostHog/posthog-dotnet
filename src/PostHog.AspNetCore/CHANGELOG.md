@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.7.5
+
+### Patch Changes
+
+- 4fd337c: Release feature flag enumeration fallback without a Personal API Key.
+
 ## 2.7.4
 
 ### Patch Changes
