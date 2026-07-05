@@ -68,7 +68,7 @@ public sealed class PostHogClient : IPostHogClient
             loggerFactory.CreateLogger<PostHogApiClient>()
         );
         _asyncBatchHandler = new AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext>(
-            batch => _apiClient.CaptureBatchAsync(batch, CancellationToken.None),
+            CaptureBatchAsync,
             batchContextFunc: () => new CapturedEventBatchContext(
                 new FallbackFeatureFlagCache(
                     new MemoryFeatureFlagCache(_timeProvider, 10000, 0.2),
@@ -331,7 +331,7 @@ public sealed class PostHogClient : IPostHogClient
         _logger.LogWarnCaptureFailed(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
         return false;
 
-        async Task<CapturedEvent?> BatchTask(CapturedEventBatchContext context)
+        async Task<CapturedEvent> BatchTask(CapturedEventBatchContext context)
         {
             CapturedEvent enrichedEvent;
             if (flags is not null)
@@ -357,8 +357,31 @@ public sealed class PostHogClient : IPostHogClient
                     capturedEvent);
             }
 
-            return ApplyBeforeSend(enrichedEvent);
+            return enrichedEvent;
         }
+    }
+
+    async Task CaptureBatchAsync(IEnumerable<CapturedEvent> batch)
+    {
+        var beforeSend = _options.Value.BeforeSend;
+        if (beforeSend is null)
+        {
+            await _apiClient.CaptureBatchAsync(batch, CancellationToken.None);
+            return;
+        }
+
+        var events = batch
+            .Select(ApplyBeforeSend)
+            .Where(capturedEvent => capturedEvent is not null)
+            .Select(capturedEvent => capturedEvent!)
+            .ToArray();
+
+        if (events.Length is 0)
+        {
+            return;
+        }
+
+        await _apiClient.CaptureBatchAsync(events, CancellationToken.None);
     }
 
     CapturedEvent? ApplyBeforeSend(CapturedEvent capturedEvent)
