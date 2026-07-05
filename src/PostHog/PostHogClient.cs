@@ -331,27 +331,60 @@ public sealed class PostHogClient : IPostHogClient
         _logger.LogWarnCaptureFailed(eventName, capturedEvent.Properties.Count, _asyncBatchHandler.Count);
         return false;
 
-        Task<CapturedEvent> BatchTask(CapturedEventBatchContext context)
+        async Task<CapturedEvent?> BatchTask(CapturedEventBatchContext context)
         {
+            CapturedEvent enrichedEvent;
             if (flags is not null)
             {
-                AddFeatureFlagsToCapturedEvent(capturedEvent, flags);
-                return Task.FromResult(capturedEvent);
+                enrichedEvent = AddFeatureFlagsToCapturedEvent(capturedEvent, flags);
             }
-
-            if (!sendFeatureFlags)
+            else if (!sendFeatureFlags)
             {
-                return Task.FromResult(capturedEvent);
+                enrichedEvent = capturedEvent;
             }
-
-            // Prefer local evaluation when available
-            if (_featureFlagsLoader.IsLoaded)
+            else if (_featureFlagsLoader.IsLoaded)
             {
-                return AddLocalFeatureFlagDataAsync(captureContext.DistinctId, groups, capturedEvent);
+                // Prefer local evaluation when available
+                enrichedEvent = await AddLocalFeatureFlagDataAsync(captureContext.DistinctId, groups, capturedEvent);
+            }
+            else
+            {
+                // Otherwise we fall back to remote /flags call
+                enrichedEvent = await AddFreshFeatureFlagDataAsync(
+                    context.FeatureFlagCache,
+                    captureContext.DistinctId,
+                    groups,
+                    capturedEvent);
             }
 
-            // Otherwise we fall back to remote /flags call
-            return AddFreshFeatureFlagDataAsync(context.FeatureFlagCache, captureContext.DistinctId, groups, capturedEvent);
+            return ApplyBeforeSend(enrichedEvent);
+        }
+    }
+
+    CapturedEvent? ApplyBeforeSend(CapturedEvent capturedEvent)
+    {
+        var beforeSend = _options.Value.BeforeSend;
+        if (beforeSend is null)
+        {
+            return capturedEvent;
+        }
+
+        try
+        {
+            var result = beforeSend(capturedEvent);
+            if (result is null)
+            {
+                _logger.LogDebugBeforeSendDropped(capturedEvent.EventName);
+            }
+
+            return result;
+        }
+#pragma warning disable CA1031 // Customer callbacks can throw any exception; drop just this event.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            _logger.LogErrorBeforeSendException(ex, capturedEvent.EventName);
+            return null;
         }
     }
 
@@ -1278,6 +1311,18 @@ public sealed class PostHogClient : IPostHogClient
 
 internal static partial class PostHogClientLoggerExtensions
 {
+    [LoggerMessage(
+        EventId = 22,
+        Level = LogLevel.Debug,
+        Message = "Event {EventName} was dropped by the before send callback")]
+    public static partial void LogDebugBeforeSendDropped(this ILogger<PostHogClient> logger, string eventName);
+
+    [LoggerMessage(
+        EventId = 23,
+        Level = LogLevel.Error,
+        Message = "Error in before send callback for event {EventName}; dropping event")]
+    public static partial void LogErrorBeforeSendException(this ILogger<PostHogClient> logger, Exception exception, string eventName);
+
     [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Information,

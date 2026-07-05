@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using PostHog.Api;
 using PostHog.Library;
 
 namespace PostHog;
@@ -100,6 +101,12 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// key sent with the event.
     /// </summary>
     public Dictionary<string, object> SuperProperties { get; init; } = new();
+
+    /// <summary>
+    /// Optional callback invoked after an event is fully enriched and before it is serialized for upload.
+    /// Return the event (mutated or unchanged) to continue, or <c>null</c> to drop it.
+    /// </summary>
+    public Func<CapturedEvent, CapturedEvent?>? BeforeSend { get; set; }
 
     /// <summary>
     /// When <see cref="PersonalApiKey"/> is set, this is the interval to poll for feature flags used in
