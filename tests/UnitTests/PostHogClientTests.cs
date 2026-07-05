@@ -453,12 +453,16 @@ public class TheCaptureMethod
         Assert.False(properties.TryGetProperty("secret", out _));
     }
 
-    [Fact]
-    public async Task BeforeSendCanDropEventBeforeUpload()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BeforeSendCanDropEventBeforeUpload(bool throws)
     {
         var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
         {
-            options.BeforeSend = _ => null;
+            options.BeforeSend = throws
+                ? _ => throw new InvalidOperationException("before send failed")
+                : _ => null;
         }));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
