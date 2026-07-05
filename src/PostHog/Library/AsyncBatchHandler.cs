@@ -15,14 +15,14 @@ namespace PostHog.Library;
 /// <typeparam name="TBatchContext">
 /// The type of the context object to pass to batch items. A new instance is passed for each batch.
 /// </typeparam>
-internal class BatchItem<TItem, TBatchContext>(Func<TBatchContext, Task<TItem>> itemFetcher)
+internal class BatchItem<TItem, TBatchContext>(Func<TBatchContext, Task<TItem?>> itemFetcher)
 {
     /// <summary>
     /// Resolves the item to send in the batch.
     /// </summary>
     /// <param name="context">Context to provide to the resolver.</param>
-    /// <returns>The item to send in the batch.</returns>
-    public Task<TItem> ResolveItem(TBatchContext context) => itemFetcher(context);
+    /// <returns>The item to send in the batch, or <c>null</c> to drop it.</returns>
+    public Task<TItem?> ResolveItem(TBatchContext context) => itemFetcher(context);
 }
 
 /// <summary>
@@ -91,7 +91,7 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
     /// </summary>
     /// <param name="item">The item to enqueue</param>
     /// <returns><c>true</c> if the item was enqueued, otherwise <c>false</c>ß</returns>
-    public bool Enqueue(Task<TItem> item) => Enqueue(new BatchItem<TItem, TBatchContext>(_ => item));
+    public bool Enqueue(Task<TItem> item) => Enqueue(new BatchItem<TItem, TBatchContext>(async _ => await item));
 
     /// <summary>
     /// Enqueues a batch item and returns true if the item was successfully enqueued.
@@ -232,7 +232,8 @@ internal sealed class AsyncBatchHandler<TItem, TBatchContext> : IDisposable, IAs
         {
             var tasks = batch.Select(item => item.ResolveItem(batchContext));
             var resolved = await Task.WhenAll(tasks);
-            await SendBatch(resolved);
+            var itemsToSend = resolved.Where(item => item is not null).Select(item => item!).ToArray();
+            await SendBatch(itemsToSend);
         }
 
         return;
