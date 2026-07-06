@@ -1335,18 +1335,6 @@ public sealed class PostHogClient : IPostHogClient
 internal static partial class PostHogClientLoggerExtensions
 {
     [LoggerMessage(
-        EventId = 22,
-        Level = LogLevel.Debug,
-        Message = "Event {EventName} was dropped by the before send callback")]
-    public static partial void LogDebugBeforeSendDropped(this ILogger<PostHogClient> logger, string eventName);
-
-    [LoggerMessage(
-        EventId = 23,
-        Level = LogLevel.Error,
-        Message = "Error in before send callback for event {EventName}; dropping event")]
-    public static partial void LogErrorBeforeSendException(this ILogger<PostHogClient> logger, Exception exception, string eventName);
-
-    [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Information,
         Message = "PostHog Client created with Max Batch Size: {MaxBatchSize}, Flush Interval: {FlushInterval}, and FlushAt: {FlushAt}")]
@@ -1503,4 +1491,16 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Error,
         Message = "PostHog API call failed in {MethodName}; returning a no-op result.")]
     public static partial void LogErrorApiCallFailed(this ILogger<PostHogClient> logger, Exception exception, string methodName);
+
+    [LoggerMessage(
+        EventId = 25,
+        Level = LogLevel.Debug,
+        Message = "Event {EventName} was dropped by the before send callback")]
+    public static partial void LogDebugBeforeSendDropped(this ILogger<PostHogClient> logger, string eventName);
+
+    [LoggerMessage(
+        EventId = 26,
+        Level = LogLevel.Error,
+        Message = "Error in before send callback for event {EventName}; dropping event")]
+    public static partial void LogErrorBeforeSendException(this ILogger<PostHogClient> logger, Exception exception, string eventName);
 }
