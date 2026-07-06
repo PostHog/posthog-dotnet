@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.8.0
+
+### Minor Changes
+
+- d543f28: Add a before send callback for modifying or dropping fully enriched events.
+
 ## 2.7.5
 
 ### Patch Changes

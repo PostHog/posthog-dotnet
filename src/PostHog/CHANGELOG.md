@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.9.0
+
+### Minor Changes
+
+- d543f28: Add a before send callback for modifying or dropping fully enriched events.
+
 ## 2.8.7
 
 ### Patch Changes
