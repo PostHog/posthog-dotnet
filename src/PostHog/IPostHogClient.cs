@@ -210,8 +210,8 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// Retrieves a remote config payload.
     /// </summary>
     /// <remarks>
-    /// Requires <see cref="PostHogOptions.PersonalApiKey"/>. Returns <c>null</c> when the client is disabled,
-    /// the personal API key is missing, the payload is missing, or the request fails.
+    /// Requires <see cref="PostHogOptions.SecretKey"/>. Returns <c>null</c> when the client is disabled,
+    /// the secret key is missing, the payload is missing, or the request fails.
     /// </remarks>
     /// <param name="key">The remote config key.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>

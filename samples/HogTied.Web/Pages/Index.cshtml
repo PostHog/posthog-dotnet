@@ -47,17 +47,17 @@
                 </strong>
             </div>
 
-            if (Model.PersonalApiKeyIsSet) {
+            if (Model.SecretKeyIsSet) {
                 <div class="alert alert-info mt-3" role="alert">
                     <strong>
-                        The Personal API Key is set. If it's valid, we'll be using local evaluation.
+                        The Secret Key is set. If it's valid, we'll be using local evaluation.
                     </strong>
                 </div>
             }
             else {
                 <div class="alert alert-info mt-3" role="alert">
                     <strong>
-                        The Personal API Key is NOT set. We'll be using remote evaluation.
+                        The Secret Key is NOT set. We'll be using remote evaluation.
                     </strong>
                 </div>
             }

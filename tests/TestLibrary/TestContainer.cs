@@ -42,7 +42,7 @@ public sealed class TestContainer : IServiceProvider
         services.Configure<PostHogOptions>(options =>
         {
             options.ProjectToken = "fake-project-token";
-            options.PersonalApiKey = personalApiKey;
+            options.SecretKey = personalApiKey;
         });
     })
     {

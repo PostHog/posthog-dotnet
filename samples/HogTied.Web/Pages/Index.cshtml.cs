@@ -24,7 +24,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
 
     public bool ProjectTokenIsSet { get; private set; }
 
-    public bool PersonalApiKeyIsSet { get; private set; }
+    public bool SecretKeyIsSet { get; private set; }
 
     public bool? NonExistentFlag { get; private set; }
 
@@ -66,7 +66,7 @@ public class IndexModel(IOptions<PostHogOptions> options, IPostHogClient posthog
     public async Task OnGetAsync()
     {
         ProjectTokenIsSet = options.Value.ProjectToken is not (null or []);
-        PersonalApiKeyIsSet = options.Value.PersonalApiKey is not (null or []);
+        SecretKeyIsSet = options.Value.SecretKey is not (null or []);
 
         // Check if the user is authenticated and get their user id.
         UserId = User.Identity?.IsAuthenticated == true
