@@ -28,7 +28,7 @@ DotEnv.Load(options: new DotEnvOptions(envFilePaths: envPaths, ignoreExceptions:
 // Get configuration from environment variables
 var projectToken = Environment.GetEnvironmentVariable("POSTHOG_PROJECT_TOKEN")
                    ?? Environment.GetEnvironmentVariable("POSTHOG_PROJECT_API_KEY");
-var personalApiKey = Environment.GetEnvironmentVariable("POSTHOG_PERSONAL_API_KEY");
+var secretKey = Environment.GetEnvironmentVariable("POSTHOG_SECRET_KEY");
 var endpoint = Environment.GetEnvironmentVariable("POSTHOG_HOST") ?? "https://us.i.posthog.com";
 
 // Check credentials
@@ -58,7 +58,7 @@ if (endpointUri.Scheme != "https" && !endpointUri.IsLoopback)
 
 Console.WriteLine("✅ PostHog credentials loaded successfully!");
 Console.WriteLine($"   Project Token: ✅ Configured");
-Console.WriteLine($"   Personal API Key: {(string.IsNullOrEmpty(personalApiKey) ? "❌ Not set (local evaluation disabled)" : "✅ Configured")}");
+Console.WriteLine($"   Secret Key: {(string.IsNullOrEmpty(secretKey) ? "❌ Not set (local evaluation disabled)" : "✅ Configured")}");
 Console.WriteLine($"   Endpoint: {endpoint}");
 Console.WriteLine();
 
@@ -66,7 +66,7 @@ Console.WriteLine();
 var options = new PostHogOptions
 {
     ProjectToken = projectToken,
-    SecretKey = personalApiKey,
+    SecretKey = secretKey,
     HostUrl = new Uri(endpoint),
     FlushAt = 1, // Flush immediately for demo purposes
     FlushInterval = TimeSpan.FromSeconds(1)
@@ -87,7 +87,7 @@ await using var posthog = new PostHogClient(options, loggerFactory: loggerFactor
 // Display menu
 while (true)
 {
-    ShowMenu(hasPersonalApiKey: !string.IsNullOrEmpty(personalApiKey));
+    ShowMenu(hasSecretKey: !string.IsNullOrEmpty(secretKey));
     var choice = Prompt("\nEnter your choice (1-6): ");
 
     switch (choice)
@@ -102,10 +102,10 @@ while (true)
             await RunFeatureFlagExamples(posthog);
             break;
         case "4":
-            await RunLocalEvaluationExample(posthog, hasPersonalApiKey: !string.IsNullOrEmpty(personalApiKey));
+            await RunLocalEvaluationExample(posthog, hasSecretKey: !string.IsNullOrEmpty(secretKey));
             break;
         case "5":
-            await RunAllExamples(posthog, hasPersonalApiKey: !string.IsNullOrEmpty(personalApiKey));
+            await RunAllExamples(posthog, hasSecretKey: !string.IsNullOrEmpty(secretKey));
             break;
         case "6":
             Console.WriteLine("👋 Goodbye!");
@@ -131,14 +131,14 @@ while (true)
     Console.WriteLine();
 }
 
-static void ShowMenu(bool hasPersonalApiKey)
+static void ShowMenu(bool hasSecretKey)
 {
     Console.WriteLine("🦔 PostHog .NET SDK Demo - Choose an example to run:");
     Console.WriteLine();
     Console.WriteLine("1. Capture events");
     Console.WriteLine("2. Identify users");
     Console.WriteLine("3. Feature flags (remote evaluation)");
-    Console.WriteLine($"4. Local evaluation with ETag polling{(hasPersonalApiKey ? "" : " (requires Personal API Key)")}");
+    Console.WriteLine($"4. Local evaluation with ETag polling{(hasSecretKey ? "" : " (requires Secret Key)")}");
     Console.WriteLine("5. Run all examples");
     Console.WriteLine("6. Exit");
 }
@@ -283,17 +283,17 @@ static async Task RunFeatureFlagExamples(PostHogClient posthog)
     }
 }
 
-static async Task RunLocalEvaluationExample(PostHogClient posthog, bool hasPersonalApiKey)
+static async Task RunLocalEvaluationExample(PostHogClient posthog, bool hasSecretKey)
 {
     Console.WriteLine("\n" + new string('=', 60));
     Console.WriteLine("LOCAL EVALUATION WITH ETAG POLLING");
     Console.WriteLine(new string('=', 60));
 
-    if (!hasPersonalApiKey)
+    if (!hasSecretKey)
     {
-        Console.WriteLine("\n⚠️  This example requires a Personal API Key to be set.");
-        Console.WriteLine("   Set POSTHOG_PERSONAL_API_KEY in your .env file.");
-        Console.WriteLine("   Personal API keys can be created at:");
+        Console.WriteLine("\n⚠️  This example requires a Secret Key to be set.");
+        Console.WriteLine("   Set POSTHOG_SECRET_KEY in your .env file.");
+        Console.WriteLine("   Secret keys can be created at:");
         Console.WriteLine("   https://us.posthog.com/settings/user-api-keys");
         return;
     }
@@ -368,12 +368,12 @@ static async Task RunLocalEvaluationExample(PostHogClient posthog, bool hasPerso
     Console.WriteLine("   ✓ Polling stopped");
 }
 
-static async Task RunAllExamples(PostHogClient posthog, bool hasPersonalApiKey)
+static async Task RunAllExamples(PostHogClient posthog, bool hasSecretKey)
 {
     Console.WriteLine("\n🔄 Running all examples…");
 
     await RunCaptureExamples(posthog);
     await RunIdentifyExamples(posthog);
     await RunFeatureFlagExamples(posthog);
-    await RunLocalEvaluationExample(posthog, hasPersonalApiKey);
+    await RunLocalEvaluationExample(posthog, hasSecretKey);
 }
