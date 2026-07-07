@@ -23,6 +23,7 @@ internal sealed class PostHogApiClient : IDisposable
     readonly HttpClient _httpClient;
     readonly IOptions<PostHogOptions> _options;
     readonly ILogger<PostHogApiClient> _logger;
+    readonly FeatureFlagRequestCircuitBreaker _featureFlagRequestCircuitBreaker = new();
 
     /// <summary>
     /// Initialize a new PostHog client
@@ -107,6 +108,7 @@ internal sealed class PostHogApiClient : IDisposable
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally, if personalApiKey is present. Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="groupProperties">Optional: What group properties are known. Used to compute flags locally, if personalApiKey is present.  Not needed if using remote evaluation, but can be used to override remote values for the purposes of feature flag evaluation.</param>
     /// <param name="flagKeysToEvaluate">The set of flag keys to evaluate. If empty, this returns all flags.</param>
+    /// <param name="disableGeoIp">Whether to disable GeoIP enrichment for the request.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="FlagsApiResult"/>.</returns>
     public async Task<FlagsApiResult?> GetFeatureFlagsAsync(
@@ -114,13 +116,18 @@ internal sealed class PostHogApiClient : IDisposable
         Dictionary<string, object?>? personProperties,
         GroupCollection? groupProperties,
         IReadOnlyList<string>? flagKeysToEvaluate,
+        bool disableGeoIp,
         CancellationToken cancellationToken)
     {
         var endpointUrl = new Uri(HostUrl, "flags/?v=2");
 
         var payload = new Dictionary<string, object>
         {
-            ["distinct_id"] = distinctUserId
+            ["api_key"] = ProjectToken,
+            ["distinct_id"] = distinctUserId,
+            ["groups"] = new Dictionary<string, string>(),
+            ["group_properties"] = new Dictionary<string, Dictionary<string, object?>>(),
+            ["geoip_disable"] = disableGeoIp
         };
 
         if (personProperties is { Count: > 0 })
@@ -147,6 +154,7 @@ internal sealed class PostHogApiClient : IDisposable
             payload,
             _timeProvider,
             _options.Value,
+            _featureFlagRequestCircuitBreaker,
             cancellationToken);
     }
 

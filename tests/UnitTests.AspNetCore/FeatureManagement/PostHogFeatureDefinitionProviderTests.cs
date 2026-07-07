@@ -67,6 +67,41 @@ public class TheGetAllFeatureDefinitionsAsyncMethod
     }
 }
 
+public class TheGetAllFeatureDefinitionsAsyncMethodFallback
+{
+    [Fact]
+    public async Task ReturnsFlagsFromFlagsEndpointWhenNoPersonalApiKey()
+    {
+        var container = new TestContainer(sp =>
+        {
+            var builder = new PostHogConfigurationBuilder(sp);
+            builder.UseFeatureManagement<FakePostHogFeatureFlagContextProvider>();
+            // No PersonalApiKey configured.
+        });
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            requestPredicate: body =>
+                body.TryGetValue("distinct_id", out var id)
+                && id is System.Text.Json.JsonElement el
+                && el.GetString() == FeatureEnumerationFallback.SentinelDistinctId,
+            responseBody: """
+            {
+              "featureFlags": {
+                "beta-feature": true,
+                "alpha-feature": false
+              }
+            }
+            """
+        );
+        var provider = container.Activate<PostHogFeatureDefinitionProvider>();
+
+        var features = await provider.GetAllFeatureDefinitionsAsync().ToListAsync();
+
+        Assert.Equal(
+            new[] { "beta-feature", "alpha-feature" },
+            features.Select(f => f.Name).OrderByDescending(n => n));
+    }
+}
+
 public class TheGetFeatureDefinitionAsyncMethod
 {
     [Fact]

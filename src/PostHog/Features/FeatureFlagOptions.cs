@@ -49,4 +49,9 @@ public class AllFeatureFlagsOptions
     /// The set of flag keys to evaluate in this request. If not specified, all flags are evaluated.
     /// </summary>
     public IReadOnlyList<string> FlagKeysToEvaluate { get; init; } = [];
+
+    /// <summary>
+    /// Whether to disable GeoIP enrichment for the feature flag request. Defaults to <c>false</c>.
+    /// </summary>
+    public bool DisableGeoIp { get; init; }
 }

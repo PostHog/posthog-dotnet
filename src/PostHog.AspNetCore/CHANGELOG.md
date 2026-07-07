@@ -1,5 +1,35 @@
 # PostHog.AspNetCore
 
+## 2.8.0
+
+### Minor Changes
+
+- d543f28: Add a before send callback for modifying or dropping fully enriched events.
+
+## 2.7.5
+
+### Patch Changes
+
+- 4fd337c: Release feature flag enumeration fallback without a Personal API Key.
+
+## 2.7.4
+
+### Patch Changes
+
+- 048601e: Stop duplicating `distinct_id` inside `/flags` person properties.
+
+## 2.7.3
+
+### Patch Changes
+
+- c631799: Retry remote feature flag requests after transient 502 and 504 responses.
+
+## 2.7.2
+
+### Patch Changes
+
+- 256d2df: Add a per-client circuit breaker for feature flag requests after consecutive transient network failures, temporarily failing fast before probing for recovery.
+
 ## 2.7.1
 
 ### Patch Changes

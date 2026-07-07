@@ -2283,7 +2283,7 @@ public class TheGetFeatureFlagAsyncMethod
     public async Task BooleanFeatureFlagPayloadsFromDecide()
     {
         var container = new TestContainer();
-        container.FakeHttpMessageHandler.AddFlagsResponse(
+        var handler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
             {"featureFlags": {"person-flag": true}, "featureFlagPayloads": {"person-flag": "300"}}
             """
@@ -2295,6 +2295,10 @@ public class TheGetFeatureFlagAsyncMethod
             PersonProperties = new() { ["region"] = "USA" }
         });
         JsonAssert.Equal(300, result?.Payload);
+        using var document = JsonDocument.Parse(handler.GetReceivedRequestBody(indented: false));
+        var personProperties = document.RootElement.GetProperty("person_properties");
+        Assert.Equal("USA", personProperties.GetProperty("region").GetString());
+        Assert.False(personProperties.TryGetProperty("distinct_id", out _));
     }
 
     [Fact] // Ported from PostHog/posthog-python test_multivariate_feature_flag_payloads
@@ -2371,8 +2375,10 @@ public class TheGetFeatureFlagAsyncMethod
         JsonAssert.Equal("""{"a":"json"}""", result?.Payload);
     }
 
-    [Fact]
-    public async Task CallsDecideWithFlagKeyToEvaluate()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CallsDecideWithFlagKeyToEvaluate(bool disableGeoIp)
     {
         var container = new TestContainer();
         var handler = container.FakeHttpMessageHandler.AddFlagsResponse(
@@ -2382,21 +2388,59 @@ public class TheGetFeatureFlagAsyncMethod
         );
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.GetFeatureFlagAsync("beta-feature", "some-distinct-id");
+        var result = await client.GetFeatureFlagAsync(
+            "beta-feature",
+            "some-distinct-id",
+            new FeatureFlagOptions
+            {
+                DisableGeoIp = disableGeoIp,
+                FlagKeysToEvaluate = ["beta-feature"]
+            });
 
         Assert.NotNull(result);
         Assert.Equal(new FeatureFlag { Key = "beta-feature", VariantKey = "alakazam" }, result);
-        var receivedBody = handler.GetReceivedRequestBody(true);
-        Assert.StartsWith(
+        using var document = JsonDocument.Parse(handler.GetReceivedRequestBody(indented: false));
+        var root = document.RootElement;
+        Assert.Equal("fake-project-token", root.GetProperty("api_key").GetString());
+        Assert.Equal("some-distinct-id", root.GetProperty("distinct_id").GetString());
+        Assert.Empty(root.GetProperty("groups").EnumerateObject());
+        Assert.False(root.TryGetProperty("person_properties", out _));
+        Assert.Empty(root.GetProperty("group_properties").EnumerateObject());
+        Assert.Equal(disableGeoIp, root.GetProperty("geoip_disable").GetBoolean());
+        var flagKey = Assert.Single(root.GetProperty("flag_keys_to_evaluate").EnumerateArray());
+        Assert.Equal("beta-feature", flagKey.GetString());
+    }
+
+    [Fact]
+    public async Task PreservesExplicitPersonPropertiesDistinctId()
+    {
+        var container = new TestContainer();
+        var handler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """
+            {"featureFlags": {"beta-feature": true}}
+            """
+        );
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.GetFeatureFlagAsync(
+            "beta-feature",
+            "top-level-distinct-id",
+            new FeatureFlagOptions
             {
-              "distinct_id": "some-distinct-id",
-              "flag_keys_to_evaluate": [
-                "beta-feature"
-              ],
-            """,
-            receivedBody,
-            StringComparison.Ordinal);
+                PersonProperties = new()
+                {
+                    ["distinct_id"] = "person-property-distinct-id",
+                    ["email"] = "test@posthog.com"
+                }
+            });
+
+        Assert.True(result);
+        using var document = JsonDocument.Parse(handler.GetReceivedRequestBody(indented: false));
+        var root = document.RootElement;
+        Assert.Equal("top-level-distinct-id", root.GetProperty("distinct_id").GetString());
+        var personProperties = root.GetProperty("person_properties");
+        Assert.Equal("person-property-distinct-id", personProperties.GetProperty("distinct_id").GetString());
+        Assert.Equal("test@posthog.com", personProperties.GetProperty("email").GetString());
     }
 
     [Fact]

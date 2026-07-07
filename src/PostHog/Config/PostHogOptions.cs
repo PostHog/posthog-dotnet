@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using PostHog.Api;
 using PostHog.Library;
 
 namespace PostHog;
@@ -122,6 +123,12 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public Dictionary<string, object> SuperProperties { get; init; } = new();
 
     /// <summary>
+    /// Optional callback invoked after an event is fully enriched and before it is serialized for upload.
+    /// Return the event (mutated or unchanged) to continue, or <c>null</c> to drop it.
+    /// </summary>
+    public Func<CapturedEvent, CapturedEvent?>? BeforeSend { get; set; }
+
+    /// <summary>
     /// When <see cref="SecretKey"/> is set, this is the interval to poll for feature flags used in
     /// local evaluation. Default is 30 seconds.
     /// </summary>
@@ -194,7 +201,8 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public int MaxRetries { get; set; } = 3;
 
     /// <summary>
-    /// The maximum number of retries for feature flag requests after transient network errors. (Default: 1)
+    /// The maximum number of retries for feature flag requests after transient network errors
+    /// or HTTP 502/504 responses. (Default: 1)
     /// Set to 0 to disable feature flag request retries.
     /// </summary>
     public int FeatureFlagRequestMaxRetries { get; set; } = 1;

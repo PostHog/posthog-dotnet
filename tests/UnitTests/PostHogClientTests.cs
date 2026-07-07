@@ -415,6 +415,64 @@ public class TheCapturePageViewMethod
 
 public class TheCaptureMethod
 {
+    [Fact]
+    public async Task BeforeSendCanModifyFullyEnrichedEventBeforeUpload()
+    {
+        var sawFullyEnrichedEvent = false;
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties["source"] = "super";
+            options.BeforeSend = capturedEvent =>
+            {
+                sawFullyEnrichedEvent = capturedEvent.Properties.ContainsKey("$lib")
+                    && capturedEvent.Properties.ContainsKey("$lib_version")
+                    && capturedEvent.Properties.ContainsKey("$is_server")
+                    && capturedEvent.Properties.TryGetValue("source", out var source)
+                    && (string)source == "super";
+                capturedEvent.Properties.Remove("secret");
+                capturedEvent.Properties["before_send"] = true;
+                return capturedEvent;
+            };
+        }));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        client.Capture(
+            "test-user",
+            "before-send-event",
+            new Dictionary<string, object> { ["secret"] = "remove-me" });
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement
+            .GetProperty("batch")[0]
+            .GetProperty("properties");
+
+        Assert.True(sawFullyEnrichedEvent);
+        Assert.True(properties.GetProperty("before_send").GetBoolean());
+        Assert.False(properties.TryGetProperty("secret", out _));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BeforeSendCanDropEventBeforeUpload(bool throws)
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.BeforeSend = throws
+                ? _ => throw new InvalidOperationException("before send failed")
+                : _ => null;
+        }));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(client.Capture("test-user", "drop-me"));
+        await client.FlushAsync();
+
+        Assert.Empty(requestHandler.ReceivedRequests);
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]

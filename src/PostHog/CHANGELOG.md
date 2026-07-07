@@ -1,5 +1,35 @@
 # PostHog
 
+## 2.9.0
+
+### Minor Changes
+
+- d543f28: Add a before send callback for modifying or dropping fully enriched events.
+
+## 2.8.7
+
+### Patch Changes
+
+- 048601e: Stop duplicating `distinct_id` inside `/flags` person properties.
+
+## 2.8.6
+
+### Patch Changes
+
+- c631799: Retry remote feature flag requests after transient 502 and 504 responses.
+
+## 2.8.5
+
+### Patch Changes
+
+- 256d2df: Add a per-client circuit breaker for feature flag requests after consecutive transient network failures, temporarily failing fast before probing for recovery.
+
+## 2.8.4
+
+### Patch Changes
+
+- 211aa24: Add a feature flag request option for disabling GeoIP enrichment.
+
 ## 2.8.3
 
 ### Patch Changes

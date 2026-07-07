@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 using PostHog;
 using PostHog.Versioning;
 
+const int StaleEventDrainDelayMs = 100;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure JSON options for consistent serialization
@@ -102,6 +104,58 @@ app.MapPost("/capture", (CaptureRequest request) =>
     return Results.Ok(new { success = true });
 });
 
+app.MapPost("/get_feature_flag", async (FeatureFlagRequest request) =>
+{
+    if (state.Client is null)
+    {
+        return Results.BadRequest(new { error = "SDK not initialized" });
+    }
+
+    if (string.IsNullOrEmpty(request.Key) || string.IsNullOrEmpty(request.DistinctId))
+    {
+        return Results.BadRequest(new { error = "key and distinct_id are required" });
+    }
+
+    try
+    {
+        var options = new FeatureFlagOptions
+        {
+            PersonProperties = request.PersonProperties,
+            Groups = ToGroupCollection(request.Groups, request.GroupProperties),
+            FlagKeysToEvaluate = [request.Key],
+            OnlyEvaluateLocally = request.ForceRemote == false,
+            DisableGeoIp = request.DisableGeoIp ?? false
+        };
+
+#pragma warning disable CS0618
+        var flag = await state.Client.GetFeatureFlagAsync(
+            request.Key,
+            request.DistinctId,
+            options,
+            CancellationToken.None);
+#pragma warning restore CS0618
+
+        // Feature-flag evaluation captures a documented $feature_flag_called side-effect event.
+        // Flush it in the same adapter action so a later /reset does not send stale events into
+        // the next harness test's freshly-reset mock server. Keep a named drain delay aligned with
+        // the /flush endpoint so async send completion timing is explicit and tunable.
+        await state.Client.FlushAsync();
+        await Task.Delay(StaleEventDrainDelayMs);
+
+        return Results.Ok(new
+        {
+            success = true,
+            value = flag?.VariantKey ?? (object?)(flag?.IsEnabled ?? false)
+        });
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Feature flag error: {ex}");
+        state.RecordError(ex.Message);
+        return Results.StatusCode(500);
+    }
+});
+
 app.MapPost("/flush", async () =>
 {
     if (state.Client is null)
@@ -113,8 +167,8 @@ app.MapPost("/flush", async () =>
     {
         await state.Client.FlushAsync();
 
-        // Wait a bit for any pending requests to complete
-        await Task.Delay(100);
+        // Wait a bit for any pending requests to complete.
+        await Task.Delay(StaleEventDrainDelayMs);
     }
     catch (Exception ex)
     {
@@ -143,6 +197,48 @@ app.MapPost("/reset", async () =>
     return Results.Ok(new { success = true });
 });
 
+GroupCollection? ToGroupCollection(
+    Dictionary<string, object?>? groups,
+    Dictionary<string, Dictionary<string, object?>>? groupProperties)
+{
+    if ((groups is null || groups.Count == 0) && (groupProperties is null || groupProperties.Count == 0))
+    {
+        return null;
+    }
+
+    var collection = new GroupCollection();
+    if (groups is null)
+    {
+        return collection;
+    }
+
+    foreach (var (groupType, groupKeyValue) in groups)
+    {
+        var groupKey = ToStringValue(groupKeyValue);
+        if (groupKey is null)
+        {
+            continue;
+        }
+
+        var properties = groupProperties is not null && groupProperties.TryGetValue(groupType, out var props)
+            ? props
+            : [];
+        collection.Add(new Group(groupType, groupKey, properties));
+    }
+
+    return collection;
+}
+
+static string? ToStringValue(object? value) => value switch
+{
+    null => null,
+    string s => s,
+    JsonElement { ValueKind: JsonValueKind.Null } => null,
+    JsonElement { ValueKind: JsonValueKind.String } json => json.GetString(),
+    JsonElement json => json.ToString(),
+    _ => value.ToString()
+};
+
 app.Run();
 
 // --- Models ---
@@ -168,6 +264,16 @@ record CaptureRequest(
     [property: JsonPropertyName("event")] string Event,
     [property: JsonPropertyName("properties")] Dictionary<string, object>? Properties = null,
     [property: JsonPropertyName("timestamp")] string? Timestamp = null
+);
+
+record FeatureFlagRequest(
+    [property: JsonPropertyName("key")] string Key,
+    [property: JsonPropertyName("distinct_id")] string DistinctId,
+    [property: JsonPropertyName("person_properties")] Dictionary<string, object?>? PersonProperties = null,
+    [property: JsonPropertyName("groups")] Dictionary<string, object?>? Groups = null,
+    [property: JsonPropertyName("group_properties")] Dictionary<string, Dictionary<string, object?>>? GroupProperties = null,
+    [property: JsonPropertyName("disable_geoip")] bool? DisableGeoIp = null,
+    [property: JsonPropertyName("force_remote")] bool? ForceRemote = null
 );
 
 record StateResponse(
