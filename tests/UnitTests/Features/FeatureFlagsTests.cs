@@ -191,6 +191,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
                       "locally_evaluated": true,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": true,
                       "$feature_flag_reason": "Evaluated locally",
                       "$feature_flag_definitions_loaded_at": 1705864103000,
@@ -210,6 +211,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
                       "locally_evaluated": true,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": true,
                       "$feature_flag_reason": "Evaluated locally",
                       "$feature_flag_definitions_loaded_at": 1705864103000,
@@ -229,6 +231,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": false,
                       "locally_evaluated": true,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": false,
                       "$feature_flag_reason": "Evaluated locally",
                       "$feature_flag_definitions_loaded_at": 1705864103000,
@@ -289,6 +292,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
                       "locally_evaluated": false,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": true,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
@@ -306,6 +310,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
                       "locally_evaluated": false,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": true,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
@@ -323,6 +328,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": false,
                       "locally_evaluated": false,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": false,
                       "distinct_id": "another-distinct-id",
                       "$lib": "posthog-dotnet",
@@ -498,6 +504,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "complex-flag",
                       "$feature_flag_response": true,
                       "locally_evaluated": true,
+                      "$feature_flag_has_experiment": false,
                       "$feature/complex-flag": true,
                       "$feature_flag_reason": "Evaluated locally",
                       "$feature_flag_definitions_loaded_at": 1705864103000,
@@ -550,6 +557,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
                       "locally_evaluated": false,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": true,
                       "$feature_flag_request_id": "the-request-id",
                       "$feature_flag_evaluated_at": 1705862903000,
@@ -603,6 +611,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": true,
                       "locally_evaluated": false,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": true,
                       "$feature_flag_request_id": "the-request-id",
                       "$feature_flag_evaluated_at": 1705862903000,
@@ -729,6 +738,7 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "$feature_flag": "flag-key",
                       "$feature_flag_response": {{expected}},
                       "locally_evaluated": false,
+                      "$feature_flag_has_experiment": false,
                       "$feature/flag-key": {{expected}},
                       "$feature_flag_id": 1,
                       "$feature_flag_version": 23,
@@ -747,6 +757,101 @@ public class TheIsFeatureFlagEnabledAsyncMethod
               }
               """
             , received);
+    }
+
+    [Theory]
+    [InlineData("\"has_experiment\": true,", true)]
+    [InlineData("\"has_experiment\": false,", false)]
+    [InlineData("", false)] // Older deployments don't report the field.
+    public async Task CapturesFeatureFlagCalledEventWithHasExperimentFromFlagsMetadata(
+        string hasExperimentJson,
+        bool expected)
+    {
+        var container = new TestContainer();
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddFlagsResponse(
+            $$"""
+              {
+                  "flags": {
+                      "flag-key": {
+                          "key": "flag-key",
+                          "enabled": true,
+                          "variant": null,
+                          "reason": {
+                            "code": "condition_match",
+                            "description": "Matched conditions set 1",
+                            "condition_index": 0
+                          },
+                          "metadata": {
+                            "id": 1,
+                            "version": 2,
+                            {{hasExperimentJson}}
+                            "description": "A flag"
+                          }
+                      }
+                  }
+              }
+              """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        Assert.Equal(expected, properties.GetProperty("$feature_flag_has_experiment").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("\"has_experiment\": true,", true)]
+    [InlineData("\"has_experiment\": false,", false)]
+    [InlineData("", false)] // Older deployments don't report the field.
+    public async Task CapturesFeatureFlagCalledEventWithHasExperimentFromLocalEvaluation(
+        string hasExperimentJson,
+        bool expected)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddLocalEvaluationResponse(
+            $$"""
+              {
+                "flags": [
+                  {
+                      "id": 1,
+                      "key": "flag-key",
+                      "active": true,
+                      {{hasExperimentJson}}
+                      "filters": {
+                          "groups": [
+                              {
+                                  "properties": [],
+                                  "rollout_percentage": 100
+                              }
+                          ]
+                      }
+                  }
+                ]
+              }
+              """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        Assert.Equal(expected, properties.GetProperty("$feature_flag_has_experiment").GetBoolean());
+        Assert.True(properties.GetProperty("locally_evaluated").GetBoolean());
     }
 }
 
@@ -2505,6 +2610,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": true,
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": true,
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2555,6 +2661,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": true,
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": true,
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2621,6 +2728,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2638,6 +2746,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2655,6 +2764,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "another-flag-key",
                                "$feature_flag_response": "flag-variant-2",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/another-flag-key": "flag-variant-2",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2672,6 +2782,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2729,6 +2840,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2746,6 +2858,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2763,6 +2876,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "another-flag-key",
                                "$feature_flag_response": "flag-variant-2",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/another-flag-key": "flag-variant-2",
                                "distinct_id": "another-distinct-id",
                                "$lib": "posthog-dotnet",
@@ -2780,6 +2894,7 @@ public class TheGetFeatureFlagAsyncMethod
                                "$feature_flag": "flag-key",
                                "$feature_flag_response": "flag-variant-1",
                                "locally_evaluated": false,
+                               "$feature_flag_has_experiment": false,
                                "$feature/flag-key": "flag-variant-1",
                                "distinct_id": "a-distinct-id",
                                "$lib": "posthog-dotnet",

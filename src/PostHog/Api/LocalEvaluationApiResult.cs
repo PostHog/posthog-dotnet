@@ -107,6 +107,13 @@ internal record LocalFeatureFlag
     /// </summary>
     [JsonPropertyName("ensure_experience_continuity")]
     public bool EnsureExperienceContinuity { get; init; }
+
+    /// <summary>
+    /// Whether the feature flag is linked to an experiment. Defaults to <c>false</c> when the
+    /// server does not report the field (older deployments).
+    /// </summary>
+    [JsonPropertyName("has_experiment")]
+    public bool HasExperiment { get; init; }
 }
 
 /// <summary>

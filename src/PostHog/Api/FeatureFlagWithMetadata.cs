@@ -84,4 +84,11 @@ internal record FeatureFlagMetadata
     /// A description of the feature flag.
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Whether the feature flag is linked to an experiment. Defaults to <c>false</c> when the
+    /// server does not report the field (older deployments).
+    /// </summary>
+    [JsonPropertyName("has_experiment")]
+    public bool HasExperiment { get; init; }
 }
