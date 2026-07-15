@@ -748,6 +748,115 @@ public class TheIsFeatureFlagEnabledAsyncMethod
               """
             , received);
     }
+
+    [Theory]
+    [InlineData("\"has_experiment\": true,", true)]
+    [InlineData("\"has_experiment\": false,", false)]
+    [InlineData("", null)] // Older deployments don't report the field, so the property is omitted.
+    public async Task CapturesFeatureFlagCalledEventWithHasExperimentFromFlagsMetadata(
+        string hasExperimentJson,
+        bool? expected)
+    {
+        var container = new TestContainer();
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddFlagsResponse(
+            $$"""
+              {
+                  "flags": {
+                      "flag-key": {
+                          "key": "flag-key",
+                          "enabled": true,
+                          "variant": null,
+                          "reason": {
+                            "code": "condition_match",
+                            "description": "Matched conditions set 1",
+                            "condition_index": 0
+                          },
+                          "metadata": {
+                            "id": 1,
+                            "version": 2,
+                            {{hasExperimentJson}}
+                            "description": "A flag"
+                          }
+                      }
+                  }
+              }
+              """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        if (expected is { } expectedValue)
+        {
+            Assert.Equal(expectedValue, properties.GetProperty("$feature_flag_has_experiment").GetBoolean());
+        }
+        else
+        {
+            Assert.False(properties.TryGetProperty("$feature_flag_has_experiment", out _));
+        }
+    }
+
+    [Theory]
+    [InlineData("\"has_experiment\": true,", true)]
+    [InlineData("\"has_experiment\": false,", false)]
+    [InlineData("", null)] // Older deployments don't report the field, so the property is omitted.
+    public async Task CapturesFeatureFlagCalledEventWithHasExperimentFromLocalEvaluation(
+        string hasExperimentJson,
+        bool? expected)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddLocalEvaluationResponse(
+            $$"""
+              {
+                "flags": [
+                  {
+                      "id": 1,
+                      "key": "flag-key",
+                      "active": true,
+                      {{hasExperimentJson}}
+                      "filters": {
+                          "groups": [
+                              {
+                                  "properties": [],
+                                  "rollout_percentage": 100
+                              }
+                          ]
+                      }
+                  }
+                ]
+              }
+              """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        if (expected is { } expectedValue)
+        {
+            Assert.Equal(expectedValue, properties.GetProperty("$feature_flag_has_experiment").GetBoolean());
+        }
+        else
+        {
+            Assert.False(properties.TryGetProperty("$feature_flag_has_experiment", out _));
+        }
+        Assert.True(properties.GetProperty("locally_evaluated").GetBoolean());
+    }
 }
 
 public class TheGetFeatureFlagAsyncMethod

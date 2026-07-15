@@ -1,6 +1,8 @@
 #nullable enable
 PostHog.AllFeatureFlagsOptions.DisableGeoIp.get -> bool
 PostHog.AllFeatureFlagsOptions.DisableGeoIp.init -> void
+PostHog.Features.FeatureFlag.HasExperiment.get -> bool?
+PostHog.Features.FeatureFlag.HasExperiment.init -> void
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?
 PostHog.PostHogOptions.BeforeSend.set -> void
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int

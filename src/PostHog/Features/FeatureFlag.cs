@@ -32,6 +32,12 @@ public record FeatureFlag
     public bool IsEnabled { get; init; } = true;
 
     /// <summary>
+    /// Whether this feature flag is linked to an experiment, as reported by the server.
+    /// <c>null</c> when the server does not report it (older deployments).
+    /// </summary>
+    public bool? HasExperiment { get; init; }
+
+    /// <summary>
     /// Creates a <see cref="FeatureFlag"/> instance from the <c>/flags</c> endpoint response. Since payloads are
     /// already calculated, we can look them up by the feature key.
     /// </summary>
@@ -44,10 +50,11 @@ public record FeatureFlag
         FlagsApiResult apiResult)
     {
         var payload = NotNull(apiResult).FeatureFlagPayloads?.GetValueOrDefault(key);
+        var flag = apiResult.Flags?.GetValueOrDefault(key);
 
-        var featureFlag = apiResult.Flags is not null && apiResult.Flags.TryGetValue(key, out var flag)
-                                                      && flag.Metadata is { Id: { } id, Version: { } version }
-                                                      && flag.Reason?.Description is { } reason
+        var featureFlag = flag is not null
+                          && flag.Metadata is { Id: { } id, Version: { } version }
+                          && flag.Reason?.Description is { } reason
             ? new FeatureFlagWithMetadata
             {
                 Key = flag.Key,
@@ -65,7 +72,8 @@ public record FeatureFlag
         {
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = payload is null ? null : JsonDocument.Parse(payload)
+            Payload = payload is null ? null : JsonDocument.Parse(payload),
+            HasExperiment = flag?.Metadata?.HasExperiment
         };
     }
 
@@ -90,7 +98,8 @@ public record FeatureFlag
             Key = key,
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = payloadJsonString is null ? null : JsonDocument.Parse(payloadJsonString)
+            Payload = payloadJsonString is null ? null : JsonDocument.Parse(payloadJsonString),
+            HasExperiment = localFeatureFlag.HasExperiment
         };
     }
 
@@ -104,13 +113,14 @@ public record FeatureFlag
         && Key == other.Key
         && IsEnabled == other.IsEnabled
         && VariantKey == other.VariantKey
+        && HasExperiment == other.HasExperiment
         && JsonEqual(Payload, other.Payload);
 
     /// <summary>
     /// Serves as the default hash function.
     /// </summary>
     /// <returns>A hash code for the current <see cref="FeatureFlag"/>.</returns>
-    public override int GetHashCode() => HashCode.Combine(Key, IsEnabled, VariantKey, Payload);
+    public override int GetHashCode() => HashCode.Combine(Key, IsEnabled, VariantKey, HasExperiment, Payload);
 
     static bool JsonEqual(JsonDocument? source, JsonDocument? comparand) =>
         JsonNode.DeepEquals(ToJsonNode(source), ToJsonNode(comparand));
