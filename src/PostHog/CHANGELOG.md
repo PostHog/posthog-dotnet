@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.11.0
+
+### Minor Changes
+
+- a329a13: Add a `$feature_flag_has_experiment` boolean property to `$feature_flag_called` events when the server reports whether the flag is linked to an experiment. The property is omitted when the server does not report it (older deployments and legacy response formats).
+
 ## 2.10.0
 
 ### Minor Changes
