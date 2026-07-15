@@ -809,9 +809,15 @@ public sealed class PostHogClient : IPostHogClient
             ["$feature_flag"] = featureKey,
             ["$feature_flag_response"] = flag.ToResponseObject(),
             ["locally_evaluated"] = locallyEvaluated,
-            ["$feature_flag_has_experiment"] = flag is { HasExperiment: true },
             [$"$feature/{featureKey}"] = flag.ToResponseObject()
         };
+
+        // Tri-state: only sent when the server explicitly reported has_experiment; omitted when
+        // unknown (older deployments, legacy response formats, or missing flags).
+        if (flag?.HasExperiment is { } hasExperiment)
+        {
+            properties["$feature_flag_has_experiment"] = hasExperiment;
+        }
         if (locallyEvaluated)
         {
             properties["$feature_flag_reason"] = "Evaluated locally";

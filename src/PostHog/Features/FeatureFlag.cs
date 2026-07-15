@@ -33,9 +33,9 @@ public record FeatureFlag
 
     /// <summary>
     /// Whether this feature flag is linked to an experiment, as reported by the server.
-    /// Defaults to <c>false</c> when the server does not report it (older deployments).
+    /// <c>null</c> when the server does not report it (older deployments).
     /// </summary>
-    public bool HasExperiment { get; init; }
+    public bool? HasExperiment { get; init; }
 
     /// <summary>
     /// Creates a <see cref="FeatureFlag"/> instance from the <c>/flags</c> endpoint response. Since payloads are
@@ -73,7 +73,7 @@ public record FeatureFlag
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
             Payload = payload is null ? null : JsonDocument.Parse(payload),
-            HasExperiment = flag?.Metadata is { HasExperiment: true }
+            HasExperiment = flag?.Metadata?.HasExperiment
         };
     }
 
