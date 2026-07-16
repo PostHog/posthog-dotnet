@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.11.1
+
+### Patch Changes
+
+- 90e0c94: Standardize event buffering defaults at a 10,000-event queue, 100-event flush threshold, 100-event maximum batch size, and 5-second flush interval.
+
 ## 2.11.0
 
 ### Minor Changes
