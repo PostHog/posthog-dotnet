@@ -174,22 +174,22 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public int MaxBatchSize { get; set; } = 100;
 
     /// <summary>
-    /// The max number of messages to store in the queue before we start dropping messages. (Default: 1000)
+    /// The max number of messages to store in the queue before we start dropping messages. (Default: 10000)
     /// </summary>
     /// <remarks>
     /// This property prevents runaway growth of the queue in the case of network outage or a burst of messages.
     /// </remarks>
-    public int MaxQueueSize { get; set; } = 1000;
+    public int MaxQueueSize { get; set; } = 10_000;
 
     /// <summary>
-    /// The number of events to queue before sending to PostHog (Default: 20)
+    /// The number of events to queue before sending to PostHog (Default: 100)
     /// </summary>
-    public int FlushAt { get; set; } = 20;
+    public int FlushAt { get; set; } = 100;
 
     /// <summary>
-    /// The interval between periodic flushes. (Default: 30s)
+    /// The interval between periodic flushes. (Default: 5s)
     /// </summary>
-    public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(30);
+    public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// The maximum number of retries for failed requests. (Default: 3)

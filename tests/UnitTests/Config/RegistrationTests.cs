@@ -82,10 +82,21 @@ public class TheAddPostHogMethod
             ["Family"] = "Starks"
         }, options.SuperProperties);
         // Check the defaults
-        Assert.Equal(1000, options.MaxQueueSize);
-        Assert.Equal(TimeSpan.FromSeconds(30), options.FlushInterval);
+        Assert.Equal(10_000, options.MaxQueueSize);
+        Assert.Equal(TimeSpan.FromSeconds(5), options.FlushInterval);
         Assert.Equal(TimeSpan.FromMinutes(10), options.FeatureFlagSentCacheSlidingExpiration);
         Assert.Equal(50_000, options.FeatureFlagSentCacheSizeLimit);
+    }
+
+    [Fact]
+    public void UsesStandardEventBufferDefaults()
+    {
+        var options = new PostHogOptions();
+
+        Assert.Equal(10_000, options.MaxQueueSize);
+        Assert.Equal(100, options.FlushAt);
+        Assert.Equal(100, options.MaxBatchSize);
+        Assert.Equal(TimeSpan.FromSeconds(5), options.FlushInterval);
     }
 
     [Fact]
@@ -240,7 +251,7 @@ public class TheAddPostHogMethod
             ["House"] = "Tully"
         }, options.SuperProperties);
         // Check the defaults
-        Assert.Equal(TimeSpan.FromSeconds(30), options.FlushInterval);
+        Assert.Equal(TimeSpan.FromSeconds(5), options.FlushInterval);
         Assert.Equal(TimeSpan.FromMinutes(10), options.FeatureFlagSentCacheSlidingExpiration);
         Assert.Equal(50_000, options.FeatureFlagSentCacheSizeLimit);
     }
