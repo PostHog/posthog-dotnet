@@ -27,6 +27,13 @@ internal record LocalEvaluationApiResult
     public IReadOnlyDictionary<string, FilterSet>? Cohorts { get; init; }
 
     /// <summary>
+    /// Whether the server gated this project into sending minimal <c>$feature_flag_called</c> events.
+    /// <c>null</c> when the server does not report the field (older deployments).
+    /// </summary>
+    [JsonPropertyName("minimal_flag_called_events")]
+    public bool? MinimalFlagCalledEvents { get; init; }
+
+    /// <summary>
     /// Compares this instance to another <see cref="LocalEvaluationApiResult"/> for equality.
     /// </summary>
     /// <remarks>
@@ -48,14 +55,15 @@ internal record LocalEvaluationApiResult
 
         return Flags.ListsAreEqual(other.Flags)
                && GroupTypeMapping.DictionariesAreEqual(other.GroupTypeMapping)
-               && Cohorts.DictionariesAreEqual(other.Cohorts);
+               && Cohorts.DictionariesAreEqual(other.Cohorts)
+               && MinimalFlagCalledEvents == other.MinimalFlagCalledEvents;
     }
 
     /// <summary>
     /// Serves as the default hash function.
     /// </summary>
     /// <returns>A hash code for the current object.</returns>
-    public override int GetHashCode() => HashCode.Combine(Flags, GroupTypeMapping, Cohorts);
+    public override int GetHashCode() => HashCode.Combine(Flags, GroupTypeMapping, Cohorts, MinimalFlagCalledEvents);
 }
 
 /// <summary>

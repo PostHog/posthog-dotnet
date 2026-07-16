@@ -25,6 +25,30 @@ public sealed class PostHogClient : IPostHogClient
     static readonly ApiResult NoOpApiResult = new(0);
     static readonly IReadOnlyDictionary<string, FeatureFlag> EmptyFeatureFlags = new Dictionary<string, FeatureFlag>(0);
 
+    // Strict allowlist for minimal $feature_flag_called events, shared across PostHog SDKs.
+    // Everything else — including super properties, context properties, the $feature/<key>
+    // enumeration, and system context — is stripped.
+    static readonly string[] MinimalFeatureFlagCalledEventProperties =
+    [
+        "$feature_flag",
+        "$feature_flag_response",
+        "$feature_flag_has_experiment",
+        "$feature_flag_id",
+        "$feature_flag_version",
+        "$feature_flag_reason",
+        "$feature_flag_request_id",
+        "$feature_flag_evaluated_at",
+        "$feature_flag_error",
+        "locally_evaluated",
+        "$groups",
+        PostHogProperties.ProcessPersonProfile,
+        PostHogProperties.SessionId,
+        PostHogProperties.Lib,
+        PostHogProperties.LibVersion,
+        PostHogProperties.GeoIpDisable,
+        PostHogProperties.IsServer,
+    ];
+
     readonly TimeProvider _timeProvider;
     readonly IOptions<PostHogOptions> _options;
     readonly ITaskScheduler _taskScheduler;
@@ -278,7 +302,8 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags,
         FeatureFlagEvaluations? flags,
-        DateTimeOffset? timestamp)
+        DateTimeOffset? timestamp,
+        bool minimalFeatureFlagCalledEvent = false)
     {
         if (CheckDisabledAndLog(nameof(Capture)))
         {
@@ -321,6 +346,11 @@ public sealed class PostHogClient : IPostHogClient
             capturedEvent.Properties[PostHogProperties.IsServer] = true;
         }
 
+        if (minimalFeatureFlagCalledEvent)
+        {
+            capturedEvent = ToMinimalFeatureFlagCalledEvent(capturedEvent);
+        }
+
         var batchItem = new BatchItem<CapturedEvent, CapturedEventBatchContext>(BatchTask);
 
         if (_asyncBatchHandler.Enqueue(batchItem))
@@ -359,6 +389,28 @@ public sealed class PostHogClient : IPostHogClient
 
             return enrichedEvent;
         }
+    }
+
+    // Builds the minimal event from the allowlist rather than removing properties from the full
+    // set, so anything merged upstream (super properties, context properties) cannot leak in. The
+    // CapturedEvent constructor re-adds distinct_id and defaults $geoip_disable to true when it
+    // was not explicitly set.
+    static CapturedEvent ToMinimalFeatureFlagCalledEvent(CapturedEvent capturedEvent)
+    {
+        var properties = new Dictionary<string, object>(MinimalFeatureFlagCalledEventProperties.Length);
+        foreach (var key in MinimalFeatureFlagCalledEventProperties)
+        {
+            if (capturedEvent.Properties.TryGetValue(key, out var value))
+            {
+                properties[key] = value;
+            }
+        }
+
+        return new CapturedEvent(
+            capturedEvent.EventName,
+            capturedEvent.DistinctId,
+            properties,
+            capturedEvent.Timestamp);
     }
 
     async Task CaptureBatchAsync(IEnumerable<CapturedEvent> batch)
@@ -731,12 +783,21 @@ public sealed class PostHogClient : IPostHogClient
                     ? _featureFlagsLoader.FlagDefinitionsLoadedAt
                     : null);
 
+            // Minimal events require both the server-side gate (read from whichever source
+            // evaluated the flag) and an explicit has_experiment == false; any missing signal
+            // sends the full event.
+            var minimalEvent = response?.HasExperiment == false
+                && (flagWasLocallyEvaluated
+                    ? localEvaluator?.MinimalFlagCalledEvents == true
+                    : flagsResult?.MinimalFlagCalledEvents == true);
+
             TryCaptureDedupedFeatureFlagCalledEvent(
                 resolvedDistinctId,
                 featureKey,
                 cacheKeyValue: (string)response,
                 properties,
                 options.Groups,
+                minimalEvent,
                 cancellationToken);
         }
 
@@ -857,6 +918,7 @@ public sealed class PostHogClient : IPostHogClient
         string cacheKeyValue,
         Dictionary<string, object> properties,
         GroupCollection? groups,
+        bool minimalEvent,
         CancellationToken cancellationToken)
     {
         var groupsCacheKey = CanonicalGroupsCacheKey(groups);
@@ -879,7 +941,8 @@ public sealed class PostHogClient : IPostHogClient
                     groups: groups,
                     sendFeatureFlags: false,
                     flags: null,
-                    timestamp: null);
+                    timestamp: null,
+                    minimalFeatureFlagCalledEvent: minimalEvent);
                 return true;
             });
 
@@ -945,12 +1008,18 @@ public sealed class PostHogClient : IPostHogClient
                 locallyEvaluated: record?.LocallyEvaluated ?? false,
                 flagDefinitionsLoadedAt: record?.LocallyEvaluated == true ? flagDefinitionsLoadedAt : null);
 
+            // Minimal events require both the server-side gate (carried on the record from the
+            // source that evaluated it) and an explicit has_experiment == false; any missing
+            // signal sends the full event.
+            var minimalEvent = record is { MinimalFlagCalledEvents: true, Flag.HasExperiment: false };
+
             _client.TryCaptureDedupedFeatureFlagCalledEvent(
                 distinctId,
                 featureKey,
                 cacheKeyValue,
                 properties,
                 groups,
+                minimalEvent,
                 CancellationToken.None);
         }
 
@@ -1013,7 +1082,11 @@ public sealed class PostHogClient : IPostHogClient
 
                     foreach (var (key, flag) in locallyEvaluated)
                     {
-                        records[key] = ToRecord(key, flag, locallyEvaluated: true);
+                        records[key] = ToRecord(
+                            key,
+                            flag,
+                            locallyEvaluated: true,
+                            minimalFlagCalledEvents: localEvaluator.MinimalFlagCalledEvents);
                     }
 
                     if (locallyEvaluated.Count > 0)
@@ -1069,7 +1142,11 @@ public sealed class PostHogClient : IPostHogClient
                     // which discards local results entirely on remote fallback.
                     if (!records.ContainsKey(key))
                     {
-                        records[key] = ToRecord(key, flag, locallyEvaluated: false);
+                        records[key] = ToRecord(
+                            key,
+                            flag,
+                            locallyEvaluated: false,
+                            minimalFlagCalledEvents: flagsResult.MinimalFlagCalledEvents);
                     }
                 }
             }
@@ -1092,7 +1169,7 @@ public sealed class PostHogClient : IPostHogClient
             options?.Groups,
             errors);
 
-        static EvaluatedFlagRecord ToRecord(string key, FeatureFlag flag, bool locallyEvaluated)
+        static EvaluatedFlagRecord ToRecord(string key, FeatureFlag flag, bool locallyEvaluated, bool minimalFlagCalledEvents)
             => new()
             {
                 Key = key,
@@ -1100,6 +1177,7 @@ public sealed class PostHogClient : IPostHogClient
                 Enabled = flag.IsEnabled,
                 CacheKeyValue = (string)flag,
                 LocallyEvaluated = locallyEvaluated,
+                MinimalFlagCalledEvents = minimalFlagCalledEvents,
             };
     }
 
