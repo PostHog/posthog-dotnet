@@ -391,6 +391,11 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
+    // Minimal events require both the server-side gate and an explicit has_experiment == false;
+    // any missing signal (gate off, has_experiment unknown) sends the full event.
+    static bool ShouldSendMinimalFeatureFlagCalledEvent(bool gate, bool? hasExperiment)
+        => gate && hasExperiment == false;
+
     // Builds the minimal event from the allowlist rather than removing properties from the full
     // set, so anything merged upstream (super properties, context properties) cannot leak in. The
     // CapturedEvent constructor re-adds distinct_id and defaults $geoip_disable to true when it
@@ -783,13 +788,11 @@ public sealed class PostHogClient : IPostHogClient
                     ? _featureFlagsLoader.FlagDefinitionsLoadedAt
                     : null);
 
-            // Minimal events require both the server-side gate (read from whichever source
-            // evaluated the flag) and an explicit has_experiment == false; any missing signal
-            // sends the full event.
-            var minimalEvent = response?.HasExperiment == false
-                && (flagWasLocallyEvaluated
-                    ? localEvaluator?.MinimalFlagCalledEvents == true
-                    : flagsResult?.MinimalFlagCalledEvents == true);
+            // The gate is read from whichever source evaluated the flag.
+            var minimalFlagCalledEventsGate = flagWasLocallyEvaluated
+                ? localEvaluator?.MinimalFlagCalledEvents == true
+                : flagsResult?.MinimalFlagCalledEvents == true;
+            var minimalEvent = ShouldSendMinimalFeatureFlagCalledEvent(minimalFlagCalledEventsGate, response?.HasExperiment);
 
             TryCaptureDedupedFeatureFlagCalledEvent(
                 resolvedDistinctId,
@@ -1008,10 +1011,10 @@ public sealed class PostHogClient : IPostHogClient
                 locallyEvaluated: record?.LocallyEvaluated ?? false,
                 flagDefinitionsLoadedAt: record?.LocallyEvaluated == true ? flagDefinitionsLoadedAt : null);
 
-            // Minimal events require both the server-side gate (carried on the record from the
-            // source that evaluated it) and an explicit has_experiment == false; any missing
-            // signal sends the full event.
-            var minimalEvent = record is { MinimalFlagCalledEvents: true, Flag.HasExperiment: false };
+            // The gate is carried on the record from the source that evaluated it.
+            var minimalEvent = ShouldSendMinimalFeatureFlagCalledEvent(
+                record?.MinimalFlagCalledEvents == true,
+                record?.Flag.HasExperiment);
 
             _client.TryCaptureDedupedFeatureFlagCalledEvent(
                 distinctId,

@@ -242,6 +242,38 @@ public class TheEvaluateFlagsAsyncMethod
     }
 
     [Fact]
+    public async Task SendsFullFeatureFlagCalledEventPerRecordWhenHasExperimentIsUnknownEvenWhenGated()
+    {
+        var container = new TestContainer();
+        // Gate is on, but the flag's metadata omits has_experiment entirely: an unknown signal
+        // must still fall back to the full event on the snapshot path.
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {"minimalFlagCalledEvents": true,
+             "flags": {
+                "flag-key": {
+                    "key": "flag-key",
+                    "enabled": true,
+                    "reason": {"description": "matched condition set 1"},
+                    "metadata": {"id": 1, "version": 1}
+                }
+            }}
+            """);
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        snapshot.IsEnabled("flag-key");
+
+        await client.FlushAsync();
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var properties = doc.RootElement.GetProperty("batch").EnumerateArray().Single().GetProperty("properties");
+
+        Assert.True(properties.TryGetProperty("$feature/flag-key", out _));
+        Assert.False(properties.TryGetProperty("$feature_flag_has_experiment", out _));
+    }
+
+    [Fact]
     public async Task UnknownKeyAccessAppendsFlagMissingErrorOnFeatureFlagCalled()
     {
         var container = new TestContainer();

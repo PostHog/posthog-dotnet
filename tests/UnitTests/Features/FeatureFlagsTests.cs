@@ -1066,6 +1066,53 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         Assert.Equal("id:5", properties.GetProperty("$groups").GetProperty("company").GetString());
     }
 
+    [Fact]
+    public async Task MinimalFeatureFlagCalledEventRetainsErrorProperty()
+    {
+        var container = new TestContainer();
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddFlagsResponse(
+            """
+            {
+                "minimalFlagCalledEvents": true,
+                "errorsWhileComputingFlags": true,
+                "flags": {
+                    "flag-key": {
+                        "key": "flag-key",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": {
+                          "code": "condition_match",
+                          "description": "Matched conditions set 1",
+                          "condition_index": 0
+                        },
+                        "metadata": {
+                          "id": 1,
+                          "version": 2,
+                          "has_experiment": false,
+                          "description": "A flag"
+                        }
+                    }
+                }
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        // The event is minimal, but $feature_flag_error (allowlisted) still survives the strip.
+        Assert.False(properties.TryGetProperty("$feature/flag-key", out _));
+        Assert.Equal("errors_while_computing_flags", properties.GetProperty("$feature_flag_error").GetString());
+    }
+
     [Theory]
     [InlineData("\"minimal_flag_called_events\": true,", "\"has_experiment\": false,", true)] // Gated + no experiment → minimal.
     [InlineData("\"minimal_flag_called_events\": true,", "\"has_experiment\": true,", false)] // Gated + experiment → full.
