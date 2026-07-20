@@ -35,4 +35,11 @@ internal sealed record EvaluatedFlagRecord
     /// on the emitted <c>$feature_flag_called</c> event.
     /// </summary>
     public bool LocallyEvaluated { get; init; }
+
+    /// <summary>
+    /// Whether the server gated this project into sending minimal <c>$feature_flag_called</c> events,
+    /// as reported by the source that evaluated this record (the local definitions payload or the
+    /// <c>/flags</c> response).
+    /// </summary>
+    public bool MinimalFlagCalledEvents { get; init; }
 }

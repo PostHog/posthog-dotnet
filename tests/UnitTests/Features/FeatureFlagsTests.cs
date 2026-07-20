@@ -857,6 +857,340 @@ public class TheIsFeatureFlagEnabledAsyncMethod
         }
         Assert.True(properties.GetProperty("locally_evaluated").GetBoolean());
     }
+
+    [Theory]
+    [InlineData("\"minimalFlagCalledEvents\": true,", "\"has_experiment\": false,", true)] // Gated + no experiment → minimal.
+    [InlineData("\"minimalFlagCalledEvents\": true,", "\"has_experiment\": true,", false)] // Gated + experiment → full.
+    [InlineData("\"minimalFlagCalledEvents\": true,", "", false)] // Gated + unknown has_experiment → full.
+    [InlineData("\"minimalFlagCalledEvents\": false,", "\"has_experiment\": false,", false)] // Gate off → full.
+    [InlineData("", "\"has_experiment\": false,", false)] // Gate absent → full.
+    public async Task SendsMinimalFeatureFlagCalledEventOnlyWhenGatedByFlagsResponseAndFlagHasNoExperiment(
+        string minimalFlagCalledEventsJson,
+        string hasExperimentJson,
+        bool expectMinimal)
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties["source"] = "super";
+        }));
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddFlagsResponse(
+            $$"""
+              {
+                  {{minimalFlagCalledEventsJson}}
+                  "flags": {
+                      "flag-key": {
+                          "key": "flag-key",
+                          "enabled": true,
+                          "variant": null,
+                          "reason": {
+                            "code": "condition_match",
+                            "description": "Matched conditions set 1",
+                            "condition_index": 0
+                          },
+                          "metadata": {
+                            "id": 1,
+                            "version": 2,
+                            {{hasExperimentJson}}
+                            "description": "A flag"
+                          }
+                      }
+                  },
+                  "requestId": "the-request-id",
+                  "evaluatedAt": 1705862903000
+              }
+              """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        if (expectMinimal)
+        {
+            string[] expectedProperties =
+            [
+                "$feature_flag",
+                "$feature_flag_response",
+                "$feature_flag_has_experiment",
+                "$feature_flag_id",
+                "$feature_flag_version",
+                "$feature_flag_reason",
+                "$feature_flag_request_id",
+                "$feature_flag_evaluated_at",
+                "locally_evaluated",
+                "$lib",
+                "$lib_version",
+                "distinct_id",
+                "$geoip_disable",
+                "$is_server"
+            ];
+            Assert.Equal(
+                expectedProperties.OrderBy(name => name, StringComparer.Ordinal),
+                properties.EnumerateObject().Select(p => p.Name).OrderBy(name => name, StringComparer.Ordinal));
+            Assert.False(properties.GetProperty("$feature_flag_has_experiment").GetBoolean());
+            Assert.True(properties.GetProperty("$is_server").GetBoolean());
+        }
+        else
+        {
+            Assert.True(properties.TryGetProperty("$feature/flag-key", out _));
+            Assert.Equal("super", properties.GetProperty("source").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task MinimalFeatureFlagCalledEventPreservesExplicitGeoIpDisable()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties["$geoip_disable"] = false;
+        }));
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddFlagsResponse(
+            """
+            {
+                "minimalFlagCalledEvents": true,
+                "flags": {
+                    "flag-key": {
+                        "key": "flag-key",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": {
+                          "code": "condition_match",
+                          "description": "Matched conditions set 1",
+                          "condition_index": 0
+                        },
+                        "metadata": {
+                          "id": 1,
+                          "version": 2,
+                          "has_experiment": false,
+                          "description": "A flag"
+                        }
+                    }
+                }
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        // The event is minimal, but the caller's explicit GeoIP choice survives the allowlist.
+        Assert.False(properties.TryGetProperty("$feature/flag-key", out _));
+        Assert.False(properties.GetProperty("$geoip_disable").GetBoolean());
+    }
+
+    [Fact]
+    public async Task MinimalFeatureFlagCalledEventRetainsGroups()
+    {
+        var container = new TestContainer();
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddFlagsResponse(
+            """
+            {
+                "minimalFlagCalledEvents": true,
+                "flags": {
+                    "flag-key": {
+                        "key": "flag-key",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": {
+                          "code": "condition_match",
+                          "description": "Matched conditions set 1",
+                          "condition_index": 0
+                        },
+                        "metadata": {
+                          "id": 1,
+                          "version": 2,
+                          "has_experiment": false,
+                          "description": "A flag"
+                        }
+                    }
+                },
+                "requestId": "the-request-id",
+                "evaluatedAt": 1705862903000
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync(
+            "flag-key",
+            "a-distinct-id",
+            options: new FeatureFlagOptions
+            {
+                Groups = [new Group { GroupType = "company", GroupKey = "id:5" }]
+            }));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        string[] expectedProperties =
+        [
+            "$feature_flag",
+            "$feature_flag_response",
+            "$feature_flag_has_experiment",
+            "$feature_flag_id",
+            "$feature_flag_version",
+            "$feature_flag_reason",
+            "$feature_flag_request_id",
+            "$feature_flag_evaluated_at",
+            "locally_evaluated",
+            "$groups",
+            "$lib",
+            "$lib_version",
+            "distinct_id",
+            "$geoip_disable",
+            "$is_server"
+        ];
+        Assert.Equal(
+            expectedProperties.OrderBy(name => name, StringComparer.Ordinal),
+            properties.EnumerateObject().Select(p => p.Name).OrderBy(name => name, StringComparer.Ordinal));
+        Assert.Equal("id:5", properties.GetProperty("$groups").GetProperty("company").GetString());
+    }
+
+    [Fact]
+    public async Task MinimalFeatureFlagCalledEventRetainsErrorProperty()
+    {
+        var container = new TestContainer();
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddFlagsResponse(
+            """
+            {
+                "minimalFlagCalledEvents": true,
+                "errorsWhileComputingFlags": true,
+                "flags": {
+                    "flag-key": {
+                        "key": "flag-key",
+                        "enabled": true,
+                        "variant": null,
+                        "reason": {
+                          "code": "condition_match",
+                          "description": "Matched conditions set 1",
+                          "condition_index": 0
+                        },
+                        "metadata": {
+                          "id": 1,
+                          "version": 2,
+                          "has_experiment": false,
+                          "description": "A flag"
+                        }
+                    }
+                }
+            }
+            """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        // The event is minimal, but $feature_flag_error (allowlisted) still survives the strip.
+        Assert.False(properties.TryGetProperty("$feature/flag-key", out _));
+        Assert.Equal("errors_while_computing_flags", properties.GetProperty("$feature_flag_error").GetString());
+    }
+
+    [Theory]
+    [InlineData("\"minimal_flag_called_events\": true,", "\"has_experiment\": false,", true)] // Gated + no experiment → minimal.
+    [InlineData("\"minimal_flag_called_events\": true,", "\"has_experiment\": true,", false)] // Gated + experiment → full.
+    [InlineData("\"minimal_flag_called_events\": true,", "", false)] // Gated + unknown has_experiment → full.
+    [InlineData("", "\"has_experiment\": false,", false)] // Gate absent → full.
+    public async Task SendsMinimalFeatureFlagCalledEventOnlyWhenGatedByLocalEvaluationAndFlagHasNoExperiment(
+        string minimalFlagCalledEventsJson,
+        string hasExperimentJson,
+        bool expectMinimal)
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SecretKey = "fake-personal-api-key";
+            options.SuperProperties["source"] = "super";
+        }));
+        var messageHandler = container.FakeHttpMessageHandler;
+        messageHandler.AddLocalEvaluationResponse(
+            $$"""
+              {
+                {{minimalFlagCalledEventsJson}}
+                "flags": [
+                  {
+                      "id": 1,
+                      "key": "flag-key",
+                      "active": true,
+                      {{hasExperimentJson}}
+                      "filters": {
+                          "groups": [
+                              {
+                                  "properties": [],
+                                  "rollout_percentage": 100
+                              }
+                          ]
+                      }
+                  }
+                ]
+              }
+              """
+        );
+        var captureRequestHandler = messageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        Assert.True(await client.IsFeatureEnabledAsync("flag-key", "a-distinct-id"));
+
+        await client.FlushAsync();
+        using var document = JsonDocument.Parse(captureRequestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")
+            .EnumerateArray()
+            .Single()
+            .GetProperty("properties");
+        if (expectMinimal)
+        {
+            string[] expectedProperties =
+            [
+                "$feature_flag",
+                "$feature_flag_response",
+                "$feature_flag_has_experiment",
+                "$feature_flag_reason",
+                "locally_evaluated",
+                "$lib",
+                "$lib_version",
+                "distinct_id",
+                "$geoip_disable",
+                "$is_server"
+            ];
+            Assert.Equal(
+                expectedProperties.OrderBy(name => name, StringComparer.Ordinal),
+                properties.EnumerateObject().Select(p => p.Name).OrderBy(name => name, StringComparer.Ordinal));
+            Assert.False(properties.GetProperty("$feature_flag_has_experiment").GetBoolean());
+            Assert.True(properties.GetProperty("locally_evaluated").GetBoolean());
+        }
+        else
+        {
+            Assert.True(properties.TryGetProperty("$feature/flag-key", out _));
+            Assert.True(properties.TryGetProperty("$feature_flag_definitions_loaded_at", out _));
+            Assert.Equal("super", properties.GetProperty("source").GetString());
+        }
+    }
 }
 
 public class TheGetFeatureFlagAsyncMethod

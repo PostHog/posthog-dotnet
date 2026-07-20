@@ -73,6 +73,12 @@ internal sealed class LocalEvaluator
     public LocalEvaluationApiResult LocalEvaluationApiResult { get; }
 
     /// <summary>
+    /// Whether the server gated this project into sending minimal <c>$feature_flag_called</c> events,
+    /// as reported by the local evaluation payload. <c>false</c> when the payload does not carry the field.
+    /// </summary>
+    public bool MinimalFlagCalledEvents => LocalEvaluationApiResult.MinimalFlagCalledEvents == true;
+
+    /// <summary>
     /// Constructs a <see cref="LocalEvaluator"/> with the specified flags.
     /// </summary>
     /// <param name="flags">The flags returned from the local evaluation endpoint.</param>

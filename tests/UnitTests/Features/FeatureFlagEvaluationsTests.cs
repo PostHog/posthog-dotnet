@@ -178,6 +178,102 @@ public class TheEvaluateFlagsAsyncMethod
     }
 
     [Fact]
+    public async Task SendsMinimalFeatureFlagCalledEventsPerRecordWhenGatedAndFlagHasNoExperiment()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        // local-flag resolves locally; needs-remote and exp-flag fall back to the remote /flags
+        // response. Both sources report the minimal gate; exp-flag is experiment-linked so it
+        // still sends the full event.
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"minimal_flag_called_events": true,
+             "flags": [
+                {"id": 1, "key": "local-flag", "active": true, "has_experiment": false,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}},
+                {"id": 2, "key": "needs-remote", "active": true,
+                 "filters": {"groups": [{"properties": [{"key": "country", "type": "person", "value": "US", "operator": "exact"}],
+                                          "rollout_percentage": 100}]}}
+            ]}
+            """);
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {"minimalFlagCalledEvents": true,
+             "flags": {
+                "needs-remote": {
+                    "key": "needs-remote",
+                    "enabled": true,
+                    "reason": {"description": "matched condition set 1"},
+                    "metadata": {"id": 2, "version": 3, "has_experiment": false}
+                },
+                "exp-flag": {
+                    "key": "exp-flag",
+                    "enabled": true,
+                    "reason": {"description": "matched condition set 1"},
+                    "metadata": {"id": 3, "version": 1, "has_experiment": true}
+                }
+            }}
+            """);
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        snapshot.IsEnabled("local-flag");
+        snapshot.IsEnabled("needs-remote");
+        snapshot.IsEnabled("exp-flag");
+
+        await client.FlushAsync();
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var byFlag = doc.RootElement.GetProperty("batch").EnumerateArray()
+            .ToDictionary(
+                e => e.GetProperty("properties").GetProperty("$feature_flag").GetString() ?? string.Empty,
+                e => e.GetProperty("properties"));
+
+        // Minimal events strip the $feature/<key> enumeration and (for local evaluation) the
+        // definitions-loaded timestamp.
+        Assert.False(byFlag["local-flag"].TryGetProperty("$feature/local-flag", out _));
+        Assert.False(byFlag["local-flag"].TryGetProperty("$feature_flag_definitions_loaded_at", out _));
+        Assert.False(byFlag["local-flag"].GetProperty("$feature_flag_has_experiment").GetBoolean());
+        Assert.False(byFlag["needs-remote"].TryGetProperty("$feature/needs-remote", out _));
+        Assert.False(byFlag["needs-remote"].GetProperty("$feature_flag_has_experiment").GetBoolean());
+
+        // Experiment-linked flags keep the full event.
+        Assert.True(byFlag["exp-flag"].TryGetProperty("$feature/exp-flag", out _));
+        Assert.True(byFlag["exp-flag"].GetProperty("$feature_flag_has_experiment").GetBoolean());
+    }
+
+    [Fact]
+    public async Task SendsFullFeatureFlagCalledEventPerRecordWhenHasExperimentIsUnknownEvenWhenGated()
+    {
+        var container = new TestContainer();
+        // Gate is on, but the flag's metadata omits has_experiment entirely: an unknown signal
+        // must still fall back to the full event on the snapshot path.
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {"minimalFlagCalledEvents": true,
+             "flags": {
+                "flag-key": {
+                    "key": "flag-key",
+                    "enabled": true,
+                    "reason": {"description": "matched condition set 1"},
+                    "metadata": {"id": 1, "version": 1}
+                }
+            }}
+            """);
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        snapshot.IsEnabled("flag-key");
+
+        await client.FlushAsync();
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var properties = doc.RootElement.GetProperty("batch").EnumerateArray().Single().GetProperty("properties");
+
+        Assert.True(properties.TryGetProperty("$feature/flag-key", out _));
+        Assert.False(properties.TryGetProperty("$feature_flag_has_experiment", out _));
+    }
+
+    [Fact]
     public async Task UnknownKeyAccessAppendsFlagMissingErrorOnFeatureFlagCalled()
     {
         var container = new TestContainer();

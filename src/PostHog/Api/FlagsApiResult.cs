@@ -44,6 +44,12 @@ internal record FlagsApiResult
     /// The timestamp when the feature flags were evaluated (milliseconds since Unix epoch).
     /// </summary>
     public long? EvaluatedAt { get; init; }
+
+    /// <summary>
+    /// Whether the server gated this project into sending minimal <c>$feature_flag_called</c> events.
+    /// <c>null</c> when the server does not report the field (older deployments and legacy response formats).
+    /// </summary>
+    public bool? MinimalFlagCalledEvents { get; init; }
 }
 
 /// <summary>
@@ -78,6 +84,12 @@ public record FlagsResult
     /// The list of feature flags that are limited by quota.
     /// </summary>
     public IReadOnlyList<string> QuotaLimited { get; init; } = [];
+
+    /// <summary>
+    /// Whether the server gated this project into sending minimal <c>$feature_flag_called</c> events.
+    /// <c>false</c> when the response does not carry the field.
+    /// </summary>
+    public bool MinimalFlagCalledEvents { get; init; }
 }
 
 /// <summary>
@@ -129,7 +141,8 @@ internal static class FlagsApiResultExtensions
             ErrorsWhileComputingFlags = results.ErrorsWhileComputingFlags,
             RequestId = results.RequestId,
             EvaluatedAt = results.EvaluatedAt,
-            QuotaLimited = results.QuotaLimited ?? []
+            QuotaLimited = results.QuotaLimited ?? [],
+            MinimalFlagCalledEvents = results.MinimalFlagCalledEvents == true
         };
     }
 }
