@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.4
+
+### Patch Changes
+
+- dd2b355: Avoid mutating caller-provided property dictionaries when capturing events, capturing exceptions, and using identify, group identify, page view, screen view, or survey capture helpers.
+
 ## 0.1.3
 
 ### Patch Changes

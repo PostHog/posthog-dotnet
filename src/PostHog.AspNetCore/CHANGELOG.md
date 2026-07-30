@@ -1,5 +1,12 @@
 # PostHog.AspNetCore
 
+## 2.8.1
+
+### Patch Changes
+
+- 2c2d89f: Prevent `ProjectToken`-only configuration from logging the deprecated `ProjectApiKey` warning.
+- dd2b355: Avoid mutating caller-provided property dictionaries when capturing events, capturing exceptions, and using identify, group identify, page view, screen view, or survey capture helpers.
+
 ## 2.8.0
 
 ### Minor Changes
