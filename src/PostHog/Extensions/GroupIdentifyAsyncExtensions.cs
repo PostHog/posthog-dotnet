@@ -141,7 +141,9 @@ public static class GroupIdentifyAsyncExtensions
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
     {
-        properties ??= new Dictionary<string, object>();
+        properties = properties is null
+            ? new Dictionary<string, object>()
+            : new Dictionary<string, object>(properties);
         properties["name"] = name;
 
         return distinctId is null

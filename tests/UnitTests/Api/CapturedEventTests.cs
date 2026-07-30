@@ -71,6 +71,10 @@ public class TheConstructor
         };
         var capturedEvent = new CapturedEvent("test-event", "user-1", properties, DateTimeOffset.UtcNow);
 
+        Assert.NotSame(properties, capturedEvent.Properties);
+        Assert.Equal(2, properties.Count);
+        Assert.Equal("custom_value", properties["custom_prop"]);
+        Assert.Equal(42, properties["number_prop"]);
         Assert.Equal("custom_value", capturedEvent.Properties["custom_prop"]);
         Assert.Equal(42, capturedEvent.Properties["number_prop"]);
     }

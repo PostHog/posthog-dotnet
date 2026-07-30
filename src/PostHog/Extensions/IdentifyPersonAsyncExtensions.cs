@@ -192,16 +192,23 @@ public static class IdentifyPersonAsyncExtensions
         Dictionary<string, object>? personPropertiesToSetOnce,
         CancellationToken cancellationToken)
     {
-        if (email is not null)
+        if (email is not null || name is not null)
         {
-            personPropertiesToSet ??= new Dictionary<string, object>();
-            personPropertiesToSet["email"] = email;
-        }
+            var enrichedProperties = personPropertiesToSet is null
+                ? new Dictionary<string, object>()
+                : new Dictionary<string, object>(personPropertiesToSet);
 
-        if (name is not null)
-        {
-            personPropertiesToSet ??= new Dictionary<string, object>();
-            personPropertiesToSet["name"] = name;
+            if (email is not null)
+            {
+                enrichedProperties["email"] = email;
+            }
+
+            if (name is not null)
+            {
+                enrichedProperties["name"] = name;
+            }
+
+            personPropertiesToSet = enrichedProperties;
         }
 
         return await NotNull(client).IdentifyAsync(distinctId,
