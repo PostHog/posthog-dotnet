@@ -156,6 +156,29 @@ public class TheAddPostHogMethod
     }
 
     [Fact]
+    public void LaterConfigurationSectionOverridesLegacyProjectApiKey()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["First:ProjectApiKey"] = "first-project-api-key",
+                ["Second:ProjectApiKey"] = "second-project-api-key",
+            })
+            .Build();
+        services.AddPostHog(options =>
+        {
+            options.UseConfigurationSection(configuration.GetSection("First"));
+            options.UseConfigurationSection(configuration.GetSection("Second"));
+        });
+
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
+
+        Assert.Equal("second-project-api-key", options.ProjectToken);
+    }
+
+    [Fact]
     public void ProjectApiKeyAliasMirrorsProjectToken()
     {
         var options = new PostHogOptions

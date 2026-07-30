@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using static PostHog.Library.Ensure;
 
 namespace PostHog.Config;
@@ -31,12 +32,23 @@ public static class PostHogConfigurationBuilderExtensions
     public static IPostHogConfigurationBuilder UseConfigurationSection(
         this IPostHogConfigurationBuilder builder,
         IConfigurationSection section) =>
-        NotNull(builder).Use(services
-            => services.Configure<PostHogOptions>(section));
-
-#if NETSTANDARD2_0 || NETSTANDARD2_1
-    static IServiceCollection Configure<T>(this IServiceCollection services, IConfigurationSection section)
-        where T : class =>
-        services.Configure<T>(section.Bind);
+        NotNull(builder).Use(services =>
+        {
+#if !(NETSTANDARD2_0 || NETSTANDARD2_1)
+            services.AddSingleton<IOptionsChangeTokenSource<PostHogOptions>>(
+                new ConfigurationChangeTokenSource<PostHogOptions>(section));
 #endif
+            services.Configure<PostHogOptions>(options =>
+            {
+                var projectKeyState = options.GetProjectKeyState();
+                section.Bind(options);
+
+                // ConfigurationBinder writes alias getter values back when their keys are absent. Restore the raw
+                // values for absent keys so this section changes only the project key values it contains.
+                options.RestoreProjectKeyState(
+                    projectKeyState,
+                    restoreProjectToken: section["ProjectToken"] is null,
+                    restoreProjectApiKey: section["ProjectApiKey"] is null);
+            });
+        });
 }

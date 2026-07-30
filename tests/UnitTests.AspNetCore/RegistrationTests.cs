@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Config;
@@ -39,6 +40,26 @@ public class TheAddPostHogMethod
         Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
+    }
+
+    [Fact]
+    public void DoesNotLogLegacyWarningWhenOnlyProjectTokenIsConfigured()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["PostHog:ProjectToken"] = "fake-not-so-secret",
+        });
+        using var logger = new FakeLoggerProvider();
+        builder.Services.AddSingleton<ILoggerFactory>(logger);
+
+        builder.AddPostHog();
+
+        using var provider = builder.Services.BuildServiceProvider();
+        Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
+        Assert.DoesNotContain(
+            logger.GetAllEvents(minimumLevel: LogLevel.Warning),
+            log => log.Message?.Contains("ProjectApiKey is deprecated", StringComparison.Ordinal) == true);
     }
 
     [Fact]
@@ -81,12 +102,18 @@ public class TheAddPostHogMethod
         {
             ["PostHog:ProjectApiKey"] = "fake-not-so-secret",
         });
+        using var logger = new FakeLoggerProvider();
+        services.AddSingleton<ILoggerFactory>(logger);
 
         builder.AddPostHog();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
+        Assert.NotNull(provider.GetRequiredService<IPostHogClient>());
         var options = provider.GetRequiredService<IOptions<PostHogOptions>>().Value;
         Assert.Equal("fake-not-so-secret", options.ProjectToken);
+        Assert.Contains(
+            logger.GetAllEvents(minimumLevel: LogLevel.Warning),
+            log => log.Message?.Contains("ProjectApiKey is deprecated", StringComparison.Ordinal) == true);
     }
 
     [Fact]
