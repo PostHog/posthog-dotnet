@@ -30,6 +30,24 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
 
     internal bool HasLegacyProjectApiKey => _projectApiKey is not null;
 
+    internal (string? ProjectToken, string? ProjectApiKey) GetProjectKeyState() =>
+        (_projectToken, _projectApiKey);
+
+    internal void RestoreProjectKeyState(
+        (string? ProjectToken, string? ProjectApiKey) state,
+        bool restoreProjectToken,
+        bool restoreProjectApiKey)
+    {
+        if (restoreProjectToken)
+        {
+            _projectToken = state.ProjectToken;
+        }
+        if (restoreProjectApiKey)
+        {
+            _projectApiKey = state.ProjectApiKey;
+        }
+    }
+
     internal void Normalize()
     {
         _projectToken = _projectToken.NullIfEmpty();
