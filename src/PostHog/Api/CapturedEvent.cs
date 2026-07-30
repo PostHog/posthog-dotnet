@@ -27,9 +27,7 @@ public class CapturedEvent
         DistinctId = distinctId;
         Timestamp = timestamp;
 
-        Properties = properties is null
-            ? new Dictionary<string, object>()
-            : new Dictionary<string, object>(properties);
+        Properties = properties?.Copy() ?? new Dictionary<string, object>();
 
         // Every event has to have these properties.
         Properties[PostHogProperties.DistinctId] = distinctId; // See `get_distinct_id` in PostHog/posthog api/capture.py line 321

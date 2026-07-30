@@ -1,4 +1,5 @@
 using PostHog.Api;
+using PostHog.Library;
 using static PostHog.Library.Ensure;
 
 namespace PostHog; // Intentionally put in the root namespace.
@@ -194,9 +195,7 @@ public static class IdentifyPersonAsyncExtensions
     {
         if (email is not null || name is not null)
         {
-            var enrichedProperties = personPropertiesToSet is null
-                ? new Dictionary<string, object>()
-                : new Dictionary<string, object>(personPropertiesToSet);
+            var enrichedProperties = personPropertiesToSet?.Copy() ?? new Dictionary<string, object>();
 
             if (email is not null)
             {

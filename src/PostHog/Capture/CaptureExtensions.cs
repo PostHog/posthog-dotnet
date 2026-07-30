@@ -263,11 +263,9 @@ public static class CaptureExtensions
         Dictionary<string, object> personPropertiesToSet,
         Dictionary<string, object> personPropertiesToSetOnce)
     {
-        properties = properties is null
-            ? new Dictionary<string, object>()
-            : new Dictionary<string, object>(properties);
-        properties["$set"] = new Dictionary<string, object>(personPropertiesToSet);
-        properties["$set_once"] = new Dictionary<string, object>(personPropertiesToSetOnce);
+        properties = properties?.Copy() ?? new Dictionary<string, object>();
+        properties["$set"] = personPropertiesToSet.Copy();
+        properties["$set_once"] = personPropertiesToSetOnce.Copy();
 
         return NotNull(client).Capture(
             distinctId,
@@ -476,9 +474,7 @@ public static class CaptureExtensions
         IReadOnlyList<string> surveyResponses,
         Dictionary<string, object>? properties)
     {
-        properties = properties is null
-            ? new Dictionary<string, object>()
-            : new Dictionary<string, object>(properties);
+        properties = properties?.Copy() ?? new Dictionary<string, object>();
         properties["$survey_id"] = surveyId;
 
         if (NotNull(surveyResponses).Count > 0)
@@ -546,9 +542,7 @@ public static class CaptureExtensions
         Dictionary<string, object>? properties,
         bool sendFeatureFlags = false)
     {
-        properties = properties is null
-            ? new Dictionary<string, object>()
-            : new Dictionary<string, object>(properties);
+        properties = properties?.Copy() ?? new Dictionary<string, object>();
         properties[eventPropertyName] = eventPropertyValue;
         if (!sendFeatureFlags)
         {

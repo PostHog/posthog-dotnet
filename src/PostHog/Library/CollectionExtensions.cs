@@ -38,6 +38,17 @@ internal static class CollectionExtensions
         => new ReadOnlyDictionary<TKey, TValue>(enumerable.ToDictionary(keySelector, valueSelector));
 
     /// <summary>
+    /// Creates a shallow copy of a dictionary.
+    /// </summary>
+    /// <param name="dictionary">The dictionary to copy.</param>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <typeparam name="TValue">The value type.</typeparam>
+    /// <returns>A new dictionary containing the same keys and values.</returns>
+    public static Dictionary<TKey, TValue> Copy<TKey, TValue>(
+        this IReadOnlyDictionary<TKey, TValue> dictionary) where TKey : notnull
+        => new(dictionary);
+
+    /// <summary>
     /// Similar to Python's hash merging, this method merges the contents of one dictionary into another.
     /// The values of the other dictionary will overwrite the values of the original dictionary.
     /// </summary>
