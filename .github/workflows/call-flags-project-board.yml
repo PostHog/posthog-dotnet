@@ -1,4 +1,4 @@
-# � SECURITY PLACEHOLDER - DO NOT USE THIS WORKFLOW NAME �
+# WARNING: SECURITY PLACEHOLDER - DO NOT USE THIS WORKFLOW NAME
 #
 # This workflow previously existed and was compromised. This placeholder file
 # exists to allow blocking this workflow name in GitHub's branch protection rules.
@@ -21,5 +21,5 @@ jobs:
     steps:
       - name: This workflow is blocked
         run: |
-          echo "� A workflow with this name was previously compromised and is now blocked."
+          echo "WARNING: A workflow with this name was previously compromised and is now blocked."
           exit 1
