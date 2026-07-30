@@ -43,8 +43,9 @@ public static class PostHogConfigurationBuilderExtensions
                 var projectKeyState = options.GetProjectKeyState();
                 section.Bind(options);
 
-                // ConfigurationBinder writes alias getter values back when their keys are absent. Restore the raw
-                // values for absent keys so this section changes only the project key values it contains.
+                // ConfigurationBinder writes alias getter values back when their keys are absent. A raw
+                // ProjectApiKey getter would avoid this but break its public alias behavior, so restore raw values
+                // for absent keys instead.
                 options.RestoreProjectKeyState(
                     projectKeyState,
                     restoreProjectToken: section["ProjectToken"] is null,
