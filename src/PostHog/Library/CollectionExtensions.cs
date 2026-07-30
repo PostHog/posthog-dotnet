@@ -46,7 +46,7 @@ internal static class CollectionExtensions
     /// <returns>A new dictionary containing the same keys and values.</returns>
     public static Dictionary<TKey, TValue> Copy<TKey, TValue>(
         this IReadOnlyDictionary<TKey, TValue> dictionary) where TKey : notnull
-        => new(dictionary);
+        => dictionary.ToDictionary(pair => pair.Key, pair => pair.Value);
 
     /// <summary>
     /// Similar to Python's hash merging, this method merges the contents of one dictionary into another.
