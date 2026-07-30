@@ -1,5 +1,6 @@
 using PostHog.Api;
 using PostHog.Json;
+using PostHog.Library;
 using static PostHog.Library.Ensure;
 
 namespace PostHog; // Intentionally put in the root namespace.
@@ -141,7 +142,7 @@ public static class GroupIdentifyAsyncExtensions
         Dictionary<string, object>? properties,
         CancellationToken cancellationToken)
     {
-        properties ??= new Dictionary<string, object>();
+        properties = properties?.Copy() ?? new Dictionary<string, object>();
         properties["name"] = name;
 
         return distinctId is null

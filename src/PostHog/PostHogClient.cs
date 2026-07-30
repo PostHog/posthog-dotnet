@@ -310,6 +310,8 @@ public sealed class PostHogClient : IPostHogClient
             return false;
         }
 
+        properties = properties?.Copy();
+
         // If custom timestamp provided, add it to properties
         if (timestamp.HasValue)
         {
@@ -513,7 +515,7 @@ public sealed class PostHogClient : IPostHogClient
         try
         {
             var host = _options.Value.HostUrl.ToString().TrimEnd('/').Replace(".i.", ".", StringComparison.Ordinal);
-            properties ??= [];
+            properties = properties?.Copy() ?? [];
             var identity = PostHogContextHelper.ResolveIdentity(distinctId, PostHogContext.Current);
             if (identity.IsPersonless && !properties.ContainsKey(PostHogProperties.ProcessPersonProfile))
             {

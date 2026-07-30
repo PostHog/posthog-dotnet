@@ -127,16 +127,20 @@ public class TheIdentifyPersonAsyncMethod
         container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
         var client = container.Activate<PostHogClient>();
+        var personPropertiesToSet = new Dictionary<string, object> { ["age"] = 36 };
+        var personPropertiesToSetOnce = new Dictionary<string, object> { ["join_date"] = "2024-01-21" };
 
         var result = await client.IdentifyAsync(
             distinctId: "some-distinct-id",
             email: "wildling-lover@example.com",
             name: "Jon Snow",
-            personPropertiesToSet: new() { ["age"] = 36 },
-            personPropertiesToSetOnce: new() { ["join_date"] = "2024-01-21" },
+            personPropertiesToSet,
+            personPropertiesToSetOnce,
             CancellationToken.None);
 
         Assert.Equal(1, result.Status);
+        Assert.Equal(new Dictionary<string, object> { ["age"] = 36 }, personPropertiesToSet);
+        Assert.Equal(new Dictionary<string, object> { ["join_date"] = "2024-01-21" }, personPropertiesToSetOnce);
         var received = requestHandler.GetReceivedRequestBody(indented: true);
         Assert.Equal($$"""
                        {
@@ -245,7 +249,7 @@ public class TheIdentifyGroupAsyncMethod
     }
 
     [Fact]
-    public async Task CancellationTokenOverloadOverwritesNameProperty()
+    public async Task CancellationTokenOverloadDoesNotOverwriteInputNameProperty()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
@@ -264,7 +268,7 @@ public class TheIdentifyGroupAsyncMethod
             CancellationToken.None);
 
         Assert.Equal(1, result.Status);
-        Assert.Equal("PostHog", properties["name"]);
+        Assert.Equal("Old Name", properties["name"]);
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
         var root = document.RootElement;
         var groupSet = root.GetProperty("properties").GetProperty("$group_set");
@@ -274,7 +278,7 @@ public class TheIdentifyGroupAsyncMethod
     }
 
     [Fact]
-    public async Task DistinctIdCancellationTokenOverloadOverwritesNameProperty()
+    public async Task DistinctIdCancellationTokenOverloadDoesNotOverwriteInputNameProperty()
     {
         var container = new TestContainer();
         var requestHandler = container.FakeHttpMessageHandler.AddCaptureResponse();
@@ -294,7 +298,7 @@ public class TheIdentifyGroupAsyncMethod
             CancellationToken.None);
 
         Assert.Equal(1, result.Status);
-        Assert.Equal("PostHog", properties["name"]);
+        Assert.Equal("Old Name", properties["name"]);
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
         var root = document.RootElement;
         var groupSet = root.GetProperty("properties").GetProperty("$group_set");
@@ -416,6 +420,34 @@ public class TheCapturePageViewMethod
 public class TheCaptureMethod
 {
     [Fact]
+    public async Task DoesNotMutateOrRetainProvidedProperties()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties["super"] = "property";
+        }));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        var timestamp = new DateTimeOffset(2024, 1, 21, 19, 8, 23, TimeSpan.Zero);
+        var properties = new Dictionary<string, object> { ["source"] = "before" };
+        var groups = new GroupCollection { new Group("company", "acme") };
+
+        Assert.True(client.Capture("test-user", "test-event", properties, groups, flags: null, timestamp));
+        Assert.Equal(new Dictionary<string, object> { ["source"] = "before" }, properties);
+
+        properties["source"] = "after";
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var capturedProperties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
+        Assert.Equal("before", capturedProperties.GetProperty("source").GetString());
+        Assert.Equal("property", capturedProperties.GetProperty("super").GetString());
+        Assert.Equal("acme", capturedProperties.GetProperty("$groups").GetProperty("company").GetString());
+        Assert.True(capturedProperties.GetProperty("$is_server").GetBoolean());
+        Assert.Equal(timestamp, capturedProperties.GetProperty("timestamp").GetDateTimeOffset());
+    }
+
+    [Fact]
     public async Task BeforeSendCanModifyFullyEnrichedEventBeforeUpload()
     {
         var sawFullyEnrichedEvent = false;
@@ -436,12 +468,12 @@ public class TheCaptureMethod
         }));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
+        var inputProperties = new Dictionary<string, object> { ["secret"] = "remove-me" };
 
-        client.Capture(
-            "test-user",
-            "before-send-event",
-            new Dictionary<string, object> { ["secret"] = "remove-me" });
+        client.Capture("test-user", "before-send-event", inputProperties);
         await client.FlushAsync();
+
+        Assert.Equal("remove-me", inputProperties["secret"]);
 
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
         var properties = document.RootElement
@@ -1183,6 +1215,27 @@ public class TheCaptureMethod
 
 public class TheCaptureExceptionMethod
 {
+    [Fact]
+    public async Task DoesNotMutateProvidedProperties()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var properties = new Dictionary<string, object> { ["source"] = "test" };
+
+        Assert.True(client.CaptureException(
+            new InvalidOperationException("boom"),
+            "some-distinct-id",
+            properties,
+            groups: null,
+            flags: null,
+            timestamp: DateTimeOffset.UtcNow));
+        Assert.Equal(new Dictionary<string, object> { ["source"] = "test" }, properties);
+
+        await client.FlushAsync();
+        var (_, _, capturedProperties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        Assert.Equal("test", capturedProperties.GetProperty("source").GetString());
+        Assert.Equal("System.InvalidOperationException", capturedProperties.GetProperty("$exception_type").GetString());
+    }
+
     [Fact]
     public async Task CaptureExceptionWithDivideByZeroException() // based on PostHog/posthog-python test_exception_capture
     {
