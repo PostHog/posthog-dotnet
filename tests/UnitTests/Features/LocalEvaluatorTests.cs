@@ -401,6 +401,59 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
+    [InlineData("value", ComparisonOperator.StartsWith, "\"Val\"", true)]
+    [InlineData("VALUE", ComparisonOperator.StartsWith, "\"Val\"", true)]
+    [InlineData("vaLue4", ComparisonOperator.StartsWith, "\"Val\"", true)]
+    [InlineData("prevalue", ComparisonOperator.StartsWith, "\"Val\"", false)]
+    [InlineData("Alakazam", ComparisonOperator.StartsWith, "\"Val\"", false)]
+    [InlineData(323, ComparisonOperator.StartsWith, "\"3\"", true)]
+    [InlineData(123, ComparisonOperator.StartsWith, "\"3\"", false)]
+    [InlineData("value", ComparisonOperator.NotStartsWith, "\"Val\"", false)]
+    [InlineData("VALUE", ComparisonOperator.NotStartsWith, "\"Val\"", false)]
+    [InlineData("prevalue", ComparisonOperator.NotStartsWith, "\"Val\"", true)]
+    [InlineData("Alakazam", ComparisonOperator.NotStartsWith, "\"Val\"", true)]
+    [InlineData("value", ComparisonOperator.EndsWith, "\"lUe\"", true)]
+    [InlineData("VALUE", ComparisonOperator.EndsWith, "\"lUe\"", true)]
+    [InlineData("343tfvalue", ComparisonOperator.EndsWith, "\"lUe\"", true)]
+    [InlineData("value2", ComparisonOperator.EndsWith, "\"lUe\"", false)]
+    [InlineData("Alakazam", ComparisonOperator.EndsWith, "\"lUe\"", false)]
+    [InlineData(323, ComparisonOperator.EndsWith, "\"3\"", true)]
+    [InlineData(13, ComparisonOperator.EndsWith, "\"3\"", true)]
+    [InlineData(321, ComparisonOperator.EndsWith, "\"3\"", false)]
+    [InlineData("value", ComparisonOperator.NotEndsWith, "\"lUe\"", false)]
+    [InlineData("VALUE", ComparisonOperator.NotEndsWith, "\"lUe\"", false)]
+    [InlineData("value2", ComparisonOperator.NotEndsWith, "\"lUe\"", true)]
+    [InlineData("Alakazam", ComparisonOperator.NotEndsWith, "\"lUe\"", true)]
+    public void HandlesStartsWithAndEndsWithComparisons(object overrideValue, ComparisonOperator comparison, string filterValueJson, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "bio",
+            properties:
+            [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "bio",
+                    Value = PropertyFilterValue.Create(JsonDocument.Parse(filterValueJson).RootElement)!,
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["bio"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "bio",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
     [InlineData(22, ComparisonOperator.GreaterThan, "\"21\"", true)]
     [InlineData(22, ComparisonOperator.GreaterThanOrEquals, "\"21\"", true)]
     [InlineData("22", ComparisonOperator.GreaterThan, "\"21\"", true)]

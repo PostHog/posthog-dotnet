@@ -1,10 +1,16 @@
 #nullable enable
 PostHog.AllFeatureFlagsOptions.DisableGeoIp.get -> bool
 PostHog.AllFeatureFlagsOptions.DisableGeoIp.init -> void
+PostHog.Api.ComparisonOperator.EndsWith = 27 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.NotEndsWith = 28 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.NotStartsWith = 26 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.StartsWith = 25 -> PostHog.Api.ComparisonOperator
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.get -> bool
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.init -> void
 PostHog.Features.FeatureFlag.HasExperiment.get -> bool?
 PostHog.Features.FeatureFlag.HasExperiment.init -> void
+PostHog.Json.PropertyFilterValue.IsPrefixOf(object? other, System.StringComparison stringComparison) -> bool
+PostHog.Json.PropertyFilterValue.IsSuffixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?
 PostHog.PostHogOptions.BeforeSend.set -> void
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int

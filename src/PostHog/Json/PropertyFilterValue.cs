@@ -140,6 +140,28 @@ public class PropertyFilterValue
         && comparandString.Contains(StringValue, stringComparison);
 
     /// <summary>
+    /// Returns a value indicating whether this instance is a prefix of the specified <paramref name="other"/> instance.
+    /// </summary>
+    /// <param name="other">The other value to compare to this one.</param>
+    /// <param name="stringComparison">The type of comparison if these are strings.</param>
+    /// <returns><c>true</c> if the other value starts with this instance.</returns>
+    public bool IsPrefixOf(object? other, StringComparison stringComparison) =>
+        other?.ToString() is { } comparandString
+        && StringValue is not null
+        && comparandString.StartsWith(StringValue, stringComparison);
+
+    /// <summary>
+    /// Returns a value indicating whether this instance is a suffix of the specified <paramref name="other"/> instance.
+    /// </summary>
+    /// <param name="other">The other value to compare to this one.</param>
+    /// <param name="stringComparison">The type of comparison if these are strings.</param>
+    /// <returns><c>true</c> if the other value ends with this instance.</returns>
+    public bool IsSuffixOf(object? other, StringComparison stringComparison) =>
+        other?.ToString() is { } comparandString
+        && StringValue is not null
+        && comparandString.EndsWith(StringValue, stringComparison);
+
+    /// <summary>
     /// Determines whether the specified <paramref name="overrideValue"/> is an "exact" match for this instance.
     /// If this instance is an array, then it's checking to see if the value is in the array.
     /// </summary>
