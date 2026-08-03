@@ -454,6 +454,74 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
+    [InlineData(ComparisonOperator.StartsWith)]
+    [InlineData(ComparisonOperator.NotStartsWith)]
+    [InlineData(ComparisonOperator.EndsWith)]
+    [InlineData(ComparisonOperator.NotEndsWith)]
+    public void ReturnsFalseWhenPropertyValueIsNullForStartsWithAndEndsWithComparisons(ComparisonOperator comparison)
+    {
+        var flags = CreateFlags(
+            key: "bio",
+            properties:
+            [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "bio",
+                    Value = new PropertyFilterValue("Val"),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["bio"] = null
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "bio",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        // A null property value fails the comparison for both the positive and not_ variants.
+        Assert.False(result.Value);
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.StartsWith)]
+    [InlineData(ComparisonOperator.NotStartsWith)]
+    [InlineData(ComparisonOperator.EndsWith)]
+    [InlineData(ComparisonOperator.NotEndsWith)]
+    public void ThrowsInconclusiveMatchExceptionWhenPropertyKeyMissingForStartsWithAndEndsWithComparisons(ComparisonOperator comparison)
+    {
+        var flags = CreateFlags(
+            key: "bio",
+            properties:
+            [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "bio",
+                    Value = new PropertyFilterValue("Val"),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["other_property"] = "value"
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() =>
+            localEvaluator.EvaluateFeatureFlag(
+                key: "bio",
+                distinctId: "distinct-id",
+                personProperties: properties));
+    }
+
+    [Theory]
     [InlineData(22, ComparisonOperator.GreaterThan, "\"21\"", true)]
     [InlineData(22, ComparisonOperator.GreaterThanOrEquals, "\"21\"", true)]
     [InlineData("22", ComparisonOperator.GreaterThan, "\"21\"", true)]
