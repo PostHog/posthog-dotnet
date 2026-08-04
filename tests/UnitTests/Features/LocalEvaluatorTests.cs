@@ -522,6 +522,48 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
+    [InlineData(ComparisonOperator.ContainsIgnoreCase)]
+    [InlineData(ComparisonOperator.Exact)]
+    public void MatchesNumericPropertyValueRegardlessOfCurrentCulture(ComparisonOperator comparison)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        // de-DE renders 3.14 as "3,14" with culture-sensitive formatting.
+        CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+        try
+        {
+            var flags = CreateFlags(
+                key: "pi",
+                properties:
+                [
+                    new PropertyFilter
+                    {
+                        Type = FilterType.Person,
+                        Key = "pi",
+                        Value = new PropertyFilterValue("3.14"),
+                        Operator = comparison
+                    }
+                ]
+            );
+            var properties = new Dictionary<string, object?>
+            {
+                ["pi"] = 3.14
+            };
+            var localEvaluator = new LocalEvaluator(flags);
+
+            var result = localEvaluator.EvaluateFeatureFlag(
+                key: "pi",
+                distinctId: "distinct-id",
+                personProperties: properties);
+
+            Assert.True(result.Value);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Theory]
     [InlineData(22, ComparisonOperator.GreaterThan, "\"21\"", true)]
     [InlineData(22, ComparisonOperator.GreaterThanOrEquals, "\"21\"", true)]
     [InlineData("22", ComparisonOperator.GreaterThan, "\"21\"", true)]

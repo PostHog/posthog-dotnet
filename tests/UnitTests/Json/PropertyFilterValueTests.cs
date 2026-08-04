@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using PostHog.Json;
 
@@ -66,6 +67,71 @@ public class TheIsExactMatchMethod
 
         Assert.NotNull(filterPropertyValue);
         Assert.False(filterPropertyValue.IsExactMatch(float.MaxValue));
+    }
+
+    [Theory]
+    [InlineData(3.14, "\"3.14\"", true)]
+    [InlineData(3.14, "\"3,14\"", false)]
+    [InlineData(1.618, "\"3.14\"", false)]
+    [InlineData(3.14, """["1", "3.14", "42"]""", true)]
+    public void StringifiesNumbersWithInvariantCulture(object overrideValue, string jsonValue, bool expected)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+        try
+        {
+            var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(jsonValue).RootElement);
+
+            Assert.NotNull(filterPropertyValue);
+            Assert.Equal(expected, filterPropertyValue.IsExactMatch(overrideValue));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public void StringifiesDecimalsWithInvariantCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+        try
+        {
+            var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse("\"3.14\"").RootElement);
+
+            Assert.NotNull(filterPropertyValue);
+            Assert.True(filterPropertyValue.IsExactMatch(3.14m));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+}
+
+public class TheIsContainedByMethod
+{
+    [Theory]
+    [InlineData(3.14, "\"3.14\"", true)]
+    [InlineData(3.14, "\".14\"", true)]
+    [InlineData(3.14, "\"3,14\"", false)]
+    [InlineData(1.618, "\"3.14\"", false)]
+    public void StringifiesNumbersWithInvariantCulture(object overrideValue, string jsonValue, bool expected)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+        try
+        {
+            var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(jsonValue).RootElement);
+
+            Assert.NotNull(filterPropertyValue);
+            Assert.Equal(expected, filterPropertyValue.IsContainedBy(overrideValue, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 }
 
