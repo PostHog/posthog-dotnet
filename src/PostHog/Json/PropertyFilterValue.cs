@@ -169,15 +169,46 @@ public class PropertyFilterValue
         return Type.GetTypeCode(overrideValue.GetType()) switch
         {
             TypeCode.Double => values.Any(value =>
-                double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                TryParseDoubleWithoutUnderflow(value, out var number)
                 && number.Equals((double)overrideValue)),
+            TypeCode.Single => values.Any(value =>
+                TryParseSingleWithoutUnderflow(value, out var number)
+                && number.Equals((float)overrideValue)),
             TypeCode.Byte or TypeCode.Decimal or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64
-                or TypeCode.SByte or TypeCode.Single or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64
+                or TypeCode.SByte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64
                 => values.Any(value =>
-                    decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                    TryParseDecimalWithoutUnderflow(value, out var number)
                     && number == Convert.ToDecimal(overrideValue, CultureInfo.InvariantCulture)),
             _ => false
         };
+    }
+
+    static bool TryParseDoubleWithoutUnderflow(string value, out double number) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)
+        && (number != 0 || RepresentsZero(value));
+
+    static bool TryParseSingleWithoutUnderflow(string value, out float number) =>
+        float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)
+        && (number != 0 || RepresentsZero(value));
+
+    static bool TryParseDecimalWithoutUnderflow(string value, out decimal number) =>
+        decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)
+        && (number != 0 || RepresentsZero(value));
+
+    static bool RepresentsZero(string value)
+    {
+        foreach (var character in value)
+        {
+            if (character is 'e' or 'E')
+            {
+                break;
+            }
+            if (character is >= '1' and <= '9')
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>
@@ -476,7 +507,7 @@ public class PropertyFilterValue
             var stringValue = element.ValueKind switch
             {
                 JsonValueKind.String => element.GetString(),
-                JsonValueKind.Number => GetInvariantNumberString(element),
+                JsonValueKind.Number => element.GetRawText(),
                 _ => null
             };
             if (stringValue is null)
@@ -489,22 +520,5 @@ public class PropertyFilterValue
 
         value = values.ToReadOnlyList();
         return true;
-    }
-
-    static string GetInvariantNumberString(JsonElement element)
-    {
-        if (element.TryGetInt64(out var integerValue))
-        {
-            return integerValue.ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (element.TryGetDecimal(out var decimalValue))
-        {
-            return decimalValue.ToString("G29", CultureInfo.InvariantCulture);
-        }
-
-        return element.TryGetDouble(out var doubleValue)
-            ? doubleValue.ToString("R", CultureInfo.InvariantCulture)
-            : element.GetRawText();
     }
 }

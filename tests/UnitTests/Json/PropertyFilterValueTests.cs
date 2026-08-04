@@ -31,6 +31,8 @@ public class TheIsExactMatchMethod
     [InlineData(1.0, "[1.0]", true)]
     [InlineData(1000, "[1e3]", true)]
     [InlineData(0.0000001, "[1e-7]", true)]
+    [InlineData(1e-100, "[1e-100]", true)]
+    [InlineData(0, "[1e-100]", false)]
     [InlineData(true, "true", true)]
     [InlineData(false, "false", true)]
     [InlineData(true, "false", false)]
@@ -54,6 +56,15 @@ public class TheIsExactMatchMethod
 
         Assert.NotNull(filterPropertyValue);
         Assert.True(filterPropertyValue.IsExactMatch(1.0m));
+    }
+
+    [Fact]
+    public void NumericArrayDoesNotThrowForLargeSingleOverride()
+    {
+        var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse("[0]").RootElement);
+
+        Assert.NotNull(filterPropertyValue);
+        Assert.False(filterPropertyValue.IsExactMatch(float.MaxValue));
     }
 }
 
