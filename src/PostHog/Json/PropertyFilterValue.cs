@@ -141,9 +141,7 @@ public class PropertyFilterValue
     {
         return this switch
         {
-            { ListOfStrings: { } listOfStrings } => overrideValue is not null
-                && Convert.ToString(overrideValue, CultureInfo.InvariantCulture) is { } stringValue
-                && listOfStrings.Contains(stringValue, StringComparer.OrdinalIgnoreCase),
+            { ListOfStrings: { } listOfStrings } => IsExactListMatch(listOfStrings, overrideValue),
             { StringValue: { } stringValue } => stringValue.Equals(overrideValue?.ToString(), StringComparison.OrdinalIgnoreCase),
             { BooleanValue: { } booleanValue } => overrideValue switch
             {
@@ -151,6 +149,33 @@ public class PropertyFilterValue
                 string stringOverride => booleanValue.ToString().Equals(stringOverride, StringComparison.OrdinalIgnoreCase),
                 _ => false
             },
+            _ => false
+        };
+    }
+
+    static bool IsExactListMatch(IReadOnlyList<string> values, object? overrideValue)
+    {
+        if (overrideValue is null)
+        {
+            return false;
+        }
+
+        var stringValue = Convert.ToString(overrideValue, CultureInfo.InvariantCulture);
+        if (stringValue is not null && values.Contains(stringValue, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return Type.GetTypeCode(overrideValue.GetType()) switch
+        {
+            TypeCode.Double => values.Any(value =>
+                double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                && number.Equals((double)overrideValue)),
+            TypeCode.Byte or TypeCode.Decimal or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64
+                or TypeCode.SByte or TypeCode.Single or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64
+                => values.Any(value =>
+                    decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+                    && number == Convert.ToDecimal(overrideValue, CultureInfo.InvariantCulture)),
             _ => false
         };
     }
