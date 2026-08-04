@@ -377,6 +377,56 @@ public class TheDeserializeFromCamelCaseJsonMethod
     }
 
     [Fact]
+    public async Task CanDeserializeLocalEvaluationFiltersWithMissingAndNumericValues()
+    {
+        var json = """
+                   {
+                     "flags": [
+                       {
+                         "id": 1,
+                         "team_id": 1,
+                         "key": "example-flag",
+                         "active": true,
+                         "deleted": false,
+                         "filters": {
+                           "groups": [
+                             {
+                               "properties": [
+                                 { "key": "email", "operator": "is_set", "type": "person" },
+                                 { "key": "last_seen", "operator": "is_not_set", "type": "person" },
+                                 { "key": "orders_count", "operator": "exact", "type": "person", "value": [0, 3.14] }
+                               ],
+                               "rollout_percentage": 100
+                             }
+                           ]
+                         }
+                       }
+                     ],
+                     "group_type_mapping": {},
+                     "cohorts": {}
+                   }
+                   """;
+
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
+
+        Assert.NotNull(result);
+        var properties = Assert.Single(Assert.Single(result.Flags).Filters!.Groups!).Properties!;
+        Assert.Equal(new PropertyFilter
+        {
+            Type = FilterType.Person,
+            Key = "email",
+            Operator = ComparisonOperator.IsSet
+        }, properties[0]);
+        Assert.Equal(new PropertyFilter
+        {
+            Type = FilterType.Person,
+            Key = "last_seen",
+            Operator = ComparisonOperator.IsNotSet
+        }, properties[1]);
+        Assert.Equal(["0", "3.14"], properties[2].Value!.ListOfStrings);
+    }
+
+    [Fact]
     public async Task ShouldDeserializeApiResult()
     {
         var json = "{\"status\": 1}";

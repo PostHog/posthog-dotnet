@@ -471,7 +471,7 @@ internal sealed class LocalEvaluator
         //        }]
         //     }
         // }
-        var cohortId = filter.Value.CohortId;
+        var cohortId = filter.Value?.CohortId;
         if (cohortId is null || !_cohortFilters.TryGetValue(cohortId.Value, out var conditions))
         {
             throw new RequiresServerEvaluationException($"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation");
@@ -621,12 +621,6 @@ internal sealed class LocalEvaluator
         }
 
         var key = NotNull(propertyFilter.Key);
-        if (propertyFilter.Value is not { } propertyValue)
-        {
-            throw new InconclusiveMatchException("The filter property value is null");
-        }
-
-        var value = propertyValue ?? throw new InconclusiveMatchException("The filter property value is null");
 
         // The overrideValue is the value that the user or group has set for the property. It's called "override value"
         // because when passing it to the `/flags` endpoint, it overrides the values stored in PostHog. For local
@@ -650,6 +644,16 @@ internal sealed class LocalEvaluator
             throw new InconclusiveMatchException("Can't match properties without a given property value");
         }
 
+        if (propertyFilter.Operator is ComparisonOperator.IsSet)
+        {
+            return overrideValue is not null;
+        }
+
+        if (propertyFilter.Value is not { } value)
+        {
+            throw new InconclusiveMatchException("The filter property value is null");
+        }
+
         if (overrideValue is null && propertyFilter.Operator != ComparisonOperator.IsNot)
         {
             // If the value is null, just fail the feature flag comparison. This doesn't throw an
@@ -669,7 +673,6 @@ internal sealed class LocalEvaluator
             ComparisonOperator.DoesNotContainIgnoreCase => !value.IsContainedBy(overrideValue, StringComparison.OrdinalIgnoreCase),
             ComparisonOperator.Regex => value.IsRegexMatch(overrideValue),
             ComparisonOperator.NotRegex => !value.IsRegexMatch(overrideValue),
-            ComparisonOperator.IsSet => true, // We already checked to see that the key exists.
             ComparisonOperator.IsDateBefore => value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
             ComparisonOperator.IsDateAfter => !value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
             ComparisonOperator.SemverEquals => value.CompareSemver(overrideValue) == 0,

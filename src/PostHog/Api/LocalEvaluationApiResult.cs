@@ -382,9 +382,10 @@ internal record PropertyFilter : Filter
     public required string Key { get; init; }
 
     /// <summary>
-    /// The value of the property to filter on.
+    /// The value of the property to filter on. This is omitted for operators such as
+    /// <see cref="ComparisonOperator.IsSet"/> and <see cref="ComparisonOperator.IsNotSet"/>.
     /// </summary>
-    public required PropertyFilterValue Value { get; init; }
+    public PropertyFilterValue? Value { get; init; }
 
     /// <summary>
     /// The comparison operator to use for the filter.
@@ -428,7 +429,7 @@ internal record PropertyFilter : Filter
 
         return Type == other.Type
                && Key == other.Key
-               && Value.Equals(other.Value)
+               && object.Equals(Value, other.Value)
                && Operator == other.Operator
                && GroupTypeIndex == other.GroupTypeIndex
                && Negation == other.Negation

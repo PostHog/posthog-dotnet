@@ -250,7 +250,6 @@ public class TheEvaluateFeatureFlagMethod
                 {
                     Type = FilterType.Person,
                     Key = "email",
-                    Value = new PropertyFilterValue("is_set"),
                     Operator = ComparisonOperator.IsSet
                 }
             ]
@@ -282,7 +281,6 @@ public class TheEvaluateFeatureFlagMethod
                 {
                     Type = FilterType.Person,
                     Key = "email",
-                    Value = new PropertyFilterValue("is_not_set"),
                     Operator = ComparisonOperator.IsNotSet
                 }
             ]

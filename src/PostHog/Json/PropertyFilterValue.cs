@@ -141,7 +141,8 @@ public class PropertyFilterValue
     {
         return this switch
         {
-            { ListOfStrings: { } listOfStrings } => overrideValue?.ToString() is { } stringValue
+            { ListOfStrings: { } listOfStrings } => overrideValue is not null
+                && Convert.ToString(overrideValue, CultureInfo.InvariantCulture) is { } stringValue
                 && listOfStrings.Contains(stringValue, StringComparer.OrdinalIgnoreCase),
             { StringValue: { } stringValue } => stringValue.Equals(overrideValue?.ToString(), StringComparison.OrdinalIgnoreCase),
             { BooleanValue: { } booleanValue } => overrideValue switch
@@ -447,18 +448,38 @@ public class PropertyFilterValue
         List<string> values = [];
         foreach (var element in jsonElement.EnumerateArray())
         {
-            if (element.ValueKind is not JsonValueKind.String)
+            var stringValue = element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number => GetInvariantNumberString(element),
+                _ => null
+            };
+            if (stringValue is null)
             {
                 value = null;
                 return false;
             }
-            if (element.GetString() is { } stringValue)
-            {
-                values.Add(stringValue);
-            }
+            values.Add(stringValue);
         }
 
         value = values.ToReadOnlyList();
         return true;
+    }
+
+    static string GetInvariantNumberString(JsonElement element)
+    {
+        if (element.TryGetInt64(out var integerValue))
+        {
+            return integerValue.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (element.TryGetDecimal(out var decimalValue))
+        {
+            return decimalValue.ToString("G29", CultureInfo.InvariantCulture);
+        }
+
+        return element.TryGetDouble(out var doubleValue)
+            ? doubleValue.ToString("R", CultureInfo.InvariantCulture)
+            : element.GetRawText();
     }
 }
