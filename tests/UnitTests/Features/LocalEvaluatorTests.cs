@@ -401,6 +401,127 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
+    [InlineData("value", ComparisonOperator.StartsWith, "\"Val\"", true)]
+    [InlineData("VALUE", ComparisonOperator.StartsWith, "\"Val\"", true)]
+    [InlineData("vaLue4", ComparisonOperator.StartsWith, "\"Val\"", true)]
+    [InlineData("prevalue", ComparisonOperator.StartsWith, "\"Val\"", false)]
+    [InlineData("Alakazam", ComparisonOperator.StartsWith, "\"Val\"", false)]
+    [InlineData(323, ComparisonOperator.StartsWith, "\"3\"", true)]
+    [InlineData(123, ComparisonOperator.StartsWith, "\"3\"", false)]
+    [InlineData("value", ComparisonOperator.NotStartsWith, "\"Val\"", false)]
+    [InlineData("VALUE", ComparisonOperator.NotStartsWith, "\"Val\"", false)]
+    [InlineData("prevalue", ComparisonOperator.NotStartsWith, "\"Val\"", true)]
+    [InlineData("Alakazam", ComparisonOperator.NotStartsWith, "\"Val\"", true)]
+    [InlineData("value", ComparisonOperator.EndsWith, "\"lUe\"", true)]
+    [InlineData("VALUE", ComparisonOperator.EndsWith, "\"lUe\"", true)]
+    [InlineData("343tfvalue", ComparisonOperator.EndsWith, "\"lUe\"", true)]
+    [InlineData("value2", ComparisonOperator.EndsWith, "\"lUe\"", false)]
+    [InlineData("Alakazam", ComparisonOperator.EndsWith, "\"lUe\"", false)]
+    [InlineData(323, ComparisonOperator.EndsWith, "\"3\"", true)]
+    [InlineData(13, ComparisonOperator.EndsWith, "\"3\"", true)]
+    [InlineData(321, ComparisonOperator.EndsWith, "\"3\"", false)]
+    [InlineData("value", ComparisonOperator.NotEndsWith, "\"lUe\"", false)]
+    [InlineData("VALUE", ComparisonOperator.NotEndsWith, "\"lUe\"", false)]
+    [InlineData("value2", ComparisonOperator.NotEndsWith, "\"lUe\"", true)]
+    [InlineData("Alakazam", ComparisonOperator.NotEndsWith, "\"lUe\"", true)]
+    public void HandlesStartsWithAndEndsWithComparisons(object overrideValue, ComparisonOperator comparison, string filterValueJson, bool expected)
+    {
+        var flags = CreateFlags(
+            key: "bio",
+            properties:
+            [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "bio",
+                    Value = PropertyFilterValue.Create(JsonDocument.Parse(filterValueJson).RootElement)!,
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["bio"] = overrideValue
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "bio",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.StartsWith)]
+    [InlineData(ComparisonOperator.NotStartsWith)]
+    [InlineData(ComparisonOperator.EndsWith)]
+    [InlineData(ComparisonOperator.NotEndsWith)]
+    public void ReturnsFalseWhenPropertyValueIsNullForStartsWithAndEndsWithComparisons(ComparisonOperator comparison)
+    {
+        var flags = CreateFlags(
+            key: "bio",
+            properties:
+            [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "bio",
+                    Value = new PropertyFilterValue("Val"),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["bio"] = null
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "bio",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        // A null property value fails the comparison for both the positive and not_ variants.
+        Assert.False(result.Value);
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.StartsWith)]
+    [InlineData(ComparisonOperator.NotStartsWith)]
+    [InlineData(ComparisonOperator.EndsWith)]
+    [InlineData(ComparisonOperator.NotEndsWith)]
+    public void ThrowsInconclusiveMatchExceptionWhenPropertyKeyMissingForStartsWithAndEndsWithComparisons(ComparisonOperator comparison)
+    {
+        var flags = CreateFlags(
+            key: "bio",
+            properties:
+            [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "bio",
+                    Value = new PropertyFilterValue("Val"),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["other_property"] = "value"
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        Assert.Throws<InconclusiveMatchException>(() =>
+            localEvaluator.EvaluateFeatureFlag(
+                key: "bio",
+                distinctId: "distinct-id",
+                personProperties: properties));
+    }
+
+    [Theory]
     [InlineData(22, ComparisonOperator.GreaterThan, "\"21\"", true)]
     [InlineData(22, ComparisonOperator.GreaterThanOrEquals, "\"21\"", true)]
     [InlineData("22", ComparisonOperator.GreaterThan, "\"21\"", true)]
@@ -716,8 +837,10 @@ public class TheEvaluateFeatureFlagMethod
         });
     }
 
-    [Fact]
-    public void ThrowsInconclusiveMatchExceptionWhenUnknownOperator()
+    [Theory]
+    [InlineData((ComparisonOperator)999)]
+    [InlineData(ComparisonOperator.Unknown)]
+    public void ThrowsInconclusiveMatchExceptionWhenUnknownOperator(ComparisonOperator comparison)
     {
         var properties = new Dictionary<string, object?>
         {
@@ -731,7 +854,7 @@ public class TheEvaluateFeatureFlagMethod
                     Type = FilterType.Person,
                     Key = "join_date",
                     Value = new PropertyFilterValue("2025-01-01"),
-                    Operator = (ComparisonOperator)999
+                    Operator = comparison
                 }
             ]
         );

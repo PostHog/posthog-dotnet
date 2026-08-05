@@ -6,7 +6,7 @@ namespace PostHog.Api;
 /// <summary>
 /// An enumeration representing the comparison types that can be used in a filter.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumMemberNameJsonConverter<ComparisonOperator>))]
+[JsonConverter(typeof(ComparisonOperatorJsonConverter))]
 public enum ComparisonOperator
 {
     /// <summary>
@@ -157,5 +157,35 @@ public enum ComparisonOperator
     /// Matches if the version matches the wildcard pattern (e.g., "1.2.*" means >=1.2.0 and &lt;1.3.0).
     /// </summary>
     [JsonStringEnumMemberName("semver_wildcard")]
-    SemverWildcard
+    SemverWildcard,
+
+    /// <summary>
+    /// Matches if the value starts with the filter value, ignoring case differences.
+    /// </summary>
+    [JsonStringEnumMemberName("starts_with")]
+    StartsWith,
+
+    /// <summary>
+    /// Matches if the value does not start with the filter value, ignoring case differences.
+    /// </summary>
+    [JsonStringEnumMemberName("not_starts_with")]
+    NotStartsWith,
+
+    /// <summary>
+    /// Matches if the value ends with the filter value, ignoring case differences.
+    /// </summary>
+    [JsonStringEnumMemberName("ends_with")]
+    EndsWith,
+
+    /// <summary>
+    /// Matches if the value does not end with the filter value, ignoring case differences.
+    /// </summary>
+    [JsonStringEnumMemberName("not_ends_with")]
+    NotEndsWith,
+
+    /// <summary>
+    /// An operator this version of the SDK doesn't recognize. Flags using such an operator can't be evaluated
+    /// locally and fall back to remote evaluation.
+    /// </summary>
+    Unknown
 }

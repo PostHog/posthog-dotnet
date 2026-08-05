@@ -425,6 +425,67 @@ public class TheDeserializeFromCamelCaseJsonMethod
         }, properties[1]);
         Assert.Equal(["0", "3.14"], properties[2].Value!.ListOfStrings);
     }
+    [Fact]
+    public async Task CanDeserializeLocalEvaluationApiResultWithUnrecognizedOperator()
+    {
+        var json = """
+                   {
+                       "flags": [
+                           {
+                               "id": 1,
+                               "team_id": 2,
+                               "name": "A flag using an operator this SDK doesn't know yet",
+                               "key": "future-flag",
+                               "filters": {
+                                   "groups": [
+                                       {
+                                           "properties": [
+                                               {
+                                                   "key": "email",
+                                                   "type": "person",
+                                                   "value": "posthog",
+                                                   "operator": "future_operator"
+                                               }
+                                           ]
+                                       }
+                                   ]
+                               }
+                           },
+                           {
+                               "id": 2,
+                               "team_id": 2,
+                               "name": "A flag using a known operator",
+                               "key": "known-flag",
+                               "filters": {
+                                   "groups": [
+                                       {
+                                           "properties": [
+                                               {
+                                                   "key": "email",
+                                                   "type": "person",
+                                                   "value": "posthog",
+                                                   "operator": "icontains"
+                                               }
+                                           ]
+                                       }
+                                   ]
+                               }
+                           }
+                       ]
+                   }
+                   """;
+
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Flags.Count);
+        Assert.Equal(
+            ComparisonOperator.Unknown,
+            result.Flags[0].Filters?.Groups?[0].Properties?[0].Operator);
+        Assert.Equal(
+            ComparisonOperator.ContainsIgnoreCase,
+            result.Flags[1].Filters?.Groups?[0].Properties?[0].Operator);
+    }
 
     [Fact]
     public async Task ShouldDeserializeApiResult()

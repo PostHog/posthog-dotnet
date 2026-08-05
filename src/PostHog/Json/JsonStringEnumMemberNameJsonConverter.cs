@@ -14,6 +14,22 @@ internal class JsonStringEnumMemberNameJsonConverter<TEnum> : JsonConverter<TEnu
     private static readonly Dictionary<string, TEnum> StringToEnum = CreateStringToEnumMapping();
     private static readonly Dictionary<TEnum, string> EnumToString = CreateEnumToStringMapping();
 
+    private readonly TEnum? _fallbackValue;
+
+    public JsonStringEnumMemberNameJsonConverter()
+    {
+    }
+
+    /// <summary>
+    /// Initializes a converter that maps unrecognized strings to <paramref name="fallbackValue"/>
+    /// instead of throwing a <see cref="JsonException"/>.
+    /// </summary>
+    /// <param name="fallbackValue">The value to return for strings that don't map to an enum member.</param>
+    protected JsonStringEnumMemberNameJsonConverter(TEnum fallbackValue)
+    {
+        _fallbackValue = fallbackValue;
+    }
+
     private static Dictionary<string, TEnum> CreateStringToEnumMapping()
     {
         var mapping = new Dictionary<string, TEnum>();
@@ -60,6 +76,10 @@ internal class JsonStringEnumMemberNameJsonConverter<TEnum> : JsonConverter<TEnu
             if (stringValue != null && StringToEnum.TryGetValue(stringValue, out var enumValue))
             {
                 return enumValue;
+            }
+            if (_fallbackValue is { } fallbackValue)
+            {
+                return fallbackValue;
             }
             throw new JsonException($"Unable to convert \"{stringValue}\" to {typeof(TEnum).Name}.");
         }

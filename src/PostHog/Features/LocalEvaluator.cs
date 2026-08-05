@@ -30,6 +30,8 @@ internal sealed class LocalEvaluator
     readonly ReadOnlyDictionary<long, FilterSet> _cohortFilters;
     readonly ReadOnlyDictionary<long, string> _groupTypeMapping;
 
+    const double LongScale = 0xFFFFFFFFFFFFFFF;
+
     /// <summary>
     /// Constructs a <see cref="LocalEvaluator"/> with the specified flags.
     /// </summary>
@@ -671,6 +673,10 @@ internal sealed class LocalEvaluator
             ComparisonOperator.LessThanOrEquals => value >= overrideValue,
             ComparisonOperator.ContainsIgnoreCase => value.IsContainedBy(overrideValue, StringComparison.OrdinalIgnoreCase),
             ComparisonOperator.DoesNotContainIgnoreCase => !value.IsContainedBy(overrideValue, StringComparison.OrdinalIgnoreCase),
+            ComparisonOperator.StartsWith => value.IsPrefixOf(overrideValue, StringComparison.OrdinalIgnoreCase),
+            ComparisonOperator.NotStartsWith => !value.IsPrefixOf(overrideValue, StringComparison.OrdinalIgnoreCase),
+            ComparisonOperator.EndsWith => value.IsSuffixOf(overrideValue, StringComparison.OrdinalIgnoreCase),
+            ComparisonOperator.NotEndsWith => !value.IsSuffixOf(overrideValue, StringComparison.OrdinalIgnoreCase),
             ComparisonOperator.Regex => value.IsRegexMatch(overrideValue),
             ComparisonOperator.NotRegex => !value.IsRegexMatch(overrideValue),
             ComparisonOperator.IsDateBefore => value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
@@ -876,8 +882,6 @@ internal sealed class LocalEvaluator
 
         return hashVal / LongScale;
     }
-
-    const double LongScale = 0xFFFFFFFFFFFFFFF;
 }
 
 internal static partial class LocalEvaluatorLoggerExtensions

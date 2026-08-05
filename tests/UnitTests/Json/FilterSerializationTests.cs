@@ -61,6 +61,44 @@ public class TheDeserializeAsyncMethod
             propertyFilter);
     }
 
+    [Theory]
+    [InlineData("starts_with", ComparisonOperator.StartsWith)]
+    [InlineData("not_starts_with", ComparisonOperator.NotStartsWith)]
+    [InlineData("ends_with", ComparisonOperator.EndsWith)]
+    [InlineData("not_ends_with", ComparisonOperator.NotEndsWith)]
+    public async Task CanDeserializeStartsWithAndEndsWithOperators(string wireName, ComparisonOperator expected)
+    {
+        var json = $$"""
+                   {
+                       "key": "email",
+                       "type": "person",
+                       "value": "posthog",
+                       "operator": "{{wireName}}"
+                   }
+                   """;
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
+
+        var propertyFilter = Assert.IsType<PropertyFilter>(result);
+        Assert.Equal(expected, propertyFilter.Operator);
+    }
+
+    [Fact]
+    public async Task DeserializesUnrecognizedOperatorAsUnknown()
+    {
+        var json = """
+                   {
+                       "key": "email",
+                       "type": "person",
+                       "value": "posthog",
+                       "operator": "future_operator"
+                   }
+                   """;
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
+
+        var propertyFilter = Assert.IsType<PropertyFilter>(result);
+        Assert.Equal(ComparisonOperator.Unknown, propertyFilter.Operator);
+    }
+
     [Fact]
     public async Task CanDeserializeFilterGroup()
     {
