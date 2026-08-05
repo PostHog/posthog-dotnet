@@ -837,8 +837,10 @@ public class TheEvaluateFeatureFlagMethod
         });
     }
 
-    [Fact]
-    public void ThrowsInconclusiveMatchExceptionWhenUnknownOperator()
+    [Theory]
+    [InlineData((ComparisonOperator)999)]
+    [InlineData(ComparisonOperator.Unknown)]
+    public void ThrowsInconclusiveMatchExceptionWhenUnknownOperator(ComparisonOperator comparison)
     {
         var properties = new Dictionary<string, object?>
         {
@@ -852,7 +854,7 @@ public class TheEvaluateFeatureFlagMethod
                     Type = FilterType.Person,
                     Key = "join_date",
                     Value = new PropertyFilterValue("2025-01-01"),
-                    Operator = (ComparisonOperator)999
+                    Operator = comparison
                 }
             ]
         );

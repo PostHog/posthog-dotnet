@@ -6,7 +6,7 @@ namespace PostHog.Api;
 /// <summary>
 /// An enumeration representing the comparison types that can be used in a filter.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumMemberNameJsonConverter<ComparisonOperator>))]
+[JsonConverter(typeof(ComparisonOperatorJsonConverter))]
 public enum ComparisonOperator
 {
     /// <summary>
@@ -181,5 +181,11 @@ public enum ComparisonOperator
     /// Matches if the value does not end with the filter value, ignoring case differences.
     /// </summary>
     [JsonStringEnumMemberName("not_ends_with")]
-    NotEndsWith
+    NotEndsWith,
+
+    /// <summary>
+    /// An operator this version of the SDK doesn't recognize. Flags using such an operator can't be evaluated
+    /// locally and fall back to remote evaluation.
+    /// </summary>
+    Unknown
 }

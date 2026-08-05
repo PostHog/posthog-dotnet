@@ -5,6 +5,7 @@ PostHog.Api.ComparisonOperator.EndsWith = 27 -> PostHog.Api.ComparisonOperator
 PostHog.Api.ComparisonOperator.NotEndsWith = 28 -> PostHog.Api.ComparisonOperator
 PostHog.Api.ComparisonOperator.NotStartsWith = 26 -> PostHog.Api.ComparisonOperator
 PostHog.Api.ComparisonOperator.StartsWith = 25 -> PostHog.Api.ComparisonOperator
+PostHog.Api.ComparisonOperator.Unknown = 29 -> PostHog.Api.ComparisonOperator
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.get -> bool
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.init -> void
 PostHog.Features.FeatureFlag.HasExperiment.get -> bool?
