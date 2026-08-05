@@ -125,7 +125,7 @@ public class PropertyFilterValue
             return false;
         }
 
-        return regex.IsMatch(NotNull(Convert.ToString(input, CultureInfo.InvariantCulture)));
+        return regex.IsMatch(NotNull(ToInvariantString(input)));
     }
 
     /// <summary>
@@ -135,7 +135,7 @@ public class PropertyFilterValue
     /// <param name="stringComparison">The type of comparison if these are strings.</param>
     /// <returns><c>true</c> if this instance contains the other.</returns>
     public bool IsContainedBy(object? other, StringComparison stringComparison) =>
-        Convert.ToString(other, CultureInfo.InvariantCulture) is { } comparandString
+        ToInvariantString(other) is { } comparandString
         && StringValue is not null
         && comparandString.Contains(StringValue, stringComparison);
 
@@ -146,7 +146,7 @@ public class PropertyFilterValue
     /// <param name="stringComparison">The type of comparison if these are strings.</param>
     /// <returns><c>true</c> if the other value starts with this instance.</returns>
     public bool IsPrefixOf(object? other, StringComparison stringComparison) =>
-        other?.ToString() is { } comparandString
+        ToInvariantString(other) is { } comparandString
         && StringValue is not null
         && comparandString.StartsWith(StringValue, stringComparison);
 
@@ -157,7 +157,7 @@ public class PropertyFilterValue
     /// <param name="stringComparison">The type of comparison if these are strings.</param>
     /// <returns><c>true</c> if the other value ends with this instance.</returns>
     public bool IsSuffixOf(object? other, StringComparison stringComparison) =>
-        other?.ToString() is { } comparandString
+        ToInvariantString(other) is { } comparandString
         && StringValue is not null
         && comparandString.EndsWith(StringValue, stringComparison);
 
@@ -172,7 +172,7 @@ public class PropertyFilterValue
         return this switch
         {
             { ListOfStrings: { } listOfStrings } => IsExactListMatch(listOfStrings, _numericListValues, overrideValue),
-            { StringValue: { } stringValue } => stringValue.Equals(Convert.ToString(overrideValue, CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase),
+            { StringValue: { } stringValue } => stringValue.Equals(ToInvariantString(overrideValue), StringComparison.OrdinalIgnoreCase),
             { BooleanValue: { } booleanValue } => overrideValue switch
             {
                 bool boolOverride => booleanValue == boolOverride,
@@ -193,7 +193,7 @@ public class PropertyFilterValue
             return false;
         }
 
-        var stringValue = Convert.ToString(overrideValue, CultureInfo.InvariantCulture);
+        var stringValue = ToInvariantString(overrideValue);
         if (stringValue is not null && values.Contains(stringValue, StringComparer.OrdinalIgnoreCase))
         {
             return true;
@@ -220,6 +220,11 @@ public class PropertyFilterValue
             _ => false
         };
     }
+
+    // Override values must stringify with the invariant culture ("3.14", never "3,14") to match how the
+    // PostHog flags service stringifies values. Null stays null so null overrides never match string filters.
+    static string? ToInvariantString(object? value) =>
+        value is null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
 
     static bool TryParseDoubleWithoutUnderflow(string value, out double number) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)
@@ -277,7 +282,7 @@ public class PropertyFilterValue
         {
             _ when TryCompareNumbers(overrideValue, out var result) => result.Value,
             _ when BooleanValue.HasValue => CompareBooleanValue(overrideValue),
-            _ => string.Compare(StringValue, Convert.ToString(overrideValue, CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+            _ => string.Compare(StringValue, ToInvariantString(overrideValue), StringComparison.OrdinalIgnoreCase)
         };
     }
 
@@ -311,7 +316,7 @@ public class PropertyFilterValue
         {
             bool boolOverride => BooleanValue.Value.CompareTo(boolOverride),
             string stringOverride when bool.TryParse(stringOverride, out var boolValue) => BooleanValue.Value.CompareTo(boolValue),
-            _ => string.Compare(BooleanValue.Value.ToString(), Convert.ToString(overrideValue, CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
+            _ => string.Compare(BooleanValue.Value.ToString(), ToInvariantString(overrideValue), StringComparison.OrdinalIgnoreCase)
         };
     }
 
@@ -395,7 +400,7 @@ public class PropertyFilterValue
 
     static SemanticVersion ParseOverrideSemver(object? overrideValue)
     {
-        var overrideVersionString = Convert.ToString(overrideValue, CultureInfo.InvariantCulture);
+        var overrideVersionString = ToInvariantString(overrideValue);
         if (!SemanticVersion.TryParse(overrideVersionString, out var version))
         {
             throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
