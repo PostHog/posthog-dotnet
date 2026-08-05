@@ -29,6 +29,7 @@ public class TheIsExactMatchMethod
     [InlineData("0", "[0]", true)]
     [InlineData(3.14, "[1, 3.14, 42]", true)]
     [InlineData(1.0, "[1.0]", true)]
+    [InlineData(1, "[\"1.0\"]", false)]
     [InlineData(1000, "[1e3]", true)]
     [InlineData(0.0000001, "[1e-7]", true)]
     [InlineData(1e-100, "[1e-100]", true)]

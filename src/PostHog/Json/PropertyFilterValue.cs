@@ -20,6 +20,8 @@ namespace PostHog.Json;
 [JsonConverter(typeof(PropertyFilterValueJsonConverter))]
 public class PropertyFilterValue
 {
+    readonly IReadOnlyList<string>? _numericListValues;
+
     /// <summary>
     /// If this value is a string, this property will be set.
     /// </summary>
@@ -48,8 +50,8 @@ public class PropertyFilterValue
         jsonElement.ValueKind switch
         {
             JsonValueKind.String => jsonElement.GetString() is { } stringValue ? new PropertyFilterValue(stringValue) : null,
-            JsonValueKind.Array when TryParseStringArray(jsonElement, out var stringArrayValue)
-                => new PropertyFilterValue(stringArrayValue),
+            JsonValueKind.Array when TryParseStringArray(jsonElement, out var stringArrayValue, out var numericListValues)
+                => new PropertyFilterValue(stringArrayValue, numericListValues),
             JsonValueKind.Number => new PropertyFilterValue(jsonElement.GetInt64()),
             JsonValueKind.True => new PropertyFilterValue(true),
             JsonValueKind.False => new PropertyFilterValue(false),
@@ -65,6 +67,12 @@ public class PropertyFilterValue
     public PropertyFilterValue(IReadOnlyList<string> listOfStrings)
     {
         ListOfStrings = listOfStrings;
+    }
+
+    PropertyFilterValue(IReadOnlyList<string> listOfStrings, IReadOnlyList<string>? numericListValues)
+    {
+        ListOfStrings = listOfStrings;
+        _numericListValues = numericListValues;
     }
 
     /// <summary>
@@ -141,7 +149,7 @@ public class PropertyFilterValue
     {
         return this switch
         {
-            { ListOfStrings: { } listOfStrings } => IsExactListMatch(listOfStrings, overrideValue),
+            { ListOfStrings: { } listOfStrings } => IsExactListMatch(listOfStrings, _numericListValues, overrideValue),
             { StringValue: { } stringValue } => stringValue.Equals(overrideValue?.ToString(), StringComparison.OrdinalIgnoreCase),
             { BooleanValue: { } booleanValue } => overrideValue switch
             {
@@ -153,7 +161,10 @@ public class PropertyFilterValue
         };
     }
 
-    static bool IsExactListMatch(IReadOnlyList<string> values, object? overrideValue)
+    static bool IsExactListMatch(
+        IReadOnlyList<string> values,
+        IReadOnlyList<string>? numericValues,
+        object? overrideValue)
     {
         if (overrideValue is null)
         {
@@ -166,17 +177,22 @@ public class PropertyFilterValue
             return true;
         }
 
+        if (numericValues is null)
+        {
+            return false;
+        }
+
         return Type.GetTypeCode(overrideValue.GetType()) switch
         {
-            TypeCode.Double => values.Any(value =>
+            TypeCode.Double => numericValues.Any(value =>
                 TryParseDoubleWithoutUnderflow(value, out var number)
                 && number.Equals((double)overrideValue)),
-            TypeCode.Single => values.Any(value =>
+            TypeCode.Single => numericValues.Any(value =>
                 TryParseSingleWithoutUnderflow(value, out var number)
                 && number.Equals((float)overrideValue)),
             TypeCode.Byte or TypeCode.Decimal or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64
                 or TypeCode.SByte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64
-                => values.Any(value =>
+                => numericValues.Any(value =>
                     TryParseDecimalWithoutUnderflow(value, out var number)
                     && number == Convert.ToDecimal(overrideValue, CultureInfo.InvariantCulture)),
             _ => false
@@ -471,7 +487,7 @@ public class PropertyFilterValue
     /// Serves as the default hash function.
     /// </summary>
     /// <returns>A hash code for the current filter value.</returns>
-    public override int GetHashCode() => HashCode.Combine(StringValue, ListOfStrings, BooleanValue);
+    public override int GetHashCode() => HashCode.Combine(StringValue, ListOfStrings, _numericListValues, BooleanValue);
 
     /// <summary>
     /// Determines if this instance is equal to the specified <paramref name="other"/> <see cref="PropertyFilterValue"/>
@@ -492,6 +508,7 @@ public class PropertyFilterValue
         }
 
         return ListOfStrings.ListsAreEqual(other.ListOfStrings)
+               && _numericListValues.ListsAreEqual(other._numericListValues)
                && StringValue == other.StringValue
                && CohortId == other.CohortId
                && BooleanValue == other.BooleanValue;
@@ -499,9 +516,11 @@ public class PropertyFilterValue
 
     static bool TryParseStringArray(
         JsonElement jsonElement,
-        [NotNullWhen(returnValue: true)] out IReadOnlyList<string>? value)
+        [NotNullWhen(returnValue: true)] out IReadOnlyList<string>? value,
+        out IReadOnlyList<string>? numericValues)
     {
         List<string> values = [];
+        List<string> numbers = [];
         foreach (var element in jsonElement.EnumerateArray())
         {
             var stringValue = element.ValueKind switch
@@ -513,12 +532,18 @@ public class PropertyFilterValue
             if (stringValue is null)
             {
                 value = null;
+                numericValues = null;
                 return false;
             }
             values.Add(stringValue);
+            if (element.ValueKind is JsonValueKind.Number)
+            {
+                numbers.Add(stringValue);
+            }
         }
 
         value = values.ToReadOnlyList();
+        numericValues = numbers.Count > 0 ? numbers.ToReadOnlyList() : null;
         return true;
     }
 }
