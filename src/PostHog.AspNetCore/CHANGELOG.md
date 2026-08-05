@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.8.2
+
+### Patch Changes
+
+- 26057b5: Keep local feature flag evaluation available when `is_set` or `is_not_set` filters omit `value`, and support numeric values in filter arrays.
+
 ## 2.8.1
 
 ### Patch Changes
