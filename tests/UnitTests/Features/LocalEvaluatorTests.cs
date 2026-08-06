@@ -6,6 +6,7 @@ using PostHog;
 using PostHog.Api;
 using PostHog.Features;
 using PostHog.Json;
+using UnitTests.Library;
 
 namespace LocalEvaluatorTests;
 
@@ -519,6 +520,41 @@ public class TheEvaluateFeatureFlagMethod
                 key: "bio",
                 distinctId: "distinct-id",
                 personProperties: properties));
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.ContainsIgnoreCase)]
+    [InlineData(ComparisonOperator.Exact)]
+    [InlineData(ComparisonOperator.StartsWith)]
+    [InlineData(ComparisonOperator.EndsWith)]
+    public void MatchesNumericPropertyValueRegardlessOfCurrentCulture(ComparisonOperator comparison)
+    {
+        using var _ = TestCulture.Use("de-DE");
+        var flags = CreateFlags(
+            key: "pi",
+            properties:
+            [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "pi",
+                    Value = new PropertyFilterValue("3.14"),
+                    Operator = comparison
+                }
+            ]
+        );
+        var properties = new Dictionary<string, object?>
+        {
+            ["pi"] = 3.14
+        };
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "pi",
+            distinctId: "distinct-id",
+            personProperties: properties);
+
+        Assert.True(result.Value);
     }
 
     [Theory]
