@@ -23,12 +23,12 @@
       },
       "Microsoft.AspNetCore.Identity.UI": {
         "type": "Direct",
-        "requested": "[9.0.0, )",
-        "resolved": "9.0.0",
-        "contentHash": "VCOH8nyG/zU9BXoL77GncmKL3szxWX0oasYVZP3pvWYRxqr9aHnWBu14JBa2SbbvhCA7vsSWfs0byeAwaiV4DA==",
+        "requested": "[9.0.18, )",
+        "resolved": "9.0.18",
+        "contentHash": "Q/0bjT6kWSAd10/1MtQFL01wIj10K7P2hY2IH+NeX7PgOt2jhvpE+loD9PBeHFb3BNAhOo9BPNemLObJbx+tbQ==",
         "dependencies": {
-          "Microsoft.Extensions.FileProviders.Embedded": "9.0.0",
-          "Microsoft.Extensions.Identity.Stores": "9.0.0"
+          "Microsoft.Extensions.FileProviders.Embedded": "9.0.18",
+          "Microsoft.Extensions.Identity.Stores": "9.0.18"
         }
       },
       "Microsoft.EntityFrameworkCore.Sqlite": {
@@ -287,18 +287,18 @@
       },
       "Microsoft.Extensions.FileProviders.Abstractions": {
         "type": "Transitive",
-        "resolved": "9.0.0",
-        "contentHash": "uK439QzYR0q2emLVtYzwyK3x+T5bTY4yWsd/k/ZUS9LR6Sflp8MIdhGXW8kQCd86dQD4tLqvcbLkku8qHY263Q==",
+        "resolved": "9.0.18",
+        "contentHash": "YqkFlTwnVSMuunsf8IT9b+KySfm6vnMBBM+CKYCfXfjRMQ62uFggVOEu4C2cgR4fXpEO1rZ6utUZC1KoYKgiSg==",
         "dependencies": {
-          "Microsoft.Extensions.Primitives": "9.0.0"
+          "Microsoft.Extensions.Primitives": "9.0.18"
         }
       },
       "Microsoft.Extensions.FileProviders.Embedded": {
         "type": "Transitive",
-        "resolved": "9.0.0",
-        "contentHash": "6Ev1goLIvggLF6uCs6oZvdr9JM+2b1Zj+4FLdBWNW5iw3tm2BymVIb0yMsjnQTBWL7YUmqVWH3u45hSqOfvuqg==",
+        "resolved": "9.0.18",
+        "contentHash": "+t0Bq5qZZ/zbmO4X70nDMC+anTsNSCxNvjtqXmRiUwh53cNfMoXkB/R95rUO9+yFYhsTR7B302ys9LqXDdIt6g==",
         "dependencies": {
-          "Microsoft.Extensions.FileProviders.Abstractions": "9.0.0"
+          "Microsoft.Extensions.FileProviders.Abstractions": "9.0.18"
         }
       },
       "Microsoft.Extensions.Identity.Core": {
@@ -492,7 +492,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.FeatureManagement": "[4.0.0, )",
-          "PostHog": "[2.13.1, )"
+          "PostHog": "[2.7.1, )"
         }
       },
       "Microsoft.Bcl.TimeProvider": {

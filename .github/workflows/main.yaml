@@ -39,7 +39,7 @@ jobs:
         run: echo "Only Markdown files changed; no additional work is required for this check."
       - name: Checkout main branch
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET Core
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
@@ -80,7 +80,7 @@ jobs:
         run: echo "Only Markdown files changed; no additional work is required for this check."
       - name: Checkout main branch
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET Core
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
@@ -109,7 +109,7 @@ jobs:
         run: echo "Only Markdown files changed; no additional work is required for this check."
       - name: Checkout main branch
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET Core
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
@@ -129,7 +129,7 @@ jobs:
 
       - name: Collect Test Results
         if: ${{ needs.detect-markdown-only.outputs.markdown_only != 'true' && (github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@d61b558e8df85cb60d09ca3e5b09653b4477cea7 # v1
+        uses: dorny/test-reporter@a53e41438c2381e621dc719a47a57180e30c7075 # v1
         with:
           name: "xUnit Tests"
           path: "tests/*/TestResults/test-results.trx"
@@ -154,7 +154,7 @@ jobs:
         run: echo "Only Markdown files changed; no additional work is required for this check."
       - name: Checkout main branch
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup .NET
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'

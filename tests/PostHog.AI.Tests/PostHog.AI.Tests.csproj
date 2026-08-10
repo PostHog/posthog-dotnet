@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <TestingPlatformDotnetTestSupport>false</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
