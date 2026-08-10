@@ -7,11 +7,14 @@
         <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
+        <TestingPlatformDotnetTestSupport>false</TestingPlatformDotnetTestSupport>
         <NoWarn>CA1034;CA1052;CA1050;CA1062;CA1308;CA1515;CA1861;CA1869;CA2000;CA2007;RS1035</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="coverlet.collector" />
+        <PackageReference Include="coverlet.collector">
+          <VersionOverride Condition="'$(TargetFramework)' == 'netcoreapp3.1'">6.0.4</VersionOverride>
+        </PackageReference>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
         <PackageReference Include="NSubstitute" />
         <PackageReference Include="NSubstitute.Analyzers.CSharp">
