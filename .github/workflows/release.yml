@@ -24,7 +24,7 @@ jobs:
       has-changesets: ${{ steps.check.outputs.has-changesets }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
@@ -89,7 +89,7 @@ jobs:
           private-key: ${{ secrets.GH_APP_POSTHOG_DOTNET_RELEASER_PRIVATE_KEY }}
 
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
@@ -162,7 +162,7 @@ jobs:
       - name: Commit version bump
         id: commit-version-bump
         if: steps.check-changes.outputs.has-changes == 'true'
-        uses: planetscale/ghcommit-action@25309d8005ac7c3bcd61d3fe19b69e0fe47dbdde # v0.2.20
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
         with:
           commit_message: "chore: update package versions [version bump] [skip ci]"
           repo: ${{ github.repository }}
@@ -272,7 +272,7 @@ jobs:
             changelog: src/PostHog.AI/CHANGELOG.md
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.version-bump.outputs.commit-sha }}
           fetch-depth: 0
@@ -327,7 +327,7 @@ jobs:
 
       - name: NuGet login
         if: steps.detect-version.outputs.has-new-version == 'true'
-        uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1.1.0
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         id: login
         with:
           user: PostHog-Engineering
