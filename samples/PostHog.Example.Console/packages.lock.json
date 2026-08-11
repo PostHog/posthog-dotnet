@@ -4,9 +4,9 @@
     "net9.0": {
       "dotenv.net": {
         "type": "Direct",
-        "requested": "[3.2.1, )",
-        "resolved": "3.2.1",
-        "contentHash": "2fc2s5PH6wAoWQ8bpyVgz28y9qMs/t8ToiCKqSM6mWpjgg4QQSPtZ0nia0x/OebGLSDbxyOelVH+fULZH7N4mA=="
+        "requested": "[4.0.2, )",
+        "resolved": "4.0.2",
+        "contentHash": "6xpiqKV1aKWIkSSDP7J+60GEKUitiDweD4yOsn9giCMysSfCghJQuYfXQwbzgdmt0Bsv/2ajUCbjvemGavqItA=="
       },
       "Microsoft.Extensions.Logging.Console": {
         "type": "Direct",

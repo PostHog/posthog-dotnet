@@ -37,7 +37,7 @@
 
   <!-- Sample packages -->
   <ItemGroup>
-    <PackageVersion Include="dotenv.net" Version="3.2.1" />
+    <PackageVersion Include="dotenv.net" Version="4.0.2" />
     <PackageVersion Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="9.0.18" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.18" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity.UI" Version="9.0.18" />
