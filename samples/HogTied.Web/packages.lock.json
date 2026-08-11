@@ -4,11 +4,11 @@
     "net9.0": {
       "Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore": {
         "type": "Direct",
-        "requested": "[9.0.0, )",
-        "resolved": "9.0.0",
-        "contentHash": "iWGrOsmmgz7wKc27SzC/rWrTuzl/jqWKIl/+YP7OL3mrDcADS/W5WFtmGkfQCAVGv0aZyck4CVfAVdjZLyyY8w==",
+        "requested": "[9.0.18, )",
+        "resolved": "9.0.18",
+        "contentHash": "/rIil4fhGyyq0UcZKOjq+kJw4xTxcTBqCXqI6NVdIST8W+EL+XjObCMxcYPcplHROMTulxyOvIEKjbs2merbCg==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore.Relational": "9.0.0"
+          "Microsoft.EntityFrameworkCore.Relational": "9.0.18"
         }
       },
       "Microsoft.AspNetCore.Identity.EntityFrameworkCore": {
