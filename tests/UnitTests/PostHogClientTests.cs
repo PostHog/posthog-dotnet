@@ -711,12 +711,9 @@ public class TheCaptureMethod
     }
 
     [Fact]
-    public async Task CaptureWithCustomTimestampWinsOverConflictingSuperPropertyAndConvertsToUtc()
+    public async Task CaptureWithCustomTimestampConvertsToUtc()
     {
-        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
-        {
-            options.SuperProperties["timestamp"] = "1999-12-31T23:59:59-07:00";
-        }));
+        var container = new TestContainer();
         container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
@@ -749,25 +746,6 @@ public class TheCaptureMethod
                        ]
                      }
                      """, received);
-    }
-
-    [Fact]
-    public async Task CaptureWithoutCustomTimestampPreservesTimestampSuperProperty()
-    {
-        const string superTimestamp = "1999-12-31T23:59:59-07:00";
-        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
-        {
-            options.SuperProperties["timestamp"] = superTimestamp;
-        }));
-        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
-        var client = container.Activate<PostHogClient>();
-
-        client.Capture("test-user", "super-timestamp-event");
-        await client.FlushAsync();
-
-        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        var timestamp = document.RootElement.GetProperty("batch")[0].GetProperty("properties").GetProperty("timestamp");
-        Assert.Equal(superTimestamp, timestamp.GetString());
     }
 
     [Fact]

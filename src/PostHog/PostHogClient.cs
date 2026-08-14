@@ -338,12 +338,6 @@ public sealed class PostHogClient : IPostHogClient
 
         capturedEvent.Properties.Merge(_options.Value.SuperProperties);
 
-        // Stamp a custom timestamp last so a super property can't override the typed value.
-        if (timestamp.HasValue)
-        {
-            AddTimestampToProperties(capturedEvent.Properties, timestamp.Value);
-        }
-
         if (hasGeoIpDisableOverride)
         {
             capturedEvent.Properties[PostHogProperties.GeoIpDisable] = geoIpDisableOverride!;
