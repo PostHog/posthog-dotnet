@@ -76,7 +76,7 @@ public static class CaptureExceptionExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="exception">The exception object that you want to capture.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool CaptureException(
         this IPostHogClient client,
@@ -97,7 +97,7 @@ public static class CaptureExceptionExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="exception">The exception object that you want to capture.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool CaptureException(
@@ -120,7 +120,7 @@ public static class CaptureExceptionExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="exception">The exception object that you want to capture.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="groups">A set of groups to send with the event. The groups are identified by their group_type and group_key.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool CaptureException(
@@ -143,7 +143,7 @@ public static class CaptureExceptionExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="exception">The exception object that you want to capture.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: A set of groups to send with the event. The groups are identified by their group_type and group_key.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
@@ -168,7 +168,7 @@ public static class CaptureExceptionExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="exception">The exception object that you want to capture.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     [Obsolete("Prefer CaptureException(..., flags: snapshot, timestamp: timestamp) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
@@ -194,7 +194,7 @@ public static class CaptureExceptionExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="exception">The exception object that you want to capture.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: A set of groups to send with the event. The groups are identified by their group_type and group_key.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>

@@ -53,12 +53,14 @@ public class TheConstructor
     }
 
     [Fact]
-    public void SetsTimestamp()
+    public void ConvertsTimestampToUtcWithoutChangingTheInstant()
     {
-        var timestamp = new DateTimeOffset(2024, 6, 15, 10, 30, 0, TimeSpan.Zero);
+        var timestamp = new DateTimeOffset(2024, 6, 15, 10, 30, 0, TimeSpan.FromHours(5.5));
         var capturedEvent = new CapturedEvent("test-event", "user-1", null, timestamp);
 
-        Assert.Equal(timestamp, capturedEvent.Timestamp);
+        Assert.Equal(new DateTimeOffset(2024, 6, 15, 5, 0, 0, TimeSpan.Zero), capturedEvent.Timestamp);
+        Assert.Equal(TimeSpan.Zero, capturedEvent.Timestamp.Offset);
+        Assert.Equal(timestamp.UtcTicks, capturedEvent.Timestamp.UtcTicks);
     }
 
     [Fact]

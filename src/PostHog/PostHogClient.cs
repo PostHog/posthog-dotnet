@@ -315,6 +315,7 @@ public sealed class PostHogClient : IPostHogClient
         // If custom timestamp provided, add it to properties
         if (timestamp.HasValue)
         {
+            timestamp = timestamp.Value.ToUniversalTime();
             properties = AddTimestampToProperties(properties, timestamp.Value);
         }
 
