@@ -59,6 +59,7 @@ public class TheConstructor
         var capturedEvent = new CapturedEvent("test-event", "user-1", null, timestamp);
 
         Assert.Equal(new DateTimeOffset(2024, 6, 15, 5, 0, 0, TimeSpan.Zero), capturedEvent.Timestamp);
+        Assert.Equal(TimeSpan.Zero, capturedEvent.Timestamp.Offset);
         Assert.Equal(timestamp.UtcTicks, capturedEvent.Timestamp.UtcTicks);
     }
 
