@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.8.3
+
+### Patch Changes
+
+- a5c6a22: Normalize captured event timestamps to the equivalent UTC instant.
+
 ## 2.8.2
 
 ### Patch Changes
