@@ -89,7 +89,7 @@ public static class PostHogSdk
     /// <param name="properties">Optional properties to send along with the event.</param>
     /// <param name="groups">Optional groups related to this event.</param>
     /// <param name="sendFeatureFlags">Whether to send feature flag data with the event.</param>
-    /// <param name="timestamp">Optional timestamp when the event occurred.</param>
+    /// <param name="timestamp">Optional timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <returns><c>true</c> if the event was successfully enqueued; otherwise <c>false</c>.</returns>
 #pragma warning disable CS0618
     public static bool Capture(
@@ -119,7 +119,7 @@ public static class PostHogSdk
     /// <param name="properties">Optional properties to send along with the event.</param>
     /// <param name="groups">Optional groups related to this event.</param>
     /// <param name="sendFeatureFlags">Whether to send feature flag data with the event.</param>
-    /// <param name="timestamp">Optional timestamp when the event occurred.</param>
+    /// <param name="timestamp">Optional timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued; otherwise <c>false</c>.</returns>
 #pragma warning disable CS0618
     public static bool CaptureException(

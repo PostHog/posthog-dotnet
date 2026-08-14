@@ -76,7 +76,7 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool Capture(
         this IPostHogClient client,
@@ -97,7 +97,7 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool Capture(
@@ -120,7 +120,7 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="groups">A set of groups to send with the event. The groups are identified by their group_type and group_key.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     public static bool Capture(
@@ -143,7 +143,7 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
@@ -168,7 +168,7 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="sendFeatureFlags">If <c>true</c>, feature flags are sent with the captured event.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     [Obsolete("Prefer Capture(..., flags: snapshot, timestamp: timestamp) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync. This overload will be removed in a future major version.", error: false)]
@@ -194,7 +194,7 @@ public static class CaptureExtensions
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="eventName">Human friendly name of the event. Recommended format [object] [verb] such as "Project created" or "User signed up".</param>
-    /// <param name="timestamp">The timestamp when the event occurred.</param>
+    /// <param name="timestamp">The timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>

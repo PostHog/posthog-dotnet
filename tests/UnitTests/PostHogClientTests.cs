@@ -711,14 +711,17 @@ public class TheCaptureMethod
     }
 
     [Fact]
-    public async Task CaptureWithCustomTimestampUsesProvidedTimestamp()
+    public async Task CaptureWithCustomTimestampWinsOverConflictingSuperPropertyAndConvertsToUtc()
     {
-        var container = new TestContainer();
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties["timestamp"] = "1999-12-31T23:59:59-07:00";
+        }));
         container.FakeTimeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 21, 19, 08, 23, TimeSpan.Zero));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.Zero);
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.FromHours(5.5));
         client.Capture("test-user", "custom-timestamp-event", customTimestamp);
         await client.FlushAsync();
 
@@ -734,18 +737,37 @@ public class TheCaptureMethod
                            "event": "custom-timestamp-event",
                            "distinct_id": "test-user",
                            "properties": {
-                             "timestamp": "2023-12-25T10:30:45\u002B00:00",
+                             "timestamp": "2023-12-25T05:00:45\u002B00:00",
                              "distinct_id": "test-user",
                              "$lib": "posthog-dotnet",
                              "$lib_version": "{{VersionConstants.Version}}",
                              "$geoip_disable": true,
                              "$is_server": true
                            },
-                           "timestamp": "2023-12-25T10:30:45\u002B00:00"
+                           "timestamp": "2023-12-25T05:00:45\u002B00:00"
                          }
                        ]
                      }
                      """, received);
+    }
+
+    [Fact]
+    public async Task CaptureWithoutCustomTimestampPreservesTimestampSuperProperty()
+    {
+        const string superTimestamp = "1999-12-31T23:59:59-07:00";
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SuperProperties["timestamp"] = superTimestamp;
+        }));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        client.Capture("test-user", "super-timestamp-event");
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var timestamp = document.RootElement.GetProperty("batch")[0].GetProperty("properties").GetProperty("timestamp");
+        Assert.Equal(superTimestamp, timestamp.GetString());
     }
 
     [Fact]
@@ -1234,6 +1256,26 @@ public class TheCaptureExceptionMethod
         var (_, _, capturedProperties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
         Assert.Equal("test", capturedProperties.GetProperty("source").GetString());
         Assert.Equal("System.InvalidOperationException", capturedProperties.GetProperty("$exception_type").GetString());
+    }
+
+    [Fact]
+    public async Task CaptureExceptionWithCustomTimestampConvertsItToUtc()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var customTimestamp = new DateTimeOffset(2023, 12, 25, 10, 30, 45, TimeSpan.FromHours(-7));
+
+        client.CaptureException(
+            new InvalidOperationException("boom"),
+            "some-distinct-id",
+            properties: null,
+            groups: null,
+            flags: null,
+            timestamp: customTimestamp);
+        await client.FlushAsync();
+
+        var (_, batchItem, properties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        Assert.Equal("2023-12-25T17:30:45+00:00", batchItem.GetProperty("timestamp").GetString());
+        Assert.Equal("2023-12-25T17:30:45+00:00", properties.GetProperty("timestamp").GetString());
     }
 
     [Fact]

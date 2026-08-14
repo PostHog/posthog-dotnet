@@ -93,7 +93,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
-    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time.</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant. If not provided, uses current time.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     [Obsolete("Prefer Capture(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     bool Capture(
@@ -115,7 +115,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="flags">A snapshot of feature flag evaluations. When non-null, <c>$feature/&lt;key&gt;</c> and <c>$active_feature_flags</c> are attached from the snapshot — no <c>/flags</c> call is made.</param>
-    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time.</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant. If not provided, uses current time.</param>
     /// <returns><c>true</c> if the event was successfully enqueued. Otherwise <c>false</c>.</returns>
     bool Capture(
         string distinctId,
@@ -139,7 +139,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="sendFeatureFlags">Default: <c>false</c>. If <c>true</c>, feature flags are sent with the captured event.</param>
-    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. If not provided, uses current time</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant. If not provided, uses current time.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     [Obsolete("Prefer CaptureException(..., flags: snapshot, ...) using a FeatureFlagEvaluations snapshot from EvaluateFlagsAsync — same payload, no extra /flags request. This overload will be removed in a future major version.", error: false)]
     bool CaptureException(
@@ -158,7 +158,7 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="properties">Optional: The properties to send along with the event.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event.</param>
     /// <param name="flags">A snapshot of feature flag evaluations. When non-null, <c>$feature/&lt;key&gt;</c> and <c>$active_feature_flags</c> are attached from the snapshot — no <c>/flags</c> call is made.</param>
-    /// <param name="timestamp">Optional: Custom timestamp when the event occurred.</param>
+    /// <param name="timestamp">Optional: Custom timestamp when the event occurred. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     /// <returns><c>true</c> if the exception event was successfully enqueued. Otherwise <c>false</c>.</returns>
     bool CaptureException(
         Exception exception,

@@ -15,7 +15,7 @@ public class CapturedEvent
     /// <param name="eventName">The name of the event.</param>
     /// <param name="distinctId">The identifier for the user.</param>
     /// <param name="properties">The properties to associate with the event.</param>
-    /// <param name="timestamp">The ISO 8601 timestamp.</param>
+    /// <param name="timestamp">The ISO 8601 timestamp. UTC is preferred; non-UTC input is converted to the equivalent UTC instant.</param>
     public CapturedEvent(
         string eventName,
         string distinctId,
@@ -25,7 +25,7 @@ public class CapturedEvent
         Uuid = Guid.NewGuid().ToString();
         EventName = eventName;
         DistinctId = distinctId;
-        Timestamp = timestamp;
+        Timestamp = timestamp.ToUniversalTime();
 
         Properties = properties?.Copy() ?? new Dictionary<string, object>();
 

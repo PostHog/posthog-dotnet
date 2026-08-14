@@ -315,6 +315,7 @@ public sealed class PostHogClient : IPostHogClient
         // If custom timestamp provided, add it to properties
         if (timestamp.HasValue)
         {
+            timestamp = timestamp.Value.ToUniversalTime();
             properties = AddTimestampToProperties(properties, timestamp.Value);
         }
 
@@ -336,6 +337,12 @@ public sealed class PostHogClient : IPostHogClient
         }
 
         capturedEvent.Properties.Merge(_options.Value.SuperProperties);
+
+        // Stamp a custom timestamp last so a super property can't override the typed value.
+        if (timestamp.HasValue)
+        {
+            AddTimestampToProperties(capturedEvent.Properties, timestamp.Value);
+        }
 
         if (hasGeoIpDisableOverride)
         {
