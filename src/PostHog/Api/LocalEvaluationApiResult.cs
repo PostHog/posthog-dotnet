@@ -219,10 +219,10 @@ internal record FeatureFlagGroup
     public string? Variant { get; init; }
 
     /// <summary>
-    /// Optional percentage (0-100) for gradual rollouts. Defaults to 100.
+    /// Optional percentage (0-100) for gradual rollouts. May be fractional (e.g. 0.5). Defaults to 100.
     /// </summary>
     [JsonPropertyName("rollout_percentage")]
-    public int? RolloutPercentage { get; init; } = 100;
+    public double? RolloutPercentage { get; init; } = 100;
 
     /// <summary>
     /// Optional per-condition aggregation override used by mixed-targeting flags.
