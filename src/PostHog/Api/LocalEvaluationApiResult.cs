@@ -13,6 +13,7 @@ internal record LocalEvaluationApiResult
     /// <summary>
     /// The list of feature flags.
     /// </summary>
+    [JsonConverter(typeof(TolerantFlagListJsonConverter))]
     public required IReadOnlyList<LocalFeatureFlag> Flags { get; init; }
 
     /// <summary>

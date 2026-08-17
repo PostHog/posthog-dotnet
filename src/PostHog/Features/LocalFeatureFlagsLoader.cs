@@ -28,6 +28,7 @@ internal sealed class LocalFeatureFlagsLoader(
     volatile Task? _pollingTask;
     LocalEvaluator? _localEvaluator;
     long _flagDefinitionsLoadedAtMs; // Unix milliseconds; 0 means not yet loaded.
+    long _lastLoadFailureAtMs; // Unix milliseconds of the most recent failed load; 0 means none.
     volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
@@ -61,7 +62,29 @@ internal sealed class LocalFeatureFlagsLoader(
         {
             return localEvaluator;
         }
+        // No evaluator exists yet and a recent load failed. Do not refetch the definitions on
+        // every flag call. A single unparseable payload would otherwise become per-call remote
+        // /flags traffic. The background poller keeps retrying at the poll interval, so wait it out.
+        if (IsWithinFailureCooldown())
+        {
+            return null;
+        }
         return await LoadLocalEvaluatorAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Whether a load failed within the last poll interval and no evaluator has been loaded since.
+    /// While this is true, callers serve degraded results instead of refetching the definitions.
+    /// </summary>
+    bool IsWithinFailureCooldown()
+    {
+        var failedAt = Interlocked.Read(ref _lastLoadFailureAtMs);
+        if (failedAt == 0)
+        {
+            return false;
+        }
+        var elapsedMs = timeProvider.GetUtcNow().ToUnixTimeMilliseconds() - failedAt;
+        return elapsedMs < options.Value.FeatureFlagPollInterval.TotalMilliseconds;
     }
 
     /// <summary>
@@ -91,7 +114,16 @@ internal sealed class LocalFeatureFlagsLoader(
     async Task<LocalEvaluator?> LoadLocalEvaluatorAsync(CancellationToken cancellationToken)
     {
         StartPollingIfNotStarted();
-        var response = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(_etag, cancellationToken);
+        LocalEvaluationResponse response;
+        try
+        {
+            response = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(_etag, cancellationToken);
+        }
+        catch
+        {
+            RecordLoadFailure();
+            throw;
+        }
 
         // If 304 Not Modified, keep using cached data (update ETag if server sent a new one)
         if (response.IsNotModified)
@@ -100,12 +132,15 @@ internal sealed class LocalFeatureFlagsLoader(
             {
                 Interlocked.Exchange(ref _etag, response.ETag);
             }
+            RecordLoadSuccess();
             return _localEvaluator;
         }
 
-        // On failure (no result), preserve existing ETag for retry
+        // On failure (no result), preserve existing ETag for retry and remember the failure so
+        // callers back off instead of refetching on every flag evaluation.
         if (response.Result is null)
         {
+            RecordLoadFailure();
             return _localEvaluator;
         }
 
@@ -115,8 +150,14 @@ internal sealed class LocalFeatureFlagsLoader(
         var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
         Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
+        RecordLoadSuccess();
         return localEvaluator;
     }
+
+    void RecordLoadSuccess() => Interlocked.Exchange(ref _lastLoadFailureAtMs, 0);
+
+    void RecordLoadFailure()
+        => Interlocked.Exchange(ref _lastLoadFailureAtMs, timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
 
     async Task PollForFeatureFlagsAsync(CancellationToken cancellationToken)
     {
@@ -189,6 +230,7 @@ internal sealed class LocalFeatureFlagsLoader(
         Interlocked.Exchange(ref _localEvaluator, null);
         Interlocked.Exchange(ref _etag, null);
         Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, 0);
+        Interlocked.Exchange(ref _lastLoadFailureAtMs, 0);
     }
 }
 
