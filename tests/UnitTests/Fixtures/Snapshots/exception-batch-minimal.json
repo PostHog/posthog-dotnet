@@ -1,0 +1,43 @@
+{
+  "api_key": "fake-project-token",
+  "historical_migration": false,
+  "batch": [
+    {
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "event": "$exception",
+      "distinct_id": "exception-user",
+      "properties": {
+        "$exception_level": "error",
+        "$exception_list": [
+          {
+            "type": "System.InvalidOperationException",
+            "value": "deterministic failure",
+            "mechanism": {
+              "type": "generic",
+              "handled": true,
+              "source": "",
+              "synthetic": false
+            },
+            "stacktrace": {
+              "frames": [],
+              "type": "raw"
+            }
+          }
+        ],
+        "$exception_message": "deterministic failure",
+        "$exception_personURL": "https://us.posthog.com/project/fake-project-token/person/exception-user",
+        "$exception_type": "System.InvalidOperationException",
+        "$geoip_disable": true,
+        "$is_server": true,
+        "$lib": "posthog-dotnet",
+        "$lib_version": "normalized",
+        "$net_runtime": "normalized",
+        "$os": "normalized",
+        "$os_version": "normalized",
+        "distinct_id": "exception-user",
+        "timestamp": "2024-07-08T03:40:11+00:00"
+      },
+      "timestamp": "2024-07-08T03:40:11+00:00"
+    }
+  ]
+}

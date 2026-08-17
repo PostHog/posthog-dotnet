@@ -1,0 +1,39 @@
+{
+  "api_key": "fake-project-token",
+  "distinct_id": "person-123",
+  "evaluation_contexts": ["checkout", "backend"],
+  "flag_keys_to_evaluate": ["checkout-redesign", "new-pricing"],
+  "geoip_disable": true,
+  "group_properties": {
+    "company": {
+      "$group_key": "company-42",
+      "plan": "enterprise",
+      "seats": 42
+    },
+    "project": {
+      "$group_key": "project-7",
+      "region": "eu-west",
+      "archived": false
+    }
+  },
+  "groups": {
+    "company": "company-42",
+    "project": "project-7"
+  },
+  "person_properties": {
+    "email": "person@example.com",
+    "age": 37,
+    "roles": ["admin", "editor"],
+    "nullable": null
+  },
+  "properties": {
+    "$arch": "normalized",
+    "$framework": "normalized",
+    "$geoip_disable": true,
+    "$is_server": true,
+    "$lib": "posthog-dotnet",
+    "$lib_version": "normalized",
+    "$os": "normalized"
+  },
+  "timestamp": "2024-07-08T09:10:11+00:00"
+}
