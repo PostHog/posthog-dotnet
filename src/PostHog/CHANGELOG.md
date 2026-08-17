@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.13.3
+
+### Patch Changes
+
+- 0c4094f: Support fractional rollout percentages when evaluating feature flags locally.
+
 ## 2.13.2
 
 ### Patch Changes

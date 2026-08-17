@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.8.4
+
+### Patch Changes
+
+- 0c4094f: Support fractional rollout percentages when evaluating feature flags locally.
+
 ## 2.8.3
 
 ### Patch Changes
