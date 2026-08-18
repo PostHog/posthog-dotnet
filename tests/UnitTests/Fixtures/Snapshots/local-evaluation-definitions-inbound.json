@@ -1,0 +1,107 @@
+{
+  "flags": [
+    {
+      "id": 17,
+      "team_id": 23,
+      "name": "Checkout rollout",
+      "key": "checkout-rollout",
+      "filters": {
+        "groups": [
+          {
+            "variant": "treatment",
+            "properties": [
+              {
+                "key": "email",
+                "type": "person",
+                "value": "@example.com",
+                "operator": "icontains"
+              },
+              {
+                "key": "plan",
+                "type": "group",
+                "value": ["enterprise", "business"],
+                "operator": "exact",
+                "group_type_index": 2,
+                "negation": true
+              },
+              {
+                "key": "prerequisite-flag",
+                "type": "flag",
+                "value": true,
+                "operator": "exact",
+                "dependency_chain": ["root-flag", "prerequisite-flag"]
+              },
+              {
+                "key": "numeric-array",
+                "type": "person",
+                "value": [1.00],
+                "operator": "exact"
+              },
+              {
+                "key": "string-array-control",
+                "type": "person",
+                "value": ["1.00"],
+                "operator": "exact"
+              }
+            ],
+            "rollout_percentage": 12.5,
+            "aggregation_group_type_index": 2
+          }
+        ],
+        "payloads": {
+          "control": "{\"layout\":\"classic\"}",
+          "treatment": "[\"fast\",{\"retry\":2}]"
+        },
+        "multivariate": {
+          "variants": [
+            {
+              "key": "control",
+              "name": "Control",
+              "rollout_percentage": 37.5
+            },
+            {
+              "key": "treatment",
+              "name": "Treatment",
+              "rollout_percentage": 62.5
+            }
+          ]
+        },
+        "aggregation_group_type_index": 2,
+        "early_exit": true
+      },
+      "deleted": false,
+      "active": true,
+      "ensure_experience_continuity": true,
+      "has_experiment": false
+    }
+  ],
+  "group_type_mapping": {
+    "2": "company"
+  },
+  "cohorts": {
+    "9": {
+      "type": "OR",
+      "values": [
+        {
+          "type": "AND",
+          "values": [
+            {
+              "key": "region",
+              "type": "person",
+              "value": ["EU", "US"],
+              "operator": "exact"
+            },
+            {
+              "key": "company-size",
+              "type": "group",
+              "value": "100",
+              "operator": "gt",
+              "group_type_index": 2
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "minimal_flag_called_events": true
+}

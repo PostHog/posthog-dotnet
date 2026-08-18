@@ -1,0 +1,17 @@
+{
+  "api_key": "fake-project-token",
+  "distinct_id": "anonymous-session",
+  "event": "$create_alias",
+  "properties": {
+    "$arch": "normalized",
+    "$framework": "normalized",
+    "$geoip_disable": true,
+    "$is_server": true,
+    "$lib": "posthog-dotnet",
+    "$lib_version": "normalized",
+    "$os": "normalized",
+    "alias": "known-user",
+    "distinct_id": "anonymous-session"
+  },
+  "timestamp": "2024-07-08T09:10:11+00:00"
+}
