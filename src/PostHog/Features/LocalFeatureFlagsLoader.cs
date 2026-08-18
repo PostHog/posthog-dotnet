@@ -28,6 +28,7 @@ internal sealed class LocalFeatureFlagsLoader(
     volatile Task? _pollingTask;
     LocalEvaluator? _localEvaluator;
     long _flagDefinitionsLoadedAtMs; // Unix milliseconds; 0 means not yet loaded.
+    long _lastLoadFailedAtMs; // Unix milliseconds; 0 means the last load did not fail.
     volatile string? _etag; // ETag for conditional requests to reduce bandwidth
     readonly CancellationTokenSource _cancellationTokenSource = new();
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
@@ -61,6 +62,18 @@ internal sealed class LocalFeatureFlagsLoader(
         {
             return localEvaluator;
         }
+
+        // Negative cache: after a failed load, wait one poll interval before trying again. A
+        // persistent failure (a bad payload the client rejects, or a quota limit) must not send an
+        // API request on every flag evaluation, which drives the endpoint into rate limiting (429).
+        var lastFailure = Interlocked.Read(ref _lastLoadFailedAtMs);
+        if (lastFailure != 0
+            && timeProvider.GetUtcNow().ToUnixTimeMilliseconds() - lastFailure
+                < options.Value.FeatureFlagPollInterval.TotalMilliseconds)
+        {
+            return null;
+        }
+
         return await LoadLocalEvaluatorAsync(cancellationToken);
     }
 
@@ -91,7 +104,18 @@ internal sealed class LocalFeatureFlagsLoader(
     async Task<LocalEvaluator?> LoadLocalEvaluatorAsync(CancellationToken cancellationToken)
     {
         StartPollingIfNotStarted();
-        var response = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(_etag, cancellationToken);
+
+        LocalEvaluationResponse response;
+        try
+        {
+            response = await postHogApiClient.GetFeatureFlagsForLocalEvaluationAsync(_etag, cancellationToken);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // A load that throws (for example a quota limit) counts as a failure for the negative cache.
+            RecordLoadFailure();
+            throw;
+        }
 
         // If 304 Not Modified, keep using cached data (update ETag if server sent a new one)
         if (response.IsNotModified)
@@ -106,6 +130,7 @@ internal sealed class LocalFeatureFlagsLoader(
         // On failure (no result), preserve existing ETag for retry
         if (response.Result is null)
         {
+            RecordLoadFailure();
             return _localEvaluator;
         }
 
@@ -115,6 +140,7 @@ internal sealed class LocalFeatureFlagsLoader(
         var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
         Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
+        Interlocked.Exchange(ref _lastLoadFailedAtMs, 0);
         return localEvaluator;
     }
 
@@ -145,6 +171,9 @@ internal sealed class LocalFeatureFlagsLoader(
             _logger.LogTraceOperationCancelled(nameof(PollForFeatureFlagsAsync));
         }
     }
+
+    void RecordLoadFailure() =>
+        Interlocked.Exchange(ref _lastLoadFailedAtMs, timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
 
     public bool IsLoaded => _localEvaluator is not null;
 
@@ -189,6 +218,7 @@ internal sealed class LocalFeatureFlagsLoader(
         Interlocked.Exchange(ref _localEvaluator, null);
         Interlocked.Exchange(ref _etag, null);
         Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, 0);
+        Interlocked.Exchange(ref _lastLoadFailedAtMs, 0);
     }
 }
 
