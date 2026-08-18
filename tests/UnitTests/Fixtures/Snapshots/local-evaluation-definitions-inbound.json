@@ -30,6 +30,18 @@
                 "value": true,
                 "operator": "exact",
                 "dependency_chain": ["root-flag", "prerequisite-flag"]
+              },
+              {
+                "key": "numeric-array",
+                "type": "person",
+                "value": [1.00],
+                "operator": "exact"
+              },
+              {
+                "key": "string-array-control",
+                "type": "person",
+                "value": ["1.00"],
+                "operator": "exact"
               }
             ],
             "rollout_percentage": 12.5,

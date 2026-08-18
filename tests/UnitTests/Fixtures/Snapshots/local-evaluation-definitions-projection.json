@@ -36,6 +36,48 @@
                 "group_type_index": null,
                 "negation": false,
                 "dependency_chain": ["root-flag", "prerequisite-flag"]
+              },
+              {
+                "type": "person",
+                "key": "numeric-array",
+                "value": ["1.00"],
+                "operator": "exact",
+                "group_type_index": null,
+                "negation": false,
+                "dependency_chain": null,
+                "exact_match_probes": [
+                  {
+                    "input_type": "decimal",
+                    "input": 1.0,
+                    "matches": true
+                  },
+                  {
+                    "input_type": "string",
+                    "input": "1.00",
+                    "matches": true
+                  }
+                ]
+              },
+              {
+                "type": "person",
+                "key": "string-array-control",
+                "value": ["1.00"],
+                "operator": "exact",
+                "group_type_index": null,
+                "negation": false,
+                "dependency_chain": null,
+                "exact_match_probes": [
+                  {
+                    "input_type": "decimal",
+                    "input": 1.0,
+                    "matches": false
+                  },
+                  {
+                    "input_type": "string",
+                    "input": "1.00",
+                    "matches": true
+                  }
+                ]
               }
             ],
             "rollout_percentage": 12.5,

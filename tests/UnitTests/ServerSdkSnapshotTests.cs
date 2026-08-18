@@ -11,46 +11,45 @@ namespace ServerSdkSnapshotTests;
 public class SnapshotNormalizationTests
 {
     [Fact]
-    public void PreservesGuidRelationshipsWhileCanonicalizingObjects()
+    public void NormalizesGeneratedEventUuids()
     {
         const string expected = """
             {
-              "first": "00000000-0000-0000-0000-000000000001",
-              "items": [
-                "00000000-0000-0000-0000-000000000002",
-                "00000000-0000-0000-0000-000000000001"
+              "uuid": "00000000-0000-0000-0000-000000000001",
+              "batch": [
+                {
+                  "uuid": "00000000-0000-0000-0000-000000000002"
+                }
               ]
             }
             """;
         const string actual = """
             {
-              "items": [
-                "80e0f2e4-f1ad-4e6e-bd86-0b6355e0180b",
-                "634b8691-c087-4d2d-94af-0e12db8b47b2"
+              "batch": [
+                {
+                  "uuid": "80e0f2e4-f1ad-4e6e-bd86-0b6355e0180b"
+                }
               ],
-              "first": "634b8691-c087-4d2d-94af-0e12db8b47b2"
+              "uuid": "634b8691-c087-4d2d-94af-0e12db8b47b2"
             }
             """;
 
         JsonAssert.EqualSnapshot(expected, actual);
     }
 
-    [Fact]
-    public void DistinctGuidsDoNotMatchOneRepeatedGuid()
+    [Theory]
+    [InlineData("""{"distinct_id":"00000000-0000-0000-0000-000000000001"}""",
+        """{"distinct_id":"00000000-0000-0000-0000-000000000002"}""")]
+    [InlineData("""{"properties":{"alias":"00000000-0000-0000-0000-000000000001"}}""",
+        """{"properties":{"alias":"00000000-0000-0000-0000-000000000002"}}""")]
+    [InlineData("""{"group_properties":{"company":{"$group_key":"00000000-0000-0000-0000-000000000001"}}}""",
+        """{"group_properties":{"company":{"$group_key":"00000000-0000-0000-0000-000000000002"}}}""")]
+    [InlineData("""{"groups":{"company":"00000000-0000-0000-0000-000000000001"}}""",
+        """{"groups":{"company":"00000000-0000-0000-0000-000000000002"}}""")]
+    [InlineData("""{"properties":{"customer_id":"00000000-0000-0000-0000-000000000001"}}""",
+        """{"properties":{"customer_id":"00000000-0000-0000-0000-000000000002"}}""")]
+    public void DoesNotNormalizeCallerControlledGuidValues(string expected, string actual)
     {
-        const string expected = """
-            [
-              "00000000-0000-0000-0000-000000000001",
-              "00000000-0000-0000-0000-000000000002"
-            ]
-            """;
-        const string actual = """
-            [
-              "634b8691-c087-4d2d-94af-0e12db8b47b2",
-              "634b8691-c087-4d2d-94af-0e12db8b47b2"
-            ]
-            """;
-
         Assert.Throws<EqualException>(() => JsonAssert.EqualSnapshot(expected, actual));
     }
 
@@ -239,16 +238,46 @@ public class LocalEvaluationSchemaSnapshots
         _ => throw new InvalidOperationException($"Unexpected filter type {filter.GetType().Name}.")
     };
 
-    static Dictionary<string, object?> Project(PropertyFilter property) => new()
+    static Dictionary<string, object?> Project(PropertyFilter property)
     {
-        ["type"] = property.Type,
-        ["key"] = property.Key,
-        ["value"] = Project(property.Value),
-        ["operator"] = property.Operator,
-        ["group_type_index"] = property.GroupTypeIndex,
-        ["negation"] = property.Negation,
-        ["dependency_chain"] = property.DependencyChain?.ToArray()
-    };
+        var projection = new Dictionary<string, object?>
+        {
+            ["type"] = property.Type,
+            ["key"] = property.Key,
+            ["value"] = Project(property.Value),
+            ["operator"] = property.Operator,
+            ["group_type_index"] = property.GroupTypeIndex,
+            ["negation"] = property.Negation,
+            ["dependency_chain"] = property.DependencyChain?.ToArray()
+        };
+
+        if (property.Key is "numeric-array" or "string-array-control")
+        {
+            projection["exact_match_probes"] = ProjectExactMatchProbes(property.Value);
+        }
+
+        return projection;
+    }
+
+    static object[] ProjectExactMatchProbes(PropertyFilterValue? value)
+    {
+        Assert.NotNull(value);
+        return
+        [
+            new Dictionary<string, object?>
+            {
+                ["input_type"] = "decimal",
+                ["input"] = 1.0m,
+                ["matches"] = value.IsExactMatch(1.0m)
+            },
+            new Dictionary<string, object?>
+            {
+                ["input_type"] = "string",
+                ["input"] = "1.00",
+                ["matches"] = value.IsExactMatch("1.00")
+            }
+        ];
+    }
 
     static object? Project(PropertyFilterValue? value)
     {
