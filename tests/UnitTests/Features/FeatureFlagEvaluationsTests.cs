@@ -132,10 +132,82 @@ public class TheEvaluateFlagsAsyncMethod
 
         var snapshot = await client.EvaluateFlagsAsync(
             "user-1",
-            new AllFeatureFlagsOptions { OnlyEvaluateLocally = true },
+            new AllFeatureFlagsOptions
+            {
+                OnlyEvaluateLocally = true,
+                FlagKeysToEvaluate = ["flag-a", "missing-flag"]
+            },
             CancellationToken.None);
 
         Assert.True(snapshot.IsEnabled("flag-a"));
+        Assert.Single(snapshot.Keys);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task MissingRequestedKeyFallsBackWithOriginalScopeAndKeepsLocalValues()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "local-flag", "active": true,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}},
+                {"id": 2, "key": "unrequested-flag", "active": true,
+                 "filters": {"groups": [{"properties": [{"key": "country", "type": "person", "value": "US", "operator": "exact"}],
+                                          "rollout_percentage": 100}]}}
+            ]}
+            """);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"local-flag": false, "remote-flag": true, "extra-flag": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-1",
+            new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "remote-flag"] },
+            CancellationToken.None);
+
+        Assert.Equal(2, snapshot.Keys.Count);
+        Assert.True(snapshot.IsEnabled("local-flag"));
+        Assert.True(snapshot.IsEnabled("remote-flag"));
+        Assert.DoesNotContain("extra-flag", snapshot.Keys);
+        Assert.DoesNotContain("unrequested-flag", snapshot.Keys);
+
+        var request = flagsHandler.ReceivedRequests.Single();
+        var body = await request.Content!.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var flagKeys = doc.RootElement.GetProperty("flag_keys_to_evaluate")
+            .EnumerateArray()
+            .Select(e => e.GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(new[] { "local-flag", "remote-flag" }, flagKeys);
+    }
+
+    [Fact]
+    public async Task RequestedLocalFlagIgnoresUnrequestedInconclusiveDefinition()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "local-flag", "active": true,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}},
+                {"id": 2, "key": "unrequested-flag", "active": true,
+                 "filters": {"groups": [{"properties": [{"key": "country", "type": "person", "value": "US", "operator": "exact"}],
+                                          "rollout_percentage": 100}]}}
+            ]}
+            """);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"unrequested-flag": true}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-1",
+            new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag"] },
+            CancellationToken.None);
+
+        Assert.True(snapshot.IsEnabled("local-flag"));
+        Assert.Single(snapshot.Keys);
         Assert.Empty(flagsHandler.ReceivedRequests);
     }
 
