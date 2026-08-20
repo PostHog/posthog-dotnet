@@ -9,6 +9,15 @@ namespace FeatureFlagEvaluationsTests;
 
 public class TheEvaluateFlagsAsyncMethod
 {
+    static void AddResolvableLocalFlag(TestContainer container) =>
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "local-flag", "active": true,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+            ]}
+            """);
+
     [Fact]
     public async Task ReturnsSnapshotWithRichMetadataFromOneFlagsRequest()
     {
@@ -184,17 +193,12 @@ public class TheEvaluateFlagsAsyncMethod
     }
 
     [Fact]
-    public async Task EmptyRemoteResultForMissingKeyIsCachedForSameInputs()
+    public async Task EmptyRemoteResultForMissingKeyIsRetriedForSameInputs()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
-            """
-            {"flags": [
-                {"id": 1, "key": "local-flag", "active": true,
-                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
-            ]}
-            """);
-        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        AddResolvableLocalFlag(container);
+        var firstFlagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var secondFlagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
         using var cache = new MemoryFeatureFlagCache(container.FakeTimeProvider, 100, 0.2);
         var client = container.Activate<PostHogClient>(cache);
         var options = new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "missing-flag"] };
@@ -206,11 +210,93 @@ public class TheEvaluateFlagsAsyncMethod
         Assert.DoesNotContain("missing-flag", first.Keys);
         Assert.True(second.IsEnabled("local-flag"));
         Assert.DoesNotContain("missing-flag", second.Keys);
-        Assert.Single(flagsHandler.ReceivedRequests);
+        Assert.Single(firstFlagsHandler.ReceivedRequests);
+        Assert.Single(secondFlagsHandler.ReceivedRequests);
     }
 
     [Fact]
-    public async Task SuccessfulFallbackKeepsRawRemoteResultInCache()
+    public async Task ScopedFallbackBypassesDifferentlyScopedWarmCache()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "local-flag", "active": true,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}},
+                {"id": 2, "key": "needs-server", "active": true,
+                 "filters": {"groups": [{"properties": [
+                     {"key": "country", "type": "person", "value": "US", "operator": "exact"}
+                 ], "rollout_percentage": 100}]}}
+            ]}
+            """);
+        var warmCacheHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"warm-only": true}}""");
+        var scopedHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"remote-flag": true}}""");
+        using var cache = new MemoryFeatureFlagCache(container.FakeTimeProvider, 100, 0.2);
+        var client = container.Activate<PostHogClient>(cache);
+
+        await client.GetAllFeatureFlagsAsync("user-1", options: null, CancellationToken.None);
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-1",
+            new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "remote-flag"] },
+            CancellationToken.None);
+
+        Assert.True(snapshot.IsEnabled("local-flag"));
+        Assert.True(snapshot.IsEnabled("remote-flag"));
+        Assert.DoesNotContain("warm-only", snapshot.Keys);
+        Assert.Single(warmCacheHandler.ReceivedRequests);
+        Assert.Single(scopedHandler.ReceivedRequests);
+    }
+
+    [Theory]
+    [InlineData("{\"featureFlags\": {}, \"quotaLimited\": [\"feature_flags\"]}")]
+    [InlineData("{\"featureFlags\": {}, \"errorsWhileComputingFlags\": true}")]
+    public async Task InconclusiveRemoteResultForMissingKeyIsRetried(string responseBody)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        AddResolvableLocalFlag(container);
+        var firstFlagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(responseBody);
+        var secondFlagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(responseBody);
+        using var cache = new MemoryFeatureFlagCache(container.FakeTimeProvider, 100, 0.2);
+        var client = container.Activate<PostHogClient>(cache);
+        var options = new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "missing-flag"] };
+
+        await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
+        await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
+
+        Assert.Single(firstFlagsHandler.ReceivedRequests);
+        Assert.Single(secondFlagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task FailedRemoteResultForMissingKeyIsRetried()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SecretKey = "fake-personal-api-key";
+            options.FeatureFlagRequestMaxRetries = 0;
+        }));
+        AddResolvableLocalFlag(container);
+        var failedHandler = container.FakeHttpMessageHandler.AddFlagsResponseException(
+            new HttpRequestException("Network error"));
+        var successfulHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"missing-flag": true}}""");
+        using var cache = new MemoryFeatureFlagCache(container.FakeTimeProvider, 100, 0.2);
+        var client = container.Activate<PostHogClient>(cache);
+        var options = new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "missing-flag"] };
+
+        var first = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
+        var second = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
+
+        Assert.DoesNotContain("missing-flag", first.Keys);
+        Assert.True(second.IsEnabled("missing-flag"));
+        Assert.Single(failedHandler.ReceivedRequests);
+        Assert.Single(successfulHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task UnscopedSuccessfulFallbackKeepsRawRemoteResultInCache()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
@@ -227,10 +313,8 @@ public class TheEvaluateFlagsAsyncMethod
             """{"featureFlags": {"local-flag": false, "remote-flag": true}}""");
         using var cache = new MemoryFeatureFlagCache(container.FakeTimeProvider, 100, 0.2);
         var client = container.Activate<PostHogClient>(cache);
-        var options = new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "remote-flag"] };
-
-        var snapshot = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
-        var rawFlags = await client.GetAllFeatureFlagsAsync("user-1", options, CancellationToken.None);
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        var rawFlags = await client.GetAllFeatureFlagsAsync("user-1", options: null, CancellationToken.None);
 
         Assert.True(snapshot.IsEnabled("local-flag"));
         Assert.True(snapshot.IsEnabled("remote-flag"));

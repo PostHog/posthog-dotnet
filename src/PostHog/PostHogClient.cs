@@ -1130,7 +1130,12 @@ public sealed class PostHogClient : IPostHogClient
         {
             try
             {
-                var flagsResult = await FetchFlagsAsync(resolvedDistinctId, options, cancellationToken);
+                // Scoped requests bypass the general cache because its public key contract does not
+                // include FlagKeysToEvaluate. This guarantees the caller's original scope is probed
+                // instead of reusing a differently scoped or inconclusive cached response.
+                var flagsResult = requestedFlagKeys is null
+                    ? await FetchFlagsAsync(resolvedDistinctId, options, cancellationToken)
+                    : await FetchFlagsDirectAsync(resolvedDistinctId, options, cancellationToken);
                 requestId = flagsResult.RequestId;
                 evaluatedAt = flagsResult.EvaluatedAt;
 
@@ -1273,6 +1278,27 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken) =>
         await FetchFlagsAsync(_featureFlagsCache, distinctId, options, cancellationToken);
+
+    async Task<FlagsResult> FetchFlagsDirectAsync(
+        string distinctId,
+        AllFeatureFlagsOptions? options,
+        CancellationToken cancellationToken)
+    {
+        var result = await _apiClient.GetFeatureFlagsAsync(
+            distinctId,
+            options?.PersonProperties,
+            options?.Groups,
+            options?.FlagKeysToEvaluate,
+            options?.DisableGeoIp ?? false,
+            cancellationToken);
+        var flagsResult = result.ToFlagsResult();
+        if (flagsResult.QuotaLimited.Contains("feature_flags"))
+        {
+            _logger.LogWarningQuotaExceeded();
+            return new FlagsResult { QuotaLimited = flagsResult.QuotaLimited };
+        }
+        return flagsResult;
+    }
 
     async Task<FlagsResult> FetchFlagsAsync(
         IFeatureFlagCache cache,

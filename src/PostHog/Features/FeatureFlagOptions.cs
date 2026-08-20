@@ -53,8 +53,8 @@ public class AllFeatureFlagsOptions
     /// <remarks>
     /// This scopes local evaluation, the <c>/flags</c> request, and the returned result. A requested
     /// key missing from local definitions triggers remote fallback unless <see cref="OnlyEvaluateLocally"/>
-    /// is <c>true</c>. If the key is also absent remotely, a configured feature flag cache can reuse
-    /// the empty response for the same identity and evaluation inputs during its cache window.
+    /// is <c>true</c>. When <c>EvaluateFlagsAsync</c> falls back with a non-empty scope, it bypasses
+    /// the general feature flag cache, so a key absent remotely costs one request per call.
     /// </remarks>
     public IReadOnlyList<string> FlagKeysToEvaluate { get; init; } = [];
 
