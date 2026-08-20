@@ -1,8 +1,11 @@
+using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PostHog;
 using PostHog.Api;
 using PostHog.Json;
+using PostHog.Versioning;
 using UnitTests.Fakes;
 using Xunit.Sdk;
 
@@ -125,7 +128,7 @@ public class FinalWireSnapshots
                 DisableGeoIp = true
             });
 
-        await AssertGoldenAsync("flags-request-maximal.json", requestHandler.GetReceivedRequestBody(indented: false));
+        await AssertGoldenAsync("flags-request-maximal.json", requestHandler);
     }
 
     [Fact]
@@ -147,7 +150,7 @@ public class FinalWireSnapshots
             timestamp));
         await client.FlushAsync();
 
-        await AssertGoldenAsync("exception-batch-minimal.json", requestHandler.GetReceivedRequestBody(indented: false));
+        await AssertGoldenAsync("exception-batch-minimal.json", requestHandler);
     }
 
     [Fact]
@@ -161,13 +164,89 @@ public class FinalWireSnapshots
 
         await client.AliasAsync("anonymous-session", "known-user", CancellationToken.None);
 
-        await AssertGoldenAsync("alias-request.json", requestHandler.GetReceivedRequestBody(indented: false));
+        await AssertGoldenAsync("alias-request.json", requestHandler);
     }
 
-    static async Task AssertGoldenAsync(string fileName, string actualJson)
+    static async Task AssertGoldenAsync(string fileName, FakeHttpMessageHandler.RequestHandler requestHandler)
     {
         var expectedJson = await File.ReadAllTextAsync(Path.Combine("Fixtures", "Snapshots", fileName));
-        JsonAssert.EqualSnapshot(expectedJson, actualJson);
+        JsonAssert.EqualSnapshot(expectedJson, requestHandler.GetReceivedRequestBody(indented: false));
+        UserAgentAssert.MatchesContract(requestHandler.ReceivedRequest.Headers.UserAgent);
+    }
+}
+
+public class UserAgentContractTests
+{
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void RejectsUnexpectedProductOrVersion(int invalidComponent)
+    {
+        var product = invalidComponent == 0 ? "not-posthog-dotnet" : "posthog-dotnet";
+        var version = invalidComponent == 1 ? $"{VersionConstants.Version}-unexpected" : VersionConstants.Version;
+        var userAgent = CreateUserAgent(
+            product,
+            version,
+            RuntimeInformation.FrameworkDescription,
+            RuntimeInformation.OSDescription,
+            RuntimeInformation.ProcessArchitecture.ToString());
+
+        Assert.ThrowsAny<XunitException>(() => UserAgentAssert.MatchesContract(userAgent));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void RejectsMissingRuntimeComponents(int missingComponent)
+    {
+        var framework = missingComponent == 0 ? string.Empty : RuntimeInformation.FrameworkDescription;
+        var os = missingComponent == 1 ? string.Empty : RuntimeInformation.OSDescription;
+        var architecture = missingComponent == 2 ? string.Empty : RuntimeInformation.ProcessArchitecture.ToString();
+        var userAgent = missingComponent == 3
+            ? [new ProductInfoHeaderValue("posthog-dotnet", VersionConstants.Version)]
+            : CreateUserAgent("posthog-dotnet", VersionConstants.Version, framework, os, architecture);
+
+        Assert.ThrowsAny<XunitException>(() => UserAgentAssert.MatchesContract(userAgent));
+    }
+
+    static ProductInfoHeaderValue[] CreateUserAgent(
+        string product,
+        string version,
+        string framework,
+        string os,
+        string architecture) =>
+        [
+            new ProductInfoHeaderValue(product, version),
+            new ProductInfoHeaderValue($"({framework}; {os}; {architecture})")
+        ];
+}
+
+static class UserAgentAssert
+{
+    public static void MatchesContract(IEnumerable<ProductInfoHeaderValue> userAgent)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(RuntimeInformation.FrameworkDescription));
+        Assert.False(string.IsNullOrWhiteSpace(RuntimeInformation.OSDescription));
+        Assert.False(string.IsNullOrWhiteSpace(RuntimeInformation.ProcessArchitecture.ToString()));
+
+        Assert.Collection(
+            userAgent,
+            product =>
+            {
+                Assert.NotNull(product.Product);
+                Assert.Null(product.Comment);
+                Assert.Equal("posthog-dotnet", product.Product.Name);
+                Assert.Equal(VersionConstants.Version, product.Product.Version);
+            },
+            runtime =>
+            {
+                Assert.Null(runtime.Product);
+                Assert.Equal(
+                    $"({RuntimeInformation.FrameworkDescription}; {RuntimeInformation.OSDescription}; {RuntimeInformation.ProcessArchitecture})",
+                    runtime.Comment);
+            });
     }
 }
 
