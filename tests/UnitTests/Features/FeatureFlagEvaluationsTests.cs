@@ -184,6 +184,62 @@ public class TheEvaluateFlagsAsyncMethod
     }
 
     [Fact]
+    public async Task EmptyRemoteResultForMissingKeyIsCachedForSameInputs()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "local-flag", "active": true,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+            ]}
+            """);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        using var cache = new MemoryFeatureFlagCache(container.FakeTimeProvider, 100, 0.2);
+        var client = container.Activate<PostHogClient>(cache);
+        var options = new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "missing-flag"] };
+
+        var first = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
+        var second = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
+
+        Assert.True(first.IsEnabled("local-flag"));
+        Assert.DoesNotContain("missing-flag", first.Keys);
+        Assert.True(second.IsEnabled("local-flag"));
+        Assert.DoesNotContain("missing-flag", second.Keys);
+        Assert.Single(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task SuccessfulFallbackKeepsRawRemoteResultInCache()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "local-flag", "active": true,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}},
+                {"id": 2, "key": "unrequested-flag", "active": true,
+                 "filters": {"groups": [{"properties": [{"key": "country", "type": "person", "value": "US", "operator": "exact"}],
+                                          "rollout_percentage": 100}]}}
+            ]}
+            """);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"local-flag": false, "remote-flag": true}}""");
+        using var cache = new MemoryFeatureFlagCache(container.FakeTimeProvider, 100, 0.2);
+        var client = container.Activate<PostHogClient>(cache);
+        var options = new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["local-flag", "remote-flag"] };
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
+        var rawFlags = await client.GetAllFeatureFlagsAsync("user-1", options, CancellationToken.None);
+
+        Assert.True(snapshot.IsEnabled("local-flag"));
+        Assert.True(snapshot.IsEnabled("remote-flag"));
+        Assert.False(rawFlags["local-flag"].IsEnabled);
+        Assert.True(rawFlags["remote-flag"].IsEnabled);
+        Assert.Single(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
     public async Task RequestedLocalFlagIgnoresUnrequestedInconclusiveDefinition()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
