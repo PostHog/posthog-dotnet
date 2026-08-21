@@ -242,17 +242,18 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="options">
     /// Optional: Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/>
-    /// scopes the underlying <c>/flags</c> request body — distinct from
+    /// scopes local evaluation, the underlying <c>/flags</c> request, and the returned snapshot. This differs from
     /// <see cref="FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable{string})"/>, which
     /// filters in memory.
     /// </param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
     /// <returns>A snapshot of feature flag evaluations.</returns>
     /// <remarks>
-    /// <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes the underlying <c>/flags</c>
-    /// request body. <see cref="FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable{string})"/>
-    /// filters an already-evaluated snapshot in memory. Use <c>FlagKeysToEvaluate</c> to reduce
-    /// network and server work; use <c>Only(...)</c> to scope an existing snapshot for capture.
+    /// <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes local evaluation, the underlying
+    /// <c>/flags</c> request, and the returned snapshot. Requested keys missing from local definitions
+    /// trigger remote fallback unless <see cref="AllFeatureFlagsOptions.OnlyEvaluateLocally"/> is
+    /// <c>true</c>. <see cref="FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable{string})"/>
+    /// filters an already-evaluated snapshot in memory.
     /// </remarks>
     Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         string distinctId,
