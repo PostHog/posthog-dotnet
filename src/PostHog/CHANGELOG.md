@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.14.0
+
+### Minor Changes
+
+- 4f2e3c8: Fall back to remote evaluation when a requested feature flag is missing from local definitions. This changes scoped calls from omitting the key without a request to making one direct `/flags` fallback per `EvaluateFlagsAsync` call.
+
 ## 2.13.3
 
 ### Patch Changes
