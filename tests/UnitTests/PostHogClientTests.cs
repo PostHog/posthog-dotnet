@@ -1314,6 +1314,60 @@ public class TheCaptureExceptionMethod
     }
 
     [Fact]
+    public async Task CaptureExceptionUsesLogicalAsyncMethodName()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var exception = await CreateExceptionAfterAwaitAsync();
+
+        client.CaptureException(exception, "some-distinct-id");
+        await client.FlushAsync();
+
+        var (_, _, properties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        var frames = GetStackFrames(GetFirstException(properties));
+
+        Assert.Contains(frames, frame =>
+            frame.GetProperty("function").GetString() == nameof(CreateExceptionAfterAwaitAsync) &&
+            frame.GetProperty("module").GetString() == typeof(TheCaptureExceptionMethod).FullName);
+        Assert.DoesNotContain(frames, frame => frame.GetProperty("function").GetString() == "MoveNext");
+    }
+
+    [Fact]
+    public async Task CaptureExceptionUsesLogicalAsyncIteratorMethodName()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var exception = await CreateExceptionFromAsyncIteratorAsync();
+
+        client.CaptureException(exception, "some-distinct-id");
+        await client.FlushAsync();
+
+        var (_, _, properties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        var frames = GetStackFrames(GetFirstException(properties));
+
+        Assert.Contains(frames, frame =>
+            frame.GetProperty("function").GetString() == nameof(ThrowFromAsyncIteratorAfterAwait) &&
+            frame.GetProperty("module").GetString() == typeof(TheCaptureExceptionMethod).FullName);
+        Assert.DoesNotContain(frames, frame => frame.GetProperty("function").GetString() == "MoveNext");
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public async Task CaptureExceptionOmitsStackTraceHiddenFrames()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var exception = CreateExceptionThroughHiddenMethod();
+
+        client.CaptureException(exception, "some-distinct-id");
+        await client.FlushAsync();
+
+        var (_, _, properties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        var frames = GetStackFrames(GetFirstException(properties));
+
+        Assert.DoesNotContain(frames, frame =>
+            frame.GetProperty("function").GetString() == nameof(ThrowFromHiddenMethod));
+    }
+#endif
+
+    [Fact]
     public async Task CaptureExceptionWithAggregateException()
     {
         var (container, requestHandler, client) = CreateClient();
@@ -1570,6 +1624,65 @@ public class TheCaptureExceptionMethod
             }
         }
     }
+
+    private static async Task<InvalidOperationException> CreateExceptionAfterAwaitAsync()
+    {
+        try
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("Async exception");
+        }
+        catch (InvalidOperationException exception)
+        {
+            return exception;
+        }
+    }
+
+    private static async Task<InvalidOperationException> CreateExceptionFromAsyncIteratorAsync()
+    {
+        try
+        {
+            await foreach (var _ in ThrowFromAsyncIteratorAfterAwait())
+            {
+            }
+
+            throw new InvalidOperationException("Unreachable");
+        }
+        catch (InvalidOperationException exception)
+        {
+            return exception;
+        }
+    }
+
+    private static async IAsyncEnumerable<int> ThrowFromAsyncIteratorAfterAwait()
+    {
+        await Task.Yield();
+        if (DateTime.UtcNow.Year == 1)
+        {
+            yield return 0;
+        }
+
+        throw new InvalidOperationException("Async iterator exception");
+    }
+
+#if NET8_0_OR_GREATER
+    private static InvalidOperationException CreateExceptionThroughHiddenMethod()
+    {
+        try
+        {
+            ThrowFromHiddenMethod();
+            throw new InvalidOperationException("Unreachable");
+        }
+        catch (InvalidOperationException exception)
+        {
+            return exception;
+        }
+    }
+
+    [System.Diagnostics.StackTraceHidden]
+    private static void ThrowFromHiddenMethod()
+        => throw new InvalidOperationException("Hidden exception");
+#endif
 
     // This test is pretty expensive because it dynamically compiles and loads an assembly.
     // Consider alternatives.
