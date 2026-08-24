@@ -97,7 +97,7 @@ public static class PostHogRequestContextExtensions
     /// authorization context. Pass an authenticated distinct ID explicitly for security-sensitive server branching.
     /// </remarks>
     /// <param name="client">The <see cref="IPostHogClient"/>.</param>
-    /// <param name="options">Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes the underlying <c>/flags</c> request body.</param>
+    /// <param name="options">Options used to control feature flag evaluation. <see cref="AllFeatureFlagsOptions.FlagKeysToEvaluate"/> scopes local evaluation, the <c>/flags</c> request, and the returned snapshot. Missing local definitions trigger fallback unless <see cref="AllFeatureFlagsOptions.OnlyEvaluateLocally"/> is <c>true</c>.</param>
     /// <returns>A snapshot of feature flag evaluations.</returns>
     public static Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         this IPostHogClient client,

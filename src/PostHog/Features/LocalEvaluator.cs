@@ -128,7 +128,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         GroupCollection? groups = null,
         Dictionary<string, object?>? personProperties = null,
-        bool warnOnUnknownGroups = true)
+        bool warnOnUnknownGroups = true,
+        IReadOnlyCollection<string>? flagKeysToEvaluate = null)
     {
         Dictionary<string, FeatureFlag> results = new();
 
@@ -138,8 +139,15 @@ internal sealed class LocalEvaluator
         }
 
         var fallbackToRemote = false;
+        IEnumerable<LocalFeatureFlag> flagsToEvaluate = LocalEvaluationApiResult.Flags;
+        if (flagKeysToEvaluate is { Count: > 0 })
+        {
+            var requestedFlagKeys = new HashSet<string>(flagKeysToEvaluate, StringComparer.Ordinal);
+            fallbackToRemote = requestedFlagKeys.Any(key => !_localFeatureFlags.ContainsKey(key));
+            flagsToEvaluate = flagsToEvaluate.Where(flag => requestedFlagKeys.Contains(flag.Key));
+        }
 
-        foreach (var flag in LocalEvaluationApiResult.Flags)
+        foreach (var flag in flagsToEvaluate)
         {
             try
             {

@@ -22,10 +22,12 @@ public class FeatureFlagOptions : AllFeatureFlagsOptions
 public class AllFeatureFlagsOptions
 {
     /// <summary>
-    /// Whether to only evaluate the flag locally. Defaults to <c>false</c>.
+    /// Whether to only evaluate flags locally. Defaults to <c>false</c>.
     /// </summary>
     /// <remarks>
-    /// Local evaluation requires that <see cref="PostHogOptions.SecretKey"/> is set.
+    /// Local evaluation requires that <see cref="PostHogOptions.SecretKey"/> is set. When this is
+    /// <c>true</c>, no <c>/flags</c> request is made and flags that cannot be resolved locally are
+    /// absent from the result.
     /// </remarks>
     public bool OnlyEvaluateLocally { get; init; }
 
@@ -48,6 +50,12 @@ public class AllFeatureFlagsOptions
     /// <summary>
     /// The set of flag keys to evaluate in this request. If not specified, all flags are evaluated.
     /// </summary>
+    /// <remarks>
+    /// This scopes local evaluation, the <c>/flags</c> request, and the returned result. A requested
+    /// key missing from local definitions triggers remote fallback unless <see cref="OnlyEvaluateLocally"/>
+    /// is <c>true</c>. When <c>EvaluateFlagsAsync</c> falls back with a non-empty scope, it bypasses
+    /// the general feature flag cache, so a key absent remotely costs one request per call.
+    /// </remarks>
     public IReadOnlyList<string> FlagKeysToEvaluate { get; init; } = [];
 
     /// <summary>

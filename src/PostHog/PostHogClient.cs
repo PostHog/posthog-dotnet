@@ -1065,6 +1065,9 @@ public sealed class PostHogClient : IPostHogClient
         }
 
         var records = new Dictionary<string, EvaluatedFlagRecord>(StringComparer.Ordinal);
+        var requestedFlagKeys = options?.FlagKeysToEvaluate is { Count: > 0 } flagKeys
+            ? new HashSet<string>(flagKeys, StringComparer.Ordinal)
+            : null;
         var errors = new List<string>();
         string? requestId = null;
         long? evaluatedAt = null;
@@ -1084,7 +1087,8 @@ public sealed class PostHogClient : IPostHogClient
                         resolvedDistinctId,
                         options?.Groups,
                         options?.PersonProperties,
-                        warnOnUnknownGroups: false);
+                        warnOnUnknownGroups: false,
+                        flagKeysToEvaluate: requestedFlagKeys);
 
                     foreach (var (key, flag) in locallyEvaluated)
                     {
@@ -1126,7 +1130,12 @@ public sealed class PostHogClient : IPostHogClient
         {
             try
             {
-                var flagsResult = await FetchFlagsAsync(resolvedDistinctId, options, cancellationToken);
+                // Scoped requests bypass the general cache because its public key contract does not
+                // include FlagKeysToEvaluate. This guarantees the caller's original scope is probed
+                // instead of reusing a differently scoped or inconclusive cached response.
+                var flagsResult = requestedFlagKeys is null
+                    ? await FetchFlagsAsync(resolvedDistinctId, options, cancellationToken)
+                    : await FetchFlagsDirectAsync(resolvedDistinctId, options, cancellationToken);
                 requestId = flagsResult.RequestId;
                 evaluatedAt = flagsResult.EvaluatedAt;
 
@@ -1142,6 +1151,11 @@ public sealed class PostHogClient : IPostHogClient
 
                 foreach (var (key, flag) in flagsResult.Flags)
                 {
+                    if (requestedFlagKeys is not null && !requestedFlagKeys.Contains(key))
+                    {
+                        continue;
+                    }
+
                     // Local-wins merge: keep the locally-evaluated record (which carries
                     // locally_evaluated=true and $feature_flag_definitions_loaded_at) and only fill
                     // in keys the local pass couldn't resolve. Differs from GetAllFeatureFlagsAsync,
@@ -1264,6 +1278,27 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken) =>
         await FetchFlagsAsync(_featureFlagsCache, distinctId, options, cancellationToken);
+
+    async Task<FlagsResult> FetchFlagsDirectAsync(
+        string distinctId,
+        AllFeatureFlagsOptions? options,
+        CancellationToken cancellationToken)
+    {
+        var result = await _apiClient.GetFeatureFlagsAsync(
+            distinctId,
+            options?.PersonProperties,
+            options?.Groups,
+            options?.FlagKeysToEvaluate,
+            options?.DisableGeoIp ?? false,
+            cancellationToken);
+        var flagsResult = result.ToFlagsResult();
+        if (flagsResult.QuotaLimited.Contains("feature_flags"))
+        {
+            _logger.LogWarningQuotaExceeded();
+            return new FlagsResult { QuotaLimited = flagsResult.QuotaLimited };
+        }
+        return flagsResult;
+    }
 
     async Task<FlagsResult> FetchFlagsAsync(
         IFeatureFlagCache cache,
