@@ -78,17 +78,28 @@ public class TheEvaluateFlagsAsyncMethod
             """{"flags": [{"id": 1, "key": "local-flag", "active": true}]}""");
         var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
             """{"featureFlags": {"remote-flag": true}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var cache = Substitute.For<IFeatureFlagCache>();
         var client = container.Activate<PostHogClient>(cache);
 
         var snapshot = await client.EvaluateFlagsAsync(
             "user-1",
-            new AllFeatureFlagsOptions { FlagKeysToEvaluate = [] },
+            new AllFeatureFlagsOptions
+            {
+                FlagKeysToEvaluate = [],
+                Groups = new GroupCollection { { "company", "acme" } }
+            },
             CancellationToken.None);
 
         Assert.Empty(snapshot.Keys);
         Assert.Null(snapshot.RequestId);
         Assert.Null(snapshot.EvaluatedAt);
+        Assert.False(snapshot.IsEnabled("missing-flag"));
+        await client.FlushAsync();
+
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var properties = doc.RootElement.GetProperty("batch").EnumerateArray().Single().GetProperty("properties");
+        Assert.Equal("acme", properties.GetProperty("$groups").GetProperty("company").GetString());
         Assert.Empty(cache.ReceivedCalls());
         Assert.Empty(localHandler.ReceivedRequests);
         Assert.Empty(flagsHandler.ReceivedRequests);

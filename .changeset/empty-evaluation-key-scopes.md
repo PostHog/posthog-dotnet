@@ -1,5 +1,5 @@
 ---
-"PostHog": patch
+"PostHog": minor
 "PostHog.AspNetCore": patch
 ---
 

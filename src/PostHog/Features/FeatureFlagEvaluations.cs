@@ -190,7 +190,10 @@ public sealed class FeatureFlagEvaluations
     /// <c>EvaluateFlagsAsync</c> is called without a usable distinct id, or when remote evaluation
     /// is quota-limited.
     /// </summary>
-    internal static FeatureFlagEvaluations Empty(IFeatureFlagEvaluationsHost host, string distinctId)
+    internal static FeatureFlagEvaluations Empty(
+        IFeatureFlagEvaluationsHost host,
+        string distinctId,
+        GroupCollection? groups = null)
         => new(
             host,
             distinctId,
@@ -198,7 +201,7 @@ public sealed class FeatureFlagEvaluations
             requestId: null,
             evaluatedAt: null,
             flagDefinitionsLoadedAt: null,
-            groups: null,
+            groups,
             errors: null);
 
     EvaluatedFlagRecord? RecordAccess(string key)
