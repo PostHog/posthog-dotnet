@@ -39,6 +39,13 @@ internal static class HttpClientExtensions
 
         await response.EnsureSuccessfulApiCall(cancellationToken);
 
+        return await DeserializeResponseAsync<TBody>(response, cancellationToken);
+    }
+
+    static async Task<TBody?> DeserializeResponseAsync<TBody>(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
         var result = await response.Content.ReadAsStreamAsync(cancellationToken);
         return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
             result,
@@ -154,10 +161,7 @@ internal static class HttpClientExtensions
 
                 await response.EnsureSuccessfulApiCall(cancellationToken);
 
-                var result = await response.Content.ReadAsStreamAsync(cancellationToken);
-                return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
-                    result,
-                    cancellationToken: cancellationToken);
+                return await DeserializeResponseAsync<TBody>(response, cancellationToken);
             }
         }
     }
@@ -241,10 +245,7 @@ internal static class HttpClientExtensions
             {
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadAsStreamAsync(cancellationToken);
-                    return await JsonSerializerHelper.DeserializeFromCamelCaseJsonAsync<TBody>(
-                        result,
-                        cancellationToken: cancellationToken);
+                    return await DeserializeResponseAsync<TBody>(response, cancellationToken);
                 }
 
                 if (!ShouldRetry(response.StatusCode) || attempt > maxRetries)
