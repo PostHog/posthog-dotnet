@@ -24,6 +24,10 @@ public sealed class PostHogClient : IPostHogClient
     readonly MemoryCache _featureFlagCalledEventCache;
     static readonly ApiResult NoOpApiResult = new(0);
     static readonly IReadOnlyDictionary<string, FeatureFlag> EmptyFeatureFlags = new Dictionary<string, FeatureFlag>(0);
+    static readonly Func<FeatureFlag, object> FeatureFlagResponseSelector = flag => flag.ToResponseObject();
+    static readonly Func<FeatureFlag, bool> FeatureFlagEnabledSelector = flag => (bool)flag;
+    static readonly Func<EvaluatedFlagRecord, object> EvaluatedFlagResponseSelector = record => record.Flag.ToResponseObject();
+    static readonly Func<EvaluatedFlagRecord, bool> EvaluatedFlagEnabledSelector = record => record.Enabled;
 
     // Strict allowlist for minimal $feature_flag_called events, shared across PostHog SDKs.
     // Everything else — including super properties, context properties, the $feature/<key>
@@ -581,28 +585,34 @@ public sealed class PostHogClient : IPostHogClient
     static CapturedEvent AddFeatureFlagsToCapturedEvent(
         CapturedEvent capturedEvent,
         IReadOnlyDictionary<string, FeatureFlag> flags)
-    {
-        capturedEvent.Properties.Merge(flags.ToDictionary(
-            f => $"$feature/{f.Key}",
-            f => f.Value.ToResponseObject()));
-        capturedEvent.Properties["$active_feature_flags"] = flags
-            .Where(f => (bool)f.Value)
-            .Select(kvp => kvp.Key)
-            .ToArray();
-        return capturedEvent;
-    }
+        => AddFeatureFlagsToCapturedEvent(
+            capturedEvent,
+            flags,
+            FeatureFlagResponseSelector,
+            FeatureFlagEnabledSelector);
 
     static CapturedEvent AddFeatureFlagsToCapturedEvent(
         CapturedEvent capturedEvent,
         FeatureFlagEvaluations flags)
+        => AddFeatureFlagsToCapturedEvent(
+            capturedEvent,
+            flags.Records,
+            EvaluatedFlagResponseSelector,
+            EvaluatedFlagEnabledSelector);
+
+    static CapturedEvent AddFeatureFlagsToCapturedEvent<TFlag>(
+        CapturedEvent capturedEvent,
+        IReadOnlyDictionary<string, TFlag> flags,
+        Func<TFlag, object> responseSelector,
+        Func<TFlag, bool> enabledSelector)
     {
         // Single-pass: per-flag $feature/<key> property + $active_feature_flags collection in one
-        // enumeration of the records dictionary. Runs per captured event, so worth keeping tight.
-        var active = new List<string>(flags.Records.Count);
-        foreach (var (key, record) in flags.Records)
+        // enumeration. The selectors are cached statically so this hot path does not allocate delegates.
+        var active = new List<string>(flags.Count);
+        foreach (var (key, flag) in flags)
         {
-            capturedEvent.Properties[$"$feature/{key}"] = record.Flag.ToResponseObject();
-            if (record.Enabled)
+            capturedEvent.Properties[$"$feature/{key}"] = responseSelector(flag);
+            if (enabledSelector(flag))
             {
                 active.Add(key);
             }

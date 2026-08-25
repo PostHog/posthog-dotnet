@@ -717,6 +717,44 @@ public class TheSnapshotFilterMethods
 public class TheCaptureWithFlagsSnapshotMethod
 {
     [Fact]
+    public async Task LegacyAndSnapshotInputsProduceIdenticalFeatureFlagProperties()
+    {
+        const string response =
+            """{"featureFlags": {"flag-a": true, "flag-b": false, "flag-c": "variant-x"}}""";
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddRepeatedFlagsResponse(2, response);
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        client.Capture("user-1", "snapshot", properties: null, groups: null, flags: snapshot);
+#pragma warning disable CS0618
+        client.Capture("user-1", "legacy", properties: null, groups: null, sendFeatureFlags: true);
+#pragma warning restore CS0618
+        await client.FlushAsync();
+
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var events = doc.RootElement.GetProperty("batch").EnumerateArray().ToArray();
+        var snapshotProperties = events.Single(e => e.GetProperty("event").GetString() == "snapshot")
+            .GetProperty("properties");
+        var legacyProperties = events.Single(e => e.GetProperty("event").GetString() == "legacy")
+            .GetProperty("properties");
+
+        foreach (var propertyName in new[]
+                 {
+                     "$feature/flag-a",
+                     "$feature/flag-b",
+                     "$feature/flag-c",
+                     "$active_feature_flags"
+                 })
+        {
+            Assert.Equal(
+                legacyProperties.GetProperty(propertyName).GetRawText(),
+                snapshotProperties.GetProperty(propertyName).GetRawText());
+        }
+    }
+
+    [Fact]
     public async Task AttachesFeatureFlagPropertiesAndActiveFeatureFlagsFromSnapshot()
     {
         var container = new TestContainer();
