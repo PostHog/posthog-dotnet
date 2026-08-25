@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.15.0
+
+### Minor Changes
+
+- 071c6bb: Return an empty feature flag snapshot without evaluation work when `FlagKeysToEvaluate` is explicitly empty.
+
 ## 2.14.0
 
 ### Minor Changes

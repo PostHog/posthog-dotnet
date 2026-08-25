@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.9.1
+
+### Patch Changes
+
+- 071c6bb: Return an empty feature flag snapshot without evaluation work when `FlagKeysToEvaluate` is explicitly empty.
+
 ## 2.9.0
 
 ### Minor Changes
