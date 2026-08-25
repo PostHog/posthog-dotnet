@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 using PostHog;
 using PostHog.Features;
 using UnitTests.Fakes;
@@ -18,8 +19,10 @@ public class TheEvaluateFlagsAsyncMethod
             ]}
             """);
 
-    [Fact]
-    public async Task ReturnsSnapshotWithRichMetadataFromOneFlagsRequest()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NullOptionsAndOmittedFlagKeysReturnSnapshotFromOneFlagsRequest(bool passOptions)
     {
         var container = new TestContainer();
         var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
@@ -45,7 +48,8 @@ public class TheEvaluateFlagsAsyncMethod
             """);
         var client = container.Activate<PostHogClient>();
 
-        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+        var options = passOptions ? new AllFeatureFlagsOptions() : null;
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
 
         Assert.Equal(2, snapshot.Keys.Count);
         Assert.Equal("the-request-id", snapshot.RequestId);
@@ -63,6 +67,30 @@ public class TheEvaluateFlagsAsyncMethod
         var snapshot = await client.EvaluateFlagsAsync(string.Empty, options: null, CancellationToken.None);
 
         Assert.Empty(snapshot.Keys);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task ExplicitEmptyFlagKeysReturnEmptySnapshotWithoutEvaluationWork()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var localHandler = container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """{"flags": [{"id": 1, "key": "local-flag", "active": true}]}""");
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"remote-flag": true}}""");
+        var cache = Substitute.For<IFeatureFlagCache>();
+        var client = container.Activate<PostHogClient>(cache);
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-1",
+            new AllFeatureFlagsOptions { FlagKeysToEvaluate = [] },
+            CancellationToken.None);
+
+        Assert.Empty(snapshot.Keys);
+        Assert.Null(snapshot.RequestId);
+        Assert.Null(snapshot.EvaluatedAt);
+        Assert.Empty(cache.ReceivedCalls());
+        Assert.Empty(localHandler.ReceivedRequests);
         Assert.Empty(flagsHandler.ReceivedRequests);
     }
 

@@ -48,15 +48,17 @@ public class AllFeatureFlagsOptions
     public GroupCollection? Groups { get; init; }
 
     /// <summary>
-    /// The set of flag keys to evaluate in this request. If not specified, all flags are evaluated.
+    /// The set of flag keys to evaluate in this request. If omitted or <c>null</c>, all flags are evaluated.
+    /// An empty list evaluates no flags.
     /// </summary>
     /// <remarks>
-    /// This scopes local evaluation, the <c>/flags</c> request, and the returned result. A requested
+    /// This scopes local evaluation, the <c>/flags</c> request, and the returned result. An empty list
+    /// returns an empty snapshot without consulting caches, local definitions, or <c>/flags</c>. A requested
     /// key missing from local definitions triggers remote fallback unless <see cref="OnlyEvaluateLocally"/>
     /// is <c>true</c>. When <c>EvaluateFlagsAsync</c> falls back with a non-empty scope, it bypasses
     /// the general feature flag cache, so a key absent remotely costs one request per call.
     /// </remarks>
-    public IReadOnlyList<string> FlagKeysToEvaluate { get; init; } = [];
+    public IReadOnlyList<string>? FlagKeysToEvaluate { get; init; }
 
     /// <summary>
     /// Whether to disable GeoIP enrichment for the feature flag request. Defaults to <c>false</c>.

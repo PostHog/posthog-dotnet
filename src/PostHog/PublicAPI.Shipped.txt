@@ -1,7 +1,7 @@
 #nullable enable
 PostHog.AllFeatureFlagsOptions
 PostHog.AllFeatureFlagsOptions.AllFeatureFlagsOptions() -> void
-PostHog.AllFeatureFlagsOptions.FlagKeysToEvaluate.get -> System.Collections.Generic.IReadOnlyList<string!>!
+PostHog.AllFeatureFlagsOptions.FlagKeysToEvaluate.get -> System.Collections.Generic.IReadOnlyList<string!>?
 PostHog.AllFeatureFlagsOptions.FlagKeysToEvaluate.init -> void
 PostHog.AllFeatureFlagsOptions.Groups.get -> PostHog.GroupCollection?
 PostHog.AllFeatureFlagsOptions.Groups.init -> void
