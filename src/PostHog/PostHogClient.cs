@@ -1061,6 +1061,14 @@ public sealed class PostHogClient : IPostHogClient
             return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId ?? string.Empty);
         }
 
+        if (options?.FlagKeysToEvaluate is { Count: 0 })
+        {
+            return FeatureFlagEvaluations.Empty(
+                _evaluationsHost,
+                resolvedDistinctId ?? string.Empty,
+                options.Groups);
+        }
+
         if (RequiresMissingPersonalApiKey(options, nameof(EvaluateFlagsAsync)))
         {
             return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId ?? string.Empty);
