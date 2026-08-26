@@ -238,11 +238,19 @@ public class TheEvaluateFeatureFlagMethod
         Assert.Equal(expected, result);
     }
 
+    public static IEnumerable<object?[]> PresentPropertyValues =>
+    [
+        ["null", null],
+        ["false", false],
+        ["zero", 0],
+        ["empty string", ""],
+        ["empty list", new List<object?>()],
+        ["empty object", new Dictionary<string, object?>()]
+    ];
+
     [Theory]
-    [InlineData("test@posthog.com", true)]
-    [InlineData("", true)]
-    [InlineData(null, false)]
-    public void HandlesIsSet(string? email, bool expected)
+    [MemberData(nameof(PresentPropertyValues))]
+    public void IsSetReturnsTrueWhenPropertyIsPresent(string _, object? propertyValue)
     {
         var flags = CreateFlags(
             key: "email",
@@ -257,7 +265,7 @@ public class TheEvaluateFeatureFlagMethod
         );
         var properties = new Dictionary<string, object?>
         {
-            ["email"] = email
+            ["email"] = propertyValue
         };
         var localEvaluator = new LocalEvaluator(flags);
 
@@ -266,14 +274,12 @@ public class TheEvaluateFeatureFlagMethod
             distinctId: "1234",
             personProperties: properties);
 
-        Assert.Equal(expected, result);
+        Assert.True(result.Value);
     }
 
     [Theory]
-    [InlineData("test@posthog.com")]
-    [InlineData("")]
-    [InlineData(null)]
-    public void ThrowsInconclusiveMatchExceptionWhenOperatorIsIsNotSet(string? email)
+    [MemberData(nameof(PresentPropertyValues))]
+    public void IsNotSetReturnsFalseWhenPropertyIsPresent(string _, object? propertyValue)
     {
         var flags = CreateFlags(
             key: "email",
@@ -288,18 +294,22 @@ public class TheEvaluateFeatureFlagMethod
         );
         var properties = new Dictionary<string, object?>
         {
-            ["email"] = email
+            ["email"] = propertyValue
         };
         var localEvaluator = new LocalEvaluator(flags);
 
-        Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
+        var result = localEvaluator.EvaluateFeatureFlag(
             key: "email",
             distinctId: "1234",
-            personProperties: properties));
+            personProperties: properties);
+
+        Assert.False(result.Value);
     }
 
-    [Fact]
-    public void ThrowsInconclusiveMatchExceptionWhenKeyDoesNotMatch()
+    [Theory]
+    [InlineData(ComparisonOperator.IsSet)]
+    [InlineData(ComparisonOperator.IsNotSet)]
+    public void ThrowsInconclusiveMatchExceptionWhenPropertyKeyIsMissing(ComparisonOperator comparison)
     {
         var flags = CreateFlags(
             key: "email",
@@ -308,20 +318,12 @@ public class TheEvaluateFeatureFlagMethod
                 {
                     Type = FilterType.Person,
                     Key = "email",
-                    Value = new PropertyFilterValue("is_set"),
-                    Operator = ComparisonOperator.IsSet
+                    Operator = comparison
                 }
             ]
         );
         var localEvaluator = new LocalEvaluator(flags);
 
-        Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
-            key: "email",
-            distinctId: "1234",
-            personProperties: new()
-            {
-                ["not-email"] = "anything"
-            }));
         Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
             key: "email",
             distinctId: "1234",
