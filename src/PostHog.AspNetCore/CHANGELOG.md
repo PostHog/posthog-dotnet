@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.9.2
+
+### Patch Changes
+
+- 22c61e1: Align local `is_set` and `is_not_set` evaluation with partial property context.
+
 ## 2.9.1
 
 ### Patch Changes
