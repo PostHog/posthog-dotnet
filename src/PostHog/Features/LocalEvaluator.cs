@@ -610,7 +610,6 @@ internal sealed class LocalEvaluator
     /// </summary>
     /// <remarks>
     /// Only looks for matches where the key exists in properties.
-    /// Doesn't support the operator <c>is_not_set</c>.
     /// </remarks>
     /// <param name="propertyFilter">The <see cref="PropertyFilter"/> to evaluate.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
@@ -623,11 +622,6 @@ internal sealed class LocalEvaluator
         {
             // Flag dependencies can't be evaluated from this context, throw inconclusive
             throw new InconclusiveMatchException($"Flag dependency '{propertyFilter.Key}' cannot be evaluated without evaluation context");
-        }
-
-        if (propertyFilter.Operator is ComparisonOperator.IsNotSet)
-        {
-            throw new InconclusiveMatchException("Can't match properties with operator is_not_set");
         }
 
         var key = NotNull(propertyFilter.Key);
@@ -654,9 +648,9 @@ internal sealed class LocalEvaluator
             throw new InconclusiveMatchException("Can't match properties without a given property value");
         }
 
-        if (propertyFilter.Operator is ComparisonOperator.IsSet)
+        if (propertyFilter.Operator is ComparisonOperator.IsSet or ComparisonOperator.IsNotSet)
         {
-            return overrideValue is not null;
+            return propertyFilter.Operator is ComparisonOperator.IsSet;
         }
 
         if (propertyFilter.Value is not { } value)
