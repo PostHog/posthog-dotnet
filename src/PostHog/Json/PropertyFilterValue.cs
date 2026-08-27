@@ -161,6 +161,21 @@ public class PropertyFilterValue
         && StringValue is not null
         && comparandString.EndsWith(StringValue, stringComparison);
 
+    internal bool IsContainedByAsciiIgnoreCase(object? other) =>
+        ToInvariantString(other) is { } comparandString
+        && StringValue is not null
+        && ToAsciiLowercase(comparandString).Contains(ToAsciiLowercase(StringValue), StringComparison.Ordinal);
+
+    internal bool IsPrefixOfAsciiIgnoreCase(object? other) =>
+        ToInvariantString(other) is { } comparandString
+        && StringValue is not null
+        && ToAsciiLowercase(comparandString).StartsWith(ToAsciiLowercase(StringValue), StringComparison.Ordinal);
+
+    internal bool IsSuffixOfAsciiIgnoreCase(object? other) =>
+        ToInvariantString(other) is { } comparandString
+        && StringValue is not null
+        && ToAsciiLowercase(comparandString).EndsWith(ToAsciiLowercase(StringValue), StringComparison.Ordinal);
+
     /// <summary>
     /// Determines whether the specified <paramref name="overrideValue"/> is an "exact" match for this instance.
     /// If this instance is an array, then it's checking to see if the value is in the array.
@@ -172,11 +187,11 @@ public class PropertyFilterValue
         return this switch
         {
             { ListOfStrings: { } listOfStrings } => IsExactListMatch(listOfStrings, _numericListValues, overrideValue),
-            { StringValue: { } stringValue } => stringValue.Equals(ToInvariantString(overrideValue), StringComparison.OrdinalIgnoreCase),
+            { StringValue: { } stringValue } => UnicodeLowercaseEquals(stringValue, ToInvariantString(overrideValue)),
             { BooleanValue: { } booleanValue } => overrideValue switch
             {
                 bool boolOverride => booleanValue == boolOverride,
-                string stringOverride => booleanValue.ToString().Equals(stringOverride, StringComparison.OrdinalIgnoreCase),
+                string stringOverride => UnicodeLowercaseEquals(booleanValue.ToString(), stringOverride),
                 _ => false
             },
             _ => false
@@ -194,7 +209,7 @@ public class PropertyFilterValue
         }
 
         var stringValue = ToInvariantString(overrideValue);
-        if (stringValue is not null && values.Contains(stringValue, StringComparer.OrdinalIgnoreCase))
+        if (stringValue is not null && values.Any(value => UnicodeLowercaseEquals(value, stringValue)))
         {
             return true;
         }
@@ -222,9 +237,56 @@ public class PropertyFilterValue
     }
 
     // Override values must stringify with the invariant culture ("3.14", never "3,14") to match how the
-    // PostHog flags service stringifies values. Null stays null so null overrides never match string filters.
-    static string? ToInvariantString(object? value) =>
-        value is null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+    // PostHog flags service stringifies values. Preserve the decimal point of integral floating-point values,
+    // because the service's JSON representation distinguishes 323.0 from the integer 323.
+    static string? ToInvariantString(object? value) => value switch
+    {
+        null => null,
+        double doubleValue => StringifyFloatingPoint(doubleValue),
+        float floatValue => StringifyFloatingPoint(floatValue),
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture)
+    };
+
+    static string StringifyFloatingPoint(double value)
+    {
+        var stringValue = value.ToString("R", CultureInfo.InvariantCulture);
+        return !double.IsNaN(value)
+               && !double.IsInfinity(value)
+               && value == Math.Truncate(value)
+               && !stringValue.Any(character => character is '.' or 'E' or 'e')
+            ? $"{stringValue}.0"
+            : stringValue;
+    }
+
+    static string StringifyFloatingPoint(float value)
+    {
+        var stringValue = value.ToString("R", CultureInfo.InvariantCulture);
+        return !float.IsNaN(value)
+               && !float.IsInfinity(value)
+               && value == Math.Truncate(value)
+               && !stringValue.Any(character => character is '.' or 'E' or 'e')
+            ? $"{stringValue}.0"
+            : stringValue;
+    }
+
+#pragma warning disable CA1308 // The flags service lowercases both operands; uppercasing has different Unicode semantics.
+    static bool UnicodeLowercaseEquals(string left, string? right) =>
+        right is not null
+        && string.Equals(left.ToLowerInvariant(), right.ToLowerInvariant(), StringComparison.Ordinal);
+#pragma warning restore CA1308
+
+    static string ToAsciiLowercase(string value)
+    {
+        var characters = value.ToCharArray();
+        for (var index = 0; index < characters.Length; index++)
+        {
+            if (characters[index] is >= 'A' and <= 'Z')
+            {
+                characters[index] = (char)(characters[index] + ('a' - 'A'));
+            }
+        }
+        return new string(characters);
+    }
 
     static bool TryParseDoubleWithoutUnderflow(string value, out double number) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)
