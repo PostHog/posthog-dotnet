@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -272,7 +273,25 @@ public class PropertyFilterValue
 #pragma warning disable CA1308 // The flags service lowercases both operands; uppercasing has different Unicode semantics.
     static bool UnicodeLowercaseEquals(string left, string? right) =>
         right is not null
-        && string.Equals(left.ToLowerInvariant(), right.ToLowerInvariant(), StringComparison.Ordinal);
+        && string.Equals(UnicodeLowercase(left), UnicodeLowercase(right), StringComparison.Ordinal);
+
+    // .NET's invariant lowercase mapping omits the full Unicode expansion for LATIN CAPITAL LETTER I WITH DOT ABOVE.
+    static string UnicodeLowercase(string value)
+    {
+        var expanded = new StringBuilder(value.Length + 1);
+        foreach (var character in value)
+        {
+            if (character == '\u0130')
+            {
+                expanded.Append("i\u0307");
+            }
+            else
+            {
+                expanded.Append(character);
+            }
+        }
+        return expanded.ToString().ToLowerInvariant();
+    }
 #pragma warning restore CA1308
 
     static string ToAsciiLowercase(string value)

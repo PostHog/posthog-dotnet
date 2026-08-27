@@ -11,6 +11,7 @@ public class TheIsExactMatchMethod
     [InlineData("SCOOBY", "\"scooby\"", true)]
     [InlineData("ScOoBy", "\"sCoObY\"", true)]
     [InlineData("ä", "\"Ä\"", true)]
+    [InlineData("i\u0307", "\"\\u0130\"", true)]
     [InlineData("ς", "\"Σ\"", false)]
     [InlineData("ss", "\"ß\"", false)]
     [InlineData("", "\"shaggy\"", false)]
