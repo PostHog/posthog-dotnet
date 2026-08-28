@@ -1,5 +1,8 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using PostHog.Json;
+// System.Text.Json 9+ ships its own JsonStringEnumMemberNameAttribute. Bind to PostHog's,
+// which JsonStringEnumMemberNameJsonConverter reads and which is shipped public API.
+using JsonStringEnumMemberName = PostHog.Json.JsonStringEnumMemberNameAttribute;
 
 namespace PostHog.Api;
 

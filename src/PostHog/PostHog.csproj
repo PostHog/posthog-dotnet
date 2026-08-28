@@ -25,6 +25,7 @@
 
     <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
         <PackageReference Include="Microsoft.Bcl.HashCode" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" VersionOverride="10.0.11" />
     </ItemGroup>
     
     <ItemGroup>
