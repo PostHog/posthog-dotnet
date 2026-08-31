@@ -10,6 +10,23 @@ public class TheIsExactMatchMethod
     [InlineData("scooby", "\"scooby\"", true)]
     [InlineData("SCOOBY", "\"scooby\"", true)]
     [InlineData("ScOoBy", "\"sCoObY\"", true)]
+    [InlineData("ä", "\"Ä\"", true)]
+    [InlineData("i\u0307", "\"\\u0130\"", true)]
+    [InlineData("ς", "\"Σ\"", false)]
+    [InlineData("ος", "\"ΟΣ\"", true)]
+    [InlineData("οσ", "\"ΟΣ\"", false)]
+    [InlineData("οδος", "\"ΟΔΟΣ\"", true)]
+    [InlineData("οδοσ", "\"ΟΔΟΣ\"", false)]
+    [InlineData("παραγγελιες", "\"ΠΑΡΑΓΓΕΛΙΕΣ\"", true)]
+    [InlineData("παραγγελιεσ", "\"ΠΑΡΑΓΓΕΛΙΕΣ\"", false)]
+    [InlineData("παραγγελιες", "[\"ΠΑΡΑΓΓΕΛΙΕΣ\"]", true)]
+    [InlineData("παραγγελιεσ", "[\"ΠΑΡΑΓΓΕΛΙΕΣ\"]", false)]
+    [InlineData("a\u0301ς", "\"A\\u0301Σ\"", true)]
+    [InlineData("aς\u0301", "\"AΣ\\u0301\"", true)]
+    [InlineData("aσ\u0301b", "\"AΣ\\u0301B\"", true)]
+    [InlineData("a.ς", "\"A.Σ\"", true)]
+    [InlineData("a σ", "\"A Σ\"", true)]
+    [InlineData("ss", "\"ß\"", false)]
     [InlineData("", "\"shaggy\"", false)]
     [InlineData(null, "\"shaggy\"", false)]
     [InlineData("scooby", "\"shaggy\"", false)]
@@ -52,6 +69,105 @@ public class TheIsExactMatchMethod
     }
 
     [Fact]
+    public void MatchesBackendBooleanArrayPrecedence()
+    {
+        var cases = new (string FilterJson, object? OverrideValue, bool Expected)[]
+        {
+            ("false", "banana", true),
+            ("\"false\"", 0, true),
+            ("[\"false\"]", null, true),
+            ("[\"true\",\"false\"]", "true", false),
+            ("[\"true\",\"false\"]", "pro", true),
+            ("[]", true, true),
+            ("[]", "true", true),
+            ("[]", Array.Empty<object>(), true),
+            ("[]", new object[] { true }, true),
+            ("[]", false, false),
+            ("[]", "banana", false),
+            ("[\"FREE\",\"PRO\"]", "pro", true),
+            ("\"falſe\"", 0, false)
+        };
+
+        foreach (var (filterJson, overrideValue, expected) in cases)
+        {
+            var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(filterJson).RootElement);
+
+            Assert.NotNull(filterPropertyValue);
+            Assert.Equal(expected, filterPropertyValue.IsExactMatch(overrideValue));
+        }
+    }
+
+    [Fact]
+    public void StringifiesJsonValuesLikeTheFlagsService()
+    {
+        var cases = new (string FilterJson, object OverrideValue, bool Expected)[]
+        {
+            ("\"[1,2]\"", new object[] { 1, 2 }, true),
+            ("\"{\\\"a\\\":2,\\\"b\\\":1}\"", new Dictionary<string, object?> { ["b"] = 1, ["a"] = 2 }, true),
+            ("\"{\\\"a\\\":{\\\"c\\\":3,\\\"d\\\":4},\\\"z\\\":0}\"", new Dictionary<string, object?> { ["z"] = 0, ["a"] = new Dictionary<string, object?> { ["d"] = 4, ["c"] = 3 } }, true),
+            ("\"{\\\"\\\":1,\\\"𐀀\\\":2}\"", new Dictionary<string, object?> { ["𐀀"] = 2, [""] = 1 }, true),
+            ("\"{\\\"a\\\":2,\\\"b\\\":1}\"", JsonDocument.Parse("{\"b\":1,\"a\":2}").RootElement, true),
+            ("\"1.0\"", JsonDocument.Parse("1.0").RootElement, true),
+            ("\"1e-7\"", 1e-7, true),
+            ("\"1000000000000000.0\"", 1e15, true),
+            ("\"1e+16\"", 1e16, true),
+            ("\"0.00001\"", 1e-5, true),
+            ("\"0.000099\"", 9.9e-5, true),
+            ("\"-0.0\"", -0.0, true)
+        };
+
+        foreach (var (filterJson, overrideValue, expected) in cases)
+        {
+            var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(filterJson).RootElement);
+
+            Assert.NotNull(filterPropertyValue);
+            Assert.Equal(expected, filterPropertyValue.IsExactMatch(overrideValue));
+        }
+    }
+
+    [Fact]
+    public void QuotesNestedJsonStringElements()
+    {
+        using var stringDocument = JsonDocument.Parse("\"x\"");
+        var overrideValue = new Dictionary<string, object?>
+        {
+            ["document"] = stringDocument,
+            ["element"] = stringDocument.RootElement
+        };
+        var filterPropertyValue = PropertyFilterValue.Create(
+            JsonDocument.Parse("\"{\\\"document\\\":\\\"x\\\",\\\"element\\\":\\\"x\\\"}\"").RootElement);
+
+        Assert.NotNull(filterPropertyValue);
+        Assert.True(filterPropertyValue.IsExactMatch(overrideValue));
+    }
+
+    [Fact]
+    public void UnrepresentableRecursiveJsonValuesDoNotCrashMatching()
+    {
+        var cyclicValue = new Dictionary<string, object?>();
+        cyclicValue["self"] = cyclicValue;
+        object deeplyNestedValue = "leaf";
+        for (var depth = 0; depth < 65; depth++)
+        {
+            deeplyNestedValue = new object[] { deeplyNestedValue };
+        }
+        var recursiveArray = new object[1];
+        recursiveArray[0] = recursiveArray;
+        var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse("\"never\"").RootElement);
+        var emptyObjectFilter = PropertyFilterValue.Create(JsonDocument.Parse("\"{}\"").RootElement);
+        var falseFilter = PropertyFilterValue.Create(JsonDocument.Parse("false").RootElement);
+        var nonStringKeyValue = new System.Collections.Hashtable { [1] = "value" };
+
+        Assert.NotNull(filterPropertyValue);
+        Assert.NotNull(emptyObjectFilter);
+        Assert.NotNull(falseFilter);
+        Assert.False(filterPropertyValue.IsExactMatch(cyclicValue));
+        Assert.False(filterPropertyValue.IsExactMatch(deeplyNestedValue));
+        Assert.False(emptyObjectFilter.IsExactMatch(nonStringKeyValue));
+        Assert.True(falseFilter.IsExactMatch(recursiveArray));
+    }
+
+    [Fact]
     public void NumericArrayMatchesDecimalRegardlessOfScale()
     {
         var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse("[1.00]").RootElement);
@@ -71,6 +187,10 @@ public class TheIsExactMatchMethod
 
     [Theory]
     [InlineData(3.14, "\"3.14\"", true)]
+    [InlineData(323.0, "\"323.0\"", true)]
+    [InlineData(323.0, "\"323\"", false)]
+    [InlineData(323, "\"323\"", true)]
+    [InlineData(323, "\"323.0\"", false)]
     [InlineData(3.14, "\"3,14\"", false)]
     [InlineData(1.618, "\"3.14\"", false)]
     [InlineData(3.14, """["1", "3.14", "42"]""", true)]

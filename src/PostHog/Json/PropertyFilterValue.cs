@@ -1,5 +1,8 @@
+using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -21,6 +24,7 @@ namespace PostHog.Json;
 public class PropertyFilterValue
 {
     readonly IReadOnlyList<string>? _numericListValues;
+    readonly bool? _booleanListValue;
 
     /// <summary>
     /// If this value is a string, this property will be set.
@@ -50,8 +54,12 @@ public class PropertyFilterValue
         jsonElement.ValueKind switch
         {
             JsonValueKind.String => jsonElement.GetString() is { } stringValue ? new PropertyFilterValue(stringValue) : null,
-            JsonValueKind.Array when TryParseStringArray(jsonElement, out var stringArrayValue, out var numericListValues)
-                => new PropertyFilterValue(stringArrayValue, numericListValues),
+            JsonValueKind.Array when TryParseStringArray(
+                jsonElement,
+                out var stringArrayValue,
+                out var numericListValues,
+                out var booleanListValue)
+                => new PropertyFilterValue(stringArrayValue, numericListValues, booleanListValue),
             JsonValueKind.Number => new PropertyFilterValue(jsonElement.GetInt64()),
             JsonValueKind.True => new PropertyFilterValue(true),
             JsonValueKind.False => new PropertyFilterValue(false),
@@ -66,13 +74,18 @@ public class PropertyFilterValue
     /// <param name="listOfStrings">The list of string values to match against.</param>
     public PropertyFilterValue(IReadOnlyList<string> listOfStrings)
     {
-        ListOfStrings = listOfStrings;
+        ListOfStrings = NotNull(listOfStrings);
+        _booleanListValue = TryGetBooleanListValue(ListOfStrings);
     }
 
-    PropertyFilterValue(IReadOnlyList<string> listOfStrings, IReadOnlyList<string>? numericListValues)
+    PropertyFilterValue(
+        IReadOnlyList<string> listOfStrings,
+        IReadOnlyList<string>? numericListValues,
+        bool? booleanListValue)
     {
         ListOfStrings = listOfStrings;
         _numericListValues = numericListValues;
+        _booleanListValue = booleanListValue;
     }
 
     /// <summary>
@@ -115,11 +128,6 @@ public class PropertyFilterValue
     /// <returns><c>true</c>If the current value is a valid regex and it matches the other value.</returns>
     public bool IsRegexMatch(object? input)
     {
-        if (input is null)
-        {
-            return false;
-        }
-
         if (StringValue is null || !RegexHelpers.TryValidateRegex(StringValue, out var regex, RegexOptions.None))
         {
             return false;
@@ -161,6 +169,21 @@ public class PropertyFilterValue
         && StringValue is not null
         && comparandString.EndsWith(StringValue, stringComparison);
 
+    internal bool IsContainedByAsciiIgnoreCase(object? other) =>
+        ToInvariantString(other) is { } comparandString
+        && StringValue is not null
+        && ToAsciiLowercase(comparandString).Contains(ToAsciiLowercase(StringValue), StringComparison.Ordinal);
+
+    internal bool IsPrefixOfAsciiIgnoreCase(object? other) =>
+        ToInvariantString(other) is { } comparandString
+        && StringValue is not null
+        && ToAsciiLowercase(comparandString).StartsWith(ToAsciiLowercase(StringValue), StringComparison.Ordinal);
+
+    internal bool IsSuffixOfAsciiIgnoreCase(object? other) =>
+        ToInvariantString(other) is { } comparandString
+        && StringValue is not null
+        && ToAsciiLowercase(comparandString).EndsWith(ToAsciiLowercase(StringValue), StringComparison.Ordinal);
+
     /// <summary>
     /// Determines whether the specified <paramref name="overrideValue"/> is an "exact" match for this instance.
     /// If this instance is an array, then it's checking to see if the value is in the array.
@@ -169,18 +192,38 @@ public class PropertyFilterValue
     /// <returns><c>true</c> if the override value is an "exact" match for this value.</returns>
     public bool IsExactMatch(object? overrideValue)
     {
+        if (TryGetBooleanValue(out var booleanValue))
+        {
+            return booleanValue == IsTruthyPropertyValue(overrideValue);
+        }
+
         return this switch
         {
             { ListOfStrings: { } listOfStrings } => IsExactListMatch(listOfStrings, _numericListValues, overrideValue),
-            { StringValue: { } stringValue } => stringValue.Equals(ToInvariantString(overrideValue), StringComparison.OrdinalIgnoreCase),
-            { BooleanValue: { } booleanValue } => overrideValue switch
-            {
-                bool boolOverride => booleanValue == boolOverride,
-                string stringOverride => booleanValue.ToString().Equals(stringOverride, StringComparison.OrdinalIgnoreCase),
-                _ => false
-            },
+            { StringValue: { } stringValue } => UnicodeLowercaseEquals(stringValue, ToInvariantString(overrideValue)),
             _ => false
         };
+    }
+
+    bool TryGetBooleanValue(out bool value)
+    {
+        if (BooleanValue is { } booleanValue)
+        {
+            value = booleanValue;
+            return true;
+        }
+        if (StringValue is { } stringValue && TryParseBoolean(stringValue, out value))
+        {
+            return true;
+        }
+        if (_booleanListValue is { } booleanListValue)
+        {
+            value = booleanListValue;
+            return true;
+        }
+
+        value = false;
+        return false;
     }
 
     static bool IsExactListMatch(
@@ -194,7 +237,7 @@ public class PropertyFilterValue
         }
 
         var stringValue = ToInvariantString(overrideValue);
-        if (stringValue is not null && values.Contains(stringValue, StringComparer.OrdinalIgnoreCase))
+        if (stringValue is not null && values.Any(value => UnicodeLowercaseEquals(value, stringValue)))
         {
             return true;
         }
@@ -221,10 +264,509 @@ public class PropertyFilterValue
         };
     }
 
-    // Override values must stringify with the invariant culture ("3.14", never "3,14") to match how the
-    // PostHog flags service stringifies values. Null stays null so null overrides never match string filters.
+    // Override values use the same compact JSON representation as serde_json::Value::to_string in the flags service.
+    // Strings remain unquoted because the service returns their contents directly.
     static string? ToInvariantString(object? value) =>
-        value is null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+        ToInvariantString(value, new HashSet<object>(ReferenceEqualityComparer.Instance), depth: 0);
+
+    static string? ToInvariantString(object? value, HashSet<object> ancestors, int depth) => value switch
+    {
+        null => "null",
+        string stringValue => stringValue,
+        char character => character.ToString(),
+        bool booleanValue => booleanValue ? "true" : "false",
+        double doubleValue => StringifyFloatingPoint(doubleValue),
+        float floatValue => StringifyFloatingPoint(floatValue),
+        JsonDocument document => StringifyJsonElement(document.RootElement),
+        JsonElement element => StringifyJsonElement(element),
+        IDictionary dictionary => StringifyDictionary(dictionary, ancestors, depth),
+        IEnumerable enumerable => StringifyArray(enumerable, ancestors, depth),
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture)
+    };
+
+    static string StringifyFloatingPoint(double value) =>
+        !double.IsNaN(value) && !double.IsInfinity(value)
+            ? StringifyFiniteFloatingPoint(value.ToString("R", CultureInfo.InvariantCulture))
+            : value.ToString("R", CultureInfo.InvariantCulture);
+
+    static string StringifyFloatingPoint(float value) =>
+        !float.IsNaN(value) && !float.IsInfinity(value)
+            ? StringifyFiniteFloatingPoint(value.ToString("R", CultureInfo.InvariantCulture))
+            : value.ToString("R", CultureInfo.InvariantCulture);
+
+    static string StringifyFiniteFloatingPoint(string roundTripValue)
+    {
+        var isNegative = roundTripValue.Length > 0 && roundTripValue[0] == '-';
+        var unsignedValue = isNegative ? roundTripValue.Substring(1) : roundTripValue;
+        var exponentMarker = unsignedValue.IndexOfAny(['E', 'e']);
+        var significand = exponentMarker >= 0 ? unsignedValue.Substring(0, exponentMarker) : unsignedValue;
+        var explicitExponent = exponentMarker >= 0
+            ? ParseExponent(unsignedValue, exponentMarker + 1)
+            : 0;
+        var decimalPoint = significand.IndexOfAny(['.']);
+        if (decimalPoint < 0)
+        {
+            decimalPoint = significand.Length;
+        }
+
+        var untrimmedDigits = decimalPoint < significand.Length
+            ? significand.Remove(decimalPoint, 1)
+            : significand;
+        var firstNonZero = 0;
+        while (firstNonZero < untrimmedDigits.Length && untrimmedDigits[firstNonZero] == '0')
+        {
+            firstNonZero++;
+        }
+        if (firstNonZero == untrimmedDigits.Length)
+        {
+            return isNegative ? "-0.0" : "0.0";
+        }
+
+        var exponent = explicitExponent + decimalPoint - firstNonZero - 1;
+        var digits = untrimmedDigits.Substring(firstNonZero).TrimEnd('0');
+        var sign = isNegative ? "-" : string.Empty;
+        if (exponent <= -6 || exponent >= 16)
+        {
+            var fraction = digits.Length > 1 ? $".{digits.Substring(1)}" : string.Empty;
+            var exponentSign = exponent >= 0 ? "+" : string.Empty;
+            return $"{sign}{digits[0]}{fraction}e{exponentSign}{exponent}";
+        }
+
+        var output = new StringBuilder(sign);
+        if (exponent < 0)
+        {
+            output.Append("0.");
+            output.Append('0', -exponent - 1);
+            output.Append(digits);
+            return output.ToString();
+        }
+
+        var integerLength = exponent + 1;
+        if (digits.Length <= integerLength)
+        {
+            output.Append(digits);
+            output.Append('0', integerLength - digits.Length);
+            output.Append(".0");
+            return output.ToString();
+        }
+
+        output.Append(digits, 0, integerLength);
+        output.Append('.');
+        output.Append(digits, integerLength, digits.Length - integerLength);
+        return output.ToString();
+    }
+
+    static int ParseExponent(string value, int startIndex)
+    {
+        var isNegative = value[startIndex] == '-';
+        var index = value[startIndex] is '-' or '+' ? startIndex + 1 : startIndex;
+        var exponent = 0;
+        while (index < value.Length)
+        {
+            exponent = exponent * 10 + value[index] - '0';
+            index++;
+        }
+        return isNegative ? -exponent : exponent;
+    }
+
+    static string StringifyJsonElement(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString() ?? string.Empty,
+        JsonValueKind.Number when element.TryGetInt64(out var integer) =>
+            integer.ToString(CultureInfo.InvariantCulture),
+        JsonValueKind.Number when element.TryGetUInt64(out var unsignedInteger) =>
+            unsignedInteger.ToString(CultureInfo.InvariantCulture),
+        JsonValueKind.Number => StringifyFloatingPoint(element.GetDouble()),
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Null => "null",
+        JsonValueKind.Array => StringifyJsonArray(element),
+        JsonValueKind.Object => StringifyJsonObject(element),
+        _ => element.GetRawText()
+    };
+
+    static string StringifyJsonArray(JsonElement element)
+    {
+        var output = new StringBuilder("[");
+        var first = true;
+        foreach (var item in element.EnumerateArray())
+        {
+            if (!first)
+            {
+                output.Append(',');
+            }
+            AppendJsonValue(output, item);
+            first = false;
+        }
+        return output.Append(']').ToString();
+    }
+
+    static string StringifyJsonObject(JsonElement element)
+    {
+        var properties = new SortedDictionary<string, JsonElement>(Utf8StringComparer.Instance);
+        foreach (var property in element.EnumerateObject())
+        {
+            properties[property.Name] = property.Value;
+        }
+
+        var output = new StringBuilder("{");
+        var first = true;
+        foreach (var property in properties)
+        {
+            if (!first)
+            {
+                output.Append(',');
+            }
+            AppendJsonString(output, property.Key);
+            output.Append(':');
+            AppendJsonValue(output, property.Value);
+            first = false;
+        }
+        return output.Append('}').ToString();
+    }
+
+    static string? StringifyDictionary(IDictionary dictionary, HashSet<object> ancestors, int depth)
+    {
+        if (depth >= 64 || !ancestors.Add(dictionary))
+        {
+            return null;
+        }
+
+        try
+        {
+            var properties = new SortedDictionary<string, object?>(Utf8StringComparer.Instance);
+            foreach (DictionaryEntry entry in dictionary)
+            {
+                if (entry.Key is not string key)
+                {
+                    return null;
+                }
+                properties[key] = entry.Value;
+            }
+
+            var output = new StringBuilder("{");
+            var first = true;
+            foreach (var property in properties)
+            {
+                if (!first)
+                {
+                    output.Append(',');
+                }
+                AppendJsonString(output, property.Key);
+                output.Append(':');
+                if (!AppendJsonValue(output, property.Value, ancestors, depth + 1))
+                {
+                    return null;
+                }
+                first = false;
+            }
+            return output.Append('}').ToString();
+        }
+        finally
+        {
+            ancestors.Remove(dictionary);
+        }
+    }
+
+    static string? StringifyArray(IEnumerable values, HashSet<object> ancestors, int depth)
+    {
+        if (depth >= 64 || !ancestors.Add(values))
+        {
+            return null;
+        }
+
+        try
+        {
+            var output = new StringBuilder("[");
+            var first = true;
+            foreach (var value in values)
+            {
+                if (!first)
+                {
+                    output.Append(',');
+                }
+                if (!AppendJsonValue(output, value, ancestors, depth + 1))
+                {
+                    return null;
+                }
+                first = false;
+            }
+            return output.Append(']').ToString();
+        }
+        finally
+        {
+            ancestors.Remove(values);
+        }
+    }
+
+    static void AppendJsonValue(StringBuilder output, object? value)
+    {
+        if (value is string stringValue)
+        {
+            AppendJsonString(output, stringValue);
+            return;
+        }
+        if (value is char character)
+        {
+            AppendJsonString(output, character.ToString());
+            return;
+        }
+        if (value is JsonElement { ValueKind: JsonValueKind.String } stringElement)
+        {
+            AppendJsonString(output, stringElement.GetString() ?? string.Empty);
+            return;
+        }
+
+        output.Append(ToInvariantString(value));
+    }
+
+    static bool AppendJsonValue(
+        StringBuilder output,
+        object? value,
+        HashSet<object> ancestors,
+        int depth)
+    {
+        if (value is string stringValue)
+        {
+            AppendJsonString(output, stringValue);
+            return true;
+        }
+        if (value is char character)
+        {
+            AppendJsonString(output, character.ToString());
+            return true;
+        }
+        if (value is JsonElement { ValueKind: JsonValueKind.String } stringElement)
+        {
+            AppendJsonString(output, stringElement.GetString() ?? string.Empty);
+            return true;
+        }
+        if (value is JsonDocument { RootElement.ValueKind: JsonValueKind.String } stringDocument)
+        {
+            AppendJsonString(output, stringDocument.RootElement.GetString() ?? string.Empty);
+            return true;
+        }
+
+        var stringifiedValue = ToInvariantString(value, ancestors, depth);
+        if (stringifiedValue is null)
+        {
+            return false;
+        }
+        output.Append(stringifiedValue);
+        return true;
+    }
+
+    static void AppendJsonString(StringBuilder output, string value)
+    {
+        output.Append('"');
+        foreach (var character in value)
+        {
+            switch (character)
+            {
+                case '"': output.Append("\\\""); break;
+                case '\\': output.Append("\\\\"); break;
+                case '\b': output.Append("\\b"); break;
+                case '\t': output.Append("\\t"); break;
+                case '\n': output.Append("\\n"); break;
+                case '\f': output.Append("\\f"); break;
+                case '\r': output.Append("\\r"); break;
+                case < ' ':
+                    output.Append("\\u");
+                    output.Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                    break;
+                default: output.Append(character); break;
+            }
+        }
+        output.Append('"');
+    }
+
+    static bool TryParseBoolean(string value, out bool result)
+    {
+        var lowercaseValue = UnicodeLowercase(value);
+        if (lowercaseValue == "true")
+        {
+            result = true;
+            return true;
+        }
+        if (lowercaseValue == "false")
+        {
+            result = false;
+            return true;
+        }
+
+        result = false;
+        return false;
+    }
+
+    static bool? TryGetBooleanListValue(IEnumerable<string> values)
+    {
+        var result = true;
+        foreach (var value in values)
+        {
+            if (!TryParseBoolean(value, out var booleanValue))
+            {
+                return null;
+            }
+            result &= booleanValue;
+        }
+        return result;
+    }
+
+    static bool IsTruthyPropertyValue(object? value) =>
+        IsTruthyPropertyValue(value, new HashSet<object>(ReferenceEqualityComparer.Instance), depth: 0);
+
+    static bool IsTruthyPropertyValue(object? value, HashSet<object> ancestors, int depth) => value switch
+    {
+        bool booleanValue => booleanValue,
+        string stringValue => UnicodeLowercase(stringValue) == "true",
+        JsonDocument document => IsTruthyJsonValue(document.RootElement, depth),
+        JsonElement element => IsTruthyJsonValue(element, depth),
+        IDictionary => false,
+        IEnumerable enumerable => AllTruthy(enumerable, ancestors, depth),
+        _ => false
+    };
+
+    static bool IsTruthyJsonValue(JsonElement value, int depth) => value.ValueKind switch
+    {
+        JsonValueKind.True => true,
+        JsonValueKind.String => UnicodeLowercase(value.GetString() ?? string.Empty) == "true",
+        JsonValueKind.Array when depth < 64 =>
+            value.EnumerateArray().All(element => IsTruthyJsonValue(element, depth + 1)),
+        _ => false
+    };
+
+    static bool AllTruthy(IEnumerable values, HashSet<object> ancestors, int depth)
+    {
+        if (depth >= 64 || !ancestors.Add(values))
+        {
+            return false;
+        }
+
+        try
+        {
+            foreach (var value in values)
+            {
+                if (!IsTruthyPropertyValue(value, ancestors, depth + 1))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        finally
+        {
+            ancestors.Remove(values);
+        }
+    }
+
+#pragma warning disable CA1308 // The flags service lowercases both operands; uppercasing has different Unicode semantics.
+    static bool UnicodeLowercaseEquals(string left, string? right) =>
+        right is not null
+        && string.Equals(UnicodeLowercase(left), UnicodeLowercase(right), StringComparison.Ordinal);
+
+    // .NET's invariant mapping does not expand dotted-I or apply the exact Unicode Final_Sigma context used by Rust.
+    // UnicodeSpecialCasingData supplies the exact derived properties used
+    // by that condition from Unicode 17.0, the version used by the current flags service Rust toolchain.
+    static string UnicodeLowercase(string value)
+    {
+        var expanded = new StringBuilder(value.Length + 1);
+        for (var index = 0; index < value.Length;)
+        {
+            var codePoint = GetCodePoint(value, index, out var codePointLength);
+            if (codePoint == 0x0130)
+            {
+                expanded.Append("i\u0307");
+            }
+            else if (codePoint == 0x03A3)
+            {
+                expanded.Append(IsFinalSigma(value, index, codePointLength) ? '\u03C2' : '\u03C3');
+            }
+            else
+            {
+                expanded.Append(value, index, codePointLength);
+            }
+            index += codePointLength;
+        }
+        return expanded.ToString().ToLowerInvariant();
+    }
+
+    static bool IsFinalSigma(string value, int index, int codePointLength) =>
+        HasCasedCodePointBefore(value, index)
+        && !HasCasedCodePointAfter(value, index + codePointLength);
+
+    static bool HasCasedCodePointBefore(string value, int index)
+    {
+        while (index > 0)
+        {
+            var codePoint = GetPreviousCodePoint(value, ref index);
+            if (UnicodeSpecialCasingData.IsCased(codePoint))
+            {
+                return true;
+            }
+            if (!UnicodeSpecialCasingData.IsCaseIgnorable(codePoint))
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    static bool HasCasedCodePointAfter(string value, int index)
+    {
+        while (index < value.Length)
+        {
+            var codePoint = GetCodePoint(value, index, out var codePointLength);
+            if (UnicodeSpecialCasingData.IsCased(codePoint))
+            {
+                return true;
+            }
+            if (!UnicodeSpecialCasingData.IsCaseIgnorable(codePoint))
+            {
+                return false;
+            }
+            index += codePointLength;
+        }
+        return false;
+    }
+
+    static int GetCodePoint(string value, int index, out int length)
+    {
+        if (char.IsHighSurrogate(value[index])
+            && index + 1 < value.Length
+            && char.IsLowSurrogate(value[index + 1]))
+        {
+            length = 2;
+            return char.ConvertToUtf32(value[index], value[index + 1]);
+        }
+
+        length = 1;
+        return value[index];
+    }
+
+    static int GetPreviousCodePoint(string value, ref int index)
+    {
+        index--;
+        if (index > 0 && char.IsLowSurrogate(value[index]) && char.IsHighSurrogate(value[index - 1]))
+        {
+            index--;
+            return char.ConvertToUtf32(value[index], value[index + 1]);
+        }
+        return value[index];
+    }
+#pragma warning restore CA1308
+
+    static string ToAsciiLowercase(string value)
+    {
+        var characters = value.ToCharArray();
+        for (var index = 0; index < characters.Length; index++)
+        {
+            if (characters[index] is >= 'A' and <= 'Z')
+            {
+                characters[index] = (char)(characters[index] + ('a' - 'A'));
+            }
+        }
+        return new string(characters);
+    }
 
     static bool TryParseDoubleWithoutUnderflow(string value, out double number) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)
@@ -541,27 +1083,62 @@ public class PropertyFilterValue
                && BooleanValue == other.BooleanValue;
     }
 
+    sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+    {
+        internal static ReferenceEqualityComparer Instance { get; } = new();
+
+        public new bool Equals(object? left, object? right) => ReferenceEquals(left, right);
+
+        public int GetHashCode(object value) => RuntimeHelpers.GetHashCode(value);
+    }
+
+    sealed class Utf8StringComparer : IComparer<string>
+    {
+        internal static Utf8StringComparer Instance { get; } = new();
+
+        public int Compare(string? left, string? right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return 0;
+            }
+            if (left is null)
+            {
+                return -1;
+            }
+            if (right is null)
+            {
+                return 1;
+            }
+
+            var leftBytes = Encoding.UTF8.GetBytes(left);
+            var rightBytes = Encoding.UTF8.GetBytes(right);
+            var sharedLength = Math.Min(leftBytes.Length, rightBytes.Length);
+            for (var index = 0; index < sharedLength; index++)
+            {
+                var comparison = leftBytes[index].CompareTo(rightBytes[index]);
+                if (comparison != 0)
+                {
+                    return comparison;
+                }
+            }
+            return leftBytes.Length.CompareTo(rightBytes.Length);
+        }
+    }
+
     static bool TryParseStringArray(
         JsonElement jsonElement,
         [NotNullWhen(returnValue: true)] out IReadOnlyList<string>? value,
-        out IReadOnlyList<string>? numericValues)
+        out IReadOnlyList<string>? numericValues,
+        out bool? booleanValue)
     {
         List<string> values = [];
         List<string> numbers = [];
         foreach (var element in jsonElement.EnumerateArray())
         {
-            var stringValue = element.ValueKind switch
-            {
-                JsonValueKind.String => element.GetString(),
-                JsonValueKind.Number => element.GetRawText(),
-                _ => null
-            };
-            if (stringValue is null)
-            {
-                value = null;
-                numericValues = null;
-                return false;
-            }
+            var stringValue = element.ValueKind is JsonValueKind.String
+                ? element.GetString() ?? string.Empty
+                : StringifyJsonElement(element);
             values.Add(stringValue);
             if (element.ValueKind is JsonValueKind.Number)
             {
@@ -571,6 +1148,31 @@ public class PropertyFilterValue
 
         value = values.ToReadOnlyList();
         numericValues = numbers.Count > 0 ? numbers.ToReadOnlyList() : null;
+        booleanValue = TryGetJsonBooleanValue(jsonElement);
         return true;
+    }
+
+    static bool? TryGetJsonBooleanValue(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.String when TryParseBoolean(value.GetString() ?? string.Empty, out var booleanValue)
+            => booleanValue,
+        JsonValueKind.Array => TryGetJsonBooleanArrayValue(value),
+        _ => null
+    };
+
+    static bool? TryGetJsonBooleanArrayValue(JsonElement value)
+    {
+        var result = true;
+        foreach (var element in value.EnumerateArray())
+        {
+            if (TryGetJsonBooleanValue(element) is not { } booleanValue)
+            {
+                return null;
+            }
+            result &= booleanValue;
+        }
+        return result;
     }
 }

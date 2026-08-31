@@ -37,6 +37,31 @@ public class TheEvaluateFeatureFlagMethod
         };
     }
 
+    static StringOrValue<bool> EvaluatePropertyFilter(
+        string filterJson,
+        object? propertyValue,
+        ComparisonOperator comparison)
+    {
+        var filterValue = PropertyFilterValue.Create(JsonDocument.Parse(filterJson).RootElement);
+        Assert.NotNull(filterValue);
+        var flags = CreateFlags(
+            key: "property",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "property",
+                    Value = filterValue,
+                    Operator = comparison
+                }
+            ]);
+
+        return new LocalEvaluator(flags).EvaluateFeatureFlag(
+            key: "property",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["property"] = propertyValue });
+    }
+
     [Theory]
     [InlineData("tyrion@example.com", ComparisonOperator.Exact, true)]
     [InlineData("TYRION@example.com", ComparisonOperator.Exact, true)] // Case-insensitive
@@ -79,6 +104,102 @@ public class TheEvaluateFeatureFlagMethod
             personProperties: properties);
 
         Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.Exact, true)]
+    [InlineData(ComparisonOperator.IsNot, false)]
+    public void BooleanFilterMatchesPresentNullPropertyLikeTheFlagsService(
+        ComparisonOperator comparison,
+        bool expected)
+    {
+        var flags = CreateFlags(
+            key: "nullable",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "nullable",
+                    Value = new PropertyFilterValue(false),
+                    Operator = comparison
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "nullable",
+            distinctId: "1234",
+            personProperties: new Dictionary<string, object?> { ["nullable"] = null });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("\"null\"", ComparisonOperator.Exact, true)]
+    [InlineData("\"null\"", ComparisonOperator.IsNot, false)]
+    [InlineData("\"NULL\"", ComparisonOperator.ContainsIgnoreCase, true)]
+    [InlineData("\"NULL\"", ComparisonOperator.DoesNotContainIgnoreCase, false)]
+    [InlineData("\"NU\"", ComparisonOperator.StartsWith, true)]
+    [InlineData("\"NU\"", ComparisonOperator.NotStartsWith, false)]
+    [InlineData("\"LL\"", ComparisonOperator.EndsWith, true)]
+    [InlineData("\"LL\"", ComparisonOperator.NotEndsWith, false)]
+    [InlineData("\"^null$\"", ComparisonOperator.Regex, true)]
+    [InlineData("\"^null$\"", ComparisonOperator.NotRegex, false)]
+    public void StringOperatorsUseBackendNullStringification(
+        string filterJson,
+        ComparisonOperator comparison,
+        bool expected)
+    {
+        Assert.Equal(expected, EvaluatePropertyFilter(filterJson, null, comparison));
+    }
+
+    [Theory]
+    [InlineData("\"ΠΑΡΑΓΓΕΛΙΕΣ\"", "παραγγελιες", ComparisonOperator.Exact, true)]
+    [InlineData("\"ΠΑΡΑΓΓΕΛΙΕΣ\"", "παραγγελιες", ComparisonOperator.IsNot, false)]
+    [InlineData("[\"ΠΑΡΑΓΓΕΛΙΕΣ\"]", "παραγγελιες", ComparisonOperator.Exact, true)]
+    [InlineData("[\"ΠΑΡΑΓΓΕΛΙΕΣ\"]", "παραγγελιες", ComparisonOperator.IsNot, false)]
+    [InlineData("\"ΠΑΡΑΓΓΕΛΙΕΣ\"", "παραγγελιεσ", ComparisonOperator.Exact, false)]
+    [InlineData("\"ΠΑΡΑΓΓΕΛΙΕΣ\"", "παραγγελιεσ", ComparisonOperator.IsNot, true)]
+    [InlineData("\"İ\"", "i\u0307", ComparisonOperator.Exact, true)]
+    [InlineData("[\"İ\"]", "i\u0307", ComparisonOperator.IsNot, false)]
+    public void ExactAndIsNotUseBackendUnicodeLowercaseForScalarAndListFilters(
+        string filterJson,
+        string propertyValue,
+        ComparisonOperator comparison,
+        bool expected)
+    {
+        Assert.Equal(expected, EvaluatePropertyFilter(filterJson, propertyValue, comparison));
+    }
+
+    [Theory]
+    [InlineData("[]", true, ComparisonOperator.Exact, true)]
+    [InlineData("[]", true, ComparisonOperator.IsNot, false)]
+    [InlineData("[\"true\",\"false\"]", "true", ComparisonOperator.Exact, false)]
+    [InlineData("[\"true\",\"false\"]", "true", ComparisonOperator.IsNot, true)]
+    [InlineData("[\"true\",\"false\"]", "pro", ComparisonOperator.Exact, true)]
+    [InlineData("[\"true\",\"false\"]", "pro", ComparisonOperator.IsNot, false)]
+    [InlineData("[\"FREE\",\"PRO\"]", "pro", ComparisonOperator.Exact, true)]
+    [InlineData("[\"FREE\",\"PRO\"]", "pro", ComparisonOperator.IsNot, false)]
+    public void ExactAndIsNotComplementBackendBooleanArrayPrecedence(
+        string filterJson,
+        object propertyValue,
+        ComparisonOperator comparison,
+        bool expected)
+    {
+        Assert.Equal(expected, EvaluatePropertyFilter(filterJson, propertyValue, comparison));
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.Exact, true)]
+    [InlineData(ComparisonOperator.IsNot, false)]
+    public void ExactAndIsNotComplementCanonicalJsonMatching(ComparisonOperator comparison, bool expected)
+    {
+        var propertyValue = new Dictionary<string, object?> { ["b"] = 1, ["a"] = new object[] { 2, 3 } };
+
+        Assert.Equal(
+            expected,
+            EvaluatePropertyFilter("\"{\\\"a\\\":[2,3],\\\"b\\\":1}\"", propertyValue, comparison));
     }
 
     [Theory]
@@ -372,6 +493,8 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("Works at PostHog", ComparisonOperator.ContainsIgnoreCase, "\"posthog\"", true)]
     [InlineData("Works at PostHog", ComparisonOperator.DoesNotContainIgnoreCase, "\"posthog\"", false)]
     [InlineData("Works at PostHog", ComparisonOperator.DoesNotContainIgnoreCase, "\"PostHog\"", false)]
+    [InlineData("Äbc", ComparisonOperator.ContainsIgnoreCase, "\"ä\"", false)]
+    [InlineData("Äbc", ComparisonOperator.DoesNotContainIgnoreCase, "\"ä\"", true)]
     [InlineData("Loves puppies", ComparisonOperator.ContainsIgnoreCase, "\"cats\"", false)]
     [InlineData("Loves puppies", ComparisonOperator.DoesNotContainIgnoreCase, "\"cats\"", true)]
     public void HandlesContainsComparisons(object overrideValue, ComparisonOperator comparison, string filterValueJson, bool expected)
@@ -409,7 +532,10 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("vaLue4", ComparisonOperator.StartsWith, "\"Val\"", true)]
     [InlineData("prevalue", ComparisonOperator.StartsWith, "\"Val\"", false)]
     [InlineData("Alakazam", ComparisonOperator.StartsWith, "\"Val\"", false)]
+    [InlineData("Äbc", ComparisonOperator.StartsWith, "\"ä\"", false)]
+    [InlineData("Äbc", ComparisonOperator.NotStartsWith, "\"ä\"", true)]
     [InlineData(323, ComparisonOperator.StartsWith, "\"3\"", true)]
+    [InlineData(323.0, ComparisonOperator.StartsWith, "\"323.\"", true)]
     [InlineData(123, ComparisonOperator.StartsWith, "\"3\"", false)]
     [InlineData("value", ComparisonOperator.NotStartsWith, "\"Val\"", false)]
     [InlineData("VALUE", ComparisonOperator.NotStartsWith, "\"Val\"", false)]
@@ -420,7 +546,10 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("343tfvalue", ComparisonOperator.EndsWith, "\"lUe\"", true)]
     [InlineData("value2", ComparisonOperator.EndsWith, "\"lUe\"", false)]
     [InlineData("Alakazam", ComparisonOperator.EndsWith, "\"lUe\"", false)]
+    [InlineData("bcÄ", ComparisonOperator.EndsWith, "\"ä\"", false)]
+    [InlineData("bcÄ", ComparisonOperator.NotEndsWith, "\"ä\"", true)]
     [InlineData(323, ComparisonOperator.EndsWith, "\"3\"", true)]
+    [InlineData(323.0, ComparisonOperator.EndsWith, "\"3\"", false)]
     [InlineData(13, ComparisonOperator.EndsWith, "\"3\"", true)]
     [InlineData(321, ComparisonOperator.EndsWith, "\"3\"", false)]
     [InlineData("value", ComparisonOperator.NotEndsWith, "\"lUe\"", false)]
@@ -457,11 +586,13 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
-    [InlineData(ComparisonOperator.StartsWith)]
-    [InlineData(ComparisonOperator.NotStartsWith)]
-    [InlineData(ComparisonOperator.EndsWith)]
-    [InlineData(ComparisonOperator.NotEndsWith)]
-    public void ReturnsFalseWhenPropertyValueIsNullForStartsWithAndEndsWithComparisons(ComparisonOperator comparison)
+    [InlineData(ComparisonOperator.StartsWith, false)]
+    [InlineData(ComparisonOperator.NotStartsWith, true)]
+    [InlineData(ComparisonOperator.EndsWith, false)]
+    [InlineData(ComparisonOperator.NotEndsWith, true)]
+    public void StringifiesNullForStartsWithAndEndsWithComparisons(
+        ComparisonOperator comparison,
+        bool expected)
     {
         var flags = CreateFlags(
             key: "bio",
@@ -487,8 +618,7 @@ public class TheEvaluateFeatureFlagMethod
             distinctId: "distinct-id",
             personProperties: properties);
 
-        // A null property value fails the comparison for both the positive and not_ variants.
-        Assert.False(result.Value);
+        Assert.Equal(expected, result.Value);
     }
 
     [Theory]

@@ -40,7 +40,7 @@
               {
                 "type": "person",
                 "key": "numeric-array",
-                "value": ["1.00"],
+                "value": ["1.0"],
                 "operator": "exact",
                 "group_type_index": null,
                 "negation": false,
@@ -54,7 +54,7 @@
                   {
                     "input_type": "string",
                     "input": "1.00",
-                    "matches": true
+                    "matches": false
                   }
                 ]
               },
