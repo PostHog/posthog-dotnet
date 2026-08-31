@@ -658,10 +658,21 @@ internal sealed class LocalEvaluator
             throw new InconclusiveMatchException("The filter property value is null");
         }
 
-        if (overrideValue is null && propertyFilter.Operator != ComparisonOperator.IsNot)
+        if (overrideValue is null
+            && propertyFilter.Operator is not (
+                ComparisonOperator.Exact
+                or ComparisonOperator.IsNot
+                or ComparisonOperator.ContainsIgnoreCase
+                or ComparisonOperator.DoesNotContainIgnoreCase
+                or ComparisonOperator.StartsWith
+                or ComparisonOperator.NotStartsWith
+                or ComparisonOperator.EndsWith
+                or ComparisonOperator.NotEndsWith
+                or ComparisonOperator.Regex
+                or ComparisonOperator.NotRegex))
         {
-            // If the value is null, just fail the feature flag comparison. This doesn't throw an
-            // InconclusiveMatchException because the property value was provided.
+            // The backend stringifies null for string operators and exact matching. Other value operators keep the
+            // existing null non-match behavior.
             return false;
         }
 
