@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.9.3
+
+### Patch Changes
+
+- 5e2e606: Match local feature flag string operators using the same ASCII and Unicode lowercase rules as the flags service.
+
 ## 2.9.2
 
 ### Patch Changes

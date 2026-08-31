@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.15.2
+
+### Patch Changes
+
+- 5e2e606: Match local feature flag string operators using the same ASCII and Unicode lowercase rules as the flags service.
+
 ## 2.15.1
 
 ### Patch Changes
