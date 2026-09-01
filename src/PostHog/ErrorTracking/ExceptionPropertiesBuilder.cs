@@ -1,5 +1,7 @@
 ﻿using PostHog.Library;
 using PostHog.Versioning;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -102,6 +104,17 @@ internal class ExceptionPropertiesBuilder
             }
 
             var method = frame.GetMethod();
+            if (IsStackTraceHidden(method))
+            {
+                continue;
+            }
+
+            var displayMethod = GetDisplayMethod(method);
+            if (displayMethod != method && IsStackTraceHidden(displayMethod))
+            {
+                continue;
+            }
+
             var fileName = frame.GetFileName();
             var lineNumber = frame.GetFileLineNumber();
             var columnNumber = frame.GetFileColumnNumber();
@@ -112,8 +125,8 @@ internal class ExceptionPropertiesBuilder
                 ["lang"] = "dotnet",
                 ["filename"] = Path.GetFileName(fileName) ?? "",
                 ["abs_path"] = fileName ?? "",
-                ["function"] = method?.Name ?? "",
-                ["module"] = method?.DeclaringType?.FullName ?? "",
+                ["function"] = displayMethod?.Name ?? "",
+                ["module"] = displayMethod?.DeclaringType?.FullName ?? "",
                 ["lineno"] = lineNumber,
                 ["colno"] = columnNumber
             };
@@ -136,6 +149,80 @@ internal class ExceptionPropertiesBuilder
 
         return stackFrames;
     }
+
+    private static MethodBase? GetDisplayMethod(MethodBase? method)
+    {
+        if (method?.Name != nameof(IAsyncStateMachine.MoveNext))
+        {
+            return method;
+        }
+
+        var stateMachineType = method?.DeclaringType;
+        if (stateMachineType is null ||
+            !stateMachineType.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false))
+        {
+            return method;
+        }
+
+        var isAsyncStateMachine = typeof(IAsyncStateMachine).IsAssignableFrom(stateMachineType);
+        var declaringType = stateMachineType.DeclaringType;
+        if (declaringType is null)
+        {
+            return method;
+        }
+
+        foreach (var sourceMethod in declaringType.GetMethods(
+                     BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public |
+                     BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+        {
+            var asyncStateMachine = sourceMethod.GetCustomAttribute<AsyncStateMachineAttribute>();
+            if (isAsyncStateMachine && IsStateMachineType(asyncStateMachine?.StateMachineType, stateMachineType))
+            {
+                return sourceMethod;
+            }
+
+            if (HasAsyncIteratorStateMachineAttribute(sourceMethod, stateMachineType))
+            {
+                return sourceMethod;
+            }
+
+            var iteratorStateMachine = sourceMethod.GetCustomAttribute<IteratorStateMachineAttribute>();
+            if (IsStateMachineType(iteratorStateMachine?.StateMachineType, stateMachineType))
+            {
+                return sourceMethod;
+            }
+        }
+
+        return method;
+    }
+
+    private static bool HasAsyncIteratorStateMachineAttribute(MethodInfo sourceMethod, Type stateMachineType)
+    {
+        foreach (var attribute in sourceMethod.GetCustomAttributesData())
+        {
+            if (attribute.AttributeType.FullName == "System.Runtime.CompilerServices.AsyncIteratorStateMachineAttribute" &&
+                attribute.ConstructorArguments.FirstOrDefault().Value is Type attributedType &&
+                IsStateMachineType(attributedType, stateMachineType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsStateMachineType(Type? attributedType, Type stateMachineType)
+        => attributedType == stateMachineType ||
+           (attributedType?.IsGenericType == true && stateMachineType.IsGenericType &&
+            attributedType.GetGenericTypeDefinition() == stateMachineType.GetGenericTypeDefinition());
+
+    private static bool IsStackTraceHidden(MethodBase? method)
+        => method is not null &&
+           (HasStackTraceHiddenAttribute(method) || HasStackTraceHiddenAttribute(method.DeclaringType));
+
+    private static bool HasStackTraceHiddenAttribute(MemberInfo? member)
+        => member?.GetCustomAttributesData().Any(attribute =>
+            attribute.AttributeType.FullName == "System.Diagnostics.StackTraceHiddenAttribute") == true;
 
     private static SourceCodeContext BuildSourceCodeContext(
         string absolutePath,
