@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.9.4
+
+### Patch Changes
+
+- eed813d: Fix async exception stack trace frames.
+
 ## 2.9.3
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.15.3
+
+### Patch Changes
+
+- eed813d: Fix async exception stack trace frames.
+
 ## 2.15.2
 
 ### Patch Changes
