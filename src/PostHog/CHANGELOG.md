@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.15.4
+
+### Patch Changes
+
+- bbb8d00: Allow local feature flag definitions with a null `early_exit` value.
+
 ## 2.15.3
 
 ### Patch Changes

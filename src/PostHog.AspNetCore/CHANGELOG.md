@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.9.5
+
+### Patch Changes
+
+- bbb8d00: Allow local feature flag definitions with a null `early_exit` value.
+
 ## 2.9.4
 
 ### Patch Changes
