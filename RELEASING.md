@@ -24,11 +24,13 @@ When making a releasable change, run:
 pnpm changeset
 ```
 
-Select the package or packages that changed:
+Select every package that needs a release:
 
 - Core SDK change: select `PostHog`
 - ASP.NET Core integration change: select `PostHog.AspNetCore`
 - AI Observability change: select `PostHog.AI`
+
+Changesets does not infer dependent-package releases from the `.csproj` project references. Select a dependent package when its next release must require the new `PostHog` version. For example, select both `PostHog` and `PostHog.AspNetCore` when users must receive a core fix by updating `PostHog.AspNetCore`. Apply the same rule to `PostHog.AI`. Do not select all dependent packages for every core change. The packages release independently by design.
 
 Then choose the bump type:
 
@@ -72,7 +74,7 @@ You can manually trigger the release workflow from the Actions tab with `workflo
 - The root `package.json` is tooling-only and is not released.
 - The workflow publishes packages sequentially with `PostHog` first, because the other packages depend on it.
 - If only `PostHog.AI` changes, only `PostHog.AI` is versioned and published.
-- If only `PostHog` changes, only `PostHog` is versioned and published, including for major releases.
+- If a changeset selects only `PostHog`, only `PostHog` is versioned and published, including for major releases.
 - Do not add internal `dependencies` entries to the package-specific `package.json` files unless you intentionally want Changesets to couple those packages' releases.
 
 ## Troubleshooting
