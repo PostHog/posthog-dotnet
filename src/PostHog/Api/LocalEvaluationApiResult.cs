@@ -167,10 +167,11 @@ internal record FeatureFlagFilters
     /// When <c>true</c>, local condition evaluation stops and returns a definitive disabled result
     /// as soon as a condition group's property filters match (or the group has no property filters)
     /// but the rollout percentage excludes the user, instead of falling through to later condition
-    /// groups. Mirrors the server-side Rust evaluation engine. Defaults to <c>false</c> when absent.
+    /// groups. Mirrors the server-side Rust evaluation engine. Defaults to <c>false</c> when absent;
+    /// explicit <c>null</c> values are also treated as <c>false</c> during evaluation.
     /// </summary>
     [JsonPropertyName("early_exit")]
-    public bool EarlyExit { get; init; }
+    public bool? EarlyExit { get; init; } = false;
 
     /// <summary>
     /// Compares this instance to another <see cref="FeatureFlagFilters"/> for equality.

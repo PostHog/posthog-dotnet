@@ -2744,13 +2744,12 @@ public class TheEarlyExitBehavior
         Assert.Equal(expected, result.Value);
     }
 
-    [Fact]
-    public void EarlyExitDeserializesFromJsonAndEarlyExits()
+    [Theory]
+    [InlineData("true", false)]
+    [InlineData("null", true)]
+    public void EarlyExitDeserializesFromJson(string earlyExit, bool expected)
     {
-        // Verifies that "early_exit": true round-trips through JSON correctly. A typo in the
-        // [JsonPropertyName] attribute would silently deserialize to false and disable the
-        // feature in production while all object-initializer tests still pass.
-        var json = """
+        var json = $$"""
         {
             "flags": [
                 {
@@ -2760,7 +2759,7 @@ public class TheEarlyExitBehavior
                     "key": "early-exit",
                     "active": true,
                     "filters": {
-                        "early_exit": true,
+                        "early_exit": {{earlyExit}},
                         "groups": [
                             {
                                 "properties": [
@@ -2785,14 +2784,12 @@ public class TheEarlyExitBehavior
         var flags = JsonSerializer.Deserialize<LocalEvaluationApiResult>(json, JsonSerializerHelper.Options)!;
         var localEvaluator = new LocalEvaluator(flags);
 
-        // early_exit=true + rollout 0 on first group (OUT_OF_ROLLOUT_BOUND) must short-circuit
-        // and return false, never reaching the second group with rollout 100.
         var result = localEvaluator.EvaluateFeatureFlag(
             key: "early-exit",
             distinctId: "1234",
             personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
 
-        Assert.False(result.Value);
+        Assert.Equal(expected, result.Value);
     }
 
     [Fact]
