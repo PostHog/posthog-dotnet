@@ -44,11 +44,12 @@ public class TheAddPostHogMethod
     }
 
     [Fact]
-    public async Task CapturesWithAspNetCoreLibraryMetadata()
+    public async Task UsesAspNetCoreLibraryMetadata()
     {
         var builder = WebApplication.CreateSlimBuilder();
         using var messageHandler = new FakeHttpMessageHandler();
-        var requestHandler = messageHandler.AddBatchResponse();
+        var flagsRequestHandler = messageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var batchRequestHandler = messageHandler.AddBatchResponse();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["PostHog:ProjectToken"] = "fake-not-so-secret",
@@ -60,15 +61,25 @@ public class TheAddPostHogMethod
 
         await using var provider = builder.Services.BuildServiceProvider();
         var client = provider.GetRequiredService<IPostHogClient>();
+        await client.GetAllFeatureFlagsAsync("test-user", null, CancellationToken.None);
         client.Capture("test-user", "test-event");
         await client.FlushAsync();
 
-        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        var properties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
-        Assert.Equal("posthog-aspnetcore", properties.GetProperty("$lib").GetString());
-        Assert.Equal(
-            typeof(Registration).Assembly.GetName().Version?.ToString(3),
-            properties.GetProperty("$lib_version").GetString());
+        var expectedVersion = typeof(Registration).Assembly.GetName().Version?.ToString(3);
+        using var flagsDocument = JsonDocument.Parse(flagsRequestHandler.GetReceivedRequestBody(indented: false));
+        var flagsProperties = flagsDocument.RootElement.GetProperty("properties");
+        Assert.Equal("posthog-aspnetcore", flagsProperties.GetProperty("$lib").GetString());
+        Assert.Equal(expectedVersion, flagsProperties.GetProperty("$lib_version").GetString());
+
+        var userAgent = flagsRequestHandler.ReceivedRequest.Headers.UserAgent;
+        var userAgentProduct = Assert.Single(userAgent, value => value.Product is not null).Product;
+        Assert.Equal("posthog-aspnetcore", userAgentProduct?.Name);
+        Assert.Equal(expectedVersion, userAgentProduct?.Version);
+
+        using var batchDocument = JsonDocument.Parse(batchRequestHandler.GetReceivedRequestBody(indented: false));
+        var eventProperties = batchDocument.RootElement.GetProperty("batch")[0].GetProperty("properties");
+        Assert.Equal("posthog-aspnetcore", eventProperties.GetProperty("$lib").GetString());
+        Assert.Equal(expectedVersion, eventProperties.GetProperty("$lib_version").GetString());
     }
 
     [Fact]
