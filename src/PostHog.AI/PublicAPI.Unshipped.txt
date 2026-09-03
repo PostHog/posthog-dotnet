@@ -1,1 +1,2 @@
 #nullable enable
+const PostHog.AI.PostHogAIFieldNames.LibVersion = "$ai_lib_version" -> string!

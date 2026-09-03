@@ -333,7 +333,9 @@ public sealed class PostHogClient : IPostHogClient
             eventName,
             captureContext.DistinctId,
             captureContext.Properties,
-            timestamp: timestamp ?? _timeProvider.GetUtcNow());
+            timestamp: timestamp ?? _timeProvider.GetUtcNow(),
+            _options.Value.LibraryName,
+            _options.Value.LibraryVersion);
 
         if (groups is { Count: > 0 })
         {
@@ -407,7 +409,7 @@ public sealed class PostHogClient : IPostHogClient
     // set, so anything merged upstream (super properties, context properties) cannot leak in. The
     // CapturedEvent constructor re-adds distinct_id and defaults $geoip_disable to true when it
     // was not explicitly set.
-    static CapturedEvent ToMinimalFeatureFlagCalledEvent(CapturedEvent capturedEvent)
+    CapturedEvent ToMinimalFeatureFlagCalledEvent(CapturedEvent capturedEvent)
     {
         var properties = new Dictionary<string, object>(MinimalFeatureFlagCalledEventProperties.Length);
         foreach (var key in MinimalFeatureFlagCalledEventProperties)
@@ -422,7 +424,9 @@ public sealed class PostHogClient : IPostHogClient
             capturedEvent.EventName,
             capturedEvent.DistinctId,
             properties,
-            capturedEvent.Timestamp);
+            capturedEvent.Timestamp,
+            _options.Value.LibraryName,
+            _options.Value.LibraryVersion);
     }
 
     async Task CaptureBatchAsync(IEnumerable<CapturedEvent> batch)

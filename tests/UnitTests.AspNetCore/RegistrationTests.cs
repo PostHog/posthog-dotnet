@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,6 +41,34 @@ public class TheAddPostHogMethod
         Assert.Equal("fake-not-so-secret", options.ProjectToken);
         Assert.Equal(new Uri("https://test-host.com"), options.HostUrl);
         Assert.Equal(TimeSpan.FromSeconds(10), options.FeatureFlagPollInterval);
+    }
+
+    [Fact]
+    public async Task CapturesWithAspNetCoreLibraryMetadata()
+    {
+        var builder = WebApplication.CreateSlimBuilder();
+        using var messageHandler = new FakeHttpMessageHandler();
+        var requestHandler = messageHandler.AddBatchResponse();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["PostHog:ProjectToken"] = "fake-not-so-secret",
+            ["PostHog:EnableCompression"] = "false",
+        });
+        builder.AddPostHog(options =>
+            options.ConfigureHttpClient(httpClient =>
+                httpClient.ConfigurePrimaryHttpMessageHandler(() => messageHandler)));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var client = provider.GetRequiredService<IPostHogClient>();
+        client.Capture("test-user", "test-event");
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var properties = document.RootElement.GetProperty("batch")[0].GetProperty("properties");
+        Assert.Equal("posthog-aspnetcore", properties.GetProperty("$lib").GetString());
+        Assert.Equal(
+            typeof(Registration).Assembly.GetName().Version?.ToString(3),
+            properties.GetProperty("$lib_version").GetString());
     }
 
     [Fact]

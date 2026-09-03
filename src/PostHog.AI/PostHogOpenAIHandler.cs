@@ -239,7 +239,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
             // Basic Info
             eventProperties[PostHogAIFieldNames.Provider] = "openai";
-            eventProperties[PostHogAIFieldNames.Lib] = "posthog-dotnet";
+            eventProperties[PostHogAIFieldNames.Lib] = "posthog-ai";
+            eventProperties[PostHogAIFieldNames.LibVersion] = Versioning.VersionConstants.Version;
             eventProperties[PostHogAIFieldNames.Latency] = latency;
 
             if (request.RequestUri != null)
