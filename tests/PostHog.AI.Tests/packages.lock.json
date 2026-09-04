@@ -298,7 +298,7 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.11, )",
           "Microsoft.Extensions.Http": "[10.0.11, )",
           "OpenAI": "[2.13.0, )",
-          "PostHog": "[2.15.1, )"
+          "PostHog": "[2.15.5, )"
         }
       },
       "testlibrary": {
@@ -307,7 +307,7 @@
           "Microsoft.Extensions.Configuration": "[10.0.11, )",
           "Microsoft.Extensions.TimeProvider.Testing": "[9.0.0, )",
           "NSubstitute": "[6.2.0, )",
-          "PostHog": "[2.15.1, )",
+          "PostHog": "[2.15.5, )",
           "xunit": "[2.9.3, )"
         }
       },

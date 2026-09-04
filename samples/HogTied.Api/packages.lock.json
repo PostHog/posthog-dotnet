@@ -108,15 +108,9 @@
       "posthog.aspnetcore": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.FeatureManagement": "[4.6.0, )",
-          "PostHog": "[2.15.1, )"
+          "Microsoft.FeatureManagement": "[4.7.0, )",
+          "PostHog": "[2.15.5, )"
         }
-      },
-      "Microsoft.Bcl.TimeProvider": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.11, )",
-        "resolved": "8.0.1",
-        "contentHash": "C7kWHJnMRY7EvJev2S8+yJHZ1y7A4ZlLbA4NE+O23BDIAN5mHeqND1m+SKv1ChRS5YlCDW7yAMUe7lttRsJaAA=="
       },
       "Microsoft.Extensions.Caching.Memory": {
         "type": "CentralTransitive",
@@ -184,16 +178,14 @@
       },
       "Microsoft.FeatureManagement": {
         "type": "CentralTransitive",
-        "requested": "[4.6.0, )",
-        "resolved": "4.6.0",
-        "contentHash": "kLjGgEhlzuKs6t7g8so1dqsmE5NaSURNPOWkKD056nF43G/6w/VK5Gd02WKgpuBRQ9mjl7odAe462bn3XKBXmg==",
+        "requested": "[4.7.0, )",
+        "resolved": "4.7.0",
+        "contentHash": "f+XutOuZZLNq6OJV8z7nys+k89W3PUsoJJgrbYTXd20GvDyJfQ9A8o2MSU8FZT7DY6jQOq3I4KO/+NHsXHdACw==",
         "dependencies": {
-          "Microsoft.Bcl.TimeProvider": "8.0.1",
           "Microsoft.Extensions.Caching.Memory": "8.0.1",
           "Microsoft.Extensions.Configuration": "8.0.0",
           "Microsoft.Extensions.Configuration.Binder": "8.0.2",
-          "Microsoft.Extensions.Logging": "8.0.1",
-          "System.Diagnostics.DiagnosticSource": "8.0.1"
+          "Microsoft.Extensions.Logging": "8.0.1"
         }
       },
       "System.Text.Json": {
