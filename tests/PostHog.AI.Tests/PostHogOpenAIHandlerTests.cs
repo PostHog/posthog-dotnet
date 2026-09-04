@@ -309,6 +309,17 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             || (string)provider != "openai"
         )
             return false;
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.Lib, out var library)
+            || (string)library != "posthog-ai"
+        )
+            return false;
+        if (
+            !props.TryGetValue(PostHogAIFieldNames.LibVersion, out var libraryVersion)
+            || (string)libraryVersion
+                != typeof(PostHogOpenAIHandler).Assembly.GetName().Version?.ToString(3)
+        )
+            return false;
         return true;
     }
 

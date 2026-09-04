@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog.Json;
 using PostHog.Library;
-using PostHog.Versioning;
 #if NETSTANDARD2_0 || NETSTANDARD2_1
 #endif
 
@@ -46,7 +45,8 @@ internal sealed class PostHogApiClient : IDisposable
         var framework = RuntimeInformation.FrameworkDescription;
         var os = RuntimeInformation.OSDescription;
         var arch = RuntimeInformation.ProcessArchitecture;
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"{LibraryName}/{VersionConstants.Version} ({framework}; {os}; {arch})");
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
+            $"{_options.Value.LibraryName}/{_options.Value.LibraryVersion} ({framework}; {os}; {arch})");
 
         logger.LogTraceApiClientCreated(HostUrl);
         _logger = logger;
@@ -286,8 +286,8 @@ internal sealed class PostHogApiClient : IDisposable
 
         var properties = payload.GetOrAdd<string, Dictionary<string, object>>("properties");
 
-        properties[PostHogProperties.Lib] = LibraryName;
-        properties[PostHogProperties.LibVersion] = VersionConstants.Version;
+        properties[PostHogProperties.Lib] = _options.Value.LibraryName;
+        properties[PostHogProperties.LibVersion] = _options.Value.LibraryVersion;
         properties[PostHogProperties.Os] = RuntimeInformation.OSDescription;
         properties[PostHogProperties.Framework] = RuntimeInformation.FrameworkDescription;
         properties[PostHogProperties.Architecture] = RuntimeInformation.ProcessArchitecture.ToString();

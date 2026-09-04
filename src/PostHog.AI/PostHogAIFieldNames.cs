@@ -24,9 +24,14 @@ public static class PostHogAIFieldNames
     public const string Provider = "$ai_provider";
 
     /// <summary>
-    /// Library identifier (e.g., "posthog-dotnet").
+    /// AI library identifier (e.g., "posthog-ai").
     /// </summary>
     public const string Lib = "$ai_lib";
+
+    /// <summary>
+    /// AI library version.
+    /// </summary>
+    public const string LibVersion = "$ai_lib_version";
 
     /// <summary>
     /// Request latency in seconds.

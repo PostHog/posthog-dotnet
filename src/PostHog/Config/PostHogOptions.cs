@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using PostHog.Api;
 using PostHog.Library;
+using PostHog.Versioning;
 
 namespace PostHog;
 
@@ -13,6 +14,10 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     string? _projectApiKey;
     string? _secretKey;
     string? _personalApiKey;
+
+    internal string LibraryName { get; set; } = PostHogApiClient.LibraryName;
+
+    internal string LibraryVersion { get; set; } = VersionConstants.Version;
 
     /// <summary>
     /// The PostHog project token that identifies which project this client works with.

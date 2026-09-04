@@ -21,6 +21,23 @@ public class CapturedEvent
         string distinctId,
         Dictionary<string, object>? properties,
         DateTimeOffset timestamp)
+        : this(
+            eventName,
+            distinctId,
+            properties,
+            timestamp,
+            PostHogApiClient.LibraryName,
+            VersionConstants.Version)
+    {
+    }
+
+    internal CapturedEvent(
+        string eventName,
+        string distinctId,
+        Dictionary<string, object>? properties,
+        DateTimeOffset timestamp,
+        string libraryName,
+        string libraryVersion)
     {
         Uuid = Guid.NewGuid().ToString();
         EventName = eventName;
@@ -31,8 +48,8 @@ public class CapturedEvent
 
         // Every event has to have these properties.
         Properties[PostHogProperties.DistinctId] = distinctId; // See `get_distinct_id` in PostHog/posthog api/capture.py line 321
-        Properties[PostHogProperties.Lib] = PostHogApiClient.LibraryName;
-        Properties[PostHogProperties.LibVersion] = VersionConstants.Version;
+        Properties[PostHogProperties.Lib] = libraryName;
+        Properties[PostHogProperties.LibVersion] = libraryVersion;
         Properties[PostHogProperties.GeoIpDisable] = Properties.GetValueOrDefault(PostHogProperties.GeoIpDisable, true);
     }
 

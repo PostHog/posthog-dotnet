@@ -25,6 +25,11 @@ public static class PostHogConfigurationBuilderExtensions
         {
             services.AddSingleton<IFeatureFlagCache, HttpContextFeatureFlagCache>();
             services.AddHttpContextAccessor();
+            services.PostConfigure<PostHogOptions>(options =>
+            {
+                options.LibraryName = "posthog-aspnetcore";
+                options.LibraryVersion = global::PostHog.AspNetCore.Versioning.VersionConstants.Version;
+            });
         });
         return builder;
     }
