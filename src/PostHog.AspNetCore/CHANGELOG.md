@@ -1,5 +1,11 @@
 # PostHog.AspNetCore
 
+## 2.9.6
+
+### Patch Changes
+
+- 2f38c21: Report package-specific library names and versions for ASP.NET Core and AI events.
+
 ## 2.9.5
 
 ### Patch Changes

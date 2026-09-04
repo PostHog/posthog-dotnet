@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.5
+
+### Patch Changes
+
+- 2f38c21: Report package-specific library names and versions for ASP.NET Core and AI events.
+
 ## 0.1.4
 
 ### Patch Changes
