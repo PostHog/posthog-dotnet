@@ -190,8 +190,31 @@ public class PropertyFilterValue
     /// </summary>
     /// <param name="overrideValue">The override value.</param>
     /// <returns><c>true</c> if the override value is an "exact" match for this value.</returns>
-    public bool IsExactMatch(object? overrideValue)
+    public bool IsExactMatch(object? overrideValue) => IsExactMatch(overrideValue, propertyMatchingVersion: null);
+
+    internal bool IsExactMatch(object? overrideValue, int? propertyMatchingVersion)
     {
+        if (propertyMatchingVersion == 2)
+        {
+            // Empty filters retain recursive legacy truthiness, not empty ANY membership.
+            if (ListOfStrings is { Count: 0 })
+            {
+                return IsTruthyPropertyValue(overrideValue);
+            }
+
+            var comparand = overrideValue is decimal decimalValue
+                ? StringifyDecimal(decimalValue)
+                : ToInvariantString(overrideValue);
+            return this switch
+            {
+                { ListOfStrings: { } values } => values.Any(value => UnicodeLowercaseEquals(value, comparand)),
+                { StringValue: { } value } => UnicodeLowercaseEquals(value, comparand),
+                { BooleanValue: { } value } => UnicodeLowercaseEquals(value ? "true" : "false", comparand),
+                { CohortId: { } value } => UnicodeLowercaseEquals(value.ToString(CultureInfo.InvariantCulture), comparand),
+                _ => false
+            };
+        }
+
         if (TryGetBooleanValue(out var booleanValue))
         {
             return booleanValue == IsTruthyPropertyValue(overrideValue);
@@ -203,6 +226,13 @@ public class PropertyFilterValue
             { StringValue: { } stringValue } => UnicodeLowercaseEquals(stringValue, ToInvariantString(overrideValue)),
             _ => false
         };
+    }
+
+    static string StringifyDecimal(decimal value)
+    {
+        // Preserve the wire number's integer/float distinction and normalize its scale and precision like JSON filters.
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value));
+        return StringifyJsonElement(document.RootElement);
     }
 
     bool TryGetBooleanValue(out bool value)

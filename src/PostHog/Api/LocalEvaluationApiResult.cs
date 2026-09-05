@@ -19,6 +19,13 @@ internal record LocalEvaluationApiResult
     public required IReadOnlyList<LocalFeatureFlag> Flags { get; init; }
 
     /// <summary>
+    /// Property matching semantics for this definition snapshot. Only version 2 enables explicit matching;
+    /// missing and other versions retain legacy matching.
+    /// </summary>
+    [JsonPropertyName("property_matching_version")]
+    public int? PropertyMatchingVersion { get; init; }
+
+    /// <summary>
     /// Mappings of group IDs to group type.
     /// </summary>
     [JsonPropertyName("group_type_mapping")]
@@ -59,14 +66,15 @@ internal record LocalEvaluationApiResult
         return Flags.ListsAreEqual(other.Flags)
                && GroupTypeMapping.DictionariesAreEqual(other.GroupTypeMapping)
                && Cohorts.DictionariesAreEqual(other.Cohorts)
-               && MinimalFlagCalledEvents == other.MinimalFlagCalledEvents;
+               && MinimalFlagCalledEvents == other.MinimalFlagCalledEvents
+               && PropertyMatchingVersion == other.PropertyMatchingVersion;
     }
 
     /// <summary>
     /// Serves as the default hash function.
     /// </summary>
     /// <returns>A hash code for the current object.</returns>
-    public override int GetHashCode() => HashCode.Combine(Flags, GroupTypeMapping, Cohorts, MinimalFlagCalledEvents);
+    public override int GetHashCode() => HashCode.Combine(Flags, GroupTypeMapping, Cohorts, MinimalFlagCalledEvents, PropertyMatchingVersion);
 }
 
 /// <summary>
