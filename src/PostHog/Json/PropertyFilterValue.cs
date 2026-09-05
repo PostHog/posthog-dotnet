@@ -202,7 +202,9 @@ public class PropertyFilterValue
                 return IsTruthyPropertyValue(overrideValue);
             }
 
-            var comparand = ToInvariantString(overrideValue);
+            var comparand = overrideValue is decimal decimalValue
+                ? StringifyDecimal(decimalValue)
+                : ToInvariantString(overrideValue);
             return this switch
             {
                 { ListOfStrings: { } values } => values.Any(value => UnicodeLowercaseEquals(value, comparand)),
@@ -224,6 +226,13 @@ public class PropertyFilterValue
             { StringValue: { } stringValue } => UnicodeLowercaseEquals(stringValue, ToInvariantString(overrideValue)),
             _ => false
         };
+    }
+
+    static string StringifyDecimal(decimal value)
+    {
+        // Preserve the wire number's integer/float distinction and normalize its scale and precision like JSON filters.
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value));
+        return StringifyJsonElement(document.RootElement);
     }
 
     bool TryGetBooleanValue(out bool value)

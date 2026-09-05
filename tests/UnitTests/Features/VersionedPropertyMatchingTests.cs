@@ -180,6 +180,52 @@ public class VersionedPropertyMatchingTests
         Assert.False(new PropertyFilterValue(false).IsExactMatch(0.0, 2));
     }
 
+    public static TheoryData<decimal, string, bool> DecimalMatchingCases => new()
+    {
+        { 1.00m, "[1.00]", true },
+        { 1.00m, "[\"1.0\"]", true },
+        { 1.00m, "\"1.0\"", true },
+        { 1.00m, "[\"1.00\"]", false },
+        { 1.00m, "[1]", false },
+        { 1m, "[1]", true },
+        { 1m, "[1.0]", false },
+        { 1.2300m, "[1.23]", true },
+        { 0.00m, "[0.0]", true },
+        { -1.00m, "[-1.0]", true },
+        { 0.00000100m, "[1e-6]", true },
+        { 1.2345678901234567890123456789m, "[1.2345678901234567890123456789]", true },
+        { 18446744073709551615m, "[18446744073709551615]", true },
+        { decimal.MaxValue, "[79228162514264337593543950335]", true }
+    };
+
+    [Theory]
+    [MemberData(nameof(DecimalMatchingCases))]
+    public void ExplicitDecimalMatchingUsesWireRepresentation(decimal property, string filterJson, bool exact)
+    {
+        using var wire = JsonDocument.Parse(JsonSerializer.Serialize(property));
+        foreach (var comparison in new[] { "exact", "is_not" })
+        {
+            var evaluator = new LocalEvaluator(ParseDefinitions(filterJson, comparison, 2));
+            var expected = comparison == "exact" ? exact : !exact;
+            Assert.Equal(expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = wire.RootElement }));
+            Assert.Equal(expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = property }));
+        }
+    }
+
+    [Fact]
+    public void DecimalNormalizationPreservesLegacyAndOtherOperators()
+    {
+        using var document = JsonDocument.Parse("[1.00]");
+        var filter = PropertyFilterValue.Create(document.RootElement)!;
+        Assert.True(filter.IsExactMatch(1.00m));
+        foreach (var version in new int?[] { null, 1, 0, 3 })
+        {
+            Assert.True(filter.IsExactMatch(1.00m, version));
+            Assert.True(new PropertyFilterValue("1.00").IsExactMatch(1.00m, version));
+        }
+        Assert.True(new PropertyFilterValue("1.00").IsContainedBy(1.00m, StringComparison.Ordinal));
+    }
+
     internal static LocalEvaluationApiResult ParseDefinitions(string filterJson, string comparison, int? version) =>
         JsonSerializer.Deserialize<LocalEvaluationApiResult>(DefinitionsJson(filterJson, comparison, version), JsonSerializerHelper.Options)!;
 
