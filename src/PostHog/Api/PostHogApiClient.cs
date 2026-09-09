@@ -94,6 +94,10 @@ internal sealed class PostHogApiClient : IDisposable
         CancellationToken cancellationToken)
     {
         PrepareAndMutatePayload(payload);
+        payload["properties"] = CapturedEventJsonConverter.NormalizeProperties(
+            payload["properties"],
+            payload.GetValueOrDefault("event") as string,
+            JsonSerializerHelper.Options)!;
 
         var endpointUrl = new Uri(HostUrl, "capture");
 

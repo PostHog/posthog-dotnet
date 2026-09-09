@@ -11,6 +11,7 @@ internal static class JsonSerializerHelper
         PropertyNameCaseInsensitive = true,
         Converters =
         {
+            new CapturedEventJsonConverter(),
             new ReadOnlyCollectionJsonConverterFactory(),
             new ReadOnlyDictionaryJsonConverterFactory()
         }
