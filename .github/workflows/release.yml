@@ -60,7 +60,7 @@ jobs:
     if: always() && needs.check-changesets.outputs.has-changesets == 'true'
     environment: Release
     permissions:
-      contents: write
+      contents: read
     outputs:
       committed: ${{ steps.version-bump-outputs.outputs.committed }}
       commit-sha: ${{ steps.version-bump-outputs.outputs.commit-sha }}
