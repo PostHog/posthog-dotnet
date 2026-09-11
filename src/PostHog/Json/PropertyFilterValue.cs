@@ -60,7 +60,11 @@ public class PropertyFilterValue
                 out var numericListValues,
                 out var booleanListValue)
                 => new PropertyFilterValue(stringArrayValue, numericListValues, booleanListValue),
-            JsonValueKind.Number => new PropertyFilterValue(jsonElement.GetInt64()),
+            // Only a whole number can be a cohort id. GetInt64 throws on a fractional one, which
+            // would fail the whole payload, so keep that operand as its invariant text instead.
+            JsonValueKind.Number => jsonElement.TryGetInt64(out var cohortId)
+                ? new PropertyFilterValue(cohortId)
+                : new PropertyFilterValue(jsonElement.GetDouble().ToString(CultureInfo.InvariantCulture)),
             JsonValueKind.True => new PropertyFilterValue(true),
             JsonValueKind.False => new PropertyFilterValue(false),
             JsonValueKind.Undefined => null,
@@ -848,7 +852,8 @@ public class PropertyFilterValue
             double overrideDouble => doubleValue.CompareTo(overrideDouble),
             long overrideLong => doubleValue.CompareTo(overrideLong),
             int overrideInt => doubleValue.CompareTo(overrideInt),
-            string overrideString when double.TryParse(overrideString, out var doubleOverrideValue) => doubleValue.CompareTo(doubleOverrideValue),
+            string overrideString when double.TryParse(overrideString, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleOverrideValue)
+                => doubleValue.CompareTo(doubleOverrideValue),
             _ => null
         };
         return result is not null;

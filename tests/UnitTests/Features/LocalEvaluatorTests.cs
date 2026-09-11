@@ -721,6 +721,11 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData(22, ComparisonOperator.LessThan, "21", false)]
     [InlineData(21, ComparisonOperator.LessThanOrEquals, "21", true)]
     [InlineData(22, ComparisonOperator.LessThanOrEquals, "21", false)]
+    // A fractional operand reaches GetInt64, which throws and fails the whole payload.
+    [InlineData(22, ComparisonOperator.GreaterThan, "21.5", true)]
+    [InlineData(21, ComparisonOperator.GreaterThan, "21.5", false)]
+    [InlineData(21, ComparisonOperator.LessThan, "21.5", true)]
+    [InlineData("21.6", ComparisonOperator.GreaterThan, "21.5", true)]
     public void HandlesGreaterAndLessThanComparisons(object overrideValue, ComparisonOperator comparison, string filterValueJson, bool expected)
     {
         var flags = CreateFlags(
@@ -747,6 +752,42 @@ public class TheEvaluateFeatureFlagMethod
             personProperties: properties);
 
         Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void OrdersTheSameWayUnderACommaDecimalCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+        try
+        {
+            var flags = CreateFlags(
+                key: "age",
+                properties: [
+                    new PropertyFilter
+                    {
+                        Type = FilterType.Person,
+                        Key = "age",
+                        Value = PropertyFilterValue.Create(JsonDocument.Parse("\"3\"").RootElement)!,
+                        Operator = ComparisonOperator.GreaterThan
+                    }
+                ]
+            );
+            var localEvaluator = new LocalEvaluator(flags);
+
+            // The person's 2.5 is below the filter's 3. Read by a de-DE parse, where '.' groups
+            // thousands, it becomes 25 and lands above it instead.
+            var result = localEvaluator.EvaluateFeatureFlag(
+                key: "age",
+                distinctId: "distinct-id",
+                personProperties: new Dictionary<string, object?> { ["age"] = "2.5" });
+
+            Assert.Equal(false, result);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Theory]
