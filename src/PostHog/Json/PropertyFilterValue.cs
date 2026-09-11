@@ -830,10 +830,17 @@ public class PropertyFilterValue
 
     bool TryCompareNumbers(object overrideValue, [NotNullWhen(returnValue: true)] out int? result)
     {
-        if (!double.TryParse(StringValue, out var doubleValue))
+        // A JSON number lands in CohortId, because a bare number in a filter was assumed to be a
+        // cohort reference. The flags API also sends one as the operand of gt, gte, lt and lte,
+        // so fall back to it here or those comparisons have nothing to compare against.
+        if (!double.TryParse(StringValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))
         {
-            result = null;
-            return false;
+            if (CohortId is not { } numericValue)
+            {
+                result = null;
+                return false;
+            }
+            doubleValue = numericValue;
         }
 
         result = overrideValue switch

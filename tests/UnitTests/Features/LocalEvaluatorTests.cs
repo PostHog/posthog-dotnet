@@ -710,6 +710,17 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("21", ComparisonOperator.GreaterThanOrEquals, "\"21\"", true)]
     [InlineData(21, ComparisonOperator.LessThanOrEquals, "\"21\"", true)]
     [InlineData("21", ComparisonOperator.LessThanOrEquals, "\"21\"", true)]
+    // The flags API sends the operand as a string, but a number reaches this path too. Without
+    // a numeric operand to compare against, every one of these comparisons passed.
+    [InlineData(22, ComparisonOperator.GreaterThan, "21", true)]
+    [InlineData(20, ComparisonOperator.GreaterThan, "21", false)]
+    [InlineData("22", ComparisonOperator.GreaterThan, "21", true)]
+    [InlineData(21, ComparisonOperator.GreaterThanOrEquals, "21", true)]
+    [InlineData(20, ComparisonOperator.GreaterThanOrEquals, "21", false)]
+    [InlineData(20, ComparisonOperator.LessThan, "21", true)]
+    [InlineData(22, ComparisonOperator.LessThan, "21", false)]
+    [InlineData(21, ComparisonOperator.LessThanOrEquals, "21", true)]
+    [InlineData(22, ComparisonOperator.LessThanOrEquals, "21", false)]
     public void HandlesGreaterAndLessThanComparisons(object overrideValue, ComparisonOperator comparison, string filterValueJson, bool expected)
     {
         var flags = CreateFlags(
