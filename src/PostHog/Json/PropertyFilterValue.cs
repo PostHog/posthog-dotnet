@@ -206,9 +206,7 @@ public class PropertyFilterValue
                 return IsTruthyPropertyValue(overrideValue);
             }
 
-            var comparand = overrideValue is decimal decimalValue
-                ? StringifyDecimal(decimalValue)
-                : ToInvariantString(overrideValue);
+            var comparand = ToInvariantString(overrideValue, normalizeDecimals: true);
             return this switch
             {
                 { ListOfStrings: { } values } => values.Any(value => UnicodeLowercaseEquals(value, comparand)),
@@ -300,10 +298,10 @@ public class PropertyFilterValue
 
     // Override values use the same compact JSON representation as serde_json::Value::to_string in the flags service.
     // Strings remain unquoted because the service returns their contents directly.
-    static string? ToInvariantString(object? value) =>
-        ToInvariantString(value, new HashSet<object>(ReferenceEqualityComparer.Instance), depth: 0);
+    static string? ToInvariantString(object? value, bool normalizeDecimals = false) =>
+        ToInvariantString(value, new HashSet<object>(ReferenceEqualityComparer.Instance), depth: 0, normalizeDecimals);
 
-    static string? ToInvariantString(object? value, HashSet<object> ancestors, int depth) => value switch
+    static string? ToInvariantString(object? value, HashSet<object> ancestors, int depth, bool normalizeDecimals) => value switch
     {
         null => "null",
         string stringValue => stringValue,
@@ -311,10 +309,11 @@ public class PropertyFilterValue
         bool booleanValue => booleanValue ? "true" : "false",
         double doubleValue => StringifyFloatingPoint(doubleValue),
         float floatValue => StringifyFloatingPoint(floatValue),
+        decimal decimalValue when normalizeDecimals => StringifyDecimal(decimalValue),
         JsonDocument document => StringifyJsonElement(document.RootElement),
         JsonElement element => StringifyJsonElement(element),
-        IDictionary dictionary => StringifyDictionary(dictionary, ancestors, depth),
-        IEnumerable enumerable => StringifyArray(enumerable, ancestors, depth),
+        IDictionary dictionary => StringifyDictionary(dictionary, ancestors, depth, normalizeDecimals),
+        IEnumerable enumerable => StringifyArray(enumerable, ancestors, depth, normalizeDecimals),
         _ => Convert.ToString(value, CultureInfo.InvariantCulture)
     };
 
@@ -459,7 +458,7 @@ public class PropertyFilterValue
         return output.Append('}').ToString();
     }
 
-    static string? StringifyDictionary(IDictionary dictionary, HashSet<object> ancestors, int depth)
+    static string? StringifyDictionary(IDictionary dictionary, HashSet<object> ancestors, int depth, bool normalizeDecimals)
     {
         if (depth >= 64 || !ancestors.Add(dictionary))
         {
@@ -488,7 +487,7 @@ public class PropertyFilterValue
                 }
                 AppendJsonString(output, property.Key);
                 output.Append(':');
-                if (!AppendJsonValue(output, property.Value, ancestors, depth + 1))
+                if (!AppendJsonValue(output, property.Value, ancestors, depth + 1, normalizeDecimals))
                 {
                     return null;
                 }
@@ -502,7 +501,7 @@ public class PropertyFilterValue
         }
     }
 
-    static string? StringifyArray(IEnumerable values, HashSet<object> ancestors, int depth)
+    static string? StringifyArray(IEnumerable values, HashSet<object> ancestors, int depth, bool normalizeDecimals)
     {
         if (depth >= 64 || !ancestors.Add(values))
         {
@@ -519,7 +518,7 @@ public class PropertyFilterValue
                 {
                     output.Append(',');
                 }
-                if (!AppendJsonValue(output, value, ancestors, depth + 1))
+                if (!AppendJsonValue(output, value, ancestors, depth + 1, normalizeDecimals))
                 {
                     return null;
                 }
@@ -558,7 +557,8 @@ public class PropertyFilterValue
         StringBuilder output,
         object? value,
         HashSet<object> ancestors,
-        int depth)
+        int depth,
+        bool normalizeDecimals)
     {
         if (value is string stringValue)
         {
@@ -581,7 +581,7 @@ public class PropertyFilterValue
             return true;
         }
 
-        var stringifiedValue = ToInvariantString(value, ancestors, depth);
+        var stringifiedValue = ToInvariantString(value, ancestors, depth, normalizeDecimals);
         if (stringifiedValue is null)
         {
             return false;

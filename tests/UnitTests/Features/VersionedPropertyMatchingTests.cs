@@ -212,6 +212,66 @@ public class VersionedPropertyMatchingTests
         }
     }
 
+    [Theory]
+    [InlineData("exact", true)]
+    [InlineData("is_not", false)]
+    public void ExplicitLargeDecimalMatchingRetainsBackendWirePrecision(string comparison, bool expected)
+    {
+        // serde_json stores integers above UInt64.MaxValue as f64, so these wire numbers coincide.
+        var evaluator = new LocalEvaluator(ParseDefinitions("[79228162514264337593543950334]", comparison, 2));
+        foreach (var property in new[] { decimal.MaxValue, decimal.MaxValue - 1 })
+        {
+            using var wire = JsonDocument.Parse(JsonSerializer.Serialize(property));
+            Assert.Equal(expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = wire.RootElement }));
+            Assert.Equal(expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = property }));
+        }
+
+        // String operands retain their digits; they are not converted into floating-point numbers.
+        Assert.Equal(!expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = "79228162514264337593543950334" }));
+        // Integers within UInt64's range retain their precision.
+        evaluator = new LocalEvaluator(ParseDefinitions("[18446744073709551614]", comparison, 2));
+        Assert.Equal(!expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = 18446744073709551615m }));
+    }
+
+    public static TheoryData<object, string, string> NestedDecimalMatchingCases => new()
+    {
+        { new decimal[] { 1.00m }, "[1.0]", "[1.00]" },
+        { new List<decimal> { -1.2300m, 0.00m }, "[-1.23,0.0]", "[-1.2300,0.00]" },
+        { new Dictionary<string, object?> { ["value"] = 1.00m }, "{\"value\":1.0}", "{\"value\":1.00}" },
+        { new object[] { new decimal[] { 1.00m } }, "[[1.0]]", "[[1.00]]" },
+        {
+            new Dictionary<string, object?> { ["values"] = new object[] { new Dictionary<string, object?> { ["value"] = 1.00m } } },
+            "{\"values\":[{\"value\":1.0}]}", "{\"values\":[{\"value\":1.00}]}"
+        },
+        { new object?[] { 1m, 1.00m, "1.00", true, null }, "[1,1.0,\"1.00\",true,null]", "[1,1.00,\"1.00\",true,null]" }
+    };
+
+    [Theory]
+    [MemberData(nameof(NestedDecimalMatchingCases))]
+    public void ExplicitNestedDecimalMatchingUsesWireRepresentation(object property, string canonical, string legacy)
+    {
+        using var wire = JsonDocument.Parse(JsonSerializer.Serialize(property));
+        foreach (var comparison in new[] { "exact", "is_not" })
+        {
+            foreach (var filterJson in new[] { JsonSerializer.Serialize(canonical), $"[{canonical}]" })
+            {
+                var evaluator = new LocalEvaluator(ParseDefinitions(filterJson, comparison, 2));
+                var expected = comparison == "exact";
+                Assert.Equal(expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = wire.RootElement }));
+                Assert.Equal(expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = property }));
+            }
+
+            foreach (var version in new int?[] { null, 1, 2, 0, 3 })
+            {
+                var evaluator = new LocalEvaluator(ParseDefinitions(JsonSerializer.Serialize(legacy), comparison, version));
+                var expected = comparison == "exact" ? version != 2 : version == 2;
+                Assert.Equal(expected, evaluator.EvaluateFeatureFlag("test", "person", personProperties: new() { ["value"] = property }));
+            }
+        }
+        Assert.True(new PropertyFilterValue(legacy).IsExactMatch(property));
+        Assert.True(new PropertyFilterValue(legacy).IsContainedBy(property, StringComparison.Ordinal));
+    }
+
     [Fact]
     public void DecimalNormalizationPreservesLegacyAndOtherOperators()
     {
