@@ -24,7 +24,8 @@ var state = new AdapterState();
 app.MapGet("/health", () => new HealthResponse(
     SdkName: "posthog-dotnet",
     SdkVersion: VersionConstants.Version,
-    AdapterVersion: "1.0.0"
+    AdapterVersion: "1.0.0",
+    Capabilities: ["capture_v0", "encoding_gzip"]
 ));
 
 app.MapPost("/init", async (InitRequest request) =>
@@ -246,7 +247,8 @@ app.Run();
 record HealthResponse(
     [property: JsonPropertyName("sdk_name")] string SdkName,
     [property: JsonPropertyName("sdk_version")] string SdkVersion,
-    [property: JsonPropertyName("adapter_version")] string AdapterVersion
+    [property: JsonPropertyName("adapter_version")] string AdapterVersion,
+    [property: JsonPropertyName("capabilities")] string[] Capabilities
 );
 
 record InitRequest(

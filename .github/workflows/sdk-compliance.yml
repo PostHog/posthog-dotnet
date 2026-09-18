@@ -18,4 +18,24 @@ jobs:
     with:
       adapter-dockerfile: "sdk_compliance_adapter/Dockerfile"
       adapter-context: "."
-      test-harness-version: "0.10.0"
+      test-harness-version: "1.0.0"
+      report-name: "sdk-compliance-report-dotnet-v0"
+
+  coverage-inventory:
+    name: Verify compliance test inventory
+    needs: compliance
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test coverage checks
+        run: python3 -m unittest discover -s sdk_compliance_adapter -p 'test_*.py'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sdk-compliance-report-dotnet-v0
+          path: report
+      - name: Verify all 47 tests were selected
+        run: python3 sdk_compliance_adapter/check_coverage.py --report report/sdk-compliance-report.md
