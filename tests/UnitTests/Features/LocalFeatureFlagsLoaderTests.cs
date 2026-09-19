@@ -1,11 +1,93 @@
 using System.Net;
 using PostHog;
+using PostHog.Api;
+using PostHog.Features;
+using PostHog.Json;
 using UnitTests.Fakes;
+using static LocalEvaluatorTests.VersionedPropertyMatchingTests;
 #if NETCOREAPP3_1
 using TestLibrary.Fakes.Polyfills;
 #endif
 
 namespace LocalFeatureFlagsLoaderTests;
+
+public class VersionedDefinitionSnapshots
+{
+    [Fact]
+    public async Task PreservesCachedSnapshotOn304AndFailureAndResetsOnVersionOnlyRefresh()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        using var httpClient = new HttpClient(container.FakeHttpMessageHandler);
+        using var apiClient = container.Activate<PostHogApiClient>(httpClient);
+        await using var loader = container.Activate<LocalFeatureFlagsLoader>(apiClient);
+        var handler = container.FakeHttpMessageHandler;
+        handler.AddLocalEvaluationResponseWithETag(DefinitionsJson("false", "exact", 1), "\"legacy\"");
+        var legacy = await loader.GetFeatureFlagsForLocalEvaluationAsync(CancellationToken.None);
+        Assert.NotNull(legacy);
+        Assert.Equal(true, Evaluate(legacy));
+
+        handler.AddLocalEvaluationResponseWithETag(DefinitionsJson("false", "exact", 2), "\"explicit\"");
+        var explicitEvaluator = await loader.RefreshAsync(CancellationToken.None);
+        Assert.NotNull(explicitEvaluator);
+        Assert.NotSame(legacy, explicitEvaluator);
+        Assert.Equal(2, explicitEvaluator.LocalEvaluationApiResult.PropertyMatchingVersion);
+        Assert.Equal(false, Evaluate(explicitEvaluator));
+        Assert.Same(explicitEvaluator, await loader.GetFeatureFlagsForLocalEvaluationAsync(CancellationToken.None));
+        Assert.Equal(true, Evaluate(legacy)); // An in-flight reader keeps its original semantics.
+
+        var notModified = handler.AddLocalEvaluationNotModifiedResponse();
+        Assert.Same(explicitEvaluator, await loader.RefreshAsync(CancellationToken.None));
+        Assert.Equal("\"explicit\"", notModified.ReceivedRequest!.Headers.IfNoneMatch.Single().Tag);
+        Assert.Equal(false, Evaluate(explicitEvaluator));
+
+        handler.AddResponse(FakeHttpMessageHandlerExtensions.LocalEvaluationUrl, HttpMethod.Get, new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("{\"type\":\"server_error\",\"detail\":\"unavailable\"}", System.Text.Encoding.UTF8, "application/json")
+        });
+        Assert.Same(explicitEvaluator, await loader.RefreshAsync(CancellationToken.None));
+        Assert.Equal(false, Evaluate(explicitEvaluator));
+
+        foreach (var version in new int?[] { 1, 2, null })
+        {
+            handler.AddLocalEvaluationResponseWithETag(DefinitionsJson("false", "exact", version), "\"refresh\"");
+            var refreshed = await loader.RefreshAsync(CancellationToken.None);
+            Assert.NotNull(refreshed);
+            Assert.Equal(version, refreshed.LocalEvaluationApiResult.PropertyMatchingVersion);
+            Assert.Equal(version != 2, Evaluate(refreshed));
+        }
+        Assert.Equal(false, Evaluate(explicitEvaluator));
+    }
+
+    [Fact]
+    public async Task PublicSingleBulkAndFullResultsFollowVersionOnlyReloadWithoutRemoteFallback()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        await using var client = container.Activate<PostHogClient>();
+        var remote = container.FakeHttpMessageHandler.AddFlagsResponse("""{"flags": {}}""");
+        var properties = new Dictionary<string, object?> { ["value"] = "banana" };
+        var options = new FeatureFlagOptions { PersonProperties = properties, OnlyEvaluateLocally = true };
+        var allOptions = new AllFeatureFlagsOptions { PersonProperties = properties, OnlyEvaluateLocally = true };
+        foreach (var version in new int?[] { 1, 2, 1, 2, null })
+        {
+            container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(DefinitionsJson("false", "exact", version), "\"reload\"");
+            await client.LoadFeatureFlagsAsync(CancellationToken.None);
+#pragma warning disable CS0618 // Verify compatibility of the legacy single-flag API too.
+            var single = await client.GetFeatureFlagAsync("test", "person", options, CancellationToken.None);
+#pragma warning restore CS0618
+            Assert.NotNull(single);
+            Assert.Equal(version != 2, single.IsEnabled);
+            var bulk = await client.GetAllFeatureFlagsAsync("person", allOptions, CancellationToken.None);
+            Assert.Equal(version != 2, bulk["test"].IsEnabled);
+            var full = await client.EvaluateFlagsAsync("person", options, CancellationToken.None);
+            Assert.Contains("test", full.Keys);
+            Assert.Equal(version != 2, full.IsEnabled("test"));
+        }
+        Assert.Empty(remote.ReceivedRequests);
+    }
+
+    static StringOrValue<bool> Evaluate(LocalEvaluator evaluator) => evaluator.EvaluateFeatureFlag(
+        "test", "person", personProperties: new() { ["value"] = "banana" });
+}
 
 public class TheDisposeAsyncMethod
 {
