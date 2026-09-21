@@ -137,7 +137,7 @@
           "Microsoft.Extensions.Caching.Memory": "[10.0.12, )",
           "Microsoft.Extensions.Http": "[10.0.12, )",
           "Microsoft.Extensions.Logging": "[10.0.12, )",
-          "System.Text.Json": "[10.0.11, )"
+          "System.Text.Json": "[10.0.12, )"
         }
       },
       "Microsoft.Extensions.Caching.Memory": {
@@ -206,7 +206,7 @@
       },
       "System.Text.Json": {
         "type": "CentralTransitive",
-        "requested": "[10.0.11, )",
+        "requested": "[10.0.12, )",
         "resolved": "10.0.12",
         "contentHash": "AHlVpUiY96eC6Oar1Gf0YbafU7E2NUU9D80O2Xk5v7ryL3kpSsbI0EusJBE8kQfwPuDdUDoKUItArzXQHxomCg==",
         "dependencies": {
