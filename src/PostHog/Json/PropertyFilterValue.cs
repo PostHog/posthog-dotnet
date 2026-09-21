@@ -194,8 +194,29 @@ public class PropertyFilterValue
     /// </summary>
     /// <param name="overrideValue">The override value.</param>
     /// <returns><c>true</c> if the override value is an "exact" match for this value.</returns>
-    public bool IsExactMatch(object? overrideValue)
+    public bool IsExactMatch(object? overrideValue) => IsExactMatch(overrideValue, propertyMatchingVersion: null);
+
+    internal bool IsExactMatch(object? overrideValue, int? propertyMatchingVersion)
     {
+        if (propertyMatchingVersion == 2)
+        {
+            // Empty filters retain recursive legacy truthiness, not empty ANY membership.
+            if (ListOfStrings is { Count: 0 })
+            {
+                return IsTruthyPropertyValue(overrideValue);
+            }
+
+            var comparand = ToInvariantString(overrideValue, normalizeDecimals: true);
+            return this switch
+            {
+                { ListOfStrings: { } values } => values.Any(value => UnicodeLowercaseEquals(value, comparand)),
+                { StringValue: { } value } => UnicodeLowercaseEquals(value, comparand),
+                { BooleanValue: { } value } => UnicodeLowercaseEquals(value ? "true" : "false", comparand),
+                { CohortId: { } value } => UnicodeLowercaseEquals(value.ToString(CultureInfo.InvariantCulture), comparand),
+                _ => false
+            };
+        }
+
         if (TryGetBooleanValue(out var booleanValue))
         {
             return booleanValue == IsTruthyPropertyValue(overrideValue);
@@ -207,6 +228,13 @@ public class PropertyFilterValue
             { StringValue: { } stringValue } => UnicodeLowercaseEquals(stringValue, ToInvariantString(overrideValue)),
             _ => false
         };
+    }
+
+    static string StringifyDecimal(decimal value)
+    {
+        // Preserve the wire number's integer/float distinction and normalize its scale and precision like JSON filters.
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value));
+        return StringifyJsonElement(document.RootElement);
     }
 
     bool TryGetBooleanValue(out bool value)
@@ -270,10 +298,10 @@ public class PropertyFilterValue
 
     // Override values use the same compact JSON representation as serde_json::Value::to_string in the flags service.
     // Strings remain unquoted because the service returns their contents directly.
-    static string? ToInvariantString(object? value) =>
-        ToInvariantString(value, new HashSet<object>(ReferenceEqualityComparer.Instance), depth: 0);
+    static string? ToInvariantString(object? value, bool normalizeDecimals = false) =>
+        ToInvariantString(value, new HashSet<object>(ReferenceEqualityComparer.Instance), depth: 0, normalizeDecimals);
 
-    static string? ToInvariantString(object? value, HashSet<object> ancestors, int depth) => value switch
+    static string? ToInvariantString(object? value, HashSet<object> ancestors, int depth, bool normalizeDecimals) => value switch
     {
         null => "null",
         string stringValue => stringValue,
@@ -281,10 +309,11 @@ public class PropertyFilterValue
         bool booleanValue => booleanValue ? "true" : "false",
         double doubleValue => StringifyFloatingPoint(doubleValue),
         float floatValue => StringifyFloatingPoint(floatValue),
+        decimal decimalValue when normalizeDecimals => StringifyDecimal(decimalValue),
         JsonDocument document => StringifyJsonElement(document.RootElement),
         JsonElement element => StringifyJsonElement(element),
-        IDictionary dictionary => StringifyDictionary(dictionary, ancestors, depth),
-        IEnumerable enumerable => StringifyArray(enumerable, ancestors, depth),
+        IDictionary dictionary => StringifyDictionary(dictionary, ancestors, depth, normalizeDecimals),
+        IEnumerable enumerable => StringifyArray(enumerable, ancestors, depth, normalizeDecimals),
         _ => Convert.ToString(value, CultureInfo.InvariantCulture)
     };
 
@@ -429,7 +458,7 @@ public class PropertyFilterValue
         return output.Append('}').ToString();
     }
 
-    static string? StringifyDictionary(IDictionary dictionary, HashSet<object> ancestors, int depth)
+    static string? StringifyDictionary(IDictionary dictionary, HashSet<object> ancestors, int depth, bool normalizeDecimals)
     {
         if (depth >= 64 || !ancestors.Add(dictionary))
         {
@@ -458,7 +487,7 @@ public class PropertyFilterValue
                 }
                 AppendJsonString(output, property.Key);
                 output.Append(':');
-                if (!AppendJsonValue(output, property.Value, ancestors, depth + 1))
+                if (!AppendJsonValue(output, property.Value, ancestors, depth + 1, normalizeDecimals))
                 {
                     return null;
                 }
@@ -472,7 +501,7 @@ public class PropertyFilterValue
         }
     }
 
-    static string? StringifyArray(IEnumerable values, HashSet<object> ancestors, int depth)
+    static string? StringifyArray(IEnumerable values, HashSet<object> ancestors, int depth, bool normalizeDecimals)
     {
         if (depth >= 64 || !ancestors.Add(values))
         {
@@ -489,7 +518,7 @@ public class PropertyFilterValue
                 {
                     output.Append(',');
                 }
-                if (!AppendJsonValue(output, value, ancestors, depth + 1))
+                if (!AppendJsonValue(output, value, ancestors, depth + 1, normalizeDecimals))
                 {
                     return null;
                 }
@@ -528,7 +557,8 @@ public class PropertyFilterValue
         StringBuilder output,
         object? value,
         HashSet<object> ancestors,
-        int depth)
+        int depth,
+        bool normalizeDecimals)
     {
         if (value is string stringValue)
         {
@@ -551,7 +581,7 @@ public class PropertyFilterValue
             return true;
         }
 
-        var stringifiedValue = ToInvariantString(value, ancestors, depth);
+        var stringifiedValue = ToInvariantString(value, ancestors, depth, normalizeDecimals);
         if (stringifiedValue is null)
         {
             return false;

@@ -678,8 +678,8 @@ internal sealed class LocalEvaluator
 
         return propertyFilter.Operator switch
         {
-            ComparisonOperator.Exact => value.IsExactMatch(overrideValue),
-            ComparisonOperator.IsNot => !value.IsExactMatch(overrideValue),
+            ComparisonOperator.Exact => value.IsExactMatch(overrideValue, LocalEvaluationApiResult.PropertyMatchingVersion),
+            ComparisonOperator.IsNot => !value.IsExactMatch(overrideValue, LocalEvaluationApiResult.PropertyMatchingVersion),
             ComparisonOperator.GreaterThan => value < overrideValue,
             ComparisonOperator.GreaterThanOrEquals => value <= overrideValue,
             ComparisonOperator.LessThan => value > overrideValue,
