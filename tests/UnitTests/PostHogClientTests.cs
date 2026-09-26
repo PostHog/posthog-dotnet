@@ -460,7 +460,11 @@ public class TheCaptureMethod
                     && capturedEvent.Properties.ContainsKey("$lib_version")
                     && capturedEvent.Properties.ContainsKey("$is_server")
                     && capturedEvent.Properties.TryGetValue("source", out var source)
-                    && (string)source == "super";
+                    && (string)source == "super"
+                    && capturedEvent.Properties.TryGetValue("$feature/flag1", out var flag)
+                    && flag is true
+                    && capturedEvent.Properties["$active_feature_flags"] is string[] activeFlags
+                    && activeFlags.SequenceEqual(["flag1"]);
                 capturedEvent.Properties.Remove("secret");
                 capturedEvent.Properties["before_send"] = true;
                 return capturedEvent;
@@ -469,8 +473,9 @@ public class TheCaptureMethod
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
         var inputProperties = new Dictionary<string, object> { ["secret"] = "remove-me" };
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags":{"flag1":true}}""");
 
-        client.Capture("test-user", "before-send-event", inputProperties);
+        client.Capture("test-user", "before-send-event", inputProperties, groups: null, sendFeatureFlags: true);
         await client.FlushAsync();
 
         Assert.Equal("remove-me", inputProperties["secret"]);
@@ -1355,6 +1360,8 @@ public class TheCaptureExceptionMethod
     {
         var (_, requestHandler, client) = CreateClient();
         var exception = CreateExceptionThroughHiddenMethod();
+        Assert.Contains(new System.Diagnostics.StackTrace(exception, true).GetFrames(),
+            frame => frame.GetMethod()?.Name == nameof(ThrowFromHiddenMethod));
 
         client.CaptureException(exception, "some-distinct-id");
         await client.FlushAsync();
@@ -1362,6 +1369,8 @@ public class TheCaptureExceptionMethod
         var (_, _, properties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
         var frames = GetStackFrames(GetFirstException(properties));
 
+        Assert.Contains(frames, frame =>
+            frame.GetProperty("function").GetString() == nameof(CreateExceptionThroughHiddenMethod));
         Assert.DoesNotContain(frames, frame =>
             frame.GetProperty("function").GetString() == nameof(ThrowFromHiddenMethod));
     }
@@ -1512,11 +1521,19 @@ public class TheCaptureExceptionMethod
     [Fact]
     public async Task CaptureExceptionCauseIOFailureEmptyContext()
     {
-        var (_, requestHandler, client) = CreateClient();
+        var (container, requestHandler, client) = CreateClient();
         var compiledThrower = await CreateDivideByZeroExceptionWithTempSourceFileAsync();
 
         try
         {
+            client.CaptureException(compiledThrower.Exception, "some-distinct-id");
+            await client.FlushAsync();
+            var (_, _, readableProperties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+            var readableFrame = Assert.Single(GetStackFrames(GetFirstException(readableProperties)),
+                frame => frame.GetProperty("abs_path").GetString() == compiledThrower.SourcePath);
+            Assert.Equal("var _ = 1 / zero;", readableFrame.GetProperty("context_line").GetString()!.Trim());
+            requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+
             // Lock the source file exclusively so File.ReadAllLines(sourcePath) will throw IOException
             // and as result frames will not contain source code context. Use a temp file so parallel
             // target-framework test runs do not contend over this test source file.
@@ -1525,6 +1542,7 @@ public class TheCaptureExceptionMethod
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.None);
+            Assert.Throws<IOException>(() => File.ReadAllLines(compiledThrower.SourcePath));
 
             client.CaptureException(compiledThrower.Exception, "some-distinct-id");
             await client.FlushAsync();
@@ -1536,21 +1554,16 @@ public class TheCaptureExceptionMethod
             Assert.True(File.Exists(compiledThrower.SourcePath));
             Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
 
-            var sourceFrame = frames.FirstOrDefault(f =>
+            var sourceFrame = Assert.Single(frames, f =>
                 f.TryGetProperty("abs_path", out var absPath) &&
                 string.Equals(absPath.GetString(), compiledThrower.SourcePath, StringComparison.Ordinal));
 
-            // In Release builds, stack frames may not include source file paths due
-            // to JIT optimizations, making this scenario impossible to reproduce.
-            if (sourceFrame.ValueKind is JsonValueKind.Undefined)
-            {
-                return;
-            }
-
+            Assert.Equal("Boom", sourceFrame.GetProperty("function").GetString());
             AssertContextEmpty(sourceFrame);
         }
         finally
         {
+            compiledThrower.LoadContext.Unload();
             File.Delete(compiledThrower.SourcePath);
         }
     }
@@ -1564,6 +1577,7 @@ public class TheCaptureExceptionMethod
             using System;
             public static class Thrower
             {
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
                 public static void Boom()
                 {
                     int zero = 0;
@@ -1610,6 +1624,8 @@ public class TheCaptureExceptionMethod
             }
             catch (TargetInvocationException tie) when (tie.InnerException is DivideByZeroException ex)
             {
+                Assert.Contains(new System.Diagnostics.StackTrace(ex, true).GetFrames(),
+                    frame => frame?.GetFileName() == sourcePath && frame.GetFileLineNumber() > 0);
                 shouldDeleteSource = false;
                 return (sourcePath, ex, assemblyLoadContext);
             }
@@ -1666,6 +1682,7 @@ public class TheCaptureExceptionMethod
     }
 
 #if NET8_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static InvalidOperationException CreateExceptionThroughHiddenMethod()
     {
         try
@@ -1680,6 +1697,7 @@ public class TheCaptureExceptionMethod
     }
 
     [System.Diagnostics.StackTraceHidden]
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static void ThrowFromHiddenMethod()
         => throw new InvalidOperationException("Hidden exception");
 #endif
@@ -1691,29 +1709,30 @@ public class TheCaptureExceptionMethod
     {
         var (_, requestHandler, client) = CreateClient();
         var compiledThrower = await CreateDivideByZeroExceptionWithTempSourceFileAsync();
-        File.Delete(compiledThrower.SourcePath);
-
-        client.CaptureException(compiledThrower.Exception, "some-distinct-id");
-        await client.FlushAsync();
-
-        var (_, batchItem, props) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: true));
-        var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
-        var frames = GetStackFrames(divideByZeroException);
-        var sourceFrame = frames.FirstOrDefault(f =>
-            f.TryGetProperty("abs_path", out var absPath) &&
-            string.Equals(absPath.GetString(), compiledThrower.SourcePath, StringComparison.Ordinal));
-
-        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
-
-        // Some runtime/build combinations do not include source file paths in stack frames.
-        // When source info is absent, this scenario cannot be reproduced.
-        if (sourceFrame.ValueKind is JsonValueKind.Undefined)
+        try
         {
-            return;
-        }
+            File.Delete(compiledThrower.SourcePath);
+            Assert.False(File.Exists(compiledThrower.SourcePath));
 
-        Assert.Equal(Path.GetFileName(compiledThrower.SourcePath), sourceFrame.GetProperty("filename").GetString());
-        AssertContextEmpty(sourceFrame);
+            client.CaptureException(compiledThrower.Exception, "some-distinct-id");
+            await client.FlushAsync();
+
+            var (_, batchItem, props) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: true));
+            var divideByZeroException = GetExceptionOfType(props, "System.DivideByZeroException");
+            var frames = GetStackFrames(divideByZeroException);
+            var sourceFrame = Assert.Single(frames, f =>
+                f.TryGetProperty("abs_path", out var absPath) &&
+                string.Equals(absPath.GetString(), compiledThrower.SourcePath, StringComparison.Ordinal));
+
+            Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+            Assert.Equal(Path.GetFileName(compiledThrower.SourcePath), sourceFrame.GetProperty("filename").GetString());
+            AssertContextEmpty(sourceFrame);
+        }
+        finally
+        {
+            compiledThrower.LoadContext.Unload();
+            File.Delete(compiledThrower.SourcePath);
+        }
     }
 
     [Fact]
@@ -1762,13 +1781,10 @@ public class TheCaptureExceptionMethod
         var fld = typeof(Exception).GetField("_innerException", BindingFlags.NonPublic | BindingFlags.Instance)
                ?? typeof(Exception).GetField("m_innerException", BindingFlags.NonPublic | BindingFlags.Instance);
 
-        if (fld is null)
-        {
-            // runtime doesn't expose the field
-            return;
-        }
-
+        Assert.NotNull(fld);
         fld.SetValue(ex1, ex2);
+        Assert.Same(ex1, ex2.InnerException);
+        Assert.Same(ex2, ex1.InnerException);
 
         client.CaptureException(ex1, "some-distinct-id");
         await client.FlushAsync();
@@ -1777,9 +1793,7 @@ public class TheCaptureExceptionMethod
         var (_, _, props) = ParseSingleEvent(received);
         var exceptionsList = GetExceptionList(props);
 
-        Assert.Equal(2, exceptionsList.Count);
-        Assert.Equal(ex1, ex2.InnerException);
-        Assert.Equal(ex2, ex1.InnerException);
+        Assert.Equal(["ex1", "ex2"], exceptionsList.Select(item => item.GetProperty("value").GetString()));
     }
 
     [Fact]
@@ -2281,10 +2295,24 @@ public class TheLoadFeatureFlagsAsyncMethod
     public async Task LoadsFeatureFlagsSuccessfully()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
-        container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags": []}""");
+        var initialResponse = container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """{"flags": [{"key":"reload-flag","active":true,"filters":{"groups":[{"properties":[],"rollout_percentage":100}]}}]}""");
         var client = container.Activate<PostHogClient>();
+        var options = new FeatureFlagOptions { OnlyEvaluateLocally = true, SendFeatureFlagEvents = false };
 
         await client.LoadFeatureFlagsAsync();
+        Assert.Single(initialResponse.ReceivedRequests);
+        var initialFlag = (await client.EvaluateFlagsAsync("user", options)).GetFlag("reload-flag");
+        Assert.NotNull(initialFlag);
+        Assert.True(initialFlag.IsEnabled);
+
+        var refreshedResponse = container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """{"flags": [{"key":"reload-flag","active":false,"filters":{"groups":[{"properties":[],"rollout_percentage":100}]}}]}""");
+        await client.LoadFeatureFlagsAsync();
+        Assert.Single(refreshedResponse.ReceivedRequests);
+        var refreshedFlag = (await client.EvaluateFlagsAsync("user", options)).GetFlag("reload-flag");
+        Assert.NotNull(refreshedFlag);
+        Assert.False(refreshedFlag.IsEnabled);
 
         // Verify info log was recorded
         var infoLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Information);

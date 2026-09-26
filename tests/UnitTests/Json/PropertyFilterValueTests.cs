@@ -340,8 +340,13 @@ public class TheCreateMethod
     {
         var filterPropertyValue = PropertyFilterValue.Create(JsonDocument.Parse(jsonValue).RootElement);
 
-        if (filterPropertyValue != null)
+        if (jsonValue == "null")
         {
+            Assert.Null(filterPropertyValue);
+        }
+        else
+        {
+            Assert.NotNull(filterPropertyValue);
             Assert.Null(filterPropertyValue.BooleanValue);
         }
     }

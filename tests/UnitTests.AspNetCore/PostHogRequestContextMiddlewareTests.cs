@@ -260,11 +260,17 @@ public class ThePostHogRequestContextMiddleware
         var client = container.Activate<PostHogClient>();
         var results = new Dictionary<string, (string? DistinctId, string? SessionId)>();
         var gate = new object();
+        var bothEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var enteredCount = 0;
 
         var middleware = CreateMiddleware(
             async context =>
             {
-                await Task.Delay(25);
+                if (Interlocked.Increment(ref enteredCount) == 2)
+                {
+                    bothEntered.SetResult(true);
+                }
+                await bothEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 lock (gate)
                 {
                     results[context.Request.Path.Value ?? string.Empty] = (
@@ -388,13 +394,22 @@ public class ThePostHogRequestContextMiddleware
                 Arg.Any<DateTimeOffset?>())
             .Returns(_ => throw new InvalidOperationException("capture failed"));
 
+        var original = new NotSupportedException("original");
         var middleware = CreateMiddleware(
-            _ => throw new NotSupportedException("original"),
+            _ => throw original,
             postHog,
             options => options.CaptureExceptions = true);
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(() => middleware.InvokeAsync(CreateHttpContext()));
-        Assert.Equal("original", exception.Message);
+        Assert.Same(original, exception);
+        postHog.Received(1).CaptureException(
+            original,
+            Arg.Any<string>(),
+            Arg.Is<Dictionary<string, object>?>(properties => properties != null
+                && (int)properties["$response_status_code"] == 500),
+            Arg.Any<GroupCollection?>(),
+            Arg.Any<FeatureFlagEvaluations?>(),
+            Arg.Any<DateTimeOffset?>());
     }
 
     static PostHogRequestContextMiddleware CreateMiddleware(

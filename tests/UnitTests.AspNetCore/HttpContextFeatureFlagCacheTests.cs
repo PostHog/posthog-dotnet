@@ -86,12 +86,17 @@ public class TheGetAndCacheFlagsAsyncMethod
             }
         };
 
-        var result = await cache.GetAndCacheFlagsAsync(
-            distinctId,
-            (_, _) => Task.FromResult(flagsResult),
-            CancellationToken.None);
+        var secondFlagsResult = new FlagsResult { RequestId = "second-fetch" };
+        var fetchCount = 0;
+        Task<FlagsResult> Fetch(string _, CancellationToken token)
+            => Task.FromResult(++fetchCount == 1 ? flagsResult : secondFlagsResult);
 
-        Assert.Equal(flagsResult, result);
+        var result = await cache.GetAndCacheFlagsAsync(distinctId, Fetch, CancellationToken.None);
+        var secondResult = await cache.GetAndCacheFlagsAsync(distinctId, Fetch, CancellationToken.None);
+
+        Assert.Equal(2, fetchCount);
+        Assert.Same(flagsResult, result);
+        Assert.Same(secondFlagsResult, secondResult);
     }
 
 
@@ -231,7 +236,8 @@ public class TheGetAndCacheFlagsAsyncMethod
 
         var cache = new HttpContextFeatureFlagCache(httpContextAccessor);
         var distinctId = "user123";
-        var personProperties = new Dictionary<string, object?> { ["email"] = "test@example.com" };
+        var personProperties = new Dictionary<string, object?> { ["email"] = "test@example.com", ["plan"] = "pro" };
+        var equalProperties = new Dictionary<string, object?> { ["plan"] = "pro", ["email"] = "test@example.com" };
 
         var flags = new FlagsResult
         {
@@ -249,7 +255,7 @@ public class TheGetAndCacheFlagsAsyncMethod
         };
 
         var result1 = await cache.GetAndCacheFlagsAsync(distinctId, personProperties, null, fetcher, CancellationToken.None);
-        var result2 = await cache.GetAndCacheFlagsAsync(distinctId, personProperties, null, fetcher, CancellationToken.None);
+        var result2 = await cache.GetAndCacheFlagsAsync(distinctId, equalProperties, null, fetcher, CancellationToken.None);
 
         Assert.Equal(1, fetchCount); // Should only fetch once
         Assert.Same(result1, result2);
@@ -457,11 +463,19 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
             { "feature1", new FeatureFlag { Key = "feature1", IsEnabled = true } }
         };
 
-        var result = await cache.GetAndCacheFeatureFlagsAsync(
-            distinctId,
-            _ => Task.FromResult((IReadOnlyDictionary<string, FeatureFlag>)featureFlags),
-            CancellationToken.None);
+        var secondFlags = new Dictionary<string, FeatureFlag>
+        {
+            ["feature1"] = new FeatureFlag { Key = "feature1", IsEnabled = false }
+        };
+        var fetchCount = 0;
+        Task<IReadOnlyDictionary<string, FeatureFlag>> Fetch(CancellationToken _)
+            => Task.FromResult<IReadOnlyDictionary<string, FeatureFlag>>(++fetchCount == 1 ? featureFlags : secondFlags);
 
+        var result = await cache.GetAndCacheFeatureFlagsAsync(distinctId, Fetch, CancellationToken.None);
+        var secondResult = await cache.GetAndCacheFeatureFlagsAsync(distinctId, Fetch, CancellationToken.None);
+
+        Assert.Equal(2, fetchCount);
         Assert.Equal(featureFlags, result);
+        Assert.Equal(secondFlags, secondResult);
     }
 }

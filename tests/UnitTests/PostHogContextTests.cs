@@ -23,6 +23,10 @@ public class ThePostHogContext
                 Assert.Equal(true, PostHogContext.Current?.Properties["inner"]);
             }
 
+            Assert.Equal("outer-user", PostHogContext.Current?.DistinctId);
+            Assert.Equal("outer-session", PostHogContext.Current?.SessionId);
+            Assert.Equal(new Dictionary<string, object> { ["outer"] = true }, PostHogContext.Current?.Properties);
+
             using (PostHogContext.BeginScope(properties: new Dictionary<string, object> { ["fresh"] = true }, fresh: true))
             {
                 Assert.Null(PostHogContext.Current?.DistinctId);
@@ -30,6 +34,10 @@ public class ThePostHogContext
                 Assert.False(PostHogContext.Current?.Properties.ContainsKey("outer"));
                 Assert.Equal(true, PostHogContext.Current?.Properties["fresh"]);
             }
+
+            Assert.Equal("outer-user", PostHogContext.Current?.DistinctId);
+            Assert.Equal("outer-session", PostHogContext.Current?.SessionId);
+            Assert.Equal(new Dictionary<string, object> { ["outer"] = true }, PostHogContext.Current?.Properties);
         }
 
         Assert.Null(PostHogContext.Current);
@@ -188,9 +196,24 @@ public class ThePostHogContext
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
-        await Task.WhenAll(
-            CaptureInContextAsync("user-a", "session-a", "event-a"),
-            CaptureInContextAsync("user-b", "session-b", "event-b"));
+        var readyA = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readyB = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var taskA = CaptureInContextAsync("user-a", "session-a", "event-a", readyA);
+        var taskB = CaptureInContextAsync("user-b", "session-b", "event-b", readyB);
+        try
+        {
+            var bothReady = Task.WhenAll(readyA.Task, readyB.Task);
+            Assert.Same(bothReady, await Task.WhenAny(bothReady, Task.Delay(TimeSpan.FromSeconds(5))));
+            await bothReady;
+            Assert.Null(PostHogContext.Current);
+        }
+        finally
+        {
+            release.SetResult(true);
+            await Task.WhenAll(taskA, taskB);
+        }
+        Assert.Null(PostHogContext.Current);
         await client.FlushAsync();
 
         using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
@@ -198,17 +221,21 @@ public class ThePostHogContext
             .EnumerateArray()
             .ToDictionary(e => e.GetProperty("event").GetString()!);
 
+        Assert.Equal(2, events.Count);
         Assert.Equal("user-a", events["event-a"].GetProperty("distinct_id").GetString());
         Assert.Equal("session-a", events["event-a"].GetProperty("properties").GetProperty("$session_id").GetString());
         Assert.Equal("user-b", events["event-b"].GetProperty("distinct_id").GetString());
         Assert.Equal("session-b", events["event-b"].GetProperty("properties").GetProperty("$session_id").GetString());
 
-        async Task CaptureInContextAsync(string distinctId, string sessionId, string eventName)
+        async Task CaptureInContextAsync(string distinctId, string sessionId, string eventName, TaskCompletionSource<bool> ready)
         {
             using (PostHogContext.BeginScope(distinctId: distinctId, sessionId: sessionId, fresh: true))
             {
-                await Task.Delay(10);
-                client.Capture(distinctId, eventName);
+                ready.SetResult(true);
+                await release.Task;
+                Assert.Equal(distinctId, PostHogContext.Current?.DistinctId);
+                Assert.Equal(sessionId, PostHogContext.Current?.SessionId);
+                client.Capture(null!, eventName);
             }
         }
     }

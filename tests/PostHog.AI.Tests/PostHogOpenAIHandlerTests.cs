@@ -466,8 +466,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 Arg.Any<string>(),
                 PostHogAIFieldNames.Generation,
                 Arg.Is<Dictionary<string, object>>(props =>
-                    props.ContainsKey(PostHogAIFieldNames.Input)
-                    && props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                    HasExpectedMessagePayloads(props)
                 ),
                 null,
                 false,
@@ -690,21 +689,23 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         HttpResponseMessage? response = null;
         try
         {
-            using (PostHogAIContext.BeginScope(privacyMode: true))
+            using (PostHogAIContext.BeginScope(distinctId: "request-user", traceId: "request-trace", privacyMode: true))
             {
-                response = await _client.PostAsync(
-                    new Uri("/v1/chat/completions", UriKind.Relative),
-                    requestContent
-                );
-
+                using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("/v1/chat/completions", UriKind.Relative))
+                {
+                    Content = requestContent
+                };
+                response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
                 Assert.True(response.IsSuccessStatusCode);
+                Assert.Empty(_postHogClient.ReceivedCalls());
             }
 
-            // Stream consumed outside the scope — privacy mode must still apply
-            var resultStream = await response.Content.ReadAsStreamAsync();
-            using (var reader = new StreamReader(resultStream))
+            using (PostHogAIContext.BeginScope(distinctId: "other-user", traceId: "other-trace", privacyMode: false))
             {
-                await reader.ReadToEndAsync();
+                var resultStream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(resultStream);
+                Assert.Equal(Encoding.UTF8.GetString(sseStream.ToArray()), await reader.ReadToEndAsync());
+                Assert.Empty(_postHogClient.ReceivedCalls());
             }
         }
         finally
@@ -723,11 +724,13 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                     && !props.ContainsKey(PostHogAIFieldNames.OutputChoices)
                     && (int)props[PostHogAIFieldNames.InputTokens] == 10
                     && (int)props[PostHogAIFieldNames.OutputTokens] == 5
+                    && (string)props[PostHogAIFieldNames.TraceId] == "request-trace"
                 ),
                 null,
                 false,
                 Arg.Any<DateTimeOffset?>()
             );
+        Assert.Equal("request-user", Assert.Single(_postHogClient.ReceivedCalls()).GetArguments()[0]);
     }
 
     [Fact]
@@ -794,14 +797,21 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 Arg.Any<string>(),
                 PostHogAIFieldNames.Generation,
                 Arg.Is<Dictionary<string, object>>(props =>
-                    props.ContainsKey(PostHogAIFieldNames.Input)
-                    && props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                    HasExpectedMessagePayloads(props)
                 ),
                 null,
                 false,
                 Arg.Any<DateTimeOffset?>()
             );
     }
+
+    static bool HasExpectedMessagePayloads(Dictionary<string, object> properties)
+        => JsonNode.DeepEquals(
+               JsonNode.Parse("""[{"role":"user","content":"Hello"}]"""),
+               properties[PostHogAIFieldNames.Input] as JsonNode)
+           && JsonNode.DeepEquals(
+               JsonNode.Parse("""[{"index":0,"message":{"role":"assistant","content":"Hi there!"},"finish_reason":"stop"}]"""),
+               properties[PostHogAIFieldNames.OutputChoices] as JsonNode);
 
     [Fact]
     public async Task SendAsyncCapturesErrorEventOnNetworkException()
@@ -933,13 +943,18 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
 
         Assert.True(response.IsSuccessStatusCode);
 
+        Assert.Equal("this is not json {{{{", await response.Content.ReadAsStringAsync());
+
         // Event should still be captured (with whatever properties could be extracted)
         _postHogClient
             .Received(1)
             .Capture(
                 Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<Dictionary<string, object>>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    (string)props[PostHogAIFieldNames.Model] == "gpt-4"
+                    && (string)props[PostHogAIFieldNames.Provider] == "openai"
+                    && (int)props[PostHogAIFieldNames.HttpStatus] == 200),
                 null,
                 false,
                 Arg.Any<DateTimeOffset?>()
@@ -1017,7 +1032,8 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 Arg.Any<string>(),
                 PostHogAIFieldNames.Generation,
                 Arg.Any<Dictionary<string, object>>(),
-                Arg.Is<GroupCollection>(g => g != null && g.Count == 1),
+                Arg.Is<GroupCollection>(g => g != null && g.Count == 1
+                    && g.Single().GroupType == "company" && g.Single().GroupKey == "acme-corp"),
                 false,
                 Arg.Any<DateTimeOffset?>()
             );
@@ -1078,6 +1094,7 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 properties: new Dictionary<string, object>
                 {
                     { "custom_prop", "custom_value" },
+                    { PostHogAIFieldNames.Model, "context-model" },
                 }
             )
         )
@@ -1098,6 +1115,8 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 PostHogAIFieldNames.Generation,
                 Arg.Is<Dictionary<string, object>>(props =>
                     (string)props["custom_prop"] == "custom_value"
+                    && (string)props[PostHogAIFieldNames.Model] == "context-model"
+                    && (int)props[PostHogAIFieldNames.InputTokens] == 9
                 ),
                 null,
                 false,

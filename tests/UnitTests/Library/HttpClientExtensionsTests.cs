@@ -588,7 +588,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             CancellationToken.None);
 
         await handler.WaitForRequestCountAsync(1);
+#if NET8_0_OR_GREATER
         Assert.Equal(1, handler.RequestCount);
+#endif
         timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         var result = await task;
 
@@ -686,6 +688,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         await handler.WaitForRequestCountAsync(1);
         timeProvider.Advance(TimeSpan.FromMilliseconds(9));
 #if NET8_0_OR_GREATER
+        // The netstandard build uses real Task.Delay, so fake time cannot hold a retry pending.
         Assert.Equal(1, handler.RequestCount);
 #endif
         timeProvider.Advance(TimeSpan.FromMilliseconds(1));
@@ -1178,7 +1181,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             CancellationToken.None);
 
         await handler.WaitForRequestCountAsync(1);
+#if NET8_0_OR_GREATER
         Assert.Equal(1, handler.RequestCount);
+#endif
         timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         var result = await task;
 
@@ -1325,8 +1330,7 @@ public class ThePostCompressedJsonAsyncMethod
         using var reader = new StreamReader(gzipStream, Encoding.UTF8);
         var decompressedJson = await reader.ReadToEndAsync();
 
-        Assert.Contains("test-event", decompressedJson, StringComparison.Ordinal);
-        Assert.Contains("api_key", decompressedJson, StringComparison.Ordinal);
+        JsonAssert.Equal("""{"api_key":"test","batch":[{"event":"test-event"}]}""", decompressedJson);
     }
 
     public static IEnumerable<object[]> CompressionFailureExceptions()
@@ -1384,23 +1388,23 @@ public class ThePostCompressedJsonAsyncMethod
 
         Assert.Empty(capturedContentEncoding ?? Enumerable.Empty<string>());
         Assert.NotNull(capturedBody);
-        Assert.Contains("test-event", capturedBody, StringComparison.Ordinal);
-        Assert.Contains("api_key", capturedBody, StringComparison.Ordinal);
+        JsonAssert.Equal("""{"api_key":"test","batch":[{"event":"test-event"}]}""", capturedBody);
     }
 
     [Fact]
     public async Task DoesNotCompressWhenCompressionDisabled()
     {
+        string? capturedBody = null;
         IEnumerable<string>? capturedContentEncoding = null;
 
-        var handler = new LambdaHttpMessageHandler(request =>
+        var handler = new LambdaHttpMessageHandler(async request =>
         {
             capturedContentEncoding = request.Content?.Headers.ContentEncoding;
-            // Response disposal is handled by PostJsonWithRetryAsync via using declaration
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            capturedBody = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"status\": 1}")
-            });
+            };
         });
 
         using var httpClient = new HttpClient(handler);
@@ -1419,7 +1423,10 @@ public class ThePostCompressedJsonAsyncMethod
             options,
             CancellationToken.None);
 
-        Assert.Empty(capturedContentEncoding ?? Enumerable.Empty<string>());
+        Assert.NotNull(capturedContentEncoding);
+        Assert.Empty(capturedContentEncoding);
+        Assert.NotNull(capturedBody);
+        JsonAssert.Equal("""{"api_key":"test","batch":[{"event":"test-event"}]}""", capturedBody);
     }
 }
 
