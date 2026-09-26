@@ -92,7 +92,7 @@ public class TheWaitForNextTickAsyncMethod
         // Dispose the timer
         timer.Dispose();
 
-        // Timer should return false immediately
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(500));
         Assert.False(await timer.WaitForNextTickAsync());
     }
 }

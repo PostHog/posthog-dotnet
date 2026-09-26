@@ -37,7 +37,7 @@ public class TheEnqueueMethod
     }
 
     [Fact]
-    public async Task CallsBatchHandlerWithBatchContextWhenThresholdMet()
+    public async Task CallsBatchHandlerWithNewContextForEachFlush()
     {
         var options = new FakeOptions<PostHogOptions>(new()
         {
@@ -221,10 +221,15 @@ public class TheEnqueueMethod
         await CompleteWithin(flushStarted.Task, TimeSpan.FromSeconds(1));
 
         var flushTask = batchHandler.FlushAsync();
-        var completedEarly = await Task.WhenAny(flushTask, Task.Delay(TimeSpan.FromMilliseconds(100)));
-        Assert.NotSame(flushTask, completedEarly);
-
-        flushCanProceed.SetResult();
+        try
+        {
+            Assert.False(flushTask.IsCompleted);
+            Assert.Empty(items);
+        }
+        finally
+        {
+            flushCanProceed.SetResult();
+        }
         await CompleteWithin(flushTask, TimeSpan.FromSeconds(1));
 
         Assert.Equal([42], items);
@@ -338,10 +343,11 @@ public class TheEnqueueMethod
 
         Assert.Equal([1], items);
 
-        batchHandler.Enqueue(Task.FromResult(2));
-        batchHandler.Enqueue(Task.FromResult(3));
+        Assert.False(batchHandler.Enqueue(Task.FromResult(2)));
+        Assert.False(batchHandler.Enqueue(Task.FromResult(3)));
 
         Assert.Equal(0, batchHandler.Count);
+        Assert.Equal([1], items);
     }
 
     static async Task CompleteWithin(Task task, TimeSpan timeout)
@@ -385,7 +391,9 @@ public class TheDisposeAsyncMethod
         }
 
         var timeout = TimeSpan.FromSeconds(1);
-        var completedTask = await Task.WhenAny(handlerCompleteTask.Task, Task.Delay(timeout)); // Wait for the flush invoked by DisposeAsync to complete.
+        var completedTask = await Task.WhenAny(handlerCompleteTask.Task, Task.Delay(timeout));
+        Assert.Same(handlerCompleteTask.Task, completedTask);
+        await handlerCompleteTask.Task;
 
         Assert.Equal([1, 2], items);
     }
@@ -463,6 +471,7 @@ public class TheDisposeAsyncMethod
             throw new TimeoutException("DisposeAsync did not complete within 5 seconds; possible deadlock.");
         }
 
+        await disposeTask;
         Assert.Equal([42], items);
     }
 
@@ -474,7 +483,12 @@ public class TheDisposeAsyncMethod
             FlushAt = 9,
             FlushInterval = TimeSpan.FromHours(3)
         });
-        Func<IEnumerable<int>, Task> handlerFunc = batch => throw new HttpRequestException("Test exception");
+        var attemptedItems = new List<int>();
+        Func<IEnumerable<int>, Task> handlerFunc = batch =>
+        {
+            attemptedItems.AddRange(batch);
+            throw new HttpRequestException("Test exception");
+        };
 
         await using var batchHandler = new AsyncBatchHandler<int, object>(
             handlerFunc,
@@ -483,6 +497,8 @@ public class TheDisposeAsyncMethod
         batchHandler.Enqueue(Task.FromResult(1));
         batchHandler.Enqueue(Task.FromResult(2));
 
-        // Test succeeds if no exception is thrown.
+        await batchHandler.DisposeAsync();
+
+        Assert.Equal([1, 2], attemptedItems);
     }
 }

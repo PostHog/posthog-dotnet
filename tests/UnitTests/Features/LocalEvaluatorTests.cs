@@ -1680,9 +1680,12 @@ public class TheFlagDependencyEvaluationMethod
         var flags = CreateFlagsWithDependencies(new Dictionary<string, LocalFeatureFlag>
         {
             ["flag-a"] = flagA,
+            ["flag-b"] = CreateSimpleFlag("flag-b", active: true),
+            ["valid-flag"] = CreateFlagWithDependency("valid-flag", "flag-b", expectedValue: true, ["flag-b"])
         });
 
         var localEvaluator = new LocalEvaluator(flags);
+        Assert.True(localEvaluator.EvaluateFeatureFlag("valid-flag", "test-user", personProperties: new Dictionary<string, object?>()).Value);
 
         Assert.Throws<InconclusiveMatchException>(() =>
             localEvaluator.EvaluateFeatureFlag(
@@ -1762,16 +1765,18 @@ public class TheFlagDependencyEvaluationMethod
     [Fact]
     public void ThrowsInconclusiveMatchExceptionWhenDependencyChainFlagNotFound()
     {
-        var mainFlag = CreateFlagWithDependency("main-flag", "non-existent-flag", expectedValue: true, ["non-existent-flag"]);
+        var mainFlag = CreateFlagWithDependency("main-flag", "dependency-flag", expectedValue: true, ["missing-ancestor", "dependency-flag"]);
 
         var flags = CreateFlagsWithDependencies(new Dictionary<string, LocalFeatureFlag>
         {
-            ["main-flag"] = mainFlag
+            ["main-flag"] = mainFlag,
+            ["dependency-flag"] = CreateSimpleFlag("dependency-flag", active: true),
+            ["valid-flag"] = CreateFlagWithDependency("valid-flag", "dependency-flag", expectedValue: true, ["dependency-flag"])
         });
 
         var localEvaluator = new LocalEvaluator(flags);
 
-        // This should throw because the dependency chain references a non-existent flag
+        Assert.True(localEvaluator.EvaluateFeatureFlag("valid-flag", "test-user", personProperties: new Dictionary<string, object?>()).Value);
         Assert.Throws<InconclusiveMatchException>(() =>
             localEvaluator.EvaluateFeatureFlag(
                 key: "main-flag",
