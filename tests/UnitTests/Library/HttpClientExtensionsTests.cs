@@ -69,7 +69,7 @@ public class ThePostJsonWithRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         // Start the request
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
@@ -79,8 +79,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete before advancing time
-        await handler.WaitForRequestCountAsync(1);
+        // Wait for retry timer registration before advancing fake time
+        await timeProvider.WaitForRetryAsync(handler, 1);
 
         // Advance time to trigger the retry
         timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -167,7 +167,7 @@ public class ThePostJsonWithRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.ServiceUnavailable, new { type = "error", detail = "Down" });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
             BatchUrl,
@@ -177,9 +177,9 @@ public class ThePostJsonWithRetryAsyncMethod
             CancellationToken.None);
 
         // Advance time for each retry attempt (1 initial + 3 retries)
-        for (var i = 1; i <= 4 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 3; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
@@ -200,7 +200,7 @@ public class ThePostJsonWithRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
             BatchUrl,
@@ -209,8 +209,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete before advancing time
-        await handler.WaitForRequestCountAsync(1);
+        // Wait for retry timer registration before advancing fake time
+        await timeProvider.WaitForRetryAsync(handler, 1);
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting for the Retry-After delay
@@ -234,7 +234,7 @@ public class ThePostJsonWithRetryAsyncMethod
         {
             Content = new StringContent("{\"type\": \"error\", \"detail\": \"rate limited\"}")
         };
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
         // Set Retry-After to a date 100ms in the future
         var retryAfterDate = timeProvider.GetUtcNow().AddMilliseconds(100);
         responseWithRetryAfter.Headers.RetryAfter = new RetryConditionHeaderValue(retryAfterDate);
@@ -250,8 +250,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete before advancing time
-        await handler.WaitForRequestCountAsync(1);
+        // Wait for retry timer registration before advancing fake time
+        await timeProvider.WaitForRetryAsync(handler, 1);
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting for the Retry-After delay
@@ -292,11 +292,6 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete
-        await handler.WaitForRequestCountAsync(1);
-
-        // With date in past, delay should be clamped to 0 - even minimal time advancement should trigger retry
-        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         var result = await task;
 
         Assert.NotNull(result);
@@ -314,7 +309,7 @@ public class ThePostJsonWithRetryAsyncMethod
         using var httpClient = CreateHttpClient(handler);
         // Use a long delay so we can cancel during it
         var options = CreateOptions(maxRetries: 3, initialRetryDelay: TimeSpan.FromMinutes(1));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
         using var cts = new CancellationTokenSource();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
@@ -324,8 +319,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             cts.Token);
 
-        // Wait for first request to complete (the one that returns 503)
-        await handler.WaitForRequestCountAsync(1);
+        // Wait for retry timer registration before canceling
+        await timeProvider.WaitForRetryAsync(handler, 1);
 
         // Cancel while waiting for retry delay
         await cts.CancelAsync();
@@ -350,7 +345,7 @@ public class ThePostJsonWithRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3, maxRetryDelay: TimeSpan.FromMilliseconds(50));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
             BatchUrl,
@@ -359,8 +354,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete before advancing time
-        await handler.WaitForRequestCountAsync(1);
+        // Wait for retry timer registration before advancing fake time
+        await timeProvider.WaitForRetryAsync(handler, 1);
 
 #if NET8_0_OR_GREATER
         // Verify task is waiting (delay was capped, not skipped)
@@ -383,7 +378,7 @@ public class ThePostJsonWithRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
             BatchUrl,
@@ -392,8 +387,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete before advancing time
-        await handler.WaitForRequestCountAsync(1);
+        // Wait for retry timer registration before advancing fake time
+        await timeProvider.WaitForRetryAsync(handler, 1);
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await task;
 
@@ -413,7 +408,7 @@ public class ThePostJsonWithRetryAsyncMethod
         using var httpClient = CreateHttpClient(handler);
         // Use small delays for fast tests
         var options = CreateOptions(maxRetries: 3, initialRetryDelay: TimeSpan.FromMilliseconds(10));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
             BatchUrl,
@@ -424,9 +419,9 @@ public class ThePostJsonWithRetryAsyncMethod
 
         // Advance time for each retry with exponential backoff
         // Delays: 10ms, 20ms, 40ms (doubled each time)
-        for (var i = 1; i <= 4 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 3; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromMilliseconds(50));
         }
 
@@ -481,11 +476,6 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete
-        await handler.WaitForRequestCountAsync(1);
-
-        // With negative delta clamped to 0, minimal time advancement triggers retry
-        timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         var result = await task;
 
         Assert.NotNull(result);
@@ -502,7 +492,7 @@ public class ThePostJsonWithRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { status = 1 });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithRetryAsync<ApiResult>(
             BatchUrl,
@@ -511,8 +501,8 @@ public class ThePostJsonWithRetryAsyncMethod
             options,
             CancellationToken.None);
 
-        // Wait for first request to complete before advancing time
-        await handler.WaitForRequestCountAsync(1);
+        // Wait for retry timer registration before advancing fake time
+        await timeProvider.WaitForRetryAsync(handler, 1);
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await task;
 
@@ -577,7 +567,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions();
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             FlagsUrl,
@@ -587,7 +577,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
-        await handler.WaitForRequestCountAsync(1);
+        await timeProvider.WaitForRetryAsync(handler, 1);
 #if NET8_0_OR_GREATER
         Assert.Equal(1, handler.RequestCount);
 #endif
@@ -675,7 +665,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 2, initialRetryDelay: TimeSpan.FromMilliseconds(10));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             FlagsUrl,
@@ -685,14 +675,14 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
-        await handler.WaitForRequestCountAsync(1);
+        await timeProvider.WaitForRetryAsync(handler, 1);
         timeProvider.Advance(TimeSpan.FromMilliseconds(9));
 #if NET8_0_OR_GREATER
         // The netstandard build uses real Task.Delay, so fake time cannot hold a retry pending.
         Assert.Equal(1, handler.RequestCount);
 #endif
         timeProvider.Advance(TimeSpan.FromMilliseconds(1));
-        await handler.WaitForRequestCountAsync(2);
+        await timeProvider.WaitForRetryAsync(handler, 2);
 
         timeProvider.Advance(TimeSpan.FromMilliseconds(19));
 #if NET8_0_OR_GREATER
@@ -715,7 +705,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             FlagsUrl,
@@ -725,9 +715,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
-        for (var i = 1; i <= 4 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 3; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromSeconds(2));
         }
 
@@ -747,7 +737,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddException(new HttpRequestException("Connection reset", new SocketException((int)SocketError.ConnectionReset)));
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 3);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             FlagsUrl,
@@ -757,9 +747,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
-        for (var i = 1; i <= 4 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 3; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromSeconds(2));
         }
 
@@ -777,7 +767,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         }
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
         var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
@@ -788,9 +778,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             circuitBreaker,
             CancellationToken.None);
 
-        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 4; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         }
 
@@ -857,7 +847,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
         var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
@@ -868,9 +858,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             circuitBreaker,
             CancellationToken.None);
 
-        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 4; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         }
 
@@ -919,7 +909,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         }
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
         var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
@@ -930,9 +920,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             circuitBreaker,
             CancellationToken.None);
 
-        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 4; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         }
 
@@ -971,7 +961,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddException(new HttpRequestException("Connection refused", new SocketException((int)SocketError.ConnectionRefused)));
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
         var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
@@ -982,9 +972,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             circuitBreaker,
             CancellationToken.None);
 
-        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 4; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         }
 
@@ -1023,7 +1013,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddException(new InvalidOperationException("Unexpected transport failure"));
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 10, maxRetryDelay: TimeSpan.FromMilliseconds(1));
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
         var circuitBreaker = new FeatureFlagRequestCircuitBreaker();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
@@ -1034,9 +1024,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             circuitBreaker,
             CancellationToken.None);
 
-        for (var i = 1; i <= 5 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 4; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromMilliseconds(1));
         }
 
@@ -1142,7 +1132,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { flags = new { } });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions();
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             FlagsUrl,
@@ -1152,7 +1142,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
-        await handler.WaitForRequestCountAsync(1);
+        await timeProvider.WaitForRetryAsync(handler, 1);
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await task;
 
@@ -1170,7 +1160,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddResponse(HttpStatusCode.OK, new { featureFlags = new { retry_flag = true } });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions();
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             FlagsUrl,
@@ -1180,7 +1170,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
-        await handler.WaitForRequestCountAsync(1);
+        await timeProvider.WaitForRetryAsync(handler, 1);
 #if NET8_0_OR_GREATER
         Assert.Equal(1, handler.RequestCount);
 #endif
@@ -1230,7 +1220,7 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
         handler.AddResponse(statusCode, new { type = "error", detail = "server error" });
         using var httpClient = CreateHttpClient(handler);
         var options = CreateOptions(maxRetries: 2);
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new RetryTimeProvider();
 
         var task = httpClient.PostJsonWithNetworkRetryAsync<FlagsApiResult>(
             FlagsUrl,
@@ -1240,9 +1230,9 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
             new FeatureFlagRequestCircuitBreaker(),
             CancellationToken.None);
 
-        for (var i = 1; i <= 3 && !task.IsCompleted; i++)
+        for (var i = 1; i <= 2; i++)
         {
-            await handler.WaitForRequestCountAsync(i);
+            await timeProvider.WaitForRetryAsync(handler, i);
             timeProvider.Advance(TimeSpan.FromSeconds(1));
         }
 
