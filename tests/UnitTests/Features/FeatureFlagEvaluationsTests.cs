@@ -33,11 +33,14 @@ public class TheEvaluateFlagsAsyncMethod
                 "flags": {
                     "flag-a": {
                         "key": "flag-a",
-                        "metadata": {"id": 42, "version": 7},
+                        "enabled": true,
+                        "metadata": {"id": 42, "version": 7, "payload": "{\"hello\":\"world\"}"},
                         "reason": {"description": "matched condition set 1"}
                     },
                     "flag-b": {
                         "key": "flag-b",
+                        "enabled": true,
+                        "variant": "variant-x",
                         "metadata": {"id": 43, "version": 2},
                         "reason": {"description": "variant assignment"}
                     }
@@ -48,10 +51,15 @@ public class TheEvaluateFlagsAsyncMethod
             """);
         var client = container.Activate<PostHogClient>();
 
+        var extraRequest = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
         var options = passOptions ? new AllFeatureFlagsOptions() : null;
         var snapshot = await client.EvaluateFlagsAsync("user-1", options, CancellationToken.None);
 
-        Assert.Equal(2, snapshot.Keys.Count);
+        Assert.Equal(["flag-a", "flag-b"], snapshot.Keys.OrderBy(key => key, StringComparer.Ordinal));
+        Assert.True(snapshot.IsEnabled("flag-a"));
+        Assert.Equal("variant-x", snapshot.GetFlag("flag-b")?.VariantKey);
+        Assert.Equal("world", snapshot.GetFlagPayload("flag-a")?.RootElement.GetProperty("hello").GetString());
+        Assert.Empty(extraRequest.ReceivedRequests);
         Assert.Equal("the-request-id", snapshot.RequestId);
         Assert.Equal(1705862903000, snapshot.EvaluatedAt);
         Assert.Single(flagsHandler.ReceivedRequests);
@@ -571,6 +579,7 @@ public class TheSnapshotAccessMethods
 
         var payload = snapshot.GetFlagPayload("flag-a");
         Assert.NotNull(payload);
+        Assert.Equal("hello", payload.RootElement.GetString());
 
         await client.FlushAsync();
         Assert.Empty(batchHandler.ReceivedRequests);
@@ -832,7 +841,8 @@ public class TheCaptureWithFlagsSnapshotMethod
     {
         var container = new TestContainer();
         var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"flag-a": true}}""");
-        container.FakeHttpMessageHandler.AddBatchResponse();
+        var extraRequest = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         var client = container.Activate<PostHogClient>();
 
         var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
@@ -840,6 +850,11 @@ public class TheCaptureWithFlagsSnapshotMethod
         await client.FlushAsync();
 
         Assert.Single(flagsHandler.ReceivedRequests);
+        Assert.Empty(extraRequest.ReceivedRequests);
+        using var document = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        var captured = Assert.Single(document.RootElement.GetProperty("batch").EnumerateArray());
+        Assert.Equal("page_viewed", captured.GetProperty("event").GetString());
+        Assert.True(captured.GetProperty("properties").GetProperty("$feature/flag-a").GetBoolean());
     }
 
     [Fact]

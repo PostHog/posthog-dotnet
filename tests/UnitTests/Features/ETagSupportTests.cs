@@ -86,7 +86,7 @@ public class ETagSupportTests
             "\"etag-123\"");
 
         // Second request returns 304 Not Modified
-        container.FakeHttpMessageHandler.AddLocalEvaluationNotModifiedResponse("\"etag-123\"");
+        var notModifiedHandler = container.FakeHttpMessageHandler.AddLocalEvaluationNotModifiedResponse("\"etag-123\"");
 
         // Need batch response for $feature_flag_called event
         container.FakeHttpMessageHandler.AddBatchResponse();
@@ -98,6 +98,9 @@ public class ETagSupportTests
 
         // Second load gets 304 - should still have flags from cache
         await client.LoadFeatureFlagsAsync(CancellationToken.None);
+
+        var request = Assert.Single(notModifiedHandler.ReceivedRequests);
+        Assert.Contains(request.Headers.IfNoneMatch, etag => etag.Tag == "\"etag-123\"");
 
         // Verify flags still work from cached evaluator
         var result = await client.IsFeatureEnabledAsync("test-flag", "user-123");

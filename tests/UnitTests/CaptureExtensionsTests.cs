@@ -74,6 +74,7 @@ public class TheCaptureExtensions
             "survey sent",
             Arg.Is<Dictionary<string, object>>(captured =>
                 !ReferenceEquals(captured, properties)
+                && (string)captured["source"] == "test"
                 && (string)captured["$survey_id"] == "survey-id"
                 && (string)captured["$survey_response"] == "first"
                 && (string)captured["survey_response_1"] == "second"),
@@ -88,6 +89,7 @@ public class TheCaptureExtensions
         Dictionary<string, object> personPropertiesToSet,
         Dictionary<string, object> personPropertiesToSetOnce)
         => !ReferenceEquals(captured, properties)
+           && (string)captured["source"] == "test"
            && captured["$set"] is Dictionary<string, object> set
            && !ReferenceEquals(set, personPropertiesToSet)
            && (string)set["name"] == "Max"

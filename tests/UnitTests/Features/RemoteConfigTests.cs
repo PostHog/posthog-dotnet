@@ -11,9 +11,16 @@ public class TheGetRemoteConfigPayloadAsyncMethod
         var container = new TestContainer("fake-personal-api-key");
         var client = container.Activate<PostHogClient>();
 
+        using var response = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        var handler = container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/api/projects/@current/feature_flags/non-existent-key/remote_config?token=fake-project-token"),
+            HttpMethod.Get,
+            response);
+
         var result = await client.GetRemoteConfigPayloadAsync("non-existent-key");
 
         Assert.Null(result);
+        Assert.Single(handler.ReceivedRequests);
     }
 
     [Fact]

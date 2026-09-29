@@ -287,6 +287,8 @@ public class TheGenerateMethod
         var key2 = FeatureFlagCacheKey.Generate("user123", properties2, null);
 
         Assert.Equal(key1, key2);
+        properties2.Remove("middle_name");
+        Assert.NotEqual(key1, FeatureFlagCacheKey.Generate("user123", properties2, null));
     }
 
     [Fact]
@@ -305,6 +307,8 @@ public class TheGenerateMethod
         var key2 = FeatureFlagCacheKey.Generate("user123", properties, null);
 
         Assert.Equal(key1, key2);
+        ((Dictionary<string, object>)properties["metadata"]!)["version"] = 3;
+        Assert.NotEqual(key1, FeatureFlagCacheKey.Generate("user123", properties, null));
     }
 
     [Fact]
@@ -348,6 +352,8 @@ public class TheGenerateMethod
         var key2 = FeatureFlagCacheKey.Generate("user123", null, groups);
 
         Assert.Equal(key1, key2);
+        groups.Single(group => group.GroupType == "team")["size"] = 51;
+        Assert.NotEqual(key1, FeatureFlagCacheKey.Generate("user123", null, groups));
     }
 
     [Fact]
@@ -367,6 +373,11 @@ public class TheGenerateMethod
         var key2 = FeatureFlagCacheKey.Generate("user123", properties, null);
 
         Assert.Equal(key1, key2);
+        properties["int"] = "42";
+        Assert.NotEqual(key1, FeatureFlagCacheKey.Generate("user123", properties, null));
+        properties["int"] = 42;
+        properties["array"] = new[] { "vip", "stable" };
+        Assert.NotEqual(key1, FeatureFlagCacheKey.Generate("user123", properties, null));
     }
 
     [Fact]
@@ -396,6 +407,7 @@ public class TheGenerateMethod
         var key2 = FeatureFlagCacheKey.Generate("   ", null, null);
 
         Assert.Equal(key1, key2);
+        Assert.Equal("   ", key1);
     }
 
     [Fact]
@@ -436,6 +448,8 @@ public class TheGenerateMethod
 
         Assert.Equal(key1, key2);
         Assert.NotEmpty(key1);
+        properties["prop99"] = "changed";
+        Assert.NotEqual(key1, FeatureFlagCacheKey.Generate("user123", properties, null));
     }
 
     [Fact]
@@ -452,6 +466,8 @@ public class TheGenerateMethod
 
         Assert.Equal(key1, key2);
         Assert.NotEmpty(key1);
+        groups["group19"] = new Group("group19", "changed");
+        Assert.NotEqual(key1, FeatureFlagCacheKey.Generate("user123", null, groups));
     }
 
     [Fact]

@@ -572,12 +572,13 @@ public class TheIsFeatureFlagEnabledAsyncMethod
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddFlagsResponse(
+        messageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/flags/?v=2"),
+            HttpMethod.Post,
             """
             {
                 "featureFlags": {"flag-key": true},
                 "requestId": "the-request-id",
-                "evaluatedAt": 1705862903000,
                 "featureFlagPayloads": {}
             }
             """
@@ -605,7 +606,6 @@ public class TheIsFeatureFlagEnabledAsyncMethod
                       "locally_evaluated": false,
                       "$feature/flag-key": true,
                       "$feature_flag_request_id": "the-request-id",
-                      "$feature_flag_evaluated_at": 1705862903000,
                       "distinct_id": "a-distinct-id",
                       "$lib": "posthog-dotnet",
                       "$lib_version": "{{client.Version}}",
@@ -1929,19 +1929,22 @@ public class TheGetFeatureFlagAsyncMethod
         var client = container.Activate<PostHogClient>();
 
         // beta-feature resolves to False, so no matter the default, stays False
-        Assert.False(await client.GetFeatureFlagAsync("beta-feature", "some-distinct-id"));
+        var disabledLocalFlag = await client.GetFeatureFlagAsync("beta-feature", "some-distinct-id");
+        Assert.NotNull(disabledLocalFlag);
+        Assert.False(disabledLocalFlag.IsEnabled);
         Assert.False(await client.IsFeatureEnabledAsync("beta-feature", "some-distinct-id"));
         Assert.Empty(requestHandler.ReceivedRequests);
 
-        // beta-feature2 falls back to decide, and whatever decide returns is the value
-        Assert.False(await client.GetFeatureFlagAsync("beta-feature2", "some-distinct-id"));
+        var missingRemoteFlag = await client.GetFeatureFlagAsync("beta-feature2", "some-distinct-id");
+        Assert.NotNull(missingRemoteFlag);
+        Assert.False(missingRemoteFlag.IsEnabled);
         Assert.False(await client.IsFeatureEnabledAsync("beta-feature2", "some-distinct-id"));
         Assert.Single(requestHandler.ReceivedRequests);
         Assert.Single(secondRequestHandler.ReceivedRequests);
     }
 
     [Fact] // Ported from PostHog/posthog-python test_feature_flag_return_none_when_decide_errors_out
-    public async Task ReturnsNullWhenDecideThrowsException()
+    public async Task ReturnsDisabledFlagWhenRemoteEvaluationFails()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
         var firstRequestHandler =
@@ -1951,8 +1954,10 @@ public class TheGetFeatureFlagAsyncMethod
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse("""{"flags":[]}""");
         var client = container.Activate<PostHogClient>();
 
-        // beta-feature2 falls back to decide, which on error returns false
-        Assert.False(await client.GetFeatureFlagAsync("beta-feature2", "some-distinct-id"));
+        var disabledFlag = await client.GetFeatureFlagAsync("beta-feature2", "some-distinct-id");
+        Assert.NotNull(disabledFlag);
+        Assert.Equal("beta-feature2", disabledFlag.Key);
+        Assert.False(disabledFlag.IsEnabled);
         Assert.False(await client.IsFeatureEnabledAsync("beta-feature2", "some-distinct-id"));
         Assert.Single(firstRequestHandler.ReceivedRequests);
         Assert.Single(secondRequestHandler.ReceivedRequests);
@@ -2896,7 +2901,9 @@ public class TheGetFeatureFlagAsyncMethod
 
         var result = await client.GetFeatureFlagAsync("unknown-flag-key", "distinctId");
 
-        Assert.False(result);
+        Assert.NotNull(result);
+        Assert.Equal("unknown-flag-key", result.Key);
+        Assert.False(result.IsEnabled);
     }
 
     [Fact]
@@ -3242,11 +3249,17 @@ public class TheGetFeatureFlagAsyncMethod
     {
         var container = new TestContainer();
         var messageHandler = container.FakeHttpMessageHandler;
-        messageHandler.AddRepeatedFlagsResponse(
-            count: 4,
-            responseBodyFunc: count => $$"""{"featureFlags": {"flag-key": "feature-value-{{count}}"} }""");
+        var flagsHandler = messageHandler.AddFlagsResponse("""{"featureFlags":{"flag-key":"feature-value-0"}}""");
         var captureRequestHandler = messageHandler.AddBatchResponse();
         var posthog = container.Activate<PostHogClient>();
+
+        var flag = await posthog.GetFeatureFlagAsync("flag-key", "a-distinct-id",
+            new FeatureFlagOptions { SendFeatureFlagEvents = false });
+        Assert.NotNull(flag);
+        Assert.Equal("flag-key", flag.Key);
+        Assert.Equal("feature-value-0", flag.VariantKey);
+        Assert.True(flag.IsEnabled);
+        Assert.Single(flagsHandler.ReceivedRequests);
 
         await posthog.FlushAsync();
         Assert.Empty(captureRequestHandler.ReceivedRequests);
@@ -3903,13 +3916,15 @@ public class TheGetAllFeatureFlagsAsyncMethod
                 """
         );
         container.FakeTimeProvider.Advance(TimeSpan.FromMinutes(1));
-        await Task.Delay(100); // Cede execution to thread that's loading the new flags.
+        var updatedFlags = await WaitForLocalFlagsAsync(client, "some-distinct-id",
+            flags => flags.TryGetValue("beta-feature", out var beta) && !beta.IsEnabled
+                && flags.TryGetValue("disabled-feature", out var enabled) && enabled.IsEnabled);
 
         Assert.Equal(new Dictionary<string, FeatureFlag>
         {
             ["beta-feature"] = new() { Key = "beta-feature", IsEnabled = false },
             ["disabled-feature"] = new() { Key = "disabled-feature", IsEnabled = true }
-        }, await client.GetAllFeatureFlagsAsync("some-distinct-id"));
+        }, updatedFlags);
     }
 
     [Fact]
@@ -3963,13 +3978,28 @@ public class TheGetAllFeatureFlagsAsyncMethod
             """
         );
         container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(31));
-        await Task.Delay(100); // Cede execution to thread that's loading the new flags.
-
-        var newResult = await client.GetAllFeatureFlagsAsync("distinct_id");
+        var newResult = await WaitForLocalFlagsAsync(client, "distinct_id", flags => flags.ContainsKey("flag-key-2"));
 
         Assert.NotNull(newResult);
         var newFlag = Assert.Single(newResult.Values);
         Assert.Equal("flag-key-2", newFlag.Key);
+    }
+
+    static async Task<IReadOnlyDictionary<string, FeatureFlag>> WaitForLocalFlagsAsync(
+        PostHogClient client, string distinctId, Func<IReadOnlyDictionary<string, FeatureFlag>, bool> isUpdated)
+    {
+        var timeout = System.Diagnostics.Stopwatch.StartNew();
+        while (timeout.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            var flags = await client.GetAllFeatureFlagsAsync(distinctId,
+                new AllFeatureFlagsOptions { OnlyEvaluateLocally = true });
+            if (isUpdated(flags))
+            {
+                return flags;
+            }
+            await Task.Delay(1);
+        }
+        throw new TimeoutException("The timer did not publish updated local flags.");
     }
 
     [Fact]

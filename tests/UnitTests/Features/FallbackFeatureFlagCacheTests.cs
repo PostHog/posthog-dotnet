@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using PostHog;
 using PostHog.Features;
 
@@ -8,9 +9,9 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
     [Fact]
     public async Task ReturnsItemInPrimaryCache()
     {
-        var timeProvider = TimeProvider.System;
-        var primaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
-        var secondaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
+        var timeProvider = new FakeTimeProvider();
+        using var primaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
+        using var secondaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
 
         var cache = new FallbackFeatureFlagCache(primaryCache, secondaryCache);
         var distinctId = "test-distinct-id";
@@ -30,9 +31,9 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
     [Fact]
     public async Task ReturnsItemInSecondaryCache()
     {
-        var timeProvider = TimeProvider.System;
-        var primaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
-        var secondaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
+        var timeProvider = new FakeTimeProvider();
+        using var primaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
+        using var secondaryCache = new MemoryFeatureFlagCache(timeProvider, 10, 0.2);
 
         var cache = new FallbackFeatureFlagCache(primaryCache, secondaryCache);
         var distinctId = "test-distinct-id";

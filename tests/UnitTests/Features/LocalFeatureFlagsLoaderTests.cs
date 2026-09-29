@@ -117,8 +117,8 @@ public class TheDisposeAsyncMethod
     public async Task CompletesGracefullyDuringInFlightPoll()
     {
         var container = new TestContainer("fake-personal-api-key");
-        var pollStarted = new TaskCompletionSource();
-        var pollCanProceed = new TaskCompletionSource();
+        var pollStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pollCanProceed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // First response succeeds immediately (the initial load).
         container.FakeHttpMessageHandler.AddLocalEvaluationResponse(LocalEvaluationResponse);
@@ -129,7 +129,7 @@ public class TheDisposeAsyncMethod
             HttpMethod.Get,
             async () =>
             {
-                pollStarted.SetResult();
+                pollStarted.SetResult(true);
                 await pollCanProceed.Task;
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -140,22 +140,25 @@ public class TheDisposeAsyncMethod
                 };
             });
 
-        var client = container.Activate<PostHogClient>();
-
-        // Initial load starts the polling loop and makes the first API call.
-        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+        using var httpClient = new HttpClient(container.FakeHttpMessageHandler);
+        using var apiClient = container.Activate<PostHogApiClient>(httpClient);
+        await using var loader = container.Activate<LocalFeatureFlagsLoader>(apiClient);
+        await loader.RefreshAsync(CancellationToken.None);
 
         // Advance past the poll interval so the background poll fires.
         container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(31));
 
-        // Wait for the poll's API call to begin.
-        await pollStarted.Task;
-
-        // Begin disposal while the poll is mid-flight.
-        var disposeTask = client.DisposeAsync().AsTask();
-
-        // Unblock the in-flight API call so the poll can finish.
-        pollCanProceed.SetResult();
+        Task disposeTask;
+        try
+        {
+            Assert.Same(pollStarted.Task, await Task.WhenAny(pollStarted.Task, Task.Delay(TimeSpan.FromSeconds(5))));
+            disposeTask = loader.DisposeAsync().AsTask();
+            Assert.False(disposeTask.IsCompleted);
+        }
+        finally
+        {
+            pollCanProceed.SetResult(true);
+        }
 
         // Verify disposal completes without deadlock or exception.
         var timeout = TimeSpan.FromSeconds(5);

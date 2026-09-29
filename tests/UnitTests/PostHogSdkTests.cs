@@ -104,6 +104,7 @@ public sealed class PostHogSdkTests : IDisposable
     {
         var client = PostHogSdk.Init(new PostHogOptions { ProjectToken = "test-token" });
 
+        Assert.IsType<PostHogClient>(client);
         Assert.Same(client, PostHogSdk.DefaultClient);
     }
 

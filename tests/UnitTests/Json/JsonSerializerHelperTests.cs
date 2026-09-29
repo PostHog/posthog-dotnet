@@ -343,7 +343,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
             })
         };
 
-        // Verify the important parts - JSON deserialization is working correctly
+        Assert.Equal(expected, result);
         Assert.NotNull(result);
         Assert.Equal(4, result.Flags.Count);
 
@@ -374,6 +374,27 @@ public class TheDeserializeFromCamelCaseJsonMethod
         var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(json);
 
         Assert.NotNull(result);
+        Assert.Equal(5, result.Flags.Count);
+        var survey = result.Flags[0];
+        Assert.Equal("survey-targeting-0da71edbdd-custom", survey.Key);
+        Assert.False(survey.Active);
+        var surveyGroup = Assert.Single(survey.Filters!.Groups!);
+        Assert.Equal("", surveyGroup.Variant);
+        Assert.Equal(2, surveyGroup.Properties!.Count);
+        Assert.All(surveyGroup.Properties, property => Assert.Equal(ComparisonOperator.IsNotSet, property.Operator));
+
+        Assert.Equal("{\"not\": \"a\", \"secret\": {\"payload\": 42}}", result.Flags[1].Filters!.Payloads!["true"]);
+        var multivariate = result.Flags[2].Filters!;
+        Assert.Equal(50, Assert.Single(multivariate.Groups!).RolloutPercentage);
+        Assert.Equal(["first-variant-key", "second-variant-key", "third-variant-key", "fourth-variant"],
+            multivariate.Multivariate!.Variants.Select(variant => variant.Key));
+        Assert.All(multivariate.Multivariate.Variants, variant => Assert.Equal(25, variant.RolloutPercentage));
+        Assert.Equal("42", multivariate.Payloads!["first-variant-key"]);
+        Assert.Equal("\"This is a test payload\"", result.Flags[3].Filters!.Payloads!["true"]);
+        Assert.Equal(3, result.Flags[4].Filters!.AggregationGroupTypeIndex);
+        Assert.Equal("project", result.GroupTypeMapping!["3"]);
+        var cohort = Assert.IsType<FilterSet>(Assert.Single(result.Cohorts!["1"].Values));
+        Assert.Equal(ComparisonOperator.IsSet, Assert.IsType<PropertyFilter>(Assert.Single(cohort.Values)).Operator);
     }
 
     [Fact]
@@ -683,7 +704,8 @@ public class TheDeserializeFromCamelCaseJsonMethod
 
         Assert.NotNull(result);
         Assert.Equal("danaerys", result.TrueOrValue.StringValue);
-        Assert.False(result.TrueOrValue.Value);
+        Assert.False(result.AnotherTrueOrValue.Value);
+        Assert.True(result.AnotherTrueOrValue.IsValue);
     }
 
     public class ClassWithStringOr

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using PostHog;
 using PostHog.Api;
 using PostHog.Features;
@@ -9,8 +10,8 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
     [Fact]
     public async Task ReturnsCachedFlagsWhenFlagsAreCached()
     {
-        var timeProvider = TimeProvider.System;
-        var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
         var distinctId = "test-distinct-id";
         var expectedFlags = new Dictionary<string, FeatureFlag>
         {
@@ -28,8 +29,8 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
     [Fact]
     public async Task FetchesAndCachesFlagsWhenFlagsAreNotCached()
     {
-        var timeProvider = TimeProvider.System;
-        var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
         var distinctId = "test-distinct-id";
         var expectedFlags = new Dictionary<string, FeatureFlag>
         {
@@ -41,6 +42,9 @@ public class TheGetAndCacheFeatureFlagsAsyncMethod
             _ => Task.FromResult<IReadOnlyDictionary<string, FeatureFlag>>(expectedFlags), CancellationToken.None);
 
         Assert.Equal(expectedFlags, result);
+        var cached = await cache.GetAndCacheFeatureFlagsAsync(distinctId,
+            _ => throw new InvalidOperationException("Unexpected second fetch"), CancellationToken.None);
+        Assert.Equal(expectedFlags, cached);
     }
 }
 
@@ -49,8 +53,8 @@ public class TheGetAndCacheFlagsAsyncMethodWithPropertiesAndGroups
     [Fact]
     public async Task ReturnsCachedFlagsWhenAllParametersMatch()
     {
-        var timeProvider = TimeProvider.System;
-        var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
         var distinctId = "test-user";
         var personProperties = new Dictionary<string, object?> { ["email"] = "test@example.com" };
         var groups = new GroupCollection { { "company", "acme" } };
@@ -83,8 +87,8 @@ public class TheGetAndCacheFlagsAsyncMethodWithPropertiesAndGroups
     [Fact]
     public async Task FetchesNewFlagsWhenPersonPropertiesDiffer()
     {
-        var timeProvider = TimeProvider.System;
-        var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
         var distinctId = "test-user";
         var personProperties1 = new Dictionary<string, object?> { ["email"] = "test1@example.com" };
         var personProperties2 = new Dictionary<string, object?> { ["email"] = "test2@example.com" };
@@ -122,8 +126,8 @@ public class TheGetAndCacheFlagsAsyncMethodWithPropertiesAndGroups
     [Fact]
     public async Task FetchesNewFlagsWhenGroupsDiffer()
     {
-        var timeProvider = TimeProvider.System;
-        var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
         var distinctId = "test-user";
         var groups1 = new GroupCollection { { "company", "acme" } };
         var groups2 = new GroupCollection { { "company", "initech" } };
@@ -161,8 +165,8 @@ public class TheGetAndCacheFlagsAsyncMethodWithPropertiesAndGroups
     [Fact]
     public async Task FetchesNewFlagsWhenGroupPropertiesDiffer()
     {
-        var timeProvider = TimeProvider.System;
-        var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
         var distinctId = "test-user";
         var groups1 = new GroupCollection
         {
@@ -206,8 +210,8 @@ public class TheGetAndCacheFlagsAsyncMethodWithPropertiesAndGroups
     [Fact]
     public async Task FetchesNewFlagsWhenNullVsNonNullProperties()
     {
-        var timeProvider = TimeProvider.System;
-        var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new MemoryFeatureFlagCache(timeProvider, 100, 0.1);
         var distinctId = "test-user";
         var personProperties = new Dictionary<string, object?> { ["email"] = "test@example.com" };
 

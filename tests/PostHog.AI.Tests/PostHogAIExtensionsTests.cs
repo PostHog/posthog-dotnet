@@ -38,5 +38,9 @@ public sealed class PostHogAIExtensionsTests
         // Should not throw
         var builder = services.AddPostHogOpenAIClient("sk-test-key");
         Assert.NotNull(builder);
+        using var provider = services.BuildServiceProvider();
+        Assert.NotNull(provider.GetRequiredService<OpenAI.OpenAIClient>());
+        using var handler = provider.GetRequiredService<PostHogOpenAIHandler>();
+        Assert.NotNull(handler);
     }
 }
