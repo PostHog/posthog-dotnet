@@ -108,7 +108,7 @@
       "posthog.aspnetcore": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.FeatureManagement": "[4.7.0, )",
+          "Microsoft.FeatureManagement": "[4.8.0, )",
           "PostHog": "[2.15.7, )"
         }
       },
@@ -178,9 +178,9 @@
       },
       "Microsoft.FeatureManagement": {
         "type": "CentralTransitive",
-        "requested": "[4.7.0, )",
-        "resolved": "4.7.0",
-        "contentHash": "f+XutOuZZLNq6OJV8z7nys+k89W3PUsoJJgrbYTXd20GvDyJfQ9A8o2MSU8FZT7DY6jQOq3I4KO/+NHsXHdACw==",
+        "requested": "[4.8.0, )",
+        "resolved": "4.8.0",
+        "contentHash": "p1dzpXano+DTet2/hQGb+J91QonETabPYmO5BdqpsWOPq2C3WsWbm1BICTNlWqL81EVGrRrjpQh9mRNX55ZKmQ==",
         "dependencies": {
           "Microsoft.Extensions.Caching.Memory": "8.0.1",
           "Microsoft.Extensions.Configuration": "8.0.0",
