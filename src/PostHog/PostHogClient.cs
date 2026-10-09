@@ -704,7 +704,7 @@ public sealed class PostHogClient : IPostHogClient
                     resolvedDistinctId,
                     options?.Groups ?? [],
                     options?.PersonProperties ?? []);
-                response = FeatureFlag.CreateFromLocalEvaluation(featureKey, value, localFeatureFlag);
+                response = FeatureFlag.CreateFromLocalEvaluation(featureKey, value, localFeatureFlag, _logger);
                 _logger.LogDebugSuccessLocally(featureKey, response);
             }
             catch (RequiresServerEvaluationException e)
@@ -1313,7 +1313,7 @@ public sealed class PostHogClient : IPostHogClient
             options?.FlagKeysToEvaluate,
             options?.DisableGeoIp ?? false,
             cancellationToken);
-        var flagsResult = result.ToFlagsResult();
+        var flagsResult = result.ToFlagsResult(_logger);
         if (flagsResult.QuotaLimited.Contains("feature_flags"))
         {
             _logger.LogWarningQuotaExceeded();
@@ -1352,7 +1352,7 @@ public sealed class PostHogClient : IPostHogClient
                 options?.FlagKeysToEvaluate,
                 options?.DisableGeoIp ?? false,
                 ctx);
-            return results.ToFlagsResult();
+            return results.ToFlagsResult(_logger);
         }
     }
 

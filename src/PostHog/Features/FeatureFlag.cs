@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 using PostHog.Api;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
@@ -44,10 +45,12 @@ public record FeatureFlag
     /// <param name="key">The feature flag key.</param>
     /// <param name="value">The value of the flag.</param>
     /// <param name="apiResult">The flags API result.</param>
+    /// <param name="logger">The logger used to report a malformed payload.</param>
     internal static FeatureFlag CreateFromFlagsApi(
         string key,
         StringOrValue<bool> value,
-        FlagsApiResult apiResult)
+        FlagsApiResult apiResult,
+        ILogger? logger = null)
     {
         var payload = NotNull(apiResult).FeatureFlagPayloads?.GetValueOrDefault(key);
         var flag = apiResult.Flags?.GetValueOrDefault(key);
@@ -72,7 +75,7 @@ public record FeatureFlag
         {
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = payload is null ? null : JsonDocument.Parse(payload),
+            Payload = ParsePayloadOrNull(payload, key, logger),
             HasExperiment = flag?.Metadata?.HasExperiment
         };
     }
@@ -84,10 +87,12 @@ public record FeatureFlag
     /// <param name="key">The feature flag key.</param>
     /// <param name="value">The value of the flag.</param>
     /// <param name="localFeatureFlag">The feature flag definition.</param>
+    /// <param name="logger">The logger used to report a malformed payload.</param>
     internal static FeatureFlag CreateFromLocalEvaluation(
         string key,
         StringOrValue<bool> value,
-        LocalFeatureFlag localFeatureFlag)
+        LocalFeatureFlag localFeatureFlag,
+        ILogger? logger = null)
     {
 #pragma warning disable CA1308
         var payloadKey = value.StringValue ?? value.Value.ToString().ToLowerInvariant();
@@ -98,9 +103,37 @@ public record FeatureFlag
             Key = key,
             IsEnabled = value.IsString ? value.StringValue is not null : value.Value,
             VariantKey = value.StringValue,
-            Payload = payloadJsonString is null ? null : JsonDocument.Parse(payloadJsonString),
+            Payload = ParsePayloadOrNull(payloadJsonString, key, logger),
             HasExperiment = localFeatureFlag.HasExperiment
         };
+    }
+
+    /// <summary>
+    /// Decodes a serialized payload. A malformed, empty, or whitespace-only payload is logged and treated the same
+    /// way as a flag with no payload at all, so neither the flag's value nor its healthy siblings are lost.
+    /// </summary>
+    static JsonDocument? ParsePayloadOrNull(string? serializedPayload, string key, ILogger? logger)
+    {
+        if (serializedPayload is null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(serializedPayload))
+        {
+            logger?.LogWarnEmptyFeatureFlagPayload(key);
+            return null;
+        }
+
+        try
+        {
+            return JsonDocument.Parse(serializedPayload);
+        }
+        catch (JsonException e)
+        {
+            logger?.LogWarnMalformedFeatureFlagPayload(e, key);
+            return null;
+        }
     }
 
     /// <summary>
@@ -145,4 +178,19 @@ public record FeatureFlag
     /// <param name="flag">The <see cref="FeatureFlag"/>.</param>
     /// <returns>The variant key, if this flag is enabled and has a variant key, otherwise the IsEnabled value as a string.</returns>
     public static implicit operator string(FeatureFlag? flag) => flag?.VariantKey ?? ((bool)flag).ToString();
+}
+
+internal static partial class FeatureFlagLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] The payload for feature flag {FlagKey} is empty. Treating it as no payload.")]
+    public static partial void LogWarnEmptyFeatureFlagPayload(this ILogger logger, string flagKey);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] The payload for feature flag {FlagKey} is not valid JSON. Treating it as no payload.")]
+    public static partial void LogWarnMalformedFeatureFlagPayload(this ILogger logger, Exception exception, string flagKey);
 }

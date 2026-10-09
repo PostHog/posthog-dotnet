@@ -80,6 +80,32 @@ public class TheCreateFromFlagsApiMethod
         Assert.NotNull(flag.Payload);
         JsonAssert.Equal("""{"foo": "bar"}""", flag.Payload);
     }
+
+    [Theory]
+    [InlineData("{broken")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TreatsUnparsablePayloadAsNoPayloadAndKeepsTheFlagValue(string serializedPayload)
+    {
+        var apiResult = new FlagsApiResult
+        {
+            FeatureFlags = new Dictionary<string, StringOrValue<bool>>
+            {
+                ["some-key"] = new("variant-x")
+            },
+            FeatureFlagPayloads = new Dictionary<string, string>
+            {
+                { "some-key", serializedPayload }
+            }
+        };
+
+        var flag = FeatureFlag.CreateFromFlagsApi("some-key", new("variant-x"), apiResult);
+
+        Assert.Equal("some-key", flag.Key);
+        Assert.True(flag.IsEnabled);
+        Assert.Equal("variant-x", flag.VariantKey);
+        Assert.Null(flag.Payload);
+    }
 }
 
 public class TheCreateFromLocalEvaluationMethod
@@ -106,5 +132,31 @@ public class TheCreateFromLocalEvaluationMethod
         Assert.Null(flag.VariantKey);
         Assert.NotNull(flag.Payload);
         JsonAssert.Equal("""{"foo": "bar"}""", flag.Payload);
+    }
+
+    [Theory]
+    [InlineData("{broken")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TreatsUnparsablePayloadAsNoPayloadAndKeepsTheFlagValue(string serializedPayload)
+    {
+        var localFeatureFlag = new LocalFeatureFlag
+        {
+            Key = "some-key",
+            Filters = new FeatureFlagFilters
+            {
+                Payloads = new Dictionary<string, string>
+                {
+                    ["true"] = serializedPayload
+                }
+            }
+        };
+
+        var flag = FeatureFlag.CreateFromLocalEvaluation("some-key", new(true), localFeatureFlag);
+
+        Assert.Equal("some-key", flag.Key);
+        Assert.True(flag.IsEnabled);
+        Assert.Null(flag.VariantKey);
+        Assert.Null(flag.Payload);
     }
 }
