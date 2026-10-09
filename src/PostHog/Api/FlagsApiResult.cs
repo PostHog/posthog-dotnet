@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
@@ -115,7 +116,7 @@ internal record FeatureFlagWithMetadata : FeatureFlag
 
 internal static class FlagsApiResultExtensions
 {
-    public static FlagsResult ToFlagsResult(this FlagsApiResult? results)
+    public static FlagsResult ToFlagsResult(this FlagsApiResult? results, ILogger? logger = null)
     {
         if (results is null)
         {
@@ -136,7 +137,7 @@ internal static class FlagsApiResultExtensions
                     .Where(kvp => !failedKeys.Contains(kvp.Key))
                     .ToReadOnlyDictionary(
                         kvp => kvp.Key,
-                        kvp => FeatureFlag.CreateFromFlagsApi(kvp.Key, kvp.Value, normalized))
+                        kvp => FeatureFlag.CreateFromFlagsApi(kvp.Key, kvp.Value, normalized, logger))
                 : new Dictionary<string, FeatureFlag>(),
             ErrorsWhileComputingFlags = results.ErrorsWhileComputingFlags,
             RequestId = results.RequestId,

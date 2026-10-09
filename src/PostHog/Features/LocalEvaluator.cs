@@ -158,7 +158,7 @@ internal sealed class LocalEvaluator
                     personProperties ?? [],
                     warnOnUnknownGroups);
 
-                results[flag.Key] = FeatureFlag.CreateFromLocalEvaluation(flag.Key, flagValue, flag);
+                results[flag.Key] = FeatureFlag.CreateFromLocalEvaluation(flag.Key, flagValue, flag, _logger);
             }
             catch (InconclusiveMatchException)
             {

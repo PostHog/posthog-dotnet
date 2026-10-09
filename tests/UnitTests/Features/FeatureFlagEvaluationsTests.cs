@@ -548,6 +548,57 @@ public class TheEvaluateFlagsAsyncMethod
         var props = doc.RootElement.GetProperty("batch").EnumerateArray().Single().GetProperty("properties");
         Assert.Equal("flag_missing", props.GetProperty("$feature_flag_error").GetString());
     }
+
+    [Theory]
+    [InlineData("{broken")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RemoteMalformedPayloadIsAbsentAndKeepsSiblingFlagsAndPayloads(string serializedPayload)
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddFlagsResponse(
+            """
+            {
+                "featureFlags": {"checkout": "blue", "beta-ui": true},
+                "featureFlagPayloads": {"checkout": PAYLOAD, "beta-ui": "{\"color\":\"green\"}"}
+            }
+            """.Replace("PAYLOAD", JsonSerializer.Serialize(serializedPayload), StringComparison.Ordinal));
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+
+        Assert.Equal("blue", snapshot.GetFlag("checkout")?.VariantKey);
+        Assert.Null(snapshot.GetFlagPayload("checkout"));
+        Assert.True(snapshot.IsEnabled("beta-ui"));
+        Assert.Equal(
+            """{"color":"green"}""",
+            snapshot.GetFlagPayload("beta-ui")?.RootElement.GetRawText());
+    }
+
+    [Theory]
+    [InlineData("{broken")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task LocallyEvaluatedMalformedPayloadIsAbsentWithoutFallingBackToRemote(string serializedPayload)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """
+            {"flags": [
+                {"id": 1, "key": "checkout", "active": true,
+                 "filters": {"groups": [{"properties": [], "rollout_percentage": 100}],
+                             "payloads": {"true": PAYLOAD}}}
+            ]}
+            """.Replace("PAYLOAD", JsonSerializer.Serialize(serializedPayload), StringComparison.Ordinal));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-1", options: null, CancellationToken.None);
+
+        Assert.True(snapshot.IsEnabled("checkout"));
+        Assert.Null(snapshot.GetFlagPayload("checkout"));
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
 }
 
 public class TheSnapshotAccessMethods
