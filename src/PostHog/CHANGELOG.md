@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.15.8
+
+### Patch Changes
+
+- 7e85789: Treat a malformed, empty, or whitespace-only feature flag payload as no payload instead of throwing during flag construction, so the flag's evaluated value and its healthy sibling flags and payloads survive. The failure is logged as a warning.
+
 ## 2.15.7
 
 ### Patch Changes
