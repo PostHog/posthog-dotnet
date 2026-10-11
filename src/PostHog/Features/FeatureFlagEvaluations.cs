@@ -81,10 +81,21 @@ public sealed class FeatureFlagEvaluations
     /// </summary>
     /// <param name="key">The feature flag key.</param>
     /// <returns><c>true</c> if the flag is present and enabled; otherwise <c>false</c>.</returns>
-    public bool IsEnabled(string key)
+    public bool IsEnabled(string key) => IsEnabled(key, defaultValue: false);
+
+    /// <summary>
+    /// Returns <c>true</c> when the named flag is present in the snapshot and enabled, <c>false</c> when
+    /// it is present and disabled, and <paramref name="defaultValue"/> when the flag is not present at all
+    /// (not loaded, a failed flags request, or no flag with that key). Records access on the snapshot and
+    /// fires <c>$feature_flag_called</c> on first access for a given (distinct id, key, value) tuple.
+    /// </summary>
+    /// <param name="key">The feature flag key.</param>
+    /// <param name="defaultValue">The value to return when the flag has no value in this snapshot.</param>
+    /// <returns>The flag's enabled state, or <paramref name="defaultValue"/> when the flag is not present.</returns>
+    public bool IsEnabled(string key, bool defaultValue)
     {
         var record = RecordAccess(key);
-        return record is { Enabled: true };
+        return record is null ? defaultValue : record.Enabled;
     }
 
     /// <summary>
