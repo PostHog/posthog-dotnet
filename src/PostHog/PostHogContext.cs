@@ -9,6 +9,7 @@ namespace PostHog;
 internal sealed class PostHogContext
 {
     static readonly AsyncLocal<PostHogContext?> CurrentContext = new();
+    int _active = 1;
 
     PostHogContext(
         string? distinctId,
@@ -24,6 +25,8 @@ internal sealed class PostHogContext
     /// Gets the context for the current async execution flow, if any.
     /// </summary>
     public static PostHogContext? Current => CurrentContext.Value;
+
+    internal bool IsActive => Volatile.Read(ref _active) == 1;
 
     /// <summary>
     /// The distinct ID applied to captures that do not pass one explicitly.
@@ -71,11 +74,12 @@ internal sealed class PostHogContext
         var resolvedDistinctId = string.IsNullOrWhiteSpace(distinctId) ? baseContext?.DistinctId : distinctId;
         var resolvedSessionId = string.IsNullOrWhiteSpace(sessionId) ? baseContext?.SessionId : sessionId;
 
-        CurrentContext.Value = new PostHogContext(resolvedDistinctId, resolvedSessionId, mergedProperties);
-        return new DisposableScope(parent);
+        var context = new PostHogContext(resolvedDistinctId, resolvedSessionId, mergedProperties);
+        CurrentContext.Value = context;
+        return new DisposableScope(context, parent);
     }
 
-    sealed class DisposableScope(PostHogContext? parent) : IDisposable
+    sealed class DisposableScope(PostHogContext context, PostHogContext? parent) : IDisposable
     {
         bool _disposed;
 
@@ -86,6 +90,7 @@ internal sealed class PostHogContext
                 return;
             }
 
+            Interlocked.Exchange(ref context._active, 0);
             CurrentContext.Value = parent;
             _disposed = true;
         }

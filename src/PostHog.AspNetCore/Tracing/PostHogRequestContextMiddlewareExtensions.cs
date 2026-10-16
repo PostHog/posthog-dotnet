@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace PostHog;
 
@@ -26,6 +27,7 @@ public static class PostHogRequestContextMiddlewareExtensions
 
         var options = new PostHogRequestContextOptions();
         configure?.Invoke(options);
+        app.ApplicationServices.GetService<PostHogActivityListener>();
         return app.UseMiddleware<PostHogRequestContextMiddleware>(options);
     }
 

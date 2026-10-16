@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using PostHog.Api;
 using PostHog.AspNetCore;
@@ -34,6 +35,7 @@ internal sealed class PostHogRequestContextMiddleware(
                    requestContext.Properties,
                    fresh: true))
         {
+            PostHogActivityContext.Apply(Activity.Current);
             if (!_options.CaptureExceptions)
             {
                 await _next(httpContext);
