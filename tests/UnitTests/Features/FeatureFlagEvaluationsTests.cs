@@ -622,6 +622,29 @@ public class TheSnapshotAccessMethods
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnknownKeyReturnsCallerSuppliedDefaultValue(bool defaultValue)
+    {
+        var snapshot = await EvaluateAsync("""{"featureFlags": {}}""");
+
+        Assert.Equal(defaultValue, snapshot.IsEnabled("missing", defaultValue));
+    }
+
+    [Theory]
+    [InlineData("false", true, false)]
+    [InlineData("\"variant-a\"", false, true)]
+    public async Task PresentFlagValueWinsOverCallerSuppliedDefaultValue(
+        string flagValue,
+        bool defaultValue,
+        bool expected)
+    {
+        var snapshot = await EvaluateAsync($$$"""{"featureFlags": {"feature": {{{flagValue}}} }}""");
+
+        Assert.Equal(expected, snapshot.IsEnabled("feature", defaultValue));
+    }
+
     [Fact]
     public async Task GetFlagPayloadDoesNotFireFeatureFlagCalledEvent()
     {
