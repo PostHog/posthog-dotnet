@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.FeatureManagement;
 using Microsoft.FeatureManagement.FeatureFilters;
 using PostHog.Cache;
@@ -25,6 +26,7 @@ public static class PostHogConfigurationBuilderExtensions
         {
             services.AddSingleton<IFeatureFlagCache, HttpContextFeatureFlagCache>();
             services.AddHttpContextAccessor();
+            services.TryAddSingleton<PostHogActivityListener>();
             services.PostConfigure<PostHogOptions>(options =>
             {
                 options.LibraryName = "posthog-aspnetcore";
