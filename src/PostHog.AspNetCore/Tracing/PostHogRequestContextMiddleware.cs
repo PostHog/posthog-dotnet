@@ -35,6 +35,12 @@ internal sealed class PostHogRequestContextMiddleware(
                    requestContext.Properties,
                    fresh: true))
         {
+            PostHogContext.Current!.SpanEnrichmentEnabled = _postHog switch
+            {
+                PostHogClient client => !client.IsDisabled,
+                Sdk.NoOpPostHogClient => false,
+                _ => true,
+            };
             PostHogActivityContext.Apply(Activity.Current);
             if (!_options.CaptureExceptions)
             {

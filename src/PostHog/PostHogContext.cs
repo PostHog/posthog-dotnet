@@ -26,6 +26,8 @@ internal sealed class PostHogContext
     /// </summary>
     public static PostHogContext? Current => CurrentContext.Value;
 
+    internal bool SpanEnrichmentEnabled { get; set; } = true;
+
     internal bool IsActive => Volatile.Read(ref _active) == 1;
 
     /// <summary>
@@ -74,7 +76,10 @@ internal sealed class PostHogContext
         var resolvedDistinctId = string.IsNullOrWhiteSpace(distinctId) ? baseContext?.DistinctId : distinctId;
         var resolvedSessionId = string.IsNullOrWhiteSpace(sessionId) ? baseContext?.SessionId : sessionId;
 
-        var context = new PostHogContext(resolvedDistinctId, resolvedSessionId, mergedProperties);
+        var context = new PostHogContext(resolvedDistinctId, resolvedSessionId, mergedProperties)
+        {
+            SpanEnrichmentEnabled = baseContext?.SpanEnrichmentEnabled ?? true,
+        };
         CurrentContext.Value = context;
         return new DisposableScope(context, parent);
     }

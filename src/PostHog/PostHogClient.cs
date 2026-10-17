@@ -58,6 +58,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
     readonly bool _isDisabled;
+    internal bool IsDisabled => _isDisabled;
     readonly IFeatureFlagEvaluationsHost _evaluationsHost;
     int _missingFeatureFlagDistinctIdWarningLogged;
 

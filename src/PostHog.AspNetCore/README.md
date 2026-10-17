@@ -10,6 +10,8 @@ SDK usage examples and code snippets live in the official documentation so they 
 
 ## Request span context
 
+Disabled PostHog clients add no person or session tags to activities. The client uses the disabled state set when it was created.
+
 `UsePostHogRequestContext()` adds `sessionId` and `posthogDistinctId` tags to the active request `Activity`, including an activity that started before the middleware. It preserves tags that the application already set. Missing IDs stay absent. These headers are client-controlled analytics context. Do not use them for authentication or authorization.
 
 To also enrich child activities, register PostHog with the host builder's `AddPostHog()`, or call `UseAspNetCore()` when configuring PostHog services. The middleware activates a listener that the service provider disposes when the host stops. Child activities receive the request context when they start, so their tags remain available if they stop after the request ends. The listener does not change application sampling or create activities. OpenTelemetry is optional; the application keeps its existing provider, processors, and exporters.

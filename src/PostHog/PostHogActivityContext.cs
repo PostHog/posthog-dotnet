@@ -8,7 +8,7 @@ internal static class PostHogActivityContext
     internal static void Apply(Activity? activity)
     {
         var context = PostHogContext.Current;
-        if (activity is null || context is null || !context.IsActive)
+        if (activity is null || context is null || !context.IsActive || !context.SpanEnrichmentEnabled)
         {
             return;
         }

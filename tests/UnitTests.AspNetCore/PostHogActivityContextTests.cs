@@ -63,6 +63,43 @@ public class TheRequestActivityContext
     }
 
     [Theory]
+    [InlineData(true, "phc_test", false)]
+    [InlineData(false, "", false)]
+    [InlineData(false, " ", false)]
+    [InlineData(false, "phc_test", true)]
+    public async Task RespectsTheOwningClientsDisabledState(bool disabled, string key, bool expectedEnrichment)
+    {
+        var options = new PostHogOptions { ProjectToken = key, Disabled = disabled };
+        using var client = new PostHogClient(Microsoft.Extensions.Options.Options.Create(options));
+        options.Disabled = !disabled;
+        var services = new ServiceCollection();
+        new PostHogConfigurationBuilder(services).UseAspNetCore();
+        services.AddSingleton<IPostHogClient>(client);
+        using var provider = services.BuildServiceProvider();
+        using var source = new ActivitySource(Guid.NewGuid().ToString());
+        using var exporter = Listen(source);
+        using var request = new Activity("request");
+        request.SetTag("app.key", "keep");
+        request.Start();
+        var pipeline = CreatePipeline(provider, _ =>
+        {
+            using var child = source.StartActivity("child");
+            Assert.NotNull(child);
+            Assert.Equal(expectedEnrichment ? "user" : null, child.GetTagItem("posthogDistinctId"));
+            Assert.Equal(expectedEnrichment ? "session" : null, child.GetTagItem("sessionId"));
+            return Task.CompletedTask;
+        });
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-POSTHOG-DISTINCT-ID"] = "user";
+        context.Request.Headers["X-POSTHOG-SESSION-ID"] = "session";
+        await pipeline(context);
+        Assert.Equal(expectedEnrichment ? "user" : null, request.GetTagItem("posthogDistinctId"));
+        Assert.Equal(expectedEnrichment ? "session" : null, request.GetTagItem("sessionId"));
+        Assert.Equal("keep", request.GetTagItem("app.key"));
+        Assert.Null(PostHogContext.Current);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task PreservesExplicitAttributesAndCleansUpAfterSuccessOrFailure(bool fail)
