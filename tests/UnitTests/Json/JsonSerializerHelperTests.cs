@@ -207,7 +207,11 @@ public class TheSerializeToCamelCaseJsonMethod
     [Fact]
     public async Task PreservesPlatformNumberHandlingForObjectMembers()
     {
-        foreach (var value in new object[] { 1.25, 2.5f, new { Amount = 3.5 }, new object[] { 4.5, "NaN" } })
+        foreach (var value in new object[]
+        {
+            1.25, 2.5f, new { Amount = 3.5, Count = 2 }, new object[] { 4.5, "NaN" },
+            new { Values = new StringNumberList { 1.25 }, Metrics = new StringNumberMap { ["value"] = 2.5f } }
+        })
         {
             var model = new ObjectNumberModel { Value = value };
             var expected = JsonSerializer.Serialize(model, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });

@@ -34,6 +34,7 @@ internal sealed class NumberHandlingJsonTypeInfoResolver(JsonNumberHandling? inh
         }
 
         // A member's number handling applies to collection elements, not members of nested models.
+        var usesInheritedHandling = typeInfo.NumberHandling is null;
         typeInfo.NumberHandling ??= _inheritedNumberHandling;
         foreach (var property in typeInfo.Properties)
         {
@@ -42,6 +43,10 @@ internal sealed class NumberHandlingJsonTypeInfoResolver(JsonNumberHandling? inh
                 continue;
             }
             var propertyTypeInfo = base.GetTypeInfo(property.PropertyType, options);
+            if (usesInheritedHandling && IsAffected(propertyTypeInfo))
+            {
+                property.NumberHandling ??= propertyTypeInfo.NumberHandling;
+            }
             var handling = property.NumberHandling ?? typeInfo.NumberHandling ?? propertyTypeInfo.NumberHandling ?? options.NumberHandling;
             if (!IsAffected(propertyTypeInfo) || (handling == options.NumberHandling
                 && (propertyTypeInfo.NumberHandling is null || propertyTypeInfo.NumberHandling == handling)))
