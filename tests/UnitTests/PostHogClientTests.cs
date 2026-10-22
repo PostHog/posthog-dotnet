@@ -1474,6 +1474,10 @@ public class TheCaptureExceptionMethod
                 exception = e.InnerException;
             }
         }
+#if NET8_0_OR_GREATER
+        Assert.Contains(new System.Diagnostics.StackTrace(exception!, true).GetFrames(),
+            frame => frame.GetMethod()?.Name.StartsWith("InvokeStub_", StringComparison.Ordinal) == true);
+#endif
 
         Assert.True(client.CaptureException(exception!, "some-distinct-id"));
         await client.FlushAsync();
