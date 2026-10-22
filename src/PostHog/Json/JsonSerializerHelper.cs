@@ -11,6 +11,8 @@ internal static class JsonSerializerHelper
         PropertyNameCaseInsensitive = true,
         Converters =
         {
+            new NonFiniteDoubleJsonConverter(),
+            new NonFiniteSingleJsonConverter(),
             new ReadOnlyCollectionJsonConverterFactory(),
             new ReadOnlyDictionaryJsonConverterFactory()
         }
