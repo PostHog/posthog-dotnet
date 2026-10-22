@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.16.0
+
+### Minor Changes
+
+- 79f12cf: Add `FeatureFlagEvaluations.IsEnabled(key, defaultValue)`, which returns the caller-supplied default when the flag has no value in the snapshot. A flag that has a value — including `false` — still wins over the default.
+
 ## 2.15.8
 
 ### Patch Changes
