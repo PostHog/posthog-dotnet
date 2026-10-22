@@ -1268,6 +1268,10 @@ public class ThePostJsonWithNetworkRetryAsyncMethod
     }
 }
 
+[CollectionDefinition(nameof(CompressionTestScope), DisableParallelization = true)]
+public sealed class CompressionTestScope;
+
+[Collection(nameof(CompressionTestScope))]
 public class ThePostCompressedJsonAsyncMethod
 {
     static readonly Uri BatchUrl = new("https://us.i.posthog.com/batch");

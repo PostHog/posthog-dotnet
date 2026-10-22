@@ -2,11 +2,205 @@ using PostHog.Api;
 using PostHog.Json;
 using PostHog.Library;
 using System.Collections.ObjectModel;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace JsonSerializerHelperTests;
 
 public class TheSerializeToCamelCaseJsonMethod
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SerializesTypedNonFiniteNumbersAsNull(bool writeIndented)
+    {
+        var obj = new
+        {
+            Doubles = new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, double.MaxValue, double.MinValue, 0.0 },
+            Singles = new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity, float.MaxValue, float.MinValue, 0.0f },
+            Nested = new { Double = double.NaN, Single = float.PositiveInfinity },
+            NullableDouble = (double?)double.NegativeInfinity,
+            NullableSingle = (float?)float.NaN,
+            Null = (double?)null
+        };
+
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(obj, writeIndented);
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var doubles = root.GetProperty("doubles");
+        var singles = root.GetProperty("singles");
+        Assert.Equal(6, doubles.GetArrayLength());
+        Assert.Equal(6, singles.GetArrayLength());
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Equal(JsonValueKind.Null, doubles[i].ValueKind);
+            Assert.Equal(JsonValueKind.Null, singles[i].ValueKind);
+        }
+        Assert.Equal(double.MaxValue, doubles[3].GetDouble());
+        Assert.Equal(double.MinValue, doubles[4].GetDouble());
+        Assert.Equal(0.0, doubles[5].GetDouble());
+        Assert.Equal(float.MaxValue, singles[3].GetSingle());
+        Assert.Equal(float.MinValue, singles[4].GetSingle());
+        Assert.Equal(0.0f, singles[5].GetSingle());
+        JsonAssert.Equal("""{"double":null,"single":null}""", root.GetProperty("nested").GetRawText());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("nullableDouble").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("nullableSingle").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("null").ValueKind);
+    }
+
+    [Fact]
+    public async Task StillSupportsFiniteNumericDictionaryKeys()
+    {
+        var doubles = new Dictionary<double, double> { [1.25] = 2.5 };
+        var singles = new Dictionary<float, float> { [1.5f] = 3.5f };
+
+        var doubleJson = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(doubles);
+        var singleJson = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(singles);
+
+        JsonAssert.Equal("""{"1.25":2.5}""", doubleJson);
+        JsonAssert.Equal("""{"1.5":3.5}""", singleJson);
+        Assert.Equal(doubles, await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Dictionary<double, double>>(doubleJson));
+        Assert.Equal(singles, await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Dictionary<float, float>>(singleJson));
+    }
+
+    [Fact]
+    public async Task StillDeserializesFiniteNumbers()
+    {
+        var doubles = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<double[]>("[1.25,-2.5,0]");
+        var singles = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<float[]>("[1.25,-2.5,0]");
+
+        Assert.Equal(new[] { 1.25, -2.5, 0.0 }, doubles);
+        Assert.Equal(new[] { 1.25f, -2.5f, 0.0f }, singles);
+    }
+
+    [Theory]
+    [InlineData("\"NaN\"")]
+    [InlineData("\"Infinity\"")]
+    [InlineData("\"-Infinity\"")]
+    public async Task StillRejectsNamedFloatingPointStrings(string json)
+    {
+        await Assert.ThrowsAsync<JsonException>(() => JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<double>(json));
+        await Assert.ThrowsAsync<JsonException>(() => JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<float>(json));
+    }
+
+    [Fact]
+    public async Task StillRejectsUnsupportedValues()
+    {
+        var obj = new { Callback = (Action)(() => { }) };
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(obj));
+    }
+
+    [Fact]
+    public async Task WritesAttributedFloatingPointMembersAsNumbers()
+    {
+        var model = new StringNumberModel { Measurement = 1.25, Score = 2.5f };
+
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model);
+
+        JsonAssert.Equal("""{"measurement":1.25,"score":2.5}""", json);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public async Task WritesAttributedNonFiniteNumbersAsNull(double value)
+    {
+        var model = new StringNumberModel { Measurement = value, Score = (float)value };
+
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model);
+
+        JsonAssert.Equal("""{"measurement":null,"score":null}""", json);
+    }
+
+    [Theory]
+    [InlineData(JsonNumberHandling.Strict, "[1.25,2.5]", "[1.25,2.5]")]
+    [InlineData(JsonNumberHandling.WriteAsString, "[\"1.25\",\"2.5\"]", "[1.25,2.5]")]
+    [InlineData(JsonNumberHandling.AllowReadingFromString, "[1.25,2.5]", "[\"1.25\",\"2.5\"]")]
+    [InlineData(JsonNumberHandling.AllowNamedFloatingPointLiterals, "[1.25,2.5]", "[1.25,2.5]")]
+    public void PreservesOptionsNumberHandling(JsonNumberHandling handling, string expected, string input)
+    {
+        var options = new JsonSerializerOptions(JsonSerializerHelper.Options) { NumberHandling = handling };
+
+        JsonAssert.Equal(expected, JsonSerializer.Serialize(new[] { 1.25, 2.5 }, options));
+        JsonAssert.Equal(expected, JsonSerializer.Serialize(new[] { 1.25f, 2.5f }, options));
+        Assert.Equal(new[] { 1.25, 2.5 }, JsonSerializer.Deserialize<double[]>(input, options));
+        Assert.Equal(new[] { 1.25f, 2.5f }, JsonSerializer.Deserialize<float[]>(input, options));
+        JsonAssert.Equal("[null,null]", JsonSerializer.Serialize(new[] { double.NaN, double.PositiveInfinity }, options));
+    }
+
+    [Theory]
+    [InlineData("NaN", double.NaN)]
+    [InlineData("Infinity", double.PositiveInfinity)]
+    [InlineData("-Infinity", double.NegativeInfinity)]
+    public void PreservesOptionsNamedNumberReads(string namedValue, double expected)
+    {
+        var options = new JsonSerializerOptions(JsonSerializerHelper.Options) { NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals };
+
+        Assert.Equal(expected, JsonSerializer.Deserialize<double>("\"" + namedValue + "\"", options));
+        Assert.Equal((float)expected, JsonSerializer.Deserialize<float>("\"" + namedValue + "\"", options));
+        JsonAssert.Equal("null", JsonSerializer.Serialize(expected, options));
+        JsonAssert.Equal("null", JsonSerializer.Serialize((float)expected, options));
+    }
+
+    [Fact]
+    public async Task WritesAttributedObjectMembersWithoutChangingFloatingPointFormatting()
+    {
+        foreach (var value in new object[]
+        {
+            1.25, 2.5f, new { Amount = 3.5, Count = 2 }, new object[] { 4.5, "NaN" }
+        })
+        {
+            var model = new ObjectNumberModel { Value = value };
+            var expected = JsonSerializer.Serialize(new { Value = value }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+            var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model);
+
+            JsonAssert.Equal(expected, json);
+        }
+    }
+
+    [Fact]
+    public async Task PreservesExplicitMemberConverter()
+    {
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(new CustomNumberModel());
+
+        JsonAssert.Equal("""{"measurement":"custom"}""", json);
+        var model = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<CustomNumberModel>(json);
+        Assert.NotNull(model);
+        Assert.Equal(1.25, model.Measurement);
+    }
+
+    public sealed class StringNumberModel
+    {
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        public double Measurement { get; set; }
+
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        public float Score { get; set; }
+    }
+
+    public sealed class ObjectNumberModel
+    {
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        public object Value { get; set; } = 1.25;
+    }
+
+    public sealed class CustomNumberModel
+    {
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        [JsonConverter(typeof(CustomNumberConverter))]
+        public double Measurement { get; set; } = 1.25;
+    }
+
+    public sealed class CustomNumberConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => 1.25;
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options) => writer.WriteStringValue("custom");
+    }
+
     [Fact]
     public async Task ShouldSerializeObjectToCamelCaseJson()
     {
