@@ -445,8 +445,8 @@ public class TheCaptureMethod
         {
             Assert.Equal("/batch", request.RequestUri!.AbsolutePath);
             Assert.Equal(enableCompression, request.Content!.Headers.ContentEncoding.Contains("gzip"));
-            using var stream = await request.Content.ReadAsStreamAsync();
-            using var decoded = enableCompression ? new GZipStream(stream, CompressionMode.Decompress) : stream;
+            using var stream = new MemoryStream(await request.Content.ReadAsByteArrayAsync());
+            using Stream decoded = enableCompression ? new GZipStream(stream, CompressionMode.Decompress) : stream;
             using var reader = new StreamReader(decoded);
             body = await reader.ReadToEndAsync();
             return true;
@@ -463,7 +463,8 @@ public class TheCaptureMethod
             ["finiteSingle"] = 1.5f,
             ["enabled"] = true,
             ["nothing"] = null!,
-            ["literal"] = "Infinity"
+            ["literal"] = "Infinity",
+            ["model"] = new JsonSerializerHelperTests.TheSerializeToCamelCaseJsonMethod.StringNumberModel { Measurement = 1.25, Score = 2.5f }
         };
 
         Assert.True(client.Capture("test-user", "non-finite", properties));
@@ -485,6 +486,7 @@ public class TheCaptureMethod
         Assert.True(sent.GetProperty("enabled").GetBoolean());
         Assert.Equal(JsonValueKind.Null, sent.GetProperty("nothing").ValueKind);
         Assert.Equal("Infinity", sent.GetProperty("literal").GetString());
+        JsonAssert.Equal("""{"measurement":"1.25","score":"2.5"}""", sent.GetProperty("model").GetRawText());
         Assert.Equal("neighbor", batch[1].GetProperty("event").GetString());
         Assert.Equal(42, batch[1].GetProperty("properties").GetProperty("finite").GetInt32());
         Assert.Same(value, properties["value"]);

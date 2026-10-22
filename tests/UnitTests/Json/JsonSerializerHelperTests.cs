@@ -3,6 +3,7 @@ using PostHog.Json;
 using PostHog.Library;
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace JsonSerializerHelperTests;
 
@@ -89,6 +90,177 @@ public class TheSerializeToCamelCaseJsonMethod
         var obj = new { Callback = (Action)(() => { }) };
 
         await Assert.ThrowsAsync<NotSupportedException>(() => JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(obj));
+    }
+
+    [Fact]
+    public async Task PreservesNumberHandlingOnFiniteModelMembers()
+    {
+        var model = new StringNumberModel { Measurement = 1.25, Score = 2.5f };
+
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model);
+
+        JsonAssert.Equal("""{"measurement":"1.25","score":"2.5"}""", json);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public async Task WritesAttributedNonFiniteNumbersAsNull(double value)
+    {
+        var model = new NumberHandlingModel
+        {
+            Measurement = value,
+            Score = (float)value,
+            Readings = [value, 1.25, null],
+            Samples = [(float)value, 2.5f, null]
+        };
+
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model);
+
+        JsonAssert.Equal("""{"measurement":null,"score":null,"readings":[null,"1.25",null],"samples":[null,2.5,null],"count":3}""", json);
+    }
+
+    [Fact]
+    public async Task PreservesTypeAndCollectionNumberHandling()
+    {
+        var model = new NumberHandlingModel { Measurement = 1.25, Score = 2.5f, Readings = [3.5, null], Samples = [4.5f, null] };
+
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model);
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<NumberHandlingModel>(json);
+        var listJson = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(new StringNumberList { 1.25, double.NaN, null });
+        var list = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<StringNumberList>("""["1.25",null]""");
+        var map = new StringNumberMap { ["finite"] = 1.25f, ["nonFinite"] = float.PositiveInfinity };
+        var mapJson = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(map);
+        var restoredMap = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<StringNumberMap>("""{"finite":"1.25","nothing":null}""");
+
+        JsonAssert.Equal("""{"measurement":"1.25","score":"2.5","readings":["3.5",null],"samples":[4.5,null],"count":3}""", json);
+        Assert.NotNull(result);
+        Assert.Equal(model.Measurement, result.Measurement);
+        Assert.Equal(model.Score, result.Score);
+        Assert.Equal(model.Readings, result.Readings);
+        Assert.Equal(model.Samples, result.Samples);
+        JsonAssert.Equal("""["1.25",null,null]""", listJson);
+        Assert.Equal(new double?[] { 1.25, null }, list);
+        JsonAssert.Equal("""{"finite":"1.25","nonFinite":null}""", mapJson);
+        Assert.Equal(new StringNumberMap { ["finite"] = 1.25f, ["nothing"] = null }, restoredMap);
+    }
+
+    [Theory]
+    [InlineData(JsonNumberHandling.Strict, "[1.25,2.5]", "[1.25,2.5]")]
+    [InlineData(JsonNumberHandling.WriteAsString, "[\"1.25\",\"2.5\"]", "[1.25,2.5]")]
+    [InlineData(JsonNumberHandling.AllowReadingFromString, "[1.25,2.5]", "[\"1.25\",\"2.5\"]")]
+    [InlineData(JsonNumberHandling.AllowNamedFloatingPointLiterals, "[1.25,2.5]", "[1.25,2.5]")]
+    public void PreservesOptionsNumberHandling(JsonNumberHandling handling, string expected, string input)
+    {
+        var options = new JsonSerializerOptions(JsonSerializerHelper.Options) { NumberHandling = handling };
+
+        JsonAssert.Equal(expected, JsonSerializer.Serialize(new[] { 1.25, 2.5 }, options));
+        JsonAssert.Equal(expected, JsonSerializer.Serialize(new[] { 1.25f, 2.5f }, options));
+        Assert.Equal(new[] { 1.25, 2.5 }, JsonSerializer.Deserialize<double[]>(input, options));
+        Assert.Equal(new[] { 1.25f, 2.5f }, JsonSerializer.Deserialize<float[]>(input, options));
+        JsonAssert.Equal("[null,null]", JsonSerializer.Serialize(new[] { double.NaN, double.PositiveInfinity }, options));
+    }
+
+    [Theory]
+    [InlineData("NaN", double.NaN)]
+    [InlineData("Infinity", double.PositiveInfinity)]
+    [InlineData("-Infinity", double.NegativeInfinity)]
+    public async Task PreservesExplicitNamedNumberReads(string namedValue, double expected)
+    {
+        var json = "{\"measurement\":\"" + namedValue + "\",\"score\":\"" + namedValue + "\"}";
+
+        var model = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<NamedNumberModel>(json);
+        var options = new JsonSerializerOptions(JsonSerializerHelper.Options) { NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals };
+
+        Assert.NotNull(model);
+        Assert.Equal(expected, model.Measurement);
+        Assert.Equal((float)expected, model.Score);
+        Assert.Equal(expected, JsonSerializer.Deserialize<double>("\"" + namedValue + "\"", options));
+        Assert.Equal((float)expected, JsonSerializer.Deserialize<float>("\"" + namedValue + "\"", options));
+        JsonAssert.Equal("""{"measurement":null,"score":null}""", await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model));
+    }
+
+    [Fact]
+    public async Task PreservesPlatformNumberHandlingForObjectMembers()
+    {
+        foreach (var value in new object[] { 1.25, 2.5f, new { Amount = 3.5 }, new object[] { 4.5, "NaN" } })
+        {
+            var model = new ObjectNumberModel { Value = value };
+            var expected = JsonSerializer.Serialize(model, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+            var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model);
+
+            JsonAssert.Equal(expected, json);
+        }
+    }
+
+    [Fact]
+    public async Task PreservesExplicitMemberConverter()
+    {
+        var json = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(new CustomNumberModel());
+
+        JsonAssert.Equal("""{"measurement":"custom"}""", json);
+        var model = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<CustomNumberModel>(json);
+        Assert.NotNull(model);
+        Assert.Equal(1.25, model.Measurement);
+    }
+
+    public sealed class StringNumberModel
+    {
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        public double Measurement { get; set; }
+
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        public float Score { get; set; }
+    }
+
+#pragma warning disable CA1819, CA2227, CA1002 // Test models exercise array and mutable collection serialization.
+    [JsonNumberHandling(JsonNumberHandling.WriteAsString | JsonNumberHandling.AllowReadingFromString)]
+    public sealed class NumberHandlingModel
+    {
+        public double? Measurement { get; set; }
+        public float? Score { get; set; }
+        public double?[] Readings { get; set; } = [];
+        [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+        public List<float?> Samples { get; set; } = [];
+
+        [JsonNumberHandling(JsonNumberHandling.Strict)]
+        public double Count { get; set; } = 3;
+    }
+
+#pragma warning restore CA1819, CA2227, CA1002
+
+    [JsonNumberHandling(JsonNumberHandling.WriteAsString | JsonNumberHandling.AllowReadingFromString)]
+    public sealed class StringNumberList : List<double?>;
+
+    [JsonNumberHandling(JsonNumberHandling.WriteAsString | JsonNumberHandling.AllowReadingFromString)]
+    public sealed class StringNumberMap : Dictionary<string, float?>;
+
+    [JsonNumberHandling(JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+    public sealed class NamedNumberModel
+    {
+        public double? Measurement { get; set; }
+        public float? Score { get; set; }
+    }
+
+    public sealed class ObjectNumberModel
+    {
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        public object Value { get; set; } = 1.25;
+    }
+
+    public sealed class CustomNumberModel
+    {
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        [JsonConverter(typeof(CustomNumberConverter))]
+        public double Measurement { get; set; } = 1.25;
+    }
+
+    public sealed class CustomNumberConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => 1.25;
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options) => writer.WriteStringValue("custom");
     }
 
     [Fact]
