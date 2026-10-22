@@ -5,7 +5,7 @@ using System.Text.Json.Serialization.Metadata;
 
 namespace PostHog.Json;
 
-internal sealed class NumberHandlingJsonTypeInfoResolver(JsonNumberHandling? inheritedNumberHandling = null) : DefaultJsonTypeInfoResolver
+internal sealed class NumberHandlingJsonTypeInfoResolver(JsonNumberHandling? inheritedNumberHandling = null, Type? memberType = null) : DefaultJsonTypeInfoResolver
 {
     readonly JsonNumberHandling? _inheritedNumberHandling = inheritedNumberHandling;
     static readonly JsonSerializerOptions[] BuiltInOptions = Enumerable.Range(0, 8)
@@ -16,6 +16,10 @@ internal sealed class NumberHandlingJsonTypeInfoResolver(JsonNumberHandling? inh
     public override JsonTypeInfo GetTypeInfo(Type type, JsonSerializerOptions options)
     {
         var typeInfo = base.GetTypeInfo(type, options);
+        if (type == memberType && typeInfo.Kind is JsonTypeInfoKind.Enumerable or JsonTypeInfoKind.Dictionary)
+        {
+            typeInfo.NumberHandling = options.NumberHandling;
+        }
         if (typeInfo.Kind is JsonTypeInfoKind.Enumerable or JsonTypeInfoKind.Dictionary
             && IsAffected(typeInfo) && typeInfo.NumberHandling is { } typeHandling && typeHandling != options.NumberHandling)
         {
@@ -39,13 +43,14 @@ internal sealed class NumberHandlingJsonTypeInfoResolver(JsonNumberHandling? inh
             }
             var propertyTypeInfo = base.GetTypeInfo(property.PropertyType, options);
             var handling = property.NumberHandling ?? typeInfo.NumberHandling ?? propertyTypeInfo.NumberHandling ?? options.NumberHandling;
-            if (!IsAffected(propertyTypeInfo) || handling == options.NumberHandling)
+            if (!IsAffected(propertyTypeInfo) || (handling == options.NumberHandling
+                && (propertyTypeInfo.NumberHandling is null || propertyTypeInfo.NumberHandling == handling)))
             {
                 continue;
             }
 
             var converterType = typeof(NumberHandlingJsonConverter<>).MakeGenericType(property.PropertyType);
-            property.CustomConverter = (JsonConverter)Activator.CreateInstance(converterType, WithNumberHandling(options, handling))!;
+            property.CustomConverter = (JsonConverter)Activator.CreateInstance(converterType, WithNumberHandling(options, handling, property.PropertyType))!;
             property.NumberHandling = null;
         }
         return typeInfo;
@@ -58,12 +63,12 @@ internal sealed class NumberHandlingJsonTypeInfoResolver(JsonNumberHandling? inh
         return type == typeof(double) || type == typeof(float) || type == typeof(object);
     }
 
-    static JsonSerializerOptions WithNumberHandling(JsonSerializerOptions options, JsonNumberHandling handling)
+    static JsonSerializerOptions WithNumberHandling(JsonSerializerOptions options, JsonNumberHandling handling, Type? memberType = null)
         => new(options)
         {
             NumberHandling = handling,
             TypeInfoResolver = new NumberHandlingJsonTypeInfoResolver(
-                (options.TypeInfoResolver as NumberHandlingJsonTypeInfoResolver)?._inheritedNumberHandling ?? options.NumberHandling)
+                (options.TypeInfoResolver as NumberHandlingJsonTypeInfoResolver)?._inheritedNumberHandling ?? options.NumberHandling, memberType)
         };
 
     static JsonTypeInfo<T> CreateTypeInfo<T>(JsonSerializerOptions options, JsonSerializerOptions numberOptions)

@@ -181,6 +181,29 @@ public class TheSerializeToCamelCaseJsonMethod
         JsonAssert.Equal("""{"measurement":null,"score":null}""", await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(model));
     }
 
+    [Theory]
+    [InlineData(JsonNumberHandling.Strict)]
+    [InlineData(JsonNumberHandling.WriteAsString)]
+    public void MemberNumberHandlingOverridesCollectionType(JsonNumberHandling optionsHandling)
+    {
+        var model = new MemberOverrideModel
+        {
+            Values = [1.25, double.NaN, null],
+            Metrics = new StringNumberMap { ["finite"] = 2.5f, ["nonFinite"] = float.PositiveInfinity }
+        };
+        var options = new JsonSerializerOptions(JsonSerializerHelper.Options) { NumberHandling = optionsHandling };
+
+        var json = JsonSerializer.Serialize(model, options);
+        var result = JsonSerializer.Deserialize<MemberOverrideModel>("""{"values":[1.25,null],"metrics":{"finite":2.5}}""", options);
+
+        JsonAssert.Equal("""{"values":[1.25,null,null],"metrics":{"finite":2.5,"nonFinite":null}}""", json);
+        Assert.NotNull(result);
+        Assert.Equal(new double?[] { 1.25, null }, result.Values);
+        Assert.Equal(new StringNumberMap { ["finite"] = 2.5f }, result.Metrics);
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<MemberOverrideModel>("""{"values":["1.25"]}""", options));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<MemberOverrideModel>("""{"metrics":{"finite":"2.5"}}""", options));
+    }
+
     [Fact]
     public async Task PreservesPlatformNumberHandlingForObjectMembers()
     {
@@ -229,6 +252,13 @@ public class TheSerializeToCamelCaseJsonMethod
         public double Count { get; set; } = 3;
     }
 
+    [JsonNumberHandling(JsonNumberHandling.Strict)]
+    public sealed class MemberOverrideModel
+    {
+        [JsonNumberHandling(JsonNumberHandling.Strict)]
+        public StringNumberList Values { get; set; } = [];
+        public StringNumberMap Metrics { get; set; } = [];
+    }
 #pragma warning restore CA1819, CA2227, CA1002
 
     [JsonNumberHandling(JsonNumberHandling.WriteAsString | JsonNumberHandling.AllowReadingFromString)]
