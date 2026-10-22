@@ -9,7 +9,6 @@ internal static class JsonSerializerHelper
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
-        TypeInfoResolver = new NumberHandlingJsonTypeInfoResolver(),
         Converters =
         {
             new NonFiniteDoubleJsonConverter(),

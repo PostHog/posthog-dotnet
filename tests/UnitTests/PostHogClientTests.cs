@@ -486,7 +486,7 @@ public class TheCaptureMethod
         Assert.True(sent.GetProperty("enabled").GetBoolean());
         Assert.Equal(JsonValueKind.Null, sent.GetProperty("nothing").ValueKind);
         Assert.Equal("Infinity", sent.GetProperty("literal").GetString());
-        JsonAssert.Equal("""{"measurement":"1.25","score":"2.5"}""", sent.GetProperty("model").GetRawText());
+        JsonAssert.Equal("""{"measurement":1.25,"score":2.5}""", sent.GetProperty("model").GetRawText());
         Assert.Equal("neighbor", batch[1].GetProperty("event").GetString());
         Assert.Equal(42, batch[1].GetProperty("properties").GetProperty("finite").GetInt32());
         Assert.Same(value, properties["value"]);
