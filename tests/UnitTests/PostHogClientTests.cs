@@ -1455,6 +1455,36 @@ public class TheCaptureExceptionMethod
 #endif
 
     [Fact]
+    public async Task CaptureExceptionThrownThroughReflectionInvoke()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var method = typeof(TheCaptureExceptionMethod).GetMethod(
+            nameof(ThrowFromReflectionInvokedMethod), BindingFlags.NonPublic | BindingFlags.Static)!;
+        Exception? exception = null;
+        // The runtime switches from the interpreted invoke path to an emitted invoke stub after the
+        // first call, and the stub frame's method doesn't implement GetCustomAttributesData.
+        for (var i = 0; i < 3; i++)
+        {
+            try
+            {
+                method.Invoke(null, null);
+            }
+            catch (TargetInvocationException e)
+            {
+                exception = e.InnerException;
+            }
+        }
+
+        Assert.True(client.CaptureException(exception!, "some-distinct-id"));
+        await client.FlushAsync();
+
+        var (_, _, properties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        var frames = GetStackFrames(GetFirstException(properties));
+        Assert.Contains(frames, frame =>
+            frame.GetProperty("function").GetString() == nameof(ThrowFromReflectionInvokedMethod));
+    }
+
+    [Fact]
     public async Task CaptureExceptionWithAggregateException()
     {
         var (container, requestHandler, client) = CreateClient();
@@ -1990,6 +2020,9 @@ public class TheCaptureExceptionMethod
         Assert.Equal("", frame.GetProperty("context_line").GetString());
         Assert.Equal("[]", frame.GetProperty("post_context").ToString());
     }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void ThrowFromReflectionInvokedMethod() => throw new InvalidOperationException("boom");
 }
 
 public class TheNoOpPostHogClient
