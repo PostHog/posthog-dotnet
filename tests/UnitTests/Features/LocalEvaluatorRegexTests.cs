@@ -1,12 +1,18 @@
+using System.Text.Json;
+using PostHog;
 using PostHog.Api;
 using PostHog.Features;
 using PostHog.Json;
+using UnitTests.Fakes;
 
 namespace LocalEvaluatorTests;
 
 public class TheRegexCompatibilityBoundary
 {
-    static LocalEvaluator CreateEvaluator(string pattern, ComparisonOperator comparison, bool negateInCohort = false)
+    static LocalEvaluator CreateEvaluator(string pattern, ComparisonOperator comparison, bool negateInCohort = false) =>
+        new(CreateDefinitions(pattern, comparison, negateInCohort));
+
+    static LocalEvaluationApiResult CreateDefinitions(string pattern, ComparisonOperator comparison, bool negateInCohort = false)
     {
         var property = new PropertyFilter
         {
@@ -16,7 +22,7 @@ public class TheRegexCompatibilityBoundary
             Operator = comparison,
             Negation = negateInCohort
         };
-        return new LocalEvaluator(new LocalEvaluationApiResult
+        return new LocalEvaluationApiResult
         {
             Flags = [new LocalFeatureFlag
             {
@@ -43,7 +49,158 @@ public class TheRegexCompatibilityBoundary
             {
                 ["1"] = new FilterSet { Type = FilterType.And, Values = [property] }
             }
-        });
+        };
+    }
+
+    static LocalEvaluationApiResult CreateCohortDefinitions(
+        string pattern,
+        ComparisonOperator comparison,
+        string structure,
+        FilterType groupType = FilterType.And,
+        bool negateLeaf = true)
+    {
+        var definitions = CreateDefinitions(pattern, comparison, negateInCohort: true);
+        var leaf = new PropertyFilter
+        {
+            Type = FilterType.Person,
+            Key = "property",
+            Value = new PropertyFilterValue(pattern),
+            Operator = comparison,
+            Negation = negateLeaf
+        };
+        var group = new FilterSet { Type = groupType, Values = [leaf] };
+        var cohorts = new Dictionary<string, FilterSet> { ["1"] = group };
+        if (structure == "nested")
+        {
+            cohorts["1"] = new FilterSet { Type = groupType, Values = [group] };
+        }
+        else if (structure is "reference" or "negated-reference")
+        {
+            cohorts["2"] = group;
+            cohorts["1"] = new FilterSet
+            {
+                Type = groupType,
+                Values = [new PropertyFilter
+                {
+                    Type = FilterType.Cohort,
+                    Key = "id",
+                    Value = new PropertyFilterValue(2),
+                    Operator = ComparisonOperator.In,
+                    Negation = structure == "negated-reference"
+                }]
+            };
+        }
+        return definitions with { Cohorts = cohorts };
+    }
+
+    static string CreateCohortResponse(string pattern, ComparisonOperator comparison, string cohortOperator = "in") =>
+        $$$"""
+        {
+            "flags": [{"id": 42, "key": "regex", "active": true,
+                "filters": {"groups": [{"properties": [
+                    {"type": "cohort", "key": "id", "value": 1, "operator": "{{{cohortOperator}}}"}
+                ]}]}}],
+            "cohorts": {"1": {"type": "AND", "values": [
+                {"type": "person", "key": "property", "value": {{{JsonSerializer.Serialize(pattern)}}},
+                 "operator": "{{{(comparison is ComparisonOperator.Regex ? "regex" : "not_regex")}}}", "negation": true}
+            ]}}
+        }
+        """;
+
+    [Theory]
+    [InlineData(ComparisonOperator.Regex, "leaf")]
+    [InlineData(ComparisonOperator.NotRegex, "leaf")]
+    [InlineData(ComparisonOperator.Regex, "nested")]
+    [InlineData(ComparisonOperator.NotRegex, "nested")]
+    [InlineData(ComparisonOperator.Regex, "reference")]
+    [InlineData(ComparisonOperator.NotRegex, "reference")]
+    [InlineData(ComparisonOperator.Regex, "negated-reference")]
+    [InlineData(ComparisonOperator.NotRegex, "negated-reference")]
+    public void InvalidCohortLeavesRemainInconclusiveBeforeNegation(ComparisonOperator comparison, string structure)
+    {
+        foreach (var groupType in new[] { FilterType.And, FilterType.Or })
+            foreach (var negateLeaf in new[] { false, true })
+            {
+                var evaluator = new LocalEvaluator(CreateCohortDefinitions("[", comparison, structure, groupType, negateLeaf));
+                var properties = new Dictionary<string, object?> { ["property"] = "value" };
+
+                Assert.Throws<InconclusiveMatchException>(() =>
+                    evaluator.EvaluateFeatureFlag("regex", "user", personProperties: properties));
+                var (flags, fallbackToRemote) = evaluator.EvaluateAllFlags("user", personProperties: properties);
+                Assert.True(fallbackToRemote);
+                Assert.Empty(flags);
+            }
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.Regex, false, "in")]
+    [InlineData(ComparisonOperator.NotRegex, false, "in")]
+    [InlineData(ComparisonOperator.Regex, true, "in")]
+    [InlineData(ComparisonOperator.NotRegex, true, "in")]
+    [InlineData(ComparisonOperator.Regex, false, "not_in")]
+    [InlineData(ComparisonOperator.NotRegex, false, "not_in")]
+    [InlineData(ComparisonOperator.Regex, true, "not_in")]
+    [InlineData(ComparisonOperator.NotRegex, true, "not_in")]
+    public async Task InvalidCohortLeavesUsePublicFallbackUnlessLocalOnly(
+        ComparisonOperator comparison, bool localOnly, string cohortOperator)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var localHandler = container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            CreateCohortResponse("[", comparison, cohortOperator));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"regex": "server-variant"}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user", new AllFeatureFlagsOptions
+        {
+            OnlyEvaluateLocally = localOnly,
+            FlagKeysToEvaluate = ["regex"],
+            PersonProperties = new Dictionary<string, object?> { ["property"] = "value" }
+        }, CancellationToken.None);
+
+        Assert.Single(localHandler.ReceivedRequests);
+        if (localOnly)
+        {
+            Assert.Null(snapshot.GetFlag("regex"));
+            Assert.Empty(flagsHandler.ReceivedRequests);
+        }
+        else
+        {
+            Assert.Equal("server-variant", snapshot.GetFlag("regex")?.VariantKey);
+            Assert.Single(flagsHandler.ReceivedRequests);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ValidNegatedCohortStaysLocalUnlessPropertyMissing(bool missingProperty)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        var localHandler = container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            CreateCohortResponse("^hit$", ComparisonOperator.NotRegex));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"regex": "server-variant"}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user", new AllFeatureFlagsOptions
+        {
+            FlagKeysToEvaluate = ["regex"],
+            PersonProperties = missingProperty ? [] : new Dictionary<string, object?> { ["property"] = "hit" }
+        }, CancellationToken.None);
+
+        Assert.Single(localHandler.ReceivedRequests);
+        if (missingProperty)
+        {
+            Assert.Equal("server-variant", snapshot.GetFlag("regex")?.VariantKey);
+            Assert.Single(flagsHandler.ReceivedRequests);
+        }
+        else
+        {
+            Assert.True(snapshot.IsEnabled("regex"));
+            Assert.Null(snapshot.GetFlag("regex")?.VariantKey);
+            Assert.Empty(flagsHandler.ReceivedRequests);
+        }
     }
 
     [Theory]
