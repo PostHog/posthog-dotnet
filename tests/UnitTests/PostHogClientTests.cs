@@ -1,4 +1,5 @@
 #pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Reflection;
@@ -1298,6 +1299,115 @@ public class TheCaptureMethod
 
 public class TheCaptureExceptionMethod
 {
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    public async Task CapturesActiveTraceContext(bool sampled, bool overrideTraceId, bool overrideSpanId)
+    {
+        var (_, requestHandler, client) = CreateClient();
+        const string traceId = "00000000000000000000000000000abc";
+        using var activity = new Activity("capture-exception")
+            .SetIdFormat(ActivityIdFormat.W3C)
+            .SetParentId(ActivityTraceId.CreateFromString(traceId.AsSpan()),
+                ActivitySpanId.CreateFromString("0000000000000002".AsSpan()))
+            .Start();
+        activity.ActivityTraceFlags = sampled ? ActivityTraceFlags.Recorded : ActivityTraceFlags.None;
+        var properties = new Dictionary<string, object>();
+        if (overrideTraceId)
+        {
+            properties["$trace_id"] = "caller-trace";
+        }
+        if (overrideSpanId)
+        {
+            properties["$span_id"] = "caller-span";
+        }
+
+        Assert.True(client.CaptureException(new InvalidOperationException("boom"), "some-distinct-id", properties));
+        activity.Stop();
+        await client.FlushAsync();
+
+        var (_, batchItem, capturedProperties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+        Assert.Equal(overrideTraceId ? "caller-trace" : traceId, capturedProperties.GetProperty("$trace_id").GetString());
+        Assert.Equal(overrideSpanId ? "caller-span" : activity.SpanId.ToHexString(), capturedProperties.GetProperty("$span_id").GetString());
+        Assert.Matches("^[0-9a-f]{16}$", activity.SpanId.ToHexString());
+        Assert.Equal(overrideTraceId, properties.ContainsKey("$trace_id"));
+        Assert.Equal(overrideSpanId, properties.ContainsKey("$span_id"));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task CapturesWithoutValidTraceContext(bool hierarchical, bool callerProperties)
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var previousActivity = Activity.Current;
+        using var activity = hierarchical
+            ? new Activity("hierarchical").SetIdFormat(ActivityIdFormat.Hierarchical).Start()
+            : null;
+        var properties = callerProperties
+            ? new Dictionary<string, object> { ["$trace_id"] = "caller-trace", ["$span_id"] = "caller-span" }
+            : null;
+        try
+        {
+            Activity.Current = activity;
+            Assert.Same(activity, Activity.Current);
+            Assert.True(client.CaptureException(new InvalidOperationException("boom"), "some-distinct-id", properties));
+        }
+        finally
+        {
+            Activity.Current = previousActivity;
+        }
+        await client.FlushAsync();
+
+        var (_, batchItem, capturedProperties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+        Assert.Equal(callerProperties, capturedProperties.TryGetProperty("$trace_id", out var traceId));
+        Assert.Equal(callerProperties, capturedProperties.TryGetProperty("$span_id", out var spanId));
+        if (callerProperties)
+        {
+            Assert.Equal("caller-trace", traceId.GetString());
+            Assert.Equal("caller-span", spanId.GetString());
+        }
+    }
+
+    [Fact]
+    public async Task KeepsTraceContextIsolatedAcrossAsyncCaptures()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var previousActivity = Activity.Current;
+        var traceIds = new[] { "00000000000000000000000000000abc", "00000000000000000000000000000def" };
+
+        await Task.WhenAll(traceIds.Select(CaptureInActivityAsync));
+        Assert.Same(previousActivity, Activity.Current);
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var events = document.RootElement.GetProperty("batch").EnumerateArray().ToList();
+        Assert.Equal(traceIds.Length, events.Count);
+        foreach (var capturedEvent in events)
+        {
+            var properties = capturedEvent.GetProperty("properties");
+            Assert.Equal(capturedEvent.GetProperty("distinct_id").GetString(), properties.GetProperty("$trace_id").GetString());
+        }
+
+        async Task CaptureInActivityAsync(string traceId)
+        {
+            using var activity = new Activity("async-capture")
+                .SetIdFormat(ActivityIdFormat.W3C)
+                .SetParentId(ActivityTraceId.CreateFromString(traceId.AsSpan()),
+                    ActivitySpanId.CreateFromString("0000000000000002".AsSpan()))
+                .Start();
+            await Task.Yield();
+            Assert.True(client.CaptureException(new InvalidOperationException("boom"), traceId));
+        }
+    }
+
     [Fact]
     public async Task DoesNotMutateProvidedProperties()
     {

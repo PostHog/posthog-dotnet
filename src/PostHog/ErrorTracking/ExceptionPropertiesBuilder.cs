@@ -1,5 +1,6 @@
 ﻿using PostHog.Library;
 using PostHog.Versioning;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -32,8 +33,38 @@ internal class ExceptionPropertiesBuilder
         properties["$net_runtime"] = RuntimeInformation.FrameworkDescription;
 
         properties["$exception_list"] = BuildExceptionList(exception);
+        TryAddTraceContext(properties);
 
         return properties;
+    }
+
+    private static void TryAddTraceContext(Dictionary<string, object> properties)
+    {
+        try
+        {
+            var activity = Activity.Current;
+            if (activity is null || activity.IdFormat != ActivityIdFormat.W3C
+                || activity.TraceId == default || activity.SpanId == default)
+            {
+                return;
+            }
+
+            var traceId = activity.TraceId.ToHexString();
+            var spanId = activity.SpanId.ToHexString();
+            if (!properties.ContainsKey("$trace_id"))
+            {
+                properties["$trace_id"] = traceId;
+            }
+            if (!properties.ContainsKey("$span_id"))
+            {
+                properties["$span_id"] = spanId;
+            }
+        }
+#pragma warning disable CA1031
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+        }
     }
 
     private static List<Dictionary<string, object>> BuildExceptionList(Exception exception)
