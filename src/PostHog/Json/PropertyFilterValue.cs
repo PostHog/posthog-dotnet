@@ -140,6 +140,10 @@ public class PropertyFilterValue
         return regex.IsMatch(NotNull(ToInvariantString(input)));
     }
 
+    internal bool? MatchFeatureFlagRegex(object? input) => StringValue is { } pattern
+        ? RegexHelpers.MatchFeatureFlagRegex(pattern, NotNull(ToInvariantString(input)))
+        : null;
+
     /// <summary>
     /// Returns a value indicating whether this instance is contained by the specified <paramref name="other"/> instance.
     /// </summary>

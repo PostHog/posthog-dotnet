@@ -351,3 +351,17 @@ public class TheCreateMethod
         }
     }
 }
+
+public class TheIsRegexMatchMethod
+{
+    [Theory]
+    [InlineData("", "é", true)]
+    [InlineData("^\\p{L}+$", "é", true)]
+    [InlineData("(?i)^foo$", "FOO", true)]
+    [InlineData("^foo$", "foo\n", true)]
+    [InlineData("[", "value", false)]
+    public void PreservesNativeRegexSemantics(string pattern, string input, bool expected)
+    {
+        Assert.Equal(expected, new PropertyFilterValue(pattern).IsRegexMatch(input));
+    }
+}
