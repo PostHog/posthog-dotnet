@@ -2,6 +2,10 @@
 
 Thanks for your interest in improving the PostHog .NET SDK.
 
+## Commit signing
+
+This repo requires all commits to be signed. To configure commit signing, see the [PostHog handbook](https://posthog.com/handbook/engineering/security#commit-signing). Set `commit.gpgsign` to `true` in your git config so that every commit is signed, not only the ones you sign by hand.
+
 ## Building
 
 From the repository root, use the same restore, formatting, build, and test flow that CI runs:
