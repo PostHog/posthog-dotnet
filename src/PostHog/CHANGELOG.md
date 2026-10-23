@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.16.3
+
+### Patch Changes
+
+- c809437: Keep feature flag regex evaluation local only for compatible syntax, falling back to the server for unsupported matching. Fix empty patterns, strict end anchors, and invalid negative regex conditions.
+
 ## 2.16.2
 
 ### Patch Changes
