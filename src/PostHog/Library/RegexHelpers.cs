@@ -202,7 +202,11 @@ internal static class RegexHelpers
             else if (character is '*' or '+' or '?')
             {
                 if (previousToken is '^' or '$' || previousEmptyGroup
-                    || (index + 1 < pattern.Length && pattern[index + 1] is '+' or '{'))
+                    || (index + 1 < pattern.Length && pattern[index + 1] is '+' or '{')
+                    || (index + 1 < pattern.Length && pattern[index + 1] == '*'
+                        && previousToken is not ('\0' or '(' or '|'))
+                    || (character == '?' && previousToken is '*' or '+' or '?' or '}'
+                        && index + 1 < pattern.Length && pattern[index + 1] == '?'))
                 {
                     return null;
                 }
