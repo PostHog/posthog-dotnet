@@ -1,5 +1,6 @@
 #pragma warning disable CS0618 // Tests/samples retain coverage of the deprecated single-flag API surface.
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -420,6 +421,83 @@ public class TheCapturePageViewMethod
 
 public class TheCaptureMethod
 {
+    [Theory]
+    [InlineData(double.NaN, false)]
+    [InlineData(double.PositiveInfinity, false)]
+    [InlineData(double.NegativeInfinity, false)]
+    [InlineData(float.NaN, false)]
+    [InlineData(float.PositiveInfinity, false)]
+    [InlineData(float.NegativeInfinity, false)]
+    [InlineData(double.NaN, true)]
+    [InlineData(double.PositiveInfinity, true)]
+    [InlineData(double.NegativeInfinity, true)]
+    [InlineData(float.NaN, true)]
+    [InlineData(float.PositiveInfinity, true)]
+    [InlineData(float.NegativeInfinity, true)]
+    public async Task SendsNonFinitePropertiesAsNullWithNeighboringEvent(object value, bool enableCompression)
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.EnableCompression = enableCompression;
+        }));
+        string? body = null;
+        using var response = new MemoryStream(Encoding.UTF8.GetBytes("{\"status\":1}"));
+        var requestHandler = container.FakeHttpMessageHandler.AddStreamResponse(async request =>
+        {
+            Assert.Equal("/batch", request.RequestUri!.AbsolutePath);
+            Assert.Equal(enableCompression, request.Content!.Headers.ContentEncoding.Contains("gzip"));
+            using var stream = new MemoryStream(await request.Content.ReadAsByteArrayAsync());
+            using Stream decoded = enableCompression ? new GZipStream(stream, CompressionMode.Decompress) : stream;
+            using var reader = new StreamReader(decoded);
+            body = await reader.ReadToEndAsync();
+            return true;
+        }, response);
+        using var client = container.Activate<PostHogClient>();
+        var nested = new Dictionary<string, object> { ["value"] = value, ["finite"] = 2.5 };
+        var array = new object[] { 1, value, new { Value = value, Finite = 3.5f }, "NaN", null! };
+        var properties = new Dictionary<string, object>
+        {
+            ["value"] = value,
+            ["nested"] = nested,
+            ["array"] = array,
+            ["finiteDouble"] = 1.25,
+            ["finiteSingle"] = 1.5f,
+            ["enabled"] = true,
+            ["nothing"] = null!,
+            ["literal"] = "Infinity",
+            ["model"] = new JsonSerializerHelperTests.TheSerializeToCamelCaseJsonMethod.StringNumberModel { Measurement = 1.25, Score = 2.5f }
+        };
+
+        Assert.True(client.Capture("test-user", "non-finite", properties));
+        Assert.True(client.Capture("test-user", "neighbor", new Dictionary<string, object> { ["finite"] = 42 }));
+        await client.FlushAsync();
+
+        Assert.Single(requestHandler.ReceivedRequests);
+        Assert.NotNull(body);
+        using var document = JsonDocument.Parse(body);
+        var batch = document.RootElement.GetProperty("batch");
+        Assert.Equal(2, batch.GetArrayLength());
+        Assert.Equal("non-finite", batch[0].GetProperty("event").GetString());
+        var sent = batch[0].GetProperty("properties");
+        Assert.Equal(JsonValueKind.Null, sent.GetProperty("value").ValueKind);
+        JsonAssert.Equal("""{"value":null,"finite":2.5}""", sent.GetProperty("nested").GetRawText());
+        JsonAssert.Equal("""[1,null,{"value":null,"finite":3.5},"NaN",null]""", sent.GetProperty("array").GetRawText());
+        Assert.Equal(1.25, sent.GetProperty("finiteDouble").GetDouble());
+        Assert.Equal(1.5f, sent.GetProperty("finiteSingle").GetSingle());
+        Assert.True(sent.GetProperty("enabled").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, sent.GetProperty("nothing").ValueKind);
+        Assert.Equal("Infinity", sent.GetProperty("literal").GetString());
+        JsonAssert.Equal("""{"measurement":1.25,"score":2.5}""", sent.GetProperty("model").GetRawText());
+        Assert.Equal("neighbor", batch[1].GetProperty("event").GetString());
+        Assert.Equal(42, batch[1].GetProperty("properties").GetProperty("finite").GetInt32());
+        Assert.Same(value, properties["value"]);
+        Assert.Same(value, nested["value"]);
+        Assert.Same(value, array[1]);
+        Assert.Equal(new { Value = value, Finite = 3.5f }, array[2]);
+        Assert.Equal(5, array.Length);
+        Assert.Null(array[4]);
+    }
+
     [Fact]
     public async Task DoesNotMutateOrRetainProvidedProperties()
     {
@@ -1487,6 +1565,40 @@ public class TheCaptureExceptionMethod
 #endif
 
     [Fact]
+    public async Task CaptureExceptionThrownThroughReflectionInvoke()
+    {
+        var (_, requestHandler, client) = CreateClient();
+        var method = typeof(TheCaptureExceptionMethod).GetMethod(
+            nameof(ThrowFromReflectionInvokedMethod), BindingFlags.NonPublic | BindingFlags.Static)!;
+        Exception? exception = null;
+        // The runtime switches from the interpreted invoke path to an emitted invoke stub after the
+        // first call, and the stub frame's method doesn't implement GetCustomAttributesData.
+        for (var i = 0; i < 3; i++)
+        {
+            try
+            {
+                method.Invoke(null, null);
+            }
+            catch (TargetInvocationException e)
+            {
+                exception = e.InnerException;
+            }
+        }
+#if NET8_0_OR_GREATER
+        Assert.Contains(new System.Diagnostics.StackTrace(exception!, true).GetFrames(),
+            frame => frame.GetMethod()?.Name.StartsWith("InvokeStub_", StringComparison.Ordinal) == true);
+#endif
+
+        Assert.True(client.CaptureException(exception!, "some-distinct-id"));
+        await client.FlushAsync();
+
+        var (_, _, properties) = ParseSingleEvent(requestHandler.GetReceivedRequestBody(indented: false));
+        var frames = GetStackFrames(GetFirstException(properties));
+        Assert.Contains(frames, frame =>
+            frame.GetProperty("function").GetString() == nameof(ThrowFromReflectionInvokedMethod));
+    }
+
+    [Fact]
     public async Task CaptureExceptionWithAggregateException()
     {
         var (container, requestHandler, client) = CreateClient();
@@ -2022,6 +2134,9 @@ public class TheCaptureExceptionMethod
         Assert.Equal("", frame.GetProperty("context_line").GetString());
         Assert.Equal("[]", frame.GetProperty("post_context").ToString());
     }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void ThrowFromReflectionInvokedMethod() => throw new InvalidOperationException("boom");
 }
 
 public class TheNoOpPostHogClient

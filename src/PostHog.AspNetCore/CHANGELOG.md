@@ -1,5 +1,17 @@
 # PostHog.AspNetCore
 
+## 2.9.9
+
+### Patch Changes
+
+- 6c8abff: Fix `CaptureException` dropping exceptions whose stack trace passes through `MethodInfo.Invoke`, such as failed Hangfire jobs ([#349](https://github.com/PostHog/posthog-dotnet/issues/349)).
+
+## 2.9.8
+
+### Patch Changes
+
+- 1cb39c3: Serialize non-finite float and double event properties as JSON null so they do not prevent an event batch from being sent.
+
 ## 2.9.7
 
 ### Patch Changes

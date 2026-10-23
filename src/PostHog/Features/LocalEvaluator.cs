@@ -419,7 +419,7 @@ internal sealed class LocalEvaluator
                 {
                     FilterType.Cohort => MatchCohort(property, distinctId, properties),
                     FilterType.Flag => MatchFlagDependencyFilter(property, distinctId, properties, evaluationCache, groups),
-                    _ => MatchProperty(property, distinctId, properties)
+                    _ => MatchProperty(property, distinctId, properties) ?? false
                 }).Any(isMatch => !isMatch))
             {
                 return ConditionMatchResult.NoMatch;
@@ -565,7 +565,8 @@ internal sealed class LocalEvaluator
             {
                 var isMatch = filter.Type is FilterType.Cohort
                     ? MatchCohort(propertyFilter, distinctId, propertyValues)
-                    : MatchProperty(propertyFilter, distinctId, propertyValues);
+                    : MatchProperty(propertyFilter, distinctId, propertyValues)
+                        ?? throw new InconclusiveMatchException("Invalid regex cohort property requires server evaluation");
                 var negation = propertyFilter.Negation;
 
                 if (filterSet.Type is FilterType.And)
@@ -614,8 +615,8 @@ internal sealed class LocalEvaluator
     /// <param name="propertyFilter">The <see cref="PropertyFilter"/> to evaluate.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="properties">The overriden values that describe the user/group.</param>
-    /// <returns><c>true</c> if the current user/group matches the property. Otherwise <c>false</c>.</returns>
-    bool MatchProperty(PropertyFilter propertyFilter, string distinctId, Dictionary<string, object?>? properties)
+    /// <returns>A match result, or <c>null</c> for an invalid regex, which must not be negated by a cohort.</returns>
+    bool? MatchProperty(PropertyFilter propertyFilter, string distinctId, Dictionary<string, object?>? properties)
     {
         // Handle flag dependencies
         if (propertyFilter.Type is FilterType.Flag)
@@ -690,8 +691,8 @@ internal sealed class LocalEvaluator
             ComparisonOperator.NotStartsWith => !value.IsPrefixOfAsciiIgnoreCase(overrideValue),
             ComparisonOperator.EndsWith => value.IsSuffixOfAsciiIgnoreCase(overrideValue),
             ComparisonOperator.NotEndsWith => !value.IsSuffixOfAsciiIgnoreCase(overrideValue),
-            ComparisonOperator.Regex => value.IsRegexMatch(overrideValue),
-            ComparisonOperator.NotRegex => !value.IsRegexMatch(overrideValue),
+            ComparisonOperator.Regex => value.MatchFeatureFlagRegex(overrideValue),
+            ComparisonOperator.NotRegex => !value.MatchFeatureFlagRegex(overrideValue),
             ComparisonOperator.IsDateBefore => value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
             ComparisonOperator.IsDateAfter => !value.IsDateBefore(overrideValue, _timeProvider.GetUtcNow()),
             ComparisonOperator.SemverEquals => value.CompareSemver(overrideValue) == 0,

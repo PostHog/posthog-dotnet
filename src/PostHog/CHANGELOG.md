@@ -1,5 +1,29 @@
 # PostHog
 
+## 2.16.3
+
+### Patch Changes
+
+- c809437: Keep feature flag regex evaluation local only for compatible syntax, falling back to the server for unsupported matching. Fix empty patterns, strict end anchors, and invalid negative regex conditions.
+
+## 2.16.2
+
+### Patch Changes
+
+- 6c8abff: Fix `CaptureException` dropping exceptions whose stack trace passes through `MethodInfo.Invoke`, such as failed Hangfire jobs ([#349](https://github.com/PostHog/posthog-dotnet/issues/349)).
+
+## 2.16.1
+
+### Patch Changes
+
+- 1cb39c3: Serialize non-finite float and double event properties as JSON null so they do not prevent an event batch from being sent.
+
+## 2.16.0
+
+### Minor Changes
+
+- 79f12cf: Add `FeatureFlagEvaluations.IsEnabled(key, defaultValue)`, which returns the caller-supplied default when the flag has no value in the snapshot. A flag that has a value — including `false` — still wins over the default.
+
 ## 2.15.8
 
 ### Patch Changes

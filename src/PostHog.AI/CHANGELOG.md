@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.6
+
+### Patch Changes
+
+- 1cb39c3: Serialize non-finite float and double event properties as JSON null so they do not prevent an event batch from being sent.
+
 ## 0.1.5
 
 ### Patch Changes

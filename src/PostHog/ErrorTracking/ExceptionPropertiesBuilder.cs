@@ -252,8 +252,18 @@ internal class ExceptionPropertiesBuilder
            (HasStackTraceHiddenAttribute(method) || HasStackTraceHiddenAttribute(method.DeclaringType));
 
     private static bool HasStackTraceHiddenAttribute(MemberInfo? member)
-        => member?.GetCustomAttributesData().Any(attribute =>
-            attribute.AttributeType.FullName == "System.Diagnostics.StackTraceHiddenAttribute") == true;
+    {
+        try
+        {
+            return member?.GetCustomAttributesData().Any(attribute =>
+                attribute.AttributeType.FullName == "System.Diagnostics.StackTraceHiddenAttribute") == true;
+        }
+        // Some runtime-generated members, such as reflection invoke stubs, don't implement attribute reads.
+        catch (Exception ex) when (ex is NotImplementedException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 
     private static SourceCodeContext BuildSourceCodeContext(
         string absolutePath,
