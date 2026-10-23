@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.16.2
+
+### Patch Changes
+
+- 6c8abff: Fix `CaptureException` dropping exceptions whose stack trace passes through `MethodInfo.Invoke`, such as failed Hangfire jobs ([#349](https://github.com/PostHog/posthog-dotnet/issues/349)).
+
 ## 2.16.1
 
 ### Patch Changes
