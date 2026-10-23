@@ -1,5 +1,6 @@
 
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using PostHog;
 using PostHog.Library;
 #if NETCOREAPP3_1
@@ -157,39 +158,59 @@ public class TheEnqueueMethod
             FlushInterval = TimeSpan.FromHours(3)
         });
         var items = new List<int>();
-        var firstFlushStarted = new TaskCompletionSource();
-        var secondFlushCompleted = new TaskCompletionSource();
+        var firstFlushStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstFlushCanFail = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondFlushCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backgroundTasks = new List<Task>();
+        var taskScheduler = Substitute.For<ITaskScheduler>();
+        taskScheduler.Run(Arg.Any<Func<Task>>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var task = call.Arg<Func<Task>>()();
+            backgroundTasks.Add(task);
+            return task;
+        });
         int callCount = 0;
 
-        Func<IEnumerable<int>, Task> handlerFunc = batch =>
+        Func<IEnumerable<int>, Task> handlerFunc = async batch =>
         {
             callCount++;
             if (callCount == 1)
             {
-                firstFlushStarted.SetResult();
+                firstFlushStarted.SetResult(true);
+                await firstFlushCanFail.Task;
                 throw new InvalidOperationException("Test exception");
             }
 
             items.AddRange(batch);
-            secondFlushCompleted.SetResult();
-            return Task.CompletedTask;
+            secondFlushCompleted.SetResult(true);
         };
 
         await using var batchHandler = new AsyncBatchHandler<int, object>(
             handlerFunc,
             () => new object(),
+            options,
+            taskScheduler,
             new FakeTimeProvider(),
-            options);
+            FakeLogger.Create<AsyncBatchHandler>());
+        var backgroundWorkerStopped = Task.WhenAny(backgroundTasks);
 
         batchHandler.Enqueue(Task.FromResult(1));
         batchHandler.Enqueue(Task.FromResult(2));
-        await CompleteWithin(firstFlushStarted.Task, TimeSpan.FromSeconds(1));
+        Assert.Same(firstFlushStarted.Task, await Task.WhenAny(firstFlushStarted.Task, backgroundWorkerStopped));
 
-        batchHandler.Enqueue(Task.FromResult(3));
-        batchHandler.Enqueue(Task.FromResult(4));
-        await CompleteWithin(secondFlushCompleted.Task, TimeSpan.FromSeconds(1));
+        try
+        {
+            batchHandler.Enqueue(Task.FromResult(3));
+            batchHandler.Enqueue(Task.FromResult(4));
+        }
+        finally
+        {
+            firstFlushCanFail.SetResult(true);
+        }
+        Assert.Same(secondFlushCompleted.Task, await Task.WhenAny(secondFlushCompleted.Task, backgroundWorkerStopped));
 
         Assert.Equal([3, 4], items);
+        Assert.Equal(2, callCount);
     }
 
     [Fact]
