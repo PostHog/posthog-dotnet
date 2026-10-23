@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.17.0
+
+### Minor Changes
+
+- feb2a62: Add the active Activity trace and span IDs to captured exception events.
+
 ## 2.16.3
 
 ### Patch Changes
