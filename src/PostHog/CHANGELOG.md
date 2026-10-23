@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.17.1
+
+### Patch Changes
+
+- d9225f7: Add request session and person context to existing ASP.NET Core request activities and application-owned child activities without changing sampling or requiring OpenTelemetry.
+
 ## 2.17.0
 
 ### Minor Changes
