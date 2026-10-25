@@ -89,7 +89,20 @@ internal sealed class PostHogRequestContextMiddleware(
     {
         try
         {
-            postHog.CaptureException(exception, GetExceptionProperties(statusCode));
+            if (postHog is PostHogClient client)
+            {
+                client.CaptureUnhandledException(
+                    exception,
+                    distinctId: null,
+                    GetExceptionProperties(statusCode),
+                    mechanismType: "middleware",
+                    source: "aspnetcore.request_context_middleware",
+                    terminatesProcess: false);
+            }
+            else
+            {
+                postHog.CaptureException(exception, GetExceptionProperties(statusCode));
+            }
         }
 #pragma warning disable CA1031 // PostHog must not replace the host application's original exception.
         catch

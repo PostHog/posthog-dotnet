@@ -21,18 +21,30 @@ internal class ExceptionPropertiesBuilder
 
     public static Dictionary<string, object> Build(
         Dictionary<string, object> properties,
-        Exception exception)
+        Exception exception,
+        bool handled = true,
+        string mechanismType = "generic",
+        string? source = null,
+        string level = "error")
     {
         properties["$exception_type"] = exception.GetType().FullName ?? exception.GetType().Name;
         properties["$exception_message"] = exception.Message;
-        properties["$exception_level"] = "error";
+        properties["$exception_level"] = level;
+        if (source is not null)
+        {
+            properties["$exception_source"] = source;
+        }
+        else
+        {
+            properties.Remove("$exception_source");
+        }
         properties["$lib"] = "posthog-dotnet";
         properties["$lib_version"] = VersionConstants.Version;
         properties["$os"] = OperatingSystemInfo.Name;
         properties["$os_version"] = OperatingSystemInfo.Version;
         properties["$net_runtime"] = RuntimeInformation.FrameworkDescription;
 
-        properties["$exception_list"] = BuildExceptionList(exception);
+        properties["$exception_list"] = BuildExceptionList(exception, handled, mechanismType);
         TryAddTraceContext(properties);
 
         return properties;
@@ -67,7 +79,8 @@ internal class ExceptionPropertiesBuilder
         }
     }
 
-    private static List<Dictionary<string, object>> BuildExceptionList(Exception exception)
+    private static List<Dictionary<string, object>> BuildExceptionList(
+        Exception exception, bool handled, string mechanismType)
     {
         var list = new List<Dictionary<string, object>>();
         var seen = new HashSet<Exception>();
@@ -86,8 +99,8 @@ internal class ExceptionPropertiesBuilder
                 ["value"] = ex.Message,
                 ["mechanism"] = new Dictionary<string, object>
                 {
-                    ["type"] = "generic",
-                    ["handled"] = true,
+                    ["type"] = depth == 0 ? mechanismType : "generic",
+                    ["handled"] = depth == 0 ? handled : true,
                     ["source"] = "",
                     ["synthetic"] = false
                 },

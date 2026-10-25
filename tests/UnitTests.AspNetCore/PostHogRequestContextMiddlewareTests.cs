@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 using NSubstitute;
 using PostHog;
@@ -331,6 +332,10 @@ public class ThePostHogRequestContextMiddleware
         Assert.Equal("ExceptionAgent/1.0", properties.GetProperty("$user_agent").GetString());
         Assert.Equal("10.0.0.2", properties.GetProperty("$ip").GetString());
         Assert.Equal(expectedCapturedStatusCode, properties.GetProperty("$response_status_code").GetInt32());
+        Assert.Equal("aspnetcore.request_context_middleware", properties.GetProperty("$exception_source").GetString());
+        var mechanism = properties.GetProperty("$exception_list")[0].GetProperty("mechanism");
+        Assert.False(mechanism.GetProperty("handled").GetBoolean());
+        Assert.Equal("middleware", mechanism.GetProperty("type").GetString());
     }
 
     [Fact]
@@ -379,6 +384,27 @@ public class ThePostHogRequestContextMiddleware
         await client.FlushAsync();
 
         Assert.Empty(requestHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task DoesNotDuplicateExceptionWhenRequestFailureReachesRuntimeHandler()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+            options.CaptureUnhandledExceptions = true));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        await using var client = container.Activate<PostHogClient>();
+        var original = new InvalidOperationException("boom");
+        var middleware = CreateMiddleware(
+            _ => throw original,
+            client,
+            options => options.CaptureExceptions = true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(CreateHttpContext()));
+        client.OnUnhandledException(this, new UnhandledExceptionEventArgs(original, isTerminating: false));
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        Assert.Single(document.RootElement.GetProperty("batch").EnumerateArray());
     }
 
     [Fact]
