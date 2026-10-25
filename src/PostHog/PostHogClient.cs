@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -58,6 +59,9 @@ public sealed class PostHogClient : IPostHogClient
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
     readonly bool _isDisabled;
+    readonly ConditionalWeakTable<Exception, object> _capturedUnhandledExceptions = new();
+    readonly object _capturedUnhandledExceptionsLock = new();
+    volatile bool _runtimeExceptionHandlersRegistered;
     internal bool IsDisabled => _isDisabled;
     readonly IFeatureFlagEvaluationsHost _evaluationsHost;
     int _missingFeatureFlagDistinctIdWarningLogged;
@@ -122,6 +126,12 @@ public sealed class PostHogClient : IPostHogClient
         });
 
         _evaluationsHost = new EvaluationsHost(this);
+        if (!_isDisabled && options.Value.CaptureUnhandledExceptions)
+        {
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+            _runtimeExceptionHandlersRegistered = true;
+        }
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
     }
 
@@ -508,7 +518,11 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags,
         FeatureFlagEvaluations? flags,
-        DateTimeOffset? timestamp)
+        DateTimeOffset? timestamp,
+        bool handled = true,
+        string mechanismType = "generic",
+        string? source = null,
+        string level = "error")
     {
         if (CheckDisabledAndLog(nameof(CaptureException)))
         {
@@ -533,7 +547,7 @@ public sealed class PostHogClient : IPostHogClient
             }
 
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{identity.DistinctId}";
-            properties = ExceptionPropertiesBuilder.Build(properties, exception);
+            properties = ExceptionPropertiesBuilder.Build(properties, exception, handled, mechanismType, source, level);
 
             return CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
         }
@@ -543,6 +557,76 @@ public sealed class PostHogClient : IPostHogClient
         {
             _logger.LogErrorCaptureExceptionFailed(e);
             return false;
+        }
+    }
+
+    internal bool CaptureUnhandledException(
+        Exception exception,
+        string? distinctId,
+        Dictionary<string, object>? properties,
+        string mechanismType,
+        string source,
+        bool terminatesProcess)
+    {
+        lock (_capturedUnhandledExceptionsLock)
+        {
+            if (_capturedUnhandledExceptions.TryGetValue(exception, out _))
+            {
+                return false;
+            }
+
+            var context = PostHogContextHelper.ResolveCaptureContext(distinctId, properties);
+            var captured = CaptureExceptionCore(
+                exception, context.DistinctId, context.Properties, groups: null, sendFeatureFlags: false,
+                flags: null, timestamp: null, handled: false, mechanismType: mechanismType, source: source,
+                level: terminatesProcess ? "fatal" : "error");
+            if (captured)
+            {
+                _capturedUnhandledExceptions.Add(exception, new object());
+            }
+            return captured;
+        }
+    }
+
+    internal void OnUnhandledException(object sender, UnhandledExceptionEventArgs args)
+    {
+        if (!_runtimeExceptionHandlersRegistered || args.ExceptionObject is not Exception exception)
+        {
+            return;
+        }
+
+        try
+        {
+            CaptureUnhandledException(exception, distinctId: null, properties: null,
+                mechanismType: "unhandled", source: "appdomain.unhandled_exception",
+                terminatesProcess: args.IsTerminating);
+            if (args.IsTerminating)
+            {
+                FlushAsync().Wait(TimeSpan.FromSeconds(2));
+            }
+        }
+#pragma warning disable CA1031 // Reporting a crash must not replace the original failure.
+        catch
+#pragma warning restore CA1031
+        {
+        }
+    }
+
+    internal void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs args)
+    {
+        if (_runtimeExceptionHandlersRegistered)
+        {
+            try
+            {
+                CaptureUnhandledException(args.Exception, distinctId: null, properties: null,
+                    mechanismType: "task", source: "task_scheduler.unobserved_task_exception",
+                    terminatesProcess: false);
+            }
+#pragma warning disable CA1031 // Reporting a task failure must not change task exception handling.
+            catch
+#pragma warning restore CA1031
+            {
+            }
         }
     }
 
@@ -1457,6 +1541,12 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (_runtimeExceptionHandlersRegistered)
+        {
+            _runtimeExceptionHandlersRegistered = false;
+            AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
+            TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+        }
         // Stop background tasks first, while the API client is still alive.
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
         try
