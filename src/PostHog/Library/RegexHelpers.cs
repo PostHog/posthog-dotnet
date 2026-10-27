@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.RegularExpressions;
+using PostHog.Features;
 using PostHog.Json;
 
 namespace PostHog.Library;
@@ -44,7 +45,9 @@ internal static class RegexHelpers
         }
 
         var compatiblePattern = GetCompatiblePattern(pattern)
-            ?? throw new InconclusiveMatchException("Regex syntax requires server evaluation");
+            ?? throw new InconclusiveMatchException(
+                "Regex syntax requires server evaluation",
+                UnresolvedFlagReason.UnsupportedDefinition);
         Regex regex;
         try
         {
@@ -58,7 +61,9 @@ internal static class RegexHelpers
         // .NET matches UTF-16 code units and its Unicode classes differ from the service's.
         if (input.Any(character => character > 0x7f))
         {
-            throw new InconclusiveMatchException("Unicode regex matching requires server evaluation");
+            throw new InconclusiveMatchException(
+                "Unicode regex matching requires server evaluation",
+                UnresolvedFlagReason.UnsupportedDefinition);
         }
 
         try
@@ -67,9 +72,14 @@ internal static class RegexHelpers
         }
         catch (RegexMatchTimeoutException)
         {
-            throw new InconclusiveMatchException("Regex execution requires server evaluation");
+            throw new InconclusiveMatchException(
+                "Regex execution requires server evaluation",
+                UnresolvedFlagReason.UnsupportedDefinition);
         }
     }
+
+    public static bool IsCompatiblePattern(string pattern)
+        => pattern.Length == 0 || GetCompatiblePattern(pattern) is not null;
 
     // Successful .NET compilation alone does not establish compatibility with the service's regex syntax.
     static string? GetCompatiblePattern(string pattern)

@@ -126,7 +126,7 @@ public class TheRegexCompatibilityBoundary
 
                 Assert.Throws<InconclusiveMatchException>(() =>
                     evaluator.EvaluateFeatureFlag("regex", "user", personProperties: properties));
-                var (flags, fallbackToRemote) = evaluator.EvaluateAllFlags("user", personProperties: properties);
+                var (flags, fallbackToRemote, _) = evaluator.EvaluateAllFlags("user", personProperties: properties);
                 Assert.True(fallbackToRemote);
                 Assert.Empty(flags);
             }
@@ -245,7 +245,7 @@ public class TheRegexCompatibilityBoundary
             var expected = comparison is ComparisonOperator.Regex ? matched : !matched;
 
             Assert.Equal(expected, evaluator.EvaluateFeatureFlag("regex", "user", personProperties: properties));
-            var (flags, fallbackToRemote) = evaluator.EvaluateAllFlags("user", personProperties: properties);
+            var (flags, fallbackToRemote, _) = evaluator.EvaluateAllFlags("user", personProperties: properties);
             Assert.False(fallbackToRemote);
             Assert.Equal(expected, flags["regex"].IsEnabled);
         }
@@ -265,7 +265,7 @@ public class TheRegexCompatibilityBoundary
             var evaluator = CreateEvaluator(pattern, comparison);
             var properties = new Dictionary<string, object?> { ["property"] = input };
             Assert.False(evaluator.EvaluateFeatureFlag("regex", "user", personProperties: properties).Value);
-            var (flags, fallbackToRemote) = evaluator.EvaluateAllFlags("user", personProperties: properties);
+            var (flags, fallbackToRemote, _) = evaluator.EvaluateAllFlags("user", personProperties: properties);
             Assert.False(fallbackToRemote);
             Assert.False(flags["regex"].IsEnabled);
         }
@@ -334,7 +334,7 @@ public class TheRegexCompatibilityBoundary
                 var properties = new Dictionary<string, object?> { ["property"] = input };
                 Assert.Throws<InconclusiveMatchException>(() =>
                     evaluator.EvaluateFeatureFlag("regex", "user", personProperties: properties));
-                var (flags, fallbackToRemote) = evaluator.EvaluateAllFlags("user", personProperties: properties);
+                var (flags, fallbackToRemote, _) = evaluator.EvaluateAllFlags("user", personProperties: properties);
                 Assert.True(fallbackToRemote);
                 Assert.Empty(flags);
             }
@@ -349,7 +349,7 @@ public class TheRegexCompatibilityBoundary
             var properties = new Dictionary<string, object?> { ["property"] = new string('a', 200) + "!" };
             Assert.Throws<InconclusiveMatchException>(() =>
                 evaluator.EvaluateFeatureFlag("regex", "user", personProperties: properties));
-            var (flags, fallbackToRemote) = evaluator.EvaluateAllFlags("user", personProperties: properties);
+            var (flags, fallbackToRemote, _) = evaluator.EvaluateAllFlags("user", personProperties: properties);
             Assert.True(fallbackToRemote);
             Assert.Empty(flags);
         }
@@ -362,7 +362,7 @@ public class TheRegexCompatibilityBoundary
     {
         var evaluator = CreateEvaluator("", comparison);
         Assert.Throws<InconclusiveMatchException>(() => evaluator.EvaluateFeatureFlag("regex", "user", personProperties: []));
-        var (flags, fallbackToRemote) = evaluator.EvaluateAllFlags("user", personProperties: []);
+        var (flags, fallbackToRemote, _) = evaluator.EvaluateAllFlags("user", personProperties: []);
         Assert.True(fallbackToRemote);
         Assert.Empty(flags);
     }

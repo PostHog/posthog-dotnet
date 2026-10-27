@@ -982,3 +982,334 @@ public class TheCaptureWithFlagsSnapshotMethod
         Assert.Equal("variant-x", props.GetProperty("$feature/flag-b").GetString());
     }
 }
+
+public class TheUnresolvedFlagsProperty
+{
+    const string BetaUiResolvesTrue = """
+        {"id": 1, "key": "beta-ui", "active": true,
+         "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+        """;
+
+    const string CheckoutWithExperienceContinuity = """
+        {"id": 2, "key": "checkout", "active": true, "ensure_experience_continuity": true,
+         "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+        """;
+
+    const string BetaUiDependsOnCheckout = """
+        {"id": 1, "key": "beta-ui", "active": true,
+         "filters": {"groups": [{"properties": [
+             {"key": "checkout", "type": "flag", "value": true, "operator": "flag_evaluates_to",
+              "dependency_chain": ["checkout"]}],
+          "rollout_percentage": 100}]}}
+        """;
+
+    const string PlanIsPro = """{"key": "plan", "type": "person", "value": "pro", "operator": "exact"}""";
+
+    const string StaticCohort = """{"key": "id", "type": "cohort", "value": 999}""";
+
+    static readonly AllFeatureFlagsOptions LocalOnly = new() { OnlyEvaluateLocally = true };
+
+    static string CheckoutWithFilters(params string[] filters) => $$$"""
+        {"id": 2, "key": "checkout", "active": true,
+         "filters": {"groups": [{"properties": [{{{string.Join(", ", filters)}}}], "rollout_percentage": 100}]}}
+        """;
+
+    static TestContainer CreateContainer(params string[] flags)
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        // Served verbatim: the typed overload cannot serialize a boolean flag dependency value.
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(
+            $$$"""{"flags": [{{{string.Join(", ", flags)}}}], "cohorts": {}}""",
+            "\"definitions\"");
+        return container;
+    }
+
+    static async Task<JsonElement[]> GetFeatureFlagCalledEventsAsync(
+        PostHogClient client,
+        FakeHttpMessageHandler.RequestHandler batchHandler)
+    {
+        await client.FlushAsync();
+        if (batchHandler.ReceivedRequests.Count == 0)
+        {
+            return [];
+        }
+        using var doc = JsonDocument.Parse(batchHandler.GetReceivedRequestBody(indented: false));
+        return doc.RootElement.GetProperty("batch").EnumerateArray()
+            .Where(e => e.GetProperty("event").GetString() == "$feature_flag_called")
+            .Select(e => e.GetProperty("properties").Clone())
+            .ToArray();
+    }
+
+    static async Task<string?> GetFeatureFlagErrorAsync(
+        PostHogClient client,
+        FakeHttpMessageHandler.RequestHandler batchHandler,
+        string key)
+    {
+        var properties = (await GetFeatureFlagCalledEventsAsync(client, batchHandler))
+            .Single(p => p.GetProperty("$feature_flag").GetString() == key);
+        return properties.TryGetProperty("$feature_flag_error", out var error) ? error.GetString() : null;
+    }
+
+    [Fact]
+    public async Task LocalOnlyEvaluationReportsExperienceContinuityFlagAsUnresolved()
+    {
+        var container = CreateContainer(BetaUiResolvesTrue, CheckoutWithExperienceContinuity);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-123", LocalOnly, CancellationToken.None);
+
+        Assert.True(snapshot.Records["beta-ui"].Enabled);
+        Assert.DoesNotContain("checkout", snapshot.Keys);
+        var unresolved = Assert.Single(snapshot.UnresolvedFlags);
+        Assert.Equal("checkout", unresolved.Key);
+        Assert.Equal(UnresolvedFlagReason.ExperienceContinuity, unresolved.Value);
+        Assert.Equal("experience_continuity", unresolved.Value.ToValueString());
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        Assert.Empty(await GetFeatureFlagCalledEventsAsync(client, batchHandler));
+        Assert.Empty(snapshot.OnlyAccessed().UnresolvedFlags);
+        Assert.Empty(snapshot.Only("beta-ui", "checkout").UnresolvedFlags);
+    }
+
+    public static IEnumerable<object[]> InconclusiveCauses()
+    {
+        yield return [CheckoutWithFilters(PlanIsPro), null!, UnresolvedFlagReason.MissingContext];
+        yield return [
+            CheckoutWithFilters("""{"key": "plan", "type": "person", "value": "pro", "operator": "operator_from_the_future"}"""),
+            "enterprise",
+            UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [CheckoutWithFilters(StaticCohort), null!, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [CheckoutWithFilters(StaticCohort, PlanIsPro), null!, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [CheckoutWithFilters(PlanIsPro, StaticCohort), null!, UnresolvedFlagReason.UnsupportedDefinition];
+    }
+
+    [Theory]
+    [MemberData(nameof(InconclusiveCauses))]
+    public async Task EachInconclusiveCauseReportsItsUnresolvedReason(
+        string checkoutDefinition,
+        string? plan,
+        UnresolvedFlagReason expectedReason)
+    {
+        var container = CreateContainer(checkoutDefinition);
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123",
+            new AllFeatureFlagsOptions
+            {
+                OnlyEvaluateLocally = true,
+                PersonProperties = plan is null ? [] : new() { ["plan"] = plan }
+            },
+            CancellationToken.None);
+
+        Assert.DoesNotContain("checkout", snapshot.Keys);
+        Assert.Equal(expectedReason, snapshot.UnresolvedFlags["checkout"]);
+    }
+
+    [Fact]
+    public async Task FlagBlockedByUnresolvedDependencyReportsTheDependency()
+    {
+        var container = CreateContainer(CheckoutWithExperienceContinuity, BetaUiDependsOnCheckout);
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123",
+            new AllFeatureFlagsOptions { OnlyEvaluateLocally = true, FlagKeysToEvaluate = ["beta-ui"] },
+            CancellationToken.None);
+
+        Assert.DoesNotContain("beta-ui", snapshot.Keys);
+        Assert.Equal(UnresolvedFlagReason.UnresolvedDependency, snapshot.UnresolvedFlags["beta-ui"]);
+        Assert.False(snapshot.UnresolvedFlags.ContainsKey("checkout"));
+    }
+
+    [Fact]
+    public async Task FlagThatDependsOnFlagWithNoLoadedDefinitionReportsUnsupportedDefinition()
+    {
+        var container = CreateContainer(BetaUiDependsOnCheckout);
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123",
+            new AllFeatureFlagsOptions { OnlyEvaluateLocally = true, FlagKeysToEvaluate = ["beta-ui"] },
+            CancellationToken.None);
+
+        Assert.DoesNotContain("beta-ui", snapshot.Keys);
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, snapshot.UnresolvedFlags["beta-ui"]);
+        Assert.False(snapshot.UnresolvedFlags.ContainsKey("checkout"));
+    }
+
+    [Fact]
+    public async Task FlagResolvedByRemoteFallbackIsNotUnresolvedAndReportsNoError()
+    {
+        var container = CreateContainer(CheckoutWithExperienceContinuity);
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"checkout": true}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-123", options: null, CancellationToken.None);
+
+        Assert.Empty(snapshot.UnresolvedFlags);
+        Assert.True(snapshot.IsEnabled("checkout"));
+        var properties = Assert.Single(await GetFeatureFlagCalledEventsAsync(client, batchHandler));
+        Assert.Equal("checkout", properties.GetProperty("$feature_flag").GetString());
+        Assert.True(properties.GetProperty("$feature_flag_response").GetBoolean());
+        Assert.False(properties.TryGetProperty("$feature_flag_error", out _));
+    }
+
+    [Theory]
+    [InlineData(null, "local_evaluation_inconclusive")]
+    [InlineData("""{"featureFlags": {}}""", "local_evaluation_inconclusive")]
+    [InlineData("""{"featureFlags": {}, "errorsWhileComputingFlags": true}""", "errors_while_computing_flags,local_evaluation_inconclusive")]
+    public async Task RemoteFallbackThatDoesNotResolveTheFlagLeavesItUnresolved(string? flagsResponse, string expectedError)
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+        {
+            options.SecretKey = "fake-personal-api-key";
+            options.FeatureFlagRequestMaxRetries = 0;
+        }));
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            $$"""{"flags": [{{CheckoutWithExperienceContinuity}}]}""");
+        var flagsHandler = flagsResponse is null
+            ? container.FakeHttpMessageHandler.AddFlagsResponseException(new HttpRequestException("Network error"))
+            : container.FakeHttpMessageHandler.AddFlagsResponse(flagsResponse);
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-123", options: null, CancellationToken.None);
+
+        Assert.Single(flagsHandler.ReceivedRequests);
+        Assert.DoesNotContain("checkout", snapshot.Keys);
+        Assert.Equal(UnresolvedFlagReason.ExperienceContinuity, snapshot.UnresolvedFlags["checkout"]);
+        Assert.False(snapshot.IsEnabled("checkout"));
+        Assert.Equal(
+            flagsResponse is null ? "unknown_error,local_evaluation_inconclusive" : expectedError,
+            await GetFeatureFlagErrorAsync(client, batchHandler, "checkout"));
+    }
+
+    [Fact]
+    public async Task ReadingUnresolvedFlagReportsInconclusiveLocalEvaluation()
+    {
+        var container = CreateContainer(CheckoutWithExperienceContinuity);
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-123", LocalOnly, CancellationToken.None);
+
+        Assert.False(snapshot.IsEnabled("checkout"));
+        Assert.Equal("local_evaluation_inconclusive", await GetFeatureFlagErrorAsync(client, batchHandler, "checkout"));
+    }
+
+    [Fact]
+    public async Task FilteredSnapshotReportsUnresolvedKeyAsMissing()
+    {
+        var container = CreateContainer(BetaUiResolvesTrue, CheckoutWithExperienceContinuity);
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-123", LocalOnly, CancellationToken.None);
+        var filtered = snapshot.Only("beta-ui", "checkout");
+
+        Assert.Empty(filtered.UnresolvedFlags);
+        Assert.False(filtered.IsEnabled("checkout"));
+        Assert.Equal("flag_missing", await GetFeatureFlagErrorAsync(client, batchHandler, "checkout"));
+    }
+
+    [Fact]
+    public async Task KeyWithoutLocalDefinitionIsMissingNotUnresolved()
+    {
+        var container = CreateContainer(BetaUiResolvesTrue);
+        container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123",
+            new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["beta-ui", "typo-flag"] },
+            CancellationToken.None);
+        snapshot.IsEnabled("typo-flag");
+
+        Assert.Empty(snapshot.UnresolvedFlags);
+        Assert.Equal("flag_missing", await GetFeatureFlagErrorAsync(client, batchHandler, "typo-flag"));
+    }
+
+    [Fact]
+    public async Task FlagOutsideTheRequestedKeysIsNotUnresolved()
+    {
+        var container = CreateContainer(BetaUiResolvesTrue, CheckoutWithExperienceContinuity);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123",
+            new AllFeatureFlagsOptions { FlagKeysToEvaluate = ["beta-ui"] },
+            CancellationToken.None);
+
+        Assert.True(snapshot.Records["beta-ui"].Enabled);
+        Assert.Empty(snapshot.UnresolvedFlags);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task InactiveFlagIsResolvedAsFalseNotUnresolved()
+    {
+        var container = CreateContainer("""
+            {"id": 2, "key": "checkout", "active": false, "ensure_experience_continuity": true,
+             "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+            """);
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-123", LocalOnly, CancellationToken.None);
+
+        Assert.False(snapshot.Records["checkout"].Enabled);
+        Assert.Empty(snapshot.UnresolvedFlags);
+    }
+
+    [Fact]
+    public async Task UnexpectedEvaluationErrorIsMissingNotUnresolved()
+    {
+        var container = CreateContainer(CheckoutWithFilters(PlanIsPro));
+        var batchHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123",
+            new AllFeatureFlagsOptions
+            {
+                OnlyEvaluateLocally = true,
+                PersonProperties = new() { ["plan"] = new ThrowingValue() }
+            },
+            CancellationToken.None);
+        snapshot.IsEnabled("checkout");
+
+        Assert.Empty(snapshot.UnresolvedFlags);
+        Assert.Equal("flag_missing", await GetFeatureFlagErrorAsync(client, batchHandler, "checkout"));
+    }
+
+    [Fact]
+    public async Task EmptySnapshotHasNoUnresolvedFlags()
+    {
+        var container = CreateContainer(CheckoutWithExperienceContinuity);
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(string.Empty, LocalOnly, CancellationToken.None);
+
+        Assert.Empty(snapshot.UnresolvedFlags);
+    }
+
+    [Theory]
+    [InlineData(UnresolvedFlagReason.ExperienceContinuity, "experience_continuity")]
+    [InlineData(UnresolvedFlagReason.UnsupportedDefinition, "unsupported_definition")]
+    [InlineData(UnresolvedFlagReason.UnresolvedDependency, "unresolved_dependency")]
+    [InlineData(UnresolvedFlagReason.MissingContext, "missing_context")]
+    public void ReasonHasTheStableSpecValue(UnresolvedFlagReason reason, string expected)
+    {
+        Assert.Equal(expected, reason.ToValueString());
+        Assert.Equal($"\"{expected}\"", JsonSerializer.Serialize(reason));
+    }
+
+    sealed class ThrowingValue
+    {
+        public override string ToString() => throw new InvalidOperationException("Cannot stringify");
+    }
+}

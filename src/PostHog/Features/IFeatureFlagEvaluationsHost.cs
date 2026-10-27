@@ -9,7 +9,9 @@ internal interface IFeatureFlagEvaluationsHost
 {
     /// <summary>
     /// Fires a <c>$feature_flag_called</c> event for the given access, deduplicated against the
-    /// per-distinct-id cache that the legacy single-flag path also writes to.
+    /// per-distinct-id cache that the legacy single-flag path also writes to. <paramref name="unresolved"/>
+    /// is <c>true</c> when the key is in <see cref="FeatureFlagEvaluations.UnresolvedFlags"/>, so a missing
+    /// record reports <c>local_evaluation_inconclusive</c> instead of <c>flag_missing</c>.
     /// </summary>
     void CaptureFeatureFlagCalled(
         string distinctId,
@@ -19,7 +21,8 @@ internal interface IFeatureFlagEvaluationsHost
         string? requestId,
         long? evaluatedAt,
         long? flagDefinitionsLoadedAt,
-        IReadOnlyCollection<string> errors);
+        IReadOnlyCollection<string> errors,
+        bool unresolved);
 
     /// <summary>
     /// Logs a warning from <see cref="FeatureFlagEvaluations.OnlyAccessed"/> or

@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using PostHog;
 using PostHog.Api;
+using PostHog.Exceptions;
 using PostHog.Features;
 using PostHog.Json;
 using UnitTests.Library;
@@ -3109,5 +3111,359 @@ public class TheEarlyExitBehavior
             personProperties: new Dictionary<string, object?> { ["email"] = "tyrion@example.com" });
 
         Assert.True(result.Value);
+    }
+}
+
+public class TheUnresolvedFlagReasons
+{
+    const string PlanIsPro = """{"key": "plan", "type": "person", "value": "pro", "operator": "exact"}""";
+    const string CountryIsUs = """{"key": "country", "type": "person", "value": "US", "operator": "exact"}""";
+    const string UnknownOperator = """{"key": "plan", "type": "person", "value": "pro", "operator": "operator_from_the_future"}""";
+    const string StaticCohort = """{"key": "id", "type": "cohort", "value": 999}""";
+    const string DependsOnCheckout = """
+        {"key": "checkout", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["checkout"]}
+        """;
+
+    const string CheckoutWithExperienceContinuity = """
+        {"id": 2, "key": "checkout", "active": true, "ensure_experience_continuity": true,
+         "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+        """;
+
+    static LocalEvaluator CreateEvaluator(params string[] flags) => CreateEvaluatorWithCohorts("{}", flags);
+
+    static LocalEvaluator CreateEvaluatorWithCohorts(string cohorts, params string[] flags) =>
+        new(JsonSerializer.Deserialize<LocalEvaluationApiResult>(
+            $$$"""
+            {"flags": [{{{string.Join(", ", flags)}}}], "cohorts": {{{cohorts}}}, "group_type_mapping": {"0": "company"}}
+            """,
+            JsonSerializerHelper.Options)!);
+
+    static string Flag(string key, params string[] conditions) => $$$"""
+        {"id": 1, "key": "{{{key}}}", "active": true, "filters": {"groups": [{{{string.Join(", ", conditions)}}}]}}
+        """;
+
+    static string Condition(params string[] filters) =>
+        $$$"""{"properties": [{{{string.Join(", ", filters)}}}], "rollout_percentage": 100}""";
+
+    static string Filter(string comparison, string value) =>
+        $$$"""{"key": "plan", "type": "person", "value": {{{JsonSerializer.Serialize(value)}}}, "operator": "{{{comparison}}}"}""";
+
+    static UnresolvedFlagReason? EvaluateReason(
+        LocalEvaluator evaluator,
+        string key,
+        Dictionary<string, object?>? personProperties = null)
+    {
+        var (flags, fallbackToRemote, unresolved) = evaluator.EvaluateAllFlags(
+            "user-123",
+            personProperties: personProperties ?? [],
+            flagKeysToEvaluate: [key]);
+        if (!unresolved.TryGetValue(key, out var reason))
+        {
+            return null;
+        }
+        Assert.True(fallbackToRemote);
+        Assert.Empty(flags);
+        return reason;
+    }
+
+    public static IEnumerable<object[]> PrecedenceCases()
+    {
+        // Across conditions.
+        yield return [new[] { Condition(PlanIsPro), Condition(UnknownOperator) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(UnknownOperator), Condition(PlanIsPro) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(PlanIsPro), Condition(DependsOnCheckout) }, UnresolvedFlagReason.UnresolvedDependency];
+        yield return [new[] { Condition(DependsOnCheckout), Condition(PlanIsPro) }, UnresolvedFlagReason.UnresolvedDependency];
+        yield return [new[] { Condition(DependsOnCheckout), Condition(StaticCohort) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(PlanIsPro), Condition(StaticCohort) }, UnresolvedFlagReason.UnsupportedDefinition];
+        // Within one condition.
+        yield return [new[] { Condition(PlanIsPro, DependsOnCheckout) }, UnresolvedFlagReason.UnresolvedDependency];
+        yield return [new[] { Condition(DependsOnCheckout, PlanIsPro) }, UnresolvedFlagReason.UnresolvedDependency];
+        yield return [new[] { Condition(DependsOnCheckout, UnknownOperator) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(UnknownOperator, DependsOnCheckout) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(StaticCohort, PlanIsPro) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(PlanIsPro, StaticCohort) }, UnresolvedFlagReason.UnsupportedDefinition];
+    }
+
+    [Theory]
+    [MemberData(nameof(PrecedenceCases))]
+    public void ReportsTheHighestPrecedenceReasonWhateverTheOrder(string[] conditions, UnresolvedFlagReason expected)
+    {
+        var evaluator = CreateEvaluator(CheckoutWithExperienceContinuity, Flag("beta-ui", conditions));
+
+        Assert.Equal(expected, EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Theory]
+    [InlineData(PlanIsPro, CountryIsUs)]
+    [InlineData(CountryIsUs, PlanIsPro)]
+    [InlineData(StaticCohort, CountryIsUs)]
+    [InlineData(CountryIsUs, StaticCohort)]
+    [InlineData(DependsOnCheckout, CountryIsUs)]
+    public void ConditionWithNonMatchingFilterResolvesLocallyDespiteUncheckableFilter(string first, string second)
+    {
+        var evaluator = CreateEvaluator(CheckoutWithExperienceContinuity, Flag("beta-ui", Condition(first, second)));
+        var properties = new Dictionary<string, object?> { ["country"] = "DE" };
+
+        Assert.False(evaluator.EvaluateFeatureFlag("beta-ui", "user-123", personProperties: properties).Value);
+        Assert.Null(EvaluateReason(evaluator, "beta-ui", properties));
+    }
+
+    [Fact]
+    public void StaticCohortFallsBackToServerWhenItIsTheFirstFilterThatCannotBeChecked()
+    {
+        var evaluator = CreateEvaluator(Flag("beta-ui", Condition(StaticCohort, PlanIsPro), Condition()));
+
+        var exception = Assert.Throws<RequiresServerEvaluationException>(
+            () => evaluator.EvaluateFeatureFlag("beta-ui", "user-123", personProperties: []));
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, exception.Reason);
+    }
+
+    [Fact]
+    public void StaticCohortAfterAnotherUncheckableFilterLetsLaterConditionsResolveLocally()
+    {
+        var evaluator = CreateEvaluator(Flag("beta-ui", Condition(PlanIsPro, StaticCohort), Condition()));
+
+        Assert.True(evaluator.EvaluateFeatureFlag("beta-ui", "user-123", personProperties: []).Value);
+    }
+
+    [Theory]
+    [InlineData("operator_from_the_future", "pro")]
+    [InlineData("is_date_before", "not-a-date")]
+    [InlineData("semver_gt", "not-a-version")]
+    [InlineData("semver_tilde", "not-a-version")]
+    [InlineData("semver_wildcard", "not-a-pattern")]
+    [InlineData("regex", "café")]
+    public void UnusableFilterOutranksMissingProperty(string comparison, string filterValue)
+    {
+        var evaluator = CreateEvaluator(Flag("beta-ui", Condition(Filter(comparison, filterValue))));
+
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Theory]
+    [InlineData("exact", "pro")]
+    [InlineData("is_date_before", "-24d")]
+    [InlineData("semver_gt", "1.2.3")]
+    [InlineData("regex", "^pro$")]
+    public void MissingPropertyForUsableFilterIsMissingContext(string comparison, string filterValue)
+    {
+        var evaluator = CreateEvaluator(Flag("beta-ui", Condition(Filter(comparison, filterValue))));
+
+        Assert.Equal(UnresolvedFlagReason.MissingContext, EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Theory]
+    [InlineData("is_date_before", "2024-01-01", "not-a-date", UnresolvedFlagReason.MissingContext)]
+    [InlineData("is_date_before", "-24d", "not-a-date", UnresolvedFlagReason.MissingContext)]
+    [InlineData("is_date_after", "2024-01-01", 42, UnresolvedFlagReason.MissingContext)]
+    [InlineData("is_date_before", "not-a-date", "2024-01-01", UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("is_date_before", "not-a-date", "not-a-date", UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("semver_gt", "1.2.3", "not-a-version", UnresolvedFlagReason.MissingContext)]
+    [InlineData("semver_gt", "not-a-version", "1.2.3", UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("semver_eq", "not-a-version", "not-a-version", UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("semver_caret", "not-a-version", "not-a-version", UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("semver_wildcard", "1.*", "not-a-version", UnresolvedFlagReason.MissingContext)]
+    [InlineData("semver_wildcard", "not-a-pattern", "not-a-version", UnresolvedFlagReason.UnsupportedDefinition)]
+    public void BadPersonValueIsMissingContextAndBadFilterValueIsUnsupportedDefinition(
+        string comparison,
+        string filterValue,
+        object personValue,
+        UnresolvedFlagReason expected)
+    {
+        var evaluator = CreateEvaluator(Flag("beta-ui", Condition(Filter(comparison, filterValue))));
+
+        Assert.Equal(expected, EvaluateReason(evaluator, "beta-ui", new() { ["plan"] = personValue }));
+    }
+
+    [Theory]
+    [InlineData("AND", new[] { PlanIsPro }, UnresolvedFlagReason.MissingContext)]
+    [InlineData("OR", new[] { PlanIsPro, UnknownOperator }, UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("OR", new[] { UnknownOperator, PlanIsPro }, UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("AND", new[] { PlanIsPro, StaticCohort }, UnresolvedFlagReason.UnsupportedDefinition)]
+    public void CohortReportsTheHighestPrecedenceReasonOfItsFilters(string groupType, string[] filters, UnresolvedFlagReason expected)
+    {
+        var cohorts = $$$"""{"1": {"type": "{{{groupType}}}", "values": [{"type": "{{{groupType}}}", "values": [{{{string.Join(", ", filters)}}}]}]}}""";
+        var evaluator = CreateEvaluatorWithCohorts(
+            cohorts,
+            Flag("beta-ui", Condition("""{"key": "id", "type": "cohort", "value": 1}""")));
+
+        Assert.Equal(expected, EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Fact]
+    public void UnknownGroupTypeIndexIsUnsupportedDefinition()
+    {
+        var evaluator = CreateEvaluator("""
+            {"id": 1, "key": "beta-ui", "active": true,
+             "filters": {"aggregation_group_type_index": 5, "groups": [{"properties": [], "rollout_percentage": 100}]}}
+            """);
+
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Fact]
+    public void InactiveFlagResolvesToFalseBeforeExperienceContinuityIsChecked()
+    {
+        var evaluator = CreateEvaluator("""
+            {"id": 2, "key": "checkout", "active": false, "ensure_experience_continuity": true,
+             "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+            """);
+
+        Assert.False(evaluator.EvaluateFeatureFlag("checkout", "user-123").Value);
+        var (flags, fallbackToRemote, unresolved) = evaluator.EvaluateAllFlags("user-123");
+        Assert.False(flags["checkout"].IsEnabled);
+        Assert.False(fallbackToRemote);
+        Assert.Empty(unresolved);
+    }
+
+    [Fact]
+    public void ExperienceContinuityFlagIsExperienceContinuity()
+    {
+        var evaluator = CreateEvaluator(CheckoutWithExperienceContinuity);
+
+        Assert.Equal(UnresolvedFlagReason.ExperienceContinuity, EvaluateReason(evaluator, "checkout"));
+    }
+
+    [Fact]
+    public void DependencyWithExperienceContinuityIsUnresolvedDependency()
+    {
+        var evaluator = CreateEvaluator(CheckoutWithExperienceContinuity, Flag("beta-ui", Condition(DependsOnCheckout)));
+
+        Assert.Equal(UnresolvedFlagReason.UnresolvedDependency, EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Fact]
+    public void InactiveDependencyWithExperienceContinuityResolvesToFalse()
+    {
+        var evaluator = CreateEvaluator(
+            """
+            {"id": 2, "key": "checkout", "active": false, "ensure_experience_continuity": true,
+             "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+            """,
+            Flag("beta-ui", Condition(DependsOnCheckout)));
+
+        Assert.False(evaluator.EvaluateFeatureFlag("beta-ui", "user-123").Value);
+        Assert.Null(EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Fact]
+    public void DependencyThatRequiresServerIsUnresolvedDependencyWithoutForcingServerFallback()
+    {
+        var evaluator = CreateEvaluator(
+            Flag("checkout", Condition(StaticCohort)),
+            Flag("beta-ui", Condition(DependsOnCheckout)),
+            Flag("beta-ui-with-fallback", Condition(DependsOnCheckout), Condition()));
+
+        var exception = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("beta-ui", "user-123"));
+        Assert.Equal(UnresolvedFlagReason.UnresolvedDependency, exception.Reason);
+        Assert.True(evaluator.EvaluateFeatureFlag("beta-ui-with-fallback", "user-123").Value);
+    }
+
+    [Theory]
+    [InlineData("""{"key": "checkout", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": []}""")]
+    [InlineData("""{"key": "checkout", "type": "flag", "value": true, "operator": "flag_evaluates_to"}""")]
+    [InlineData("""{"key": "missing", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["missing"]}""")]
+    [InlineData("""{"key": "missing", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["checkout", "missing"]}""")]
+    public void CircularMalformedOrMissingDependencyIsUnsupportedDefinition(string dependency)
+    {
+        var evaluator = CreateEvaluator(CheckoutWithExperienceContinuity, Flag("beta-ui", Condition(dependency)));
+
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, EvaluateReason(evaluator, "beta-ui"));
+    }
+
+    [Fact]
+    public void UnexpectedExceptionIsNotUnresolved()
+    {
+        var evaluator = CreateEvaluator(Flag("beta-ui", Condition(PlanIsPro)));
+
+        var (flags, fallbackToRemote, unresolved) = evaluator.EvaluateAllFlags(
+            "user-123",
+            personProperties: new() { ["plan"] = new ThrowingValue() });
+
+        Assert.Empty(flags);
+        Assert.True(fallbackToRemote);
+        Assert.Empty(unresolved);
+    }
+
+    [Fact]
+    public void StaticCohortDoesNotLogAnErrorOnEachEvaluation()
+    {
+        var loggerProvider = new FakeLoggerProvider();
+        var evaluator = new LocalEvaluator(
+            JsonSerializer.Deserialize<LocalEvaluationApiResult>(
+                $$$"""{"flags": [{{{Flag("beta-ui", Condition(StaticCohort))}}}]}""",
+                JsonSerializerHelper.Options)!,
+            TimeProvider.System,
+            ((ILoggerFactory)loggerProvider).CreateLogger<LocalEvaluator>());
+
+        var (_, fallbackToRemote, unresolved) = evaluator.EvaluateAllFlags("user-123");
+
+        Assert.True(fallbackToRemote);
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, unresolved["beta-ui"]);
+        Assert.Empty(loggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+    }
+
+    public static IEnumerable<object?[]> DefinitionCases()
+    {
+        yield return [CheckoutWithExperienceContinuity, UnresolvedFlagReason.ExperienceContinuity];
+        yield return [
+            """
+            {"id": 2, "key": "checkout", "active": false, "ensure_experience_continuity": true,
+             "filters": {"groups": [{"properties": [{"key": "id", "type": "cohort", "value": 999}]}]}}
+            """,
+            null];
+        yield return [Flag("checkout", Condition(PlanIsPro)), null];
+        yield return [Flag("checkout", Condition(CountryIsUs), Condition(StaticCohort)), UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [Flag("checkout", Condition(UnknownOperator)), UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [Flag("checkout", Condition(Filter("is_date_after", "not-a-date"))), UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [Flag("checkout", Condition(Filter("semver_gt", "not-a-version"))), UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [Flag("checkout", Condition(Filter("regex", "café"))), UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [Flag("checkout", Condition(Filter("regex", "^pro$"))), null];
+        yield return [
+            Flag("checkout", Condition("""{"key": "missing", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["missing"]}""")),
+            UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [
+            Flag("checkout", Condition("""{"key": "beta-ui", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": []}""")),
+            UnresolvedFlagReason.UnsupportedDefinition];
+        // A dependency that is only unresolved depends on the other flag, not on this definition.
+        yield return [
+            Flag("checkout", Condition("""{"key": "beta-ui", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["beta-ui"]}""")),
+            null];
+        yield return [Flag("checkout", Condition("""{"key": "id", "type": "cohort", "value": 1}""")), UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [Flag("checkout", Condition("""{"key": "id", "type": "cohort", "value": 2}""")), null];
+        yield return [
+            """
+            {"id": 2, "key": "checkout", "active": true,
+             "filters": {"aggregation_group_type_index": 5, "groups": [{"properties": [], "rollout_percentage": 100}]}}
+            """,
+            UnresolvedFlagReason.UnsupportedDefinition];
+    }
+
+    [Theory]
+    [MemberData(nameof(DefinitionCases))]
+    public void GetDefinitionUnresolvedReasonFindsCausesThatComeFromTheDefinition(string checkout, UnresolvedFlagReason? expected)
+    {
+        var betaUi = """
+            {"id": 1, "key": "beta-ui", "active": true, "ensure_experience_continuity": true,
+             "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+            """;
+        var cohorts = """
+            {
+                "1": {"type": "AND", "values": [{"type": "AND", "values": [
+                    {"key": "plan", "type": "person", "value": "pro", "operator": "operator_from_the_future"}]}]},
+                "2": {"type": "AND", "values": [{"type": "AND", "values": [
+                    {"key": "plan", "type": "person", "value": "pro", "operator": "exact"}]}]}
+            }
+            """;
+        var evaluator = CreateEvaluatorWithCohorts(cohorts, checkout, betaUi);
+        Assert.True(evaluator.TryGetLocalFeatureFlag("checkout", out var flag));
+
+        Assert.Equal(expected, evaluator.GetDefinitionUnresolvedReason(flag));
+    }
+
+    sealed class ThrowingValue
+    {
+        public override string ToString() => throw new InvalidOperationException("Cannot stringify");
     }
 }

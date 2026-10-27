@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Text.Json;
 using static PostHog.Library.Ensure;
 
@@ -23,6 +24,9 @@ public sealed class FeatureFlagEvaluations
     readonly GroupCollection? _groups;
     readonly IReadOnlyCollection<string> _errors;
 
+    static readonly IReadOnlyDictionary<string, UnresolvedFlagReason> NoUnresolvedFlags =
+        new ReadOnlyDictionary<string, UnresolvedFlagReason>(new Dictionary<string, UnresolvedFlagReason>());
+
     internal FeatureFlagEvaluations(
         IFeatureFlagEvaluationsHost host,
         string distinctId,
@@ -32,7 +36,8 @@ public sealed class FeatureFlagEvaluations
         long? flagDefinitionsLoadedAt,
         GroupCollection? groups,
         IReadOnlyCollection<string>? errors,
-        ConcurrentDictionary<string, byte>? accessed = null)
+        ConcurrentDictionary<string, byte>? accessed = null,
+        Dictionary<string, UnresolvedFlagReason>? unresolvedFlags = null)
     {
         _host = NotNull(host);
         DistinctId = distinctId ?? string.Empty;
@@ -43,6 +48,9 @@ public sealed class FeatureFlagEvaluations
         _groups = groups;
         _errors = errors ?? Array.Empty<string>();
         _accessed = accessed ?? new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+        UnresolvedFlags = unresolvedFlags is { Count: > 0 }
+            ? new ReadOnlyDictionary<string, UnresolvedFlagReason>(unresolvedFlags)
+            : NoUnresolvedFlags;
     }
 
     /// <summary>
@@ -73,6 +81,18 @@ public sealed class FeatureFlagEvaluations
     /// The set of flag keys present in this snapshot.
     /// </summary>
     public IReadOnlyCollection<string> Keys => _records.Keys;
+
+    /// <summary>
+    /// The flags that have a loaded local definition but that neither local evaluation nor a remote fallback
+    /// resolved, mapped to the reason local evaluation could not resolve them. These flags are absent from
+    /// <see cref="Keys"/>, and their accessors return the missing-flag values. Reading this property does not
+    /// record access and does not fire <c>$feature_flag_called</c>.
+    /// </summary>
+    /// <remarks>
+    /// Always empty on snapshots returned by <see cref="Only(System.Collections.Generic.IEnumerable{string})"/>
+    /// and <see cref="OnlyAccessed"/>.
+    /// </remarks>
+    public IReadOnlyDictionary<string, UnresolvedFlagReason> UnresolvedFlags { get; }
 
     /// <summary>
     /// Returns <c>true</c> when the named flag is present in the snapshot and enabled. Records
@@ -238,11 +258,13 @@ public sealed class FeatureFlagEvaluations
             requestId: RequestId,
             evaluatedAt: EvaluatedAt,
             flagDefinitionsLoadedAt: FlagDefinitionsLoadedAt,
-            errors: _errors);
+            errors: _errors,
+            unresolved: UnresolvedFlags.ContainsKey(keyChecked));
 
         return record;
     }
 
+    // Filtered snapshots carry no unresolved flags.
     FeatureFlagEvaluations CloneWith(Dictionary<string, EvaluatedFlagRecord> records)
         => new(
             _host,

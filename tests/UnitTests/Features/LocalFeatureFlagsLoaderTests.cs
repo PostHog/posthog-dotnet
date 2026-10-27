@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.Logging;
 using PostHog;
 using PostHog.Api;
 using PostHog.Features;
@@ -194,5 +195,134 @@ public class TheDisposeAsyncMethod
 
         // Dispose without ever calling LoadFeatureFlagsAsync.
         await client.DisposeAsync();
+    }
+}
+
+public class TheUnresolvableFlagWarning
+{
+    const string CheckoutWithExperienceContinuity = """
+        {"id": 2, "key": "checkout", "active": true, "ensure_experience_continuity": true,
+         "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}
+        """;
+
+    static string Flag(string key, string filter = "", bool experienceContinuity = false, int rolloutPercentage = 100) => $$$"""
+        {"id": 1, "key": "{{{key}}}", "active": true, "ensure_experience_continuity": {{{(experienceContinuity ? "true" : "false")}}},
+         "filters": {"groups": [{"properties": [{{{filter}}}], "rollout_percentage": {{{rolloutPercentage}}}}]}}
+        """;
+
+    static string Definitions(params string[] flags) => $$$"""{"flags": [{{{string.Join(", ", flags)}}}], "cohorts": {}}""";
+
+    static (TestContainer Container, PostHogClient Client, FakeHttpMessageHandler.RequestHandler FlagsHandler) CreateClient()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        return (container, container.Activate<PostHogClient>(), flagsHandler);
+    }
+
+    static async Task LoadAsync(TestContainer container, PostHogClient client, string definitions)
+    {
+        var handler = container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(definitions, "\"definitions\"");
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+        Assert.Single(handler.ReceivedRequests);
+    }
+
+    static List<string> GetWarnings(TestContainer container, string reason) =>
+        container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning)
+            .Select(e => e.Message ?? string.Empty)
+            .Where(message => message.Contains($"(reason: {reason})", StringComparison.Ordinal))
+            .ToList();
+
+    [Theory]
+    [InlineData("unchanged definitions")]
+    [InlineData("304 not modified")]
+    public async Task LoadingDefinitionThatLocalEvaluationNeverResolvesLogsOneWarning(string refreshResult)
+    {
+        var (container, client, flagsHandler) = CreateClient();
+        await LoadAsync(container, client, Definitions(CheckoutWithExperienceContinuity));
+
+        if (refreshResult == "304 not modified")
+        {
+            var notModified = container.FakeHttpMessageHandler.AddLocalEvaluationNotModifiedResponse();
+            await client.LoadFeatureFlagsAsync(CancellationToken.None);
+            Assert.Single(notModified.ReceivedRequests);
+        }
+        else
+        {
+            await LoadAsync(container, client, Definitions(CheckoutWithExperienceContinuity));
+        }
+
+        var warning = Assert.Single(GetWarnings(container, "experience_continuity"));
+        Assert.Contains("checkout", warning, StringComparison.Ordinal);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task ChangedDefinitionThatLocalEvaluationNeverResolvesLogsTheWarningAgain()
+    {
+        var (container, client, _) = CreateClient();
+        await LoadAsync(container, client, Definitions(Flag("checkout", experienceContinuity: true)));
+        await LoadAsync(container, client, Definitions(Flag("checkout", experienceContinuity: true, rolloutPercentage: 50)));
+
+        var warnings = GetWarnings(container, "experience_continuity");
+        Assert.Equal(2, warnings.Count);
+        Assert.All(warnings, warning => Assert.Contains("checkout", warning, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WarnsOncePerReasonAboutDefinitionCausesOnly()
+    {
+        var (container, client, _) = CreateClient();
+
+        await LoadAsync(container, client, Definitions(
+            Flag("experience-continuity", experienceContinuity: true),
+            Flag("static-cohort", """{"key": "id", "type": "cohort", "value": 999}"""),
+            Flag("unknown-operator", """{"key": "plan", "type": "person", "value": "pro", "operator": "operator_from_the_future"}"""),
+            Flag("missing-dependency", """{"key": "missing", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["missing"]}"""),
+            Flag("circular-dependency", """{"key": "resolvable", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": []}"""),
+            Flag("unresolved-dependency", """{"key": "experience-continuity", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["experience-continuity"]}"""),
+            Flag("missing-context", """{"key": "plan", "type": "person", "value": "pro", "operator": "exact"}"""),
+            Flag("resolvable")));
+
+        var experienceContinuity = Assert.Single(GetWarnings(container, "experience_continuity"));
+        Assert.Contains(": experience-continuity.", experienceContinuity, StringComparison.Ordinal);
+        var unsupportedDefinition = Assert.Single(GetWarnings(container, "unsupported_definition"));
+        Assert.Contains(
+            ": static-cohort, unknown-operator, missing-dependency, circular-dependency.",
+            unsupportedDefinition,
+            StringComparison.Ordinal);
+        Assert.Equal(2, container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning).Count);
+    }
+
+    [Fact]
+    public async Task FlagThatLeavesAndReturnsLogsTheWarningAgain()
+    {
+        var (container, client, _) = CreateClient();
+        await LoadAsync(container, client, Definitions(CheckoutWithExperienceContinuity, Flag("resolvable")));
+        await LoadAsync(container, client, Definitions(Flag("resolvable")));
+        await LoadAsync(container, client, Definitions(CheckoutWithExperienceContinuity, Flag("resolvable")));
+
+        Assert.Equal(2, GetWarnings(container, "experience_continuity").Count);
+    }
+
+    [Fact]
+    public async Task FlagThatBecomesResolvableAndThenUnresolvableLogsTheWarningAgain()
+    {
+        var (container, client, _) = CreateClient();
+        await LoadAsync(container, client, Definitions(Flag("checkout", experienceContinuity: true)));
+        await LoadAsync(container, client, Definitions(Flag("checkout")));
+        await LoadAsync(container, client, Definitions(Flag("checkout", experienceContinuity: true)));
+
+        Assert.Equal(2, GetWarnings(container, "experience_continuity").Count);
+    }
+
+    [Fact]
+    public async Task ChangedReasonLogsTheNewReason()
+    {
+        var (container, client, _) = CreateClient();
+        await LoadAsync(container, client, Definitions(Flag("checkout", experienceContinuity: true)));
+        await LoadAsync(container, client, Definitions(Flag("checkout", """{"key": "id", "type": "cohort", "value": 999}""")));
+
+        Assert.Single(GetWarnings(container, "experience_continuity"));
+        Assert.Contains("checkout", Assert.Single(GetWarnings(container, "unsupported_definition")), StringComparison.Ordinal);
     }
 }

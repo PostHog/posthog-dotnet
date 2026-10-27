@@ -1,3 +1,5 @@
+using PostHog.Features;
+
 namespace PostHog.Json;
 
 /// <summary>
@@ -29,4 +31,20 @@ public class InconclusiveMatchException : Exception
     public InconclusiveMatchException(string message, Exception innerException) : base(message, innerException)
     {
     }
+
+    internal InconclusiveMatchException(string message, UnresolvedFlagReason reason) : base(message)
+    {
+        Reason = reason;
+    }
+
+    internal InconclusiveMatchException(string message, UnresolvedFlagReason reason, Exception innerException)
+        : base(message, innerException)
+    {
+        Reason = reason;
+    }
+
+    /// <summary>
+    /// Why local evaluation could not resolve the flag.
+    /// </summary>
+    internal UnresolvedFlagReason Reason { get; } = UnresolvedFlagReason.UnsupportedDefinition;
 }

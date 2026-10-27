@@ -1007,14 +1007,15 @@ public sealed class PostHogClient : IPostHogClient
             string? requestId,
             long? evaluatedAt,
             long? flagDefinitionsLoadedAt,
-            IReadOnlyCollection<string> errors)
+            IReadOnlyCollection<string> errors,
+            bool unresolved)
         {
             // Mirror the legacy path's "missing flag" handling: append the FlagMissing error
             // and use a synthetic disabled FeatureFlag so the response shape is consistent.
             var snapshotErrors = new List<string>(errors);
             if (record is null)
             {
-                snapshotErrors.Add(FeatureFlagError.FlagMissing);
+                snapshotErrors.Add(unresolved ? FeatureFlagError.LocalEvaluationInconclusive : FeatureFlagError.FlagMissing);
             }
 
             var flag = record?.Flag ?? new FeatureFlag { Key = featureKey, IsEnabled = false };
@@ -1095,6 +1096,7 @@ public sealed class PostHogClient : IPostHogClient
         string? requestId = null;
         long? evaluatedAt = null;
         long? flagDefinitionsLoadedAt = null;
+        IReadOnlyDictionary<string, UnresolvedFlagReason>? locallyUnresolved = null;
 
         // 1. Local pass.
         var fallbackToRemote = true;
@@ -1106,12 +1108,13 @@ public sealed class PostHogClient : IPostHogClient
                     await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
                 if (localEvaluator is not null)
                 {
-                    var (locallyEvaluated, needsRemote) = localEvaluator.EvaluateAllFlags(
+                    var (locallyEvaluated, needsRemote, unresolved) = localEvaluator.EvaluateAllFlags(
                         resolvedDistinctId,
                         options?.Groups,
                         options?.PersonProperties,
                         warnOnUnknownGroups: false,
                         flagKeysToEvaluate: requestedFlagKeys);
+                    locallyUnresolved = unresolved;
 
                     foreach (var (key, flag) in locallyEvaluated)
                     {
@@ -1202,6 +1205,11 @@ public sealed class PostHogClient : IPostHogClient
             }
         }
 
+        // A flag the remote fallback resolved has a value, so it is not unresolved.
+        var unresolvedFlags = locallyUnresolved?
+            .Where(pair => !records.ContainsKey(pair.Key))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
         return new FeatureFlagEvaluations(
             _evaluationsHost,
             resolvedDistinctId,
@@ -1210,7 +1218,8 @@ public sealed class PostHogClient : IPostHogClient
             evaluatedAt,
             flagDefinitionsLoadedAt,
             options?.Groups,
-            errors);
+            errors,
+            unresolvedFlags: unresolvedFlags);
 
         static EvaluatedFlagRecord ToRecord(string key, FeatureFlag flag, bool locallyEvaluated, bool minimalFlagCalledEvents)
             => new()
@@ -1256,7 +1265,7 @@ public sealed class PostHogClient : IPostHogClient
                     await _featureFlagsLoader.GetFeatureFlagsForLocalEvaluationAsync(cancellationToken);
                 if (localEvaluator is not null)
                 {
-                    var (localEvaluationResults, fallbackToRemote) = localEvaluator.EvaluateAllFlags(
+                    var (localEvaluationResults, fallbackToRemote, _) = localEvaluator.EvaluateAllFlags(
                         resolvedDistinctId,
                         options?.Groups,
                         options?.PersonProperties,
