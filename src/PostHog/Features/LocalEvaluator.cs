@@ -230,7 +230,12 @@ internal sealed class LocalEvaluator
         switch (filter)
         {
             case FilterSet filterSet:
-                return filterSet.Values.Any(child => IsUnsupportedFilter(child, visitedCohortIds, inCohort));
+                return (filterSet.Values ?? []).Any(child => IsUnsupportedFilter(child, visitedCohortIds, inCohort));
+            case PropertyFilter { Operator: ComparisonOperator.Regex or ComparisonOperator.NotRegex, Value: { } value } when inCohort
+                && (value.StringValue is not { } pattern || !RegexHelpers.CanMatchLocally(pattern)):
+                // A cohort reports a regex it cannot run as UnsupportedDefinition. At flag level the same regex
+                // resolves locally as no match, so this check stays out of AssertFilterSupported.
+                return true;
             case PropertyFilter { Type: FilterType.Flag } dependency:
                 // MatchProperty cannot evaluate a flag dependency inside a cohort.
                 if (inCohort)
@@ -413,11 +418,9 @@ internal sealed class LocalEvaluator
             {
                 conditionResult = EvaluateConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups);
             }
-            catch (RequiresServerEvaluationException e)
+            catch (RequiresServerEvaluationException)
             {
                 // Static cohort or other missing server-side data - must fallback to API.
-                // A reason an earlier condition found can still outrank this one.
-                e.Reason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, e.Reason);
                 throw;
             }
             catch (InconclusiveMatchException e)
@@ -554,6 +557,12 @@ internal sealed class LocalEvaluator
                     inconclusiveReason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, e.Reason);
                     continue;
                 }
+#pragma warning disable CA1031 // An earlier filter already left the condition inconclusive. Stop at that reason, so an unexpected error here cannot fail a flag that a later condition can still resolve.
+                catch (Exception) when (inconclusiveReason is not null)
+#pragma warning restore CA1031
+                {
+                    break;
+                }
 
                 if (!isMatch)
                 {
@@ -567,7 +576,6 @@ internal sealed class LocalEvaluator
                 // server instead of trying later conditions.
                 if (serverEvaluationException is not null)
                 {
-                    serverEvaluationException.Reason = reason;
                     throw serverEvaluationException;
                 }
                 throw new InconclusiveMatchException($"Can't determine if a condition of flag {flag.Key} matches", reason);
@@ -633,8 +641,7 @@ internal sealed class LocalEvaluator
         if (cohortId is null || !_cohortFilters.TryGetValue(cohortId.Value, out var conditions))
         {
             throw new RequiresServerEvaluationException(
-                $"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation",
-                UnresolvedFlagReason.UnsupportedDefinition);
+                $"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation");
         }
 
         return MatchPropertyGroup(conditions, distinctId, propertyValues);
@@ -713,6 +720,15 @@ internal sealed class LocalEvaluator
             }
             try
             {
+                if (filter.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(propertyFilter, propertyValues))
+                {
+                    // Same result as MatchProperty for an absent key, without the cost of throwing for every
+                    // missing filter.
+                    AssertFilterSupported(propertyFilter);
+                    inconclusiveReason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, UnresolvedFlagReason.MissingContext);
+                    continue;
+                }
+
                 var isMatch = filter.Type is FilterType.Cohort
                     ? MatchCohort(propertyFilter, distinctId, propertyValues)
                     : MatchProperty(propertyFilter, distinctId, propertyValues)
@@ -835,6 +851,7 @@ internal sealed class LocalEvaluator
             return false;
         }
 
+        // A new operator here also needs an arm in AssertFilterSupported.
         return propertyFilter.Operator switch
         {
             ComparisonOperator.Exact => value.IsExactMatch(overrideValue, LocalEvaluationApiResult.PropertyMatchingVersion),
@@ -877,6 +894,8 @@ internal sealed class LocalEvaluator
     /// reason when local evaluation cannot use the filter, whatever the properties hold: an unknown operator, or a
     /// filter value that the operator cannot parse.
     /// </summary>
+    // Keep the operator list in sync with the switch in MatchProperty. An operator missing here is reported as
+    // unsupported when the property is absent, and in the load-time warning.
     static void AssertFilterSupported(PropertyFilter propertyFilter)
     {
         if (propertyFilter.Operator is ComparisonOperator.IsSet or ComparisonOperator.IsNotSet)

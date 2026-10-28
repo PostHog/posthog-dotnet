@@ -37,15 +37,10 @@ namespace PostHog.Exceptions
         {
         }
 
-        internal RequiresServerEvaluationException(string message, UnresolvedFlagReason reason) : base(message)
-        {
-            Reason = reason;
-        }
-
         /// <summary>
-        /// Why local evaluation could not resolve the flag. A condition that reaches this exception can raise it
-        /// to a higher-precedence reason found earlier in the same flag.
+        /// Why local evaluation could not resolve the flag. Only <see cref="UnresolvedFlagReason.ExperienceContinuity"/>
+        /// outranks it, and that reason is found before any condition can raise this exception.
         /// </summary>
-        internal UnresolvedFlagReason Reason { get; set; } = UnresolvedFlagReason.UnsupportedDefinition;
+        internal UnresolvedFlagReason Reason { get; } = UnresolvedFlagReason.UnsupportedDefinition;
     }
 }

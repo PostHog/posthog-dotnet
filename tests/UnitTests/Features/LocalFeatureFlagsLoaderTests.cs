@@ -238,7 +238,11 @@ public class TheUnresolvableFlagWarning
     public async Task LoadingDefinitionThatLocalEvaluationNeverResolvesLogsOneWarning(string refreshResult)
     {
         var (container, client, flagsHandler) = CreateClient();
-        await LoadAsync(container, client, Definitions(CheckoutWithExperienceContinuity));
+        var definitions = Definitions(
+            CheckoutWithExperienceContinuity,
+            Flag("static-cohort", """{"key": "id", "type": "cohort", "value": 999}"""),
+            Flag("missing-dependency", """{"key": "missing", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["missing"]}"""));
+        await LoadAsync(container, client, definitions);
 
         if (refreshResult == "304 not modified")
         {
@@ -248,11 +252,31 @@ public class TheUnresolvableFlagWarning
         }
         else
         {
-            await LoadAsync(container, client, Definitions(CheckoutWithExperienceContinuity));
+            await LoadAsync(container, client, definitions);
         }
 
         var warning = Assert.Single(GetWarnings(container, "experience_continuity"));
         Assert.Contains("checkout", warning, StringComparison.Ordinal);
+        Assert.Single(GetWarnings(container, "unsupported_definition"));
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task DefinitionTheWarningCannotReadDoesNotBreakLoadingOrFlagCalls()
+    {
+        var (container, client, flagsHandler) = CreateClient();
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(
+            Definitions(
+                Flag("malformed", """{"key": null, "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["resolvable"]}"""),
+                Flag("resolvable")),
+            "\"definitions\"");
+
+        var flags = await client.EvaluateFlagsAsync(
+            "user-123",
+            new FeatureFlagOptions { FlagKeysToEvaluate = ["resolvable"] },
+            CancellationToken.None);
+
+        Assert.True(flags.IsEnabled("resolvable"));
         Assert.Empty(flagsHandler.ReceivedRequests);
     }
 

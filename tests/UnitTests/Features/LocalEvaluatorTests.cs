@@ -3226,6 +3226,17 @@ public class TheUnresolvedFlagReasons
         Assert.True(evaluator.EvaluateFeatureFlag("beta-ui", "user-123", personProperties: []).Value);
     }
 
+    [Fact]
+    public void UnexpectedExceptionAfterAnotherUncheckableFilterLetsLaterConditionsResolveLocally()
+    {
+        var evaluator = CreateEvaluator(Flag("beta-ui", Condition(CountryIsUs, PlanIsPro), Condition()));
+
+        Assert.True(evaluator.EvaluateFeatureFlag(
+            "beta-ui",
+            "user-123",
+            personProperties: new() { ["plan"] = new ThrowingValue() }).Value);
+    }
+
     [Theory]
     [InlineData("operator_from_the_future", "pro")]
     [InlineData("is_date_before", "not-a-date")]
@@ -3420,6 +3431,8 @@ public class TheUnresolvedFlagReasons
         yield return [Flag("checkout", Condition(Filter("semver_gt", "not-a-version"))), UnresolvedFlagReason.UnsupportedDefinition];
         yield return [Flag("checkout", Condition(Filter("regex", "café"))), UnresolvedFlagReason.UnsupportedDefinition];
         yield return [Flag("checkout", Condition(Filter("regex", "^pro$"))), null];
+        // A flag-level regex that does not compile resolves locally as no match.
+        yield return [Flag("checkout", Condition(Filter("regex", "["))), null];
         yield return [
             Flag("checkout", Condition("""{"key": "missing", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["missing"]}""")),
             UnresolvedFlagReason.UnsupportedDefinition];
@@ -3432,6 +3445,9 @@ public class TheUnresolvedFlagReasons
             null];
         yield return [Flag("checkout", Condition("""{"key": "id", "type": "cohort", "value": 1}""")), UnresolvedFlagReason.UnsupportedDefinition];
         yield return [Flag("checkout", Condition("""{"key": "id", "type": "cohort", "value": 2}""")), null];
+        yield return [Flag("checkout", Condition("""{"key": "id", "type": "cohort", "value": 3}""")), null];
+        yield return [Flag("checkout", Condition("""{"key": "id", "type": "cohort", "value": 4}""")), UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [Flag("checkout", Condition("""{"key": "id", "type": "cohort", "value": 5}""")), UnresolvedFlagReason.UnsupportedDefinition];
         yield return [
             """
             {"id": 2, "key": "checkout", "active": true,
@@ -3453,7 +3469,12 @@ public class TheUnresolvedFlagReasons
                 "1": {"type": "AND", "values": [{"type": "AND", "values": [
                     {"key": "plan", "type": "person", "value": "pro", "operator": "operator_from_the_future"}]}]},
                 "2": {"type": "AND", "values": [{"type": "AND", "values": [
-                    {"key": "plan", "type": "person", "value": "pro", "operator": "exact"}]}]}
+                    {"key": "plan", "type": "person", "value": "pro", "operator": "exact"}]}]},
+                "3": {"type": "AND", "values": null},
+                "4": {"type": "AND", "values": [{"type": "AND", "values": [
+                    {"key": "plan", "type": "person", "value": "[", "operator": "regex"}]}]},
+                "5": {"type": "AND", "values": [{"type": "AND", "values": [
+                    {"key": "plan", "type": "person", "value": 5, "operator": "not_regex"}]}]}
             }
             """;
         var evaluator = CreateEvaluatorWithCohorts(cohorts, checkout, betaUi);

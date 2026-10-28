@@ -81,6 +81,12 @@ internal static class RegexHelpers
     public static bool IsCompatiblePattern(string pattern)
         => pattern.Length == 0 || GetCompatiblePattern(pattern) is not null;
 
+    // True when MatchFeatureFlagRegex accepts and compiles the pattern instead of rejecting it or returning null.
+    public static bool CanMatchLocally(string pattern)
+        => pattern.Length == 0
+           || (GetCompatiblePattern(pattern) is { } compatiblePattern
+               && TryValidateRegex(compatiblePattern, out _, RegexOptions.None));
+
     // Successful .NET compilation alone does not establish compatibility with the service's regex syntax.
     static string? GetCompatiblePattern(string pattern)
     {

@@ -118,7 +118,16 @@ internal sealed class LocalFeatureFlagsLoader(
         var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
         Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
-        WarnAboutUnresolvableFlags(localEvaluator);
+        try
+        {
+            WarnAboutUnresolvableFlags(localEvaluator);
+        }
+#pragma warning disable CA1031 // The warning is diagnostic only. A definition the scan cannot read must not stop polling or fail a flag call.
+        catch (Exception e)
+#pragma warning restore CA1031
+        {
+            _logger.LogErrorUnexpectedException(e);
+        }
         return localEvaluator;
     }
 
