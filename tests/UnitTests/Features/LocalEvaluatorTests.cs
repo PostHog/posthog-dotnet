@@ -3120,6 +3120,8 @@ public class TheUnresolvedFlagReasons
     const string CountryIsUs = """{"key": "country", "type": "person", "value": "US", "operator": "exact"}""";
     const string UnknownOperator = """{"key": "plan", "type": "person", "value": "pro", "operator": "operator_from_the_future"}""";
     const string StaticCohort = """{"key": "id", "type": "cohort", "value": 999}""";
+    const string InvalidRegex = """{"key": "plan", "type": "person", "value": "[", "operator": "regex"}""";
+    const string NumericRegex = """{"key": "plan", "type": "person", "value": 5, "operator": "not_regex"}""";
     const string DependsOnCheckout = """
         {"key": "checkout", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["checkout"]}
         """;
@@ -3291,6 +3293,8 @@ public class TheUnresolvedFlagReasons
     [InlineData("OR", new[] { PlanIsPro, UnknownOperator }, UnresolvedFlagReason.UnsupportedDefinition)]
     [InlineData("OR", new[] { UnknownOperator, PlanIsPro }, UnresolvedFlagReason.UnsupportedDefinition)]
     [InlineData("AND", new[] { PlanIsPro, StaticCohort }, UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("AND", new[] { InvalidRegex }, UnresolvedFlagReason.UnsupportedDefinition)]
+    [InlineData("AND", new[] { NumericRegex }, UnresolvedFlagReason.UnsupportedDefinition)]
     public void CohortReportsTheHighestPrecedenceReasonOfItsFilters(string groupType, string[] filters, UnresolvedFlagReason expected)
     {
         var cohorts = $$$"""{"1": {"type": "{{{groupType}}}", "values": [{"type": "{{{groupType}}}", "values": [{{{string.Join(", ", filters)}}}]}]}}""";

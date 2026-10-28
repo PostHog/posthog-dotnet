@@ -231,10 +231,7 @@ internal sealed class LocalEvaluator
         {
             case FilterSet filterSet:
                 return (filterSet.Values ?? []).Any(child => IsUnsupportedFilter(child, visitedCohortIds, inCohort));
-            case PropertyFilter { Operator: ComparisonOperator.Regex or ComparisonOperator.NotRegex, Value: { } value } when inCohort
-                && (value.StringValue is not { } pattern || !RegexHelpers.CanMatchLocally(pattern)):
-                // A cohort reports a regex it cannot run as UnsupportedDefinition. At flag level the same regex
-                // resolves locally as no match, so this check stays out of AssertFilterSupported.
+            case PropertyFilter property when inCohort && IsCohortRegexUnsupported(property):
                 return true;
             case PropertyFilter { Type: FilterType.Flag } dependency:
                 // MatchProperty cannot evaluate a flag dependency inside a cohort.
@@ -725,6 +722,12 @@ internal sealed class LocalEvaluator
                     // Same result as MatchProperty for an absent key, without the cost of throwing for every
                     // missing filter.
                     AssertFilterSupported(propertyFilter);
+                    if (IsCohortRegexUnsupported(propertyFilter))
+                    {
+                        throw new InconclusiveMatchException(
+                            "Invalid regex cohort property requires server evaluation",
+                            UnresolvedFlagReason.UnsupportedDefinition);
+                    }
                     inconclusiveReason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, UnresolvedFlagReason.MissingContext);
                     continue;
                 }
@@ -883,6 +886,12 @@ internal sealed class LocalEvaluator
             _ => throw new InconclusiveMatchException($"Unknown operator: {propertyFilter.Operator}", UnresolvedFlagReason.UnsupportedDefinition)
         };
     }
+
+    // A cohort reports a regex it cannot run as UnsupportedDefinition. At flag level the same regex
+    // resolves locally as no match, so this check stays out of AssertFilterSupported.
+    static bool IsCohortRegexUnsupported(PropertyFilter propertyFilter)
+        => propertyFilter is { Operator: ComparisonOperator.Regex or ComparisonOperator.NotRegex, Value: { } value }
+           && (value.StringValue is not { } pattern || !RegexHelpers.CanMatchLocally(pattern));
 
     static bool IsPropertyMissing(PropertyFilter propertyFilter, Dictionary<string, object?>? properties)
         => properties is not null
