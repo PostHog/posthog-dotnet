@@ -1,0 +1,21 @@
+name: .NET SDK benchmark report
+
+on:
+  workflow_run:
+    workflows: ['.NET SDK benchmarks']
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  report:
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    uses: PostHog/.github/.github/workflows/sdk-benchmark-report.yml@0ee11ac0d55505c626d9ecb987ffeebf812c9e44 # SDK benchmark reporting
+    with:
+      workflow-path: .github/workflows/benchmarks.yml
+      artifact-name: dotnet-benchmark-results
+      report-key: posthog-dotnet
+      sdk: posthog-dotnet
