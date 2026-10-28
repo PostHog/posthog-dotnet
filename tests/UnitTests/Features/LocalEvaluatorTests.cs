@@ -3120,6 +3120,9 @@ public class TheUnresolvedFlagReasons
     const string CountryIsUs = """{"key": "country", "type": "person", "value": "US", "operator": "exact"}""";
     const string UnknownOperator = """{"key": "plan", "type": "person", "value": "pro", "operator": "operator_from_the_future"}""";
     const string StaticCohort = """{"key": "id", "type": "cohort", "value": 999}""";
+    const string DependsOnMembers = """
+        {"key": "members", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["members"]}
+        """;
     const string InvalidRegex = """{"key": "plan", "type": "person", "value": "[", "operator": "regex"}""";
     const string NumericRegex = """{"key": "plan", "type": "person", "value": 5, "operator": "not_regex"}""";
     const string DependsOnCheckout = """
@@ -3177,6 +3180,10 @@ public class TheUnresolvedFlagReasons
         yield return [new[] { Condition(DependsOnCheckout), Condition(PlanIsPro) }, UnresolvedFlagReason.UnresolvedDependency];
         yield return [new[] { Condition(DependsOnCheckout), Condition(StaticCohort) }, UnresolvedFlagReason.UnsupportedDefinition];
         yield return [new[] { Condition(PlanIsPro), Condition(StaticCohort) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(DependsOnMembers), Condition(PlanIsPro) }, UnresolvedFlagReason.UnresolvedDependency];
+        yield return [new[] { Condition(PlanIsPro), Condition(DependsOnMembers) }, UnresolvedFlagReason.UnresolvedDependency];
+        yield return [new[] { Condition(DependsOnMembers), Condition(UnknownOperator) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(UnknownOperator), Condition(DependsOnMembers) }, UnresolvedFlagReason.UnsupportedDefinition];
         // Within one condition.
         yield return [new[] { Condition(PlanIsPro, DependsOnCheckout) }, UnresolvedFlagReason.UnresolvedDependency];
         yield return [new[] { Condition(DependsOnCheckout, PlanIsPro) }, UnresolvedFlagReason.UnresolvedDependency];
@@ -3184,13 +3191,18 @@ public class TheUnresolvedFlagReasons
         yield return [new[] { Condition(UnknownOperator, DependsOnCheckout) }, UnresolvedFlagReason.UnsupportedDefinition];
         yield return [new[] { Condition(StaticCohort, PlanIsPro) }, UnresolvedFlagReason.UnsupportedDefinition];
         yield return [new[] { Condition(PlanIsPro, StaticCohort) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(DependsOnMembers, UnknownOperator) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(UnknownOperator, DependsOnMembers) }, UnresolvedFlagReason.UnsupportedDefinition];
     }
 
     [Theory]
     [MemberData(nameof(PrecedenceCases))]
     public void ReportsTheHighestPrecedenceReasonWhateverTheOrder(string[] conditions, UnresolvedFlagReason expected)
     {
-        var evaluator = CreateEvaluator(CheckoutWithExperienceContinuity, Flag("beta-ui", conditions));
+        var evaluator = CreateEvaluator(
+            CheckoutWithExperienceContinuity,
+            Flag("members", Condition(StaticCohort)),
+            Flag("beta-ui", conditions));
 
         Assert.Equal(expected, EvaluateReason(evaluator, "beta-ui"));
     }
@@ -3362,17 +3374,15 @@ public class TheUnresolvedFlagReasons
     }
 
     [Fact]
-    public void DependencyThatRequiresServerIsUnresolvedDependencyWithoutForcingServerFallback()
+    public void DependencyThatRequiresServerForcesServerFallbackAsUnresolvedDependency()
     {
         var evaluator = CreateEvaluator(
             Flag("checkout", Condition(StaticCohort)),
-            Flag("beta-ui", Condition(DependsOnCheckout)),
             Flag("beta-ui-with-fallback", Condition(DependsOnCheckout), Condition()));
 
-        var exception = Assert.Throws<InconclusiveMatchException>(
-            () => evaluator.EvaluateFeatureFlag("beta-ui", "user-123"));
+        var exception = Assert.Throws<RequiresServerEvaluationException>(
+            () => evaluator.EvaluateFeatureFlag("beta-ui-with-fallback", "user-123"));
         Assert.Equal(UnresolvedFlagReason.UnresolvedDependency, exception.Reason);
-        Assert.True(evaluator.EvaluateFeatureFlag("beta-ui-with-fallback", "user-123").Value);
     }
 
     [Theory]

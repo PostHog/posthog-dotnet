@@ -218,12 +218,24 @@ internal sealed class LocalEvaluator
             return UnresolvedFlagReason.UnsupportedDefinition;
         }
 
+        return GetConditionsDefinitionReason(flag.Filters?.Groups ?? []);
+    }
+
+    // Returns UnsupportedDefinition when a filter in any of the conditions cannot be checked locally, whatever the
+    // call passes.
+    UnresolvedFlagReason? GetConditionsDefinitionReason(IEnumerable<FeatureFlagGroup> conditions)
+    {
         var visitedCohortIds = new HashSet<long>();
-        var usesUnsupportedFilter = (flag.Filters?.Groups ?? [])
+        var usesUnsupportedFilter = conditions
             .SelectMany(condition => condition.Properties ?? [])
             .Any(filter => IsUnsupportedFilter(filter, visitedCohortIds, inCohort: false));
         return usesUnsupportedFilter ? UnresolvedFlagReason.UnsupportedDefinition : null;
     }
+
+    // Returns the server exception with a higher-precedence reason found elsewhere in the flag, so the flag still
+    // falls back to the server.
+    static RequiresServerEvaluationException WithReason(RequiresServerEvaluationException e, UnresolvedFlagReason reason)
+        => reason == e.Reason ? e : new RequiresServerEvaluationException(e.Message, reason, e);
 
     bool IsUnsupportedFilter(Filter filter, HashSet<long> visitedCohortIds, bool inCohort)
     {
@@ -380,8 +392,9 @@ internal sealed class LocalEvaluator
         UnresolvedFlagReason? inconclusiveReason = null;
         var flagVariants = filters?.Multivariate?.Variants ?? [];
 
-        foreach (var condition in flagConditions)
+        for (var conditionIndex = 0; conditionIndex < flagConditions.Count; conditionIndex++)
         {
+            var condition = flagConditions[conditionIndex];
             // Per-condition aggregation overrides only when the condition explicitly
             // sets its own AggregationGroupTypeIndex (mixed targeting). When absent,
             // fall back to the flag-level aggregation so existing pure person and
@@ -415,10 +428,16 @@ internal sealed class LocalEvaluator
             {
                 conditionResult = EvaluateConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups);
             }
-            catch (RequiresServerEvaluationException)
+            catch (RequiresServerEvaluationException e)
             {
-                // Static cohort or other missing server-side data - must fallback to API.
-                throw;
+                // Static cohort or other missing server-side data - must fallback to API. The reasons of earlier
+                // conditions and the definitions of later conditions, which are not evaluated, still count.
+                var reason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, e.Reason);
+                if (GetConditionsDefinitionReason(flagConditions.Skip(conditionIndex + 1)) is { } laterReason)
+                {
+                    reason = UnresolvedFlagReasonExtensions.Pick(reason, laterReason);
+                }
+                throw WithReason(e, reason);
             }
             catch (InconclusiveMatchException e)
             {
@@ -573,7 +592,7 @@ internal sealed class LocalEvaluator
                 // server instead of trying later conditions.
                 if (serverEvaluationException is not null)
                 {
-                    throw serverEvaluationException;
+                    throw WithReason(serverEvaluationException, reason);
                 }
                 throw new InconclusiveMatchException($"Can't determine if a condition of flag {flag.Key} matches", reason);
             }
@@ -1099,7 +1118,8 @@ internal sealed class LocalEvaluator
         }
         catch (RequiresServerEvaluationException e)
         {
-            throw new InconclusiveMatchException(
+            // Keep the server exception, so the dependent flag also falls back to the server, which has the data.
+            throw new RequiresServerEvaluationException(
                 $"Cannot evaluate flag dependency '{depFlag.Key}': {e.Message}",
                 UnresolvedFlagReason.UnresolvedDependency,
                 e);

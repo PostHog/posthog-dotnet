@@ -1123,6 +1123,93 @@ public class TheUnresolvedFlagsProperty
         Assert.False(snapshot.UnresolvedFlags.ContainsKey("checkout"));
     }
 
+    const string TargetDependsOnDep = """
+        {"id": 3, "key": "target", "active": true,
+         "filters": {
+             "multivariate": {"variants": [{"key": "a", "rollout_percentage": 50}, {"key": "b", "rollout_percentage": 50}]},
+             "groups": [
+                 {"properties": [{"key": "dep", "type": "flag", "value": true, "operator": "flag_evaluates_to",
+                                  "dependency_chain": ["dep"]}],
+                  "rollout_percentage": 100, "variant": "a"},
+                 {"properties": [], "rollout_percentage": 100, "variant": "b"}]}}
+        """;
+
+    static string DepWithFilter(string filter) => $$$"""
+        {"id": 4, "key": "dep", "active": true,
+         "filters": {"groups": [{"properties": [{{{filter}}}], "rollout_percentage": 100}]}}
+        """;
+
+    static async Task<string?> ReadTargetVariantAsync(PostHogClient client, string read)
+    {
+        var personProperties = new Dictionary<string, object?> { ["plan"] = "pro" };
+        if (read == "get-feature-flag")
+        {
+#pragma warning disable CS0618
+            var flag = await client.GetFeatureFlagAsync(
+                "target",
+                "user-123",
+                new FeatureFlagOptions { PersonProperties = personProperties },
+                CancellationToken.None);
+#pragma warning restore CS0618
+            return flag?.VariantKey;
+        }
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123",
+            new AllFeatureFlagsOptions
+            {
+                PersonProperties = personProperties,
+                FlagKeysToEvaluate = read == "scoped-snapshot" ? ["target"] : null
+            },
+            CancellationToken.None);
+        return snapshot.GetFlag("target")?.VariantKey;
+    }
+
+    [Theory]
+    [InlineData("get-feature-flag")]
+    [InlineData("scoped-snapshot")]
+    [InlineData("all-flags-snapshot")]
+    public async Task FlagWhoseDependencyNeedsServerDataFallsBackToTheServer(string read)
+    {
+        var container = CreateContainer(DepWithFilter(StaticCohort), TargetDependsOnDep);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"dep": true, "target": "a"}}""");
+        var client = container.Activate<PostHogClient>();
+
+        Assert.Equal("a", await ReadTargetVariantAsync(client, read));
+        Assert.Single(flagsHandler.ReceivedRequests);
+    }
+
+    [Theory]
+    [InlineData("get-feature-flag")]
+    [InlineData("scoped-snapshot")]
+    [InlineData("all-flags-snapshot")]
+    public async Task FlagWhoseDependencyResolvesLocallyDoesNotCallTheServer(string read)
+    {
+        var container = CreateContainer(DepWithFilter(PlanIsPro), TargetDependsOnDep);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"dep": true, "target": "b"}}""");
+        var client = container.Activate<PostHogClient>();
+
+        Assert.Equal("a", await ReadTargetVariantAsync(client, read));
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task LocalOnlyEvaluationReportsFlagWhoseDependencyNeedsServerDataAsUnresolvedDependency()
+    {
+        var container = CreateContainer(DepWithFilter(StaticCohort), TargetDependsOnDep);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"dep": true, "target": "a"}}""");
+        var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync("user-123", LocalOnly, CancellationToken.None);
+
+        Assert.DoesNotContain("target", snapshot.Keys);
+        Assert.Equal(UnresolvedFlagReason.UnresolvedDependency, snapshot.UnresolvedFlags["target"]);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
     [Fact]
     public async Task FlagThatDependsOnFlagWithNoLoadedDefinitionReportsUnsupportedDefinition()
     {
