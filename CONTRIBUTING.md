@@ -144,6 +144,8 @@ measured refreshes only reload definitions and check that each made a request.
   includes capture preparation, serialization and public `FlushAsync` completion
   (`completion_boundary=completed_delivery`). Verification never adds a rescuing flush.
 
+CI keeps the suite on one runner, with a 12-minute job deadline and a 10-minute
+build/measurement step deadline to leave time for reporting and artifact upload.
 Each worker has a 120-second deadline and a 512-MiB **managed heap** limit, not an RSS
 limit. After two worker timeouts the coordinator finishes the current pair, saves
 partial diagnostics and fails the run. A killed process is not automatically classified
