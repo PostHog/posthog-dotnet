@@ -172,23 +172,23 @@ def append_sample(benchmark, raw, repetition):
             "GC.GetTotalMemory(false) after full GC",
             "estimated",
         ),
-        "post_settling_managed_heap_bytes": (
+        "post_settling_heap_used": (
             "bytes",
             "GC.GetTotalMemory(false) after full GC",
             "estimated",
         ),
-        "idle_rss_bytes": ("bytes", "Process.WorkingSet64", "measured"),
-        "post_settling_rss_bytes": (
+        "idle_process_rss": ("bytes", "Process.WorkingSet64", "measured"),
+        "post_settling_process_rss": (
             "bytes",
             "Process.WorkingSet64 after full GC",
             "measured",
         ),
-        "observed_peak_rss_bytes": (
+        "observed_workload_peak_rss": (
             "bytes",
-            "Process.WorkingSet64 at operation checkpoints",
+            "Process.WorkingSet64 maximum of before-work, checkpoints and after-work",
             "measured",
         ),
-        "process_lifetime_peak_rss_bytes": (
+        "process_lifetime_peak_rss": (
             "bytes",
             "Process.PeakWorkingSet64 including startup and warmup",
             "measured",
@@ -215,7 +215,15 @@ def append_sample(benchmark, raw, repetition):
                 "direction": "lower",
                 "status": "ok",
                 "samples": [],
-                "scope": "Whole worker process; includes managed runtime and in-process offline transport work within the measured boundary.",
+                "scope": (
+                    "CLR managed retained-heap estimate after full GC; excludes native memory, not allocation volume or RSS."
+                    if name in ("idle_managed_heap_bytes", "post_settling_heap_used")
+                    else (
+                        "Cumulative CLR managed allocations within the boundary, including in-process transport; excludes native allocations."
+                        if name == "allocated_bytes_per_op"
+                        else "Whole worker process; includes managed runtime and in-process offline transport work within the measured boundary."
+                    )
+                ),
             }
             benchmark["metrics"].append(metric)
         metric["samples"].append(
@@ -226,10 +234,10 @@ def append_sample(benchmark, raw, repetition):
                 **({"elapsed_ns": raw["elapsed_ns"]} if "elapsed_ns" in raw else {}),
             }
         )
-    if raw["pass"] == "memory" and "process_lifetime_peak_rss_bytes" not in raw:
+    if raw["pass"] == "memory" and "process_lifetime_peak_rss" not in raw:
         unavailable(
             benchmark,
-            "process_lifetime_peak_rss_bytes",
+            "process_lifetime_peak_rss",
             "bytes",
             "Runtime/OS did not expose a positive lifetime RSS peak.",
         )
@@ -325,7 +333,8 @@ def main():
     )
     suite = {
         "id": "posthog-dotnet-offline",
-        "version": 1,
+        "version": 2,
+        "specification": "sdk-benchmarks/v1",
         "source_commit": git(HERE, "rev-parse", "HEAD"),
         "source_digest": digest(suite_sources),
         "profile": "smoke" if args.smoke else "ci",

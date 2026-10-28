@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +12,41 @@ namespace PostHog.Benchmarks;
 internal sealed class Transport(Workload spec) : HttpMessageHandler, IHttpClientFactory
 {
     readonly string _payload = new('x', spec.PayloadBytes);
+    readonly bool[] _seen = new bool[Math.Max(100, spec.Operations)];
+    readonly object _deliveryLock = new();
+    int _expected;
+
+    internal void ResetDelivery(int operations)
+    {
+        lock (_deliveryLock)
+        {
+            Program.Require(operations <= _seen.Length, "Receiver capacity exceeded");
+            Array.Clear(_seen);
+            _expected = operations;
+            Delivered = BatchRequests = UnexpectedRequests = 0;
+            Failure = null;
+        }
+    }
+
+    internal void ValidateEvent(JsonElement item)
+    {
+        lock (_deliveryLock)
+        {
+            var properties = item.GetProperty("properties");
+            var sequence = properties.GetProperty("sequence").GetInt32();
+            Program.Require(item.GetProperty("event").GetString() == Fixtures.EventName, "Unexpected event");
+            Program.Require(sequence >= 0 && sequence < _expected, "Sequence outside phase");
+            Program.Require(properties.GetProperty("distinct_id").GetString() == Fixtures.Users[sequence % 16], "Wrong distinct ID");
+            Program.Require(properties.GetProperty("payload").GetString() == _payload, "Wrong event payload");
+            Program.Require(properties.GetProperty("plan").GetString() == "pro", "Wrong event plan");
+            Program.Require(!_seen[sequence], "Duplicate sequence");
+            if (!DropEvents)
+            {
+                _seen[sequence] = true;
+                Delivered++;
+            }
+        }
+    }
     internal int Generation;
     internal int DefinitionRequests;
     internal int BatchRequests;
@@ -32,23 +66,13 @@ internal sealed class Transport(Workload spec) : HttpMessageHandler, IHttpClient
         }
         if (request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath.TrimEnd('/') == "/batch")
         {
-            BatchRequests++;
+            Interlocked.Increment(ref BatchRequests);
             try
             {
-                await using var content = await request.Content!.ReadAsStreamAsync(cancellationToken);
-                using var decoded = request.Content.Headers.ContentEncoding.Contains("gzip")
-                    ? new GZipStream(content, CompressionMode.Decompress, leaveOpen: true)
-                    : (Stream)content;
-                using var body = await JsonDocument.ParseAsync(decoded, cancellationToken: cancellationToken);
-                foreach (var item in body.RootElement.GetProperty("batch").EnumerateArray())
-                {
-                    var properties = item.GetProperty("properties");
-                    Program.Require(item.GetProperty("event").GetString() == "benchmark-event", "Unexpected event");
-                    Program.Require(properties.GetProperty("distinct_id").GetString() == "benchmark-user", "Wrong distinct ID");
-                    Program.Require(properties.GetProperty("sequence").GetInt32() == Delivered, "Missing, duplicate or reordered event");
-                    Program.Require(properties.GetProperty("payload").GetString() == _payload, "Wrong event payload");
-                    if (!DropEvents) Delivered++;
-                }
+                Program.Require(!request.Content!.Headers.ContentEncoding.Any(), "Compression must be disabled");
+                await using var content = await request.Content.ReadAsStreamAsync(cancellationToken);
+                using var body = await JsonDocument.ParseAsync(content, cancellationToken: cancellationToken);
+                foreach (var item in body.RootElement.GetProperty("batch").EnumerateArray()) ValidateEvent(item);
             }
             catch (Exception error)
             {
@@ -71,28 +95,31 @@ internal sealed class Scenario : IAsyncDisposable
 {
     internal readonly Workload Spec;
     internal readonly Transport Transport;
+    internal readonly PostHogOptions Options;
     internal readonly PostHogClient Client;
-    readonly Dictionary<string, object> _properties;
+    Dictionary<string, object>[] _properties = [];
     readonly string[] _keys;
     internal long Checksum;
     internal int WarmupOperations;
+    internal int ExplicitFlushes;
 
     internal Scenario(Workload spec)
     {
         Spec = spec;
         Transport = new(spec);
-        Client = new(new PostHogOptions
+        Options = new PostHogOptions
         {
             ProjectToken = "benchmark-project-token",
             SecretKey = spec.FlagCount > 0 ? "benchmark-secret" : null,
             HostUrl = new Uri("http://benchmark.invalid"),
             FeatureFlagPollInterval = TimeSpan.FromHours(1),
             FlushInterval = TimeSpan.FromHours(1),
-            FlushAt = 20001,
-            MaxQueueSize = 20000,
-            MaxBatchSize = 100,
-        }, httpClientFactory: Transport);
-        _properties = new() { ["payload"] = new string('x', spec.PayloadBytes), ["sequence"] = 0 };
+            FlushAt = 100000,
+            MaxQueueSize = 100001,
+            MaxBatchSize = 100000,
+            EnableCompression = false,
+        };
+        Client = new(Options, httpClientFactory: Transport);
         _keys = Enumerable.Range(0, spec.FlagCount).Select(Fixtures.Key).ToArray();
     }
 
@@ -104,36 +131,64 @@ internal sealed class Scenario : IAsyncDisposable
             await VerifyFlags();
         }
         WarmupOperations = Spec.Mode switch { "single" => 1024, "all" => 16, "refresh" => 2, _ => 100 };
+        if (Spec.PayloadBytes > 0) PrepareCapturePhase(WarmupOperations);
         await Execute(WarmupOperations);
         if (Spec.FlagCount > 0)
         {
+            await VerifyFlags();
             Transport.Generation = 0;
             await Client.LoadFeatureFlagsAsync(CancellationToken.None);
+            await VerifyFlags();
         }
         else
         {
-            await Client.FlushAsync();
-            VerifyDelivery(WarmupOperations);
-            Transport.Delivered = 0;
-            Transport.BatchRequests = 0;
+            await VerifyCompletion(WarmupOperations);
+            PrepareCapturePhase(Spec.Operations);
         }
         Checksum = 0;
+        ExplicitFlushes = 0;
         await Task.Delay(25); // Let startup/background tasks reach their waits before measurement.
         Measurement.Collect();
     }
 
-    internal async Task Execute(int operations, Action<int>? checkpoint = null)
+    internal void PrepareCapturePhase(int operations)
+    {
+        // Each call owns its properties; submitted dictionaries are never mutated or reused.
+        _properties = Fixtures.CaptureProperties(Spec.PayloadBytes, operations);
+        Transport.ResetDelivery(operations);
+    }
+
+    internal async Task Flush()
+    {
+        ExplicitFlushes++;
+        await Client.FlushAsync();
+    }
+
+    internal async Task VerifyCompletion(int operations)
+    {
+        if (Spec.Mode == "capture") await Flush();
+        VerifyDelivery(operations);
+    }
+
+    internal async Task Execute(int operations, Action<int>? checkpoint = null, Action<int>? flushed = null)
     {
         if (Spec.Mode is "capture" or "drain")
         {
             for (var i = 0; i < operations; i++)
             {
-                _properties["sequence"] = i;
-                Program.Require(Client.Capture("benchmark-user", "benchmark-event", _properties), "Capture rejected event");
-                if ((i + 1) % Math.Max(1, operations / 20) == 0) checkpoint?.Invoke(i + 1);
+                Program.Require(Client.Capture(Fixtures.Users[i % 16], Fixtures.EventName, _properties[i]), "Capture rejected event");
+                if (Spec.DrainStrategy == "steady" && ((i + 1) % Spec.FlushEvery == 0 || i + 1 == operations))
+                {
+                    await Flush();
+                    flushed?.Invoke(i + 1);
+                }
+                if ((i + 1) % 100 == 0 || i + 1 == operations) checkpoint?.Invoke(i + 1);
             }
-            Program.Require(Transport.BatchRequests == 0, "Queue flushed before explicit drain");
-            if (Spec.Mode == "drain") await Client.FlushAsync();
+            if (Spec.DrainStrategy == "burst")
+            {
+                await Flush();
+                flushed?.Invoke(operations);
+            }
             return;
         }
         if (Spec.Mode == "refresh")
@@ -144,8 +199,6 @@ internal sealed class Scenario : IAsyncDisposable
                 var requests = Transport.DefinitionRequests;
                 await Client.LoadFeatureFlagsAsync(CancellationToken.None);
                 Program.Require(Transport.DefinitionRequests == requests + 1, "Reload did not fetch new definitions");
-                VerifyFlag(await Client.GetFeatureFlagAsync(_keys[0], Fixtures.Users[0], Fixtures.Options[0]), 0, 0);
-                VerifyFlag(await Client.GetFeatureFlagAsync(_keys[5], Fixtures.Users[0], Fixtures.Options[0]), 5, 0);
                 checkpoint?.Invoke(i + 1);
             }
             return;
@@ -165,7 +218,7 @@ internal sealed class Scenario : IAsyncDisposable
                     lock (checkpointLock)
                     {
                         completed++;
-                        if (completed % Math.Max(1, operations / 20) == 0) checkpoint?.Invoke(completed);
+                        if (completed % 32 == 0 || completed == operations) checkpoint?.Invoke(completed);
                     }
                 }
                 Interlocked.Add(ref Checksum, consumed);

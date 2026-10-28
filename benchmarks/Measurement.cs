@@ -48,9 +48,9 @@ internal static class Measurement
         else if (pass == "memory")
         {
             result["idle_managed_heap_bytes"] = GC.GetTotalMemory(forceFullCollection: false);
-            result["idle_rss_bytes"] = Rss(process);
+            result["idle_process_rss"] = Rss(process);
             var checkpoints = new List<object>(50);
-            var peak = (long)result["idle_rss_bytes"];
+            var peak = (long)result["idle_process_rss"];
             void Checkpoint(int completed)
             {
                 var rss = Rss(process);
@@ -60,23 +60,19 @@ internal static class Measurement
             await scenario.Execute(spec.Operations, Checkpoint);
             var completedRss = Rss(process);
             result["after_operations_rss_bytes"] = completedRss;
-            result["observed_peak_rss_bytes"] = Math.Max(peak, completedRss);
+            result["observed_workload_peak_rss"] = Math.Max(peak, completedRss);
             Collect();
-            result["post_settling_managed_heap_bytes"] = GC.GetTotalMemory(false);
-            result["post_settling_rss_bytes"] = Rss(process);
+            result["post_settling_heap_used"] = GC.GetTotalMemory(false);
+            result["post_settling_process_rss"] = Rss(process);
             var lifetime = process.PeakWorkingSet64;
-            if (lifetime > 0) result["process_lifetime_peak_rss_bytes"] = lifetime;
+            if (lifetime > 0) result["process_lifetime_peak_rss"] = lifetime;
             result["checkpoints"] = checkpoints;
         }
         else throw new ArgumentException($"Unknown pass: {pass}");
 
         // Correctness and delivery checks are outside the measurement boundary.
         if (spec.FlagCount > 0) await scenario.VerifyFlags();
-        else
-        {
-            await scenario.Client.FlushAsync();
-            scenario.VerifyDelivery(spec.Operations);
-        }
+        else await scenario.VerifyCompletion(spec.Operations);
         return result;
     }
 }

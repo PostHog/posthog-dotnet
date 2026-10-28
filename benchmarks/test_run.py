@@ -136,6 +136,36 @@ class CoordinatorTests(unittest.TestCase):
         self.assertEqual(benchmark["metrics"][0]["status"], "unsupported")
         self.assertNotIn("samples", benchmark["metrics"][0])
 
+    def test_common_memory_metrics_and_managed_heap_scope(self):
+        benchmark = {"status": "ok", "metrics": [], "runs": []}
+        names = (
+            "idle_process_rss",
+            "observed_workload_peak_rss",
+            "process_lifetime_peak_rss",
+            "post_settling_process_rss",
+            "post_settling_heap_used",
+        )
+        run.append_sample(
+            benchmark,
+            {
+                "status": "ok",
+                "pass": "memory",
+                "operations": 32,
+                **{name: 4096 for name in names},
+            },
+            0,
+        )
+        metrics = {metric["id"]: metric for metric in benchmark["metrics"]}
+        self.assertEqual(set(metrics), set(names))
+        heap = metrics["post_settling_heap_used"]
+        self.assertEqual(heap["quality"], "estimated")
+        self.assertIn("excludes native memory", heap["scope"])
+        self.assertIn("not allocation volume or RSS", heap["scope"])
+        self.assertEqual(
+            metrics["observed_workload_peak_rss"]["method"],
+            "Process.WorkingSet64 maximum of before-work, checkpoints and after-work",
+        )
+
     def test_environment_removes_external_runtime_tuning(self):
         with patch.dict(
             os.environ,
@@ -213,6 +243,9 @@ class CoordinatorTests(unittest.TestCase):
                 patch.object(run, "run_pairs", return_value=0) as pairs,
             ):
                 self.assertEqual(run.main(), 0)
+            suite = pairs.call_args.args[0]["head"]["suite"]
+            self.assertEqual(suite["version"], 2)
+            self.assertEqual(suite["specification"], "sdk-benchmarks/v1")
             execution = pairs.call_args.args[0]["head"]["execution"]
             self.assertEqual(
                 execution["packages"]["application_dependency_graph_sha256"],

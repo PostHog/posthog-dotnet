@@ -6,10 +6,12 @@ using System.Text.Json;
 namespace PostHog.Benchmarks;
 
 internal record Workload(string Id, string Mode, int Operations, string[] Passes,
-    int FlagCount = 0, int FlagIndex = 0, int Concurrency = 1, int PayloadBytes = 0);
+    int FlagCount = 0, int FlagIndex = 0, int Concurrency = 1, int PayloadBytes = 0,
+    string? DrainStrategy = null, int? FlushEvery = null, string? CompletionBoundary = null);
 
 internal static class Fixtures
 {
+    internal const string EventName = "benchmark";
     internal static readonly string[] Cases =
         ["boolean", "rollout", "variant", "property", "regex", "cohort", "early", "late", "no-match", "inactive"];
     internal static readonly string[] Users = Enumerable.Range(0, 16).Select(i => $"benchmark-user-{i}").ToArray();
@@ -33,7 +35,19 @@ internal static class Fixtures
         }), Program.Json);
 
     internal static string FixtureDigest(Workload spec, IEnumerable<FeatureFlagOptions>? options = null) =>
-        Digest(Definitions(spec.FlagCount) + FixtureInputs(options) + JsonSerializer.Serialize(spec, Program.Json));
+        Digest(Definitions(spec.FlagCount) + FixtureInputs(options) + JsonSerializer.Serialize(spec, Program.Json) +
+            (spec.PayloadBytes > 0 ? EventName + JsonSerializer.Serialize(CaptureProperties(spec.PayloadBytes, spec.Operations), Program.Json) : ""));
+
+    internal static Dictionary<string, object>[] CaptureProperties(int payloadBytes, int operations)
+    {
+        var payload = new string('x', payloadBytes);
+        return Enumerable.Range(0, operations).Select(i => new Dictionary<string, object>
+        {
+            ["payload"] = payload,
+            ["plan"] = "pro",
+            ["sequence"] = i,
+        }).ToArray();
+    }
 
     static object Property(string key, object value, string op = "exact") => new { key, value, @operator = op, type = "person" };
     static object Group(object[] properties, int rollout = 100) => new { properties, rollout_percentage = rollout };
@@ -96,7 +110,11 @@ internal static class Fixtures
         .. new[] { 10, 100, 1000 }.Select(count => new Workload($"flags.all.{count}", "all", smoke ? 16 : Math.Max(160, 16000 / count), ["timing", "allocation"], count)),
         new("flags.load.1000", "all", smoke ? 32 : 1600, ["memory"], 1000, Concurrency: 8),
         new("flags.refresh.1000", "refresh", smoke ? 4 : 40, ["memory"], 1000),
-        .. new[] { 32, 4096 }.Select(size => new Workload($"capture.enqueue.{size}", "capture", smoke ? 100 : 2000, ["timing", "allocation"], PayloadBytes: size)),
-        new("capture.drain.4096", "drain", smoke ? 200 : 10000, ["memory"], PayloadBytes: 4096),
+        .. new[] { 32, 4096 }.Select(size => new Workload($"capture.enqueue.{size}", "capture", smoke ? 200 : 1000,
+            ["timing", "allocation"], PayloadBytes: size, CompletionBoundary: "api_return")),
+        .. new[] { "steady", "burst" }.SelectMany(strategy => new[] { 32, 4096 }.Select(size =>
+            new Workload($"capture.drain.{strategy}.{size}", "drain", smoke ? 200 : 1000,
+                ["timing", "allocation", "memory"], PayloadBytes: size, DrainStrategy: strategy,
+                FlushEvery: strategy == "steady" ? 100 : smoke ? 200 : 1000, CompletionBoundary: "completed_delivery"))),
     ];
 }

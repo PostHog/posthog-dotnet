@@ -54,11 +54,17 @@ build, execution, fixture correctness, or delivery failures do. The separate tru
 `workflow_run` publisher posts a sticky PR comment once its workflow is on the default
 branch. Reporting is provided by [PostHog/.github](https://github.com/PostHog/.github/blob/main/.github/workflows/sdk-benchmark-report.md).
 
-The 17 workloads cover nine single-flag cases, all-flags at 10/100/1,000 definitions,
-eight ThreadPool tasks evaluating 1,000 flags, 40 definition reloads, enqueueing 32-byte
-and 4-KiB payloads, and draining 10,000 queued 4-KiB events. Flag cases include percentage
-rollouts, variants, properties, regexes, cohorts, early/late/no-match groups and inactive
-flags. The suite exercises supported legacy getters; it does not measure the newer
+The 20 workloads follow the shared [SDK benchmark specification](https://github.com/PostHog/.github/blob/main/.github/workflows/sdk-benchmark-specification.md)
+(`suite.version=2`, `suite.specification=sdk-benchmarks/v1`). They cover nine single-flag
+cases (16,000 evaluations each), all-flags at 10/100/1,000 definitions (1,600/160/160
+evaluations), 1,600 load evaluations using at most eight ThreadPool tasks, 40 definition
+reloads, and six capture workloads with 1,000 events each. Capture uses 32-byte and
+4-KiB payloads for enqueue, steady delivery (explicit flush every 100), and burst
+delivery (one final explicit flush). Enqueue has timing/allocation passes; both delivery
+patterns have timing/allocation/memory passes. Single/all-flags have timing/allocation
+passes; load and refresh have memory passes. Flag cases include percentage rollouts,
+variants, properties, regexes, cohorts, early/late/no-match groups and inactive flags.
+The suite exercises supported legacy getters; it does not measure the newer
 `EvaluateFlagsAsync` snapshot API.
 
 ### Run locally
@@ -78,9 +84,14 @@ python3 -B benchmarks/run.py \
   --repetitions 6
 ```
 
-Use `--smoke --repetitions 1` for shorter correctness checks. For a same-revision noise
-control, point both `--base` and `--head` at the same checkout. Run on an otherwise idle
-machine; do not compare results from different hosts or languages.
+Use `--smoke --repetitions 1` for correctness checks across all 20 workloads: 160
+single-flag evaluations, 16 all-flags evaluations, 32 load evaluations, four refreshes,
+and 200 events per capture workload. Smoke is not repeatability evidence. Native
+controls run automatically before pairs and check the inventory, fixtures, phase reset,
+flush schedules, reload generations, deterministic checkpoints and failure detection.
+For a same-revision noise control, point both `--base` and `--head` at the same checkout.
+Run repeatability checks on an otherwise idle machine; concurrent validation is only
+correctness evidence. Do not compare results from different hosts or languages.
 
 The coordinator copies the same standalone benchmark project outside the checkout,
 builds it separately against each revision's public SDK project with locked NuGet
@@ -88,8 +99,13 @@ restore, and fingerprints the loaded SDK assembly and dependency graph. It uses 
 SDK's `net8.0` target on pinned .NET 9.0.8. Benchmark workers use workstation GC and
 optimized, non-tiered JIT compilation to avoid tier transitions during measurements.
 This is one explicit runtime configuration, not a claim about all .NET deployments.
-Each repetition/pass starts a fresh process; base/head order alternates. Warmup and
-full fixture verification happen outside timed/allocation boundaries.
+Each workload/repetition/pass starts a fresh process; base/head order alternates.
+Warmup is 1,024 single evaluations, 16 all/load evaluations, two refreshes, or 100
+captures, followed by a 25-ms native settling delay and full GC. Warmup captures are
+flushed and verified before counters and bounded sequence state reset. Every measured
+flag workload starts with generation 0 reloaded and verified. Full flag correctness
+sweeps occur outside measurement, including after the memory post-settling snapshot;
+measured refreshes only reload definitions and check that each made a request.
 
 ### Measurement boundaries
 
@@ -100,17 +116,33 @@ full fixture verification happen outside timed/allocation boundaries.
   provide exact object counts; counts are reported as unsupported, never zero.
 - Idle and post-settling managed heap use `GC.GetTotalMemory(false)` after explicit
   full collections. These are retained-heap estimates, not allocation volume.
-- RSS is observed at operation checkpoints and after completion, not continuously.
-  `PeakWorkingSet64` is labeled separately because it includes startup and warmup.
-  GC heap bytes and RSS are not interchangeable; releasing objects need not reduce RSS.
+- RSS checkpoints follow every 32 completed load evaluations, each refresh, or every
+  100 captures, including the final operation if needed. Steady checkpoints follow the
+  scheduled flush; burst checkpoints precede the final flush. `observed_workload_peak_rss`
+  is the maximum of before-work, checkpoints and after-work readings, not a continuous
+  maximum. `process_lifetime_peak_rss` (`PeakWorkingSet64`) includes startup and warmup.
+  `idle_process_rss`, `post_settling_process_rss` and `post_settling_heap_used` retain their
+  distinct scopes. No forced GC occurs within measured work or checkpoint callbacks;
+  full collections bracket memory measurement. GC heap bytes and RSS are not
+  interchangeable; releasing objects need not reduce RSS.
 - Public `IHttpClientFactory` injection supplies offline definitions and acknowledges
-  batches. Refresh/drain memory includes this in-process transport's JSON and gzip
-  processing. It is not a network or remote ingestion benchmark. No project credentials
-  are required.
-- Queue capacity and flush thresholds exceed the measured enqueue burst; polling and
-  flush intervals are one hour. Enqueue measurements exclude the later explicit flush.
-  Drain measurements include `FlushAsync`, and exact payload/sequence/delivery checks
-  detect missing or duplicated events. Default SDK background tasks remain active.
+  batches. Measurements include in-process transport JSON parsing and validation, with
+  compression disabled through public options. This is not a network or remote
+  ingestion benchmark. No project credentials are required.
+- Caller fixtures are constructed outside timing/allocation boundaries. Event `benchmark`
+  uses 16 rotating identities and separate per-event property dictionaries containing
+  ASCII `payload`, `plan=pro` and integer `sequence`, starting at zero for each phase.
+  The receiver checks exact payload, plan and sequence-to-identity mapping using bounded,
+  preallocated uniqueness state: balanced duplicate/loss fails; order is not required.
+- Queue capacity (100,001), automatic flush count (100,000), and maximum count-based
+  batch size (100,000) exceed the workload; polling and flush intervals are one hour.
+  Native background consumers
+  and size-based transport behavior remain active. The patterns specify caller flushes,
+  not HTTP request counts. Enqueue measures synchronous `Capture` API return
+  (`completion_boundary=api_return`), excluding its later flush and verification;
+  process-wide CPU/allocation counters may include concurrent background work. Delivery
+  includes capture preparation, serialization and public `FlushAsync` completion
+  (`completion_boundary=completed_delivery`). Verification never adds a rescuing flush.
 
 Each worker has a 120-second deadline and a 512-MiB **managed heap** limit, not an RSS
 limit. After two worker timeouts the coordinator finishes the current pair, saves
