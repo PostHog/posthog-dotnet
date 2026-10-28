@@ -23,6 +23,18 @@ internal static class Fixtures
     internal static string Key(int i) => $"{Cases[i % Cases.Length]}-{i}";
     internal static string Digest(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     internal static string Digest(string value) => Digest(Encoding.UTF8.GetBytes(value));
+    internal static string FixtureInputs(IEnumerable<FeatureFlagOptions>? options = null) => JsonSerializer.Serialize(
+        (options ?? Options).Select((option, i) => new
+        {
+            DistinctId = Users[i],
+            option.PersonProperties,
+            option.OnlyEvaluateLocally,
+            option.SendFeatureFlagEvents,
+        }), Program.Json);
+
+    internal static string FixtureDigest(Workload spec, IEnumerable<FeatureFlagOptions>? options = null) =>
+        Digest(Definitions(spec.FlagCount) + FixtureInputs(options) + JsonSerializer.Serialize(spec, Program.Json));
+
     static object Property(string key, object value, string op = "exact") => new { key, value, @operator = op, type = "person" };
     static object Group(object[] properties, int rollout = 100) => new { properties, rollout_percentage = rollout };
 

@@ -12,8 +12,41 @@ internal static class Controls
         for (var i = 0; i < 32; i++) GC.KeepAlive(new byte[1024 * 1024]);
     }
 
+    sealed class ExtendedFlagOptions : FeatureFlagOptions
+    {
+        public bool UnrelatedDefault { get; init; }
+    }
+
+    static void CheckFixtureIdentity()
+    {
+        var spec = Fixtures.Workloads(smoke: true)[0];
+        var baseline = Fixtures.FixtureDigest(spec);
+        var extended = Fixtures.Options.Select(option => new ExtendedFlagOptions
+        {
+            PersonProperties = new(option.PersonProperties!),
+            OnlyEvaluateLocally = option.OnlyEvaluateLocally,
+            SendFeatureFlagEvents = option.SendFeatureFlagEvents,
+        }).ToArray();
+        using var sdkJson = JsonDocument.Parse(JsonSerializer.Serialize(extended, Program.Json));
+        Program.Require(sdkJson.RootElement[0].TryGetProperty("unrelated_default", out _), "Extension control must change the serialized SDK schema");
+        Program.Require(Fixtures.FixtureDigest(spec, extended) == baseline, "SDK schema extension changed explicit fixture identity");
+
+        using var inputs = JsonDocument.Parse(Fixtures.FixtureInputs());
+        string[] expectedKeys = ["distinct_id", "person_properties", "only_evaluate_locally", "send_feature_flag_events"];
+        foreach (var input in inputs.RootElement.EnumerateArray())
+        {
+            Program.Require(input.EnumerateObject().Select(p => p.Name).Order().SequenceEqual(expectedKeys.Order()),
+                "Fixture identity must contain only benchmark-owned explicit inputs");
+        }
+        extended[0].PersonProperties!["plan"] = "changed-plan";
+        Program.Require(Fixtures.FixtureDigest(spec, extended) != baseline, "Person-property change did not change fixture identity");
+        Program.Require(Fixtures.FixtureDigest(spec with { FlagCount = spec.FlagCount + 1 }) != baseline,
+            "Definition change did not change fixture identity");
+    }
+
     internal static async Task Run()
     {
+        CheckFixtureIdentity();
         foreach (var spec in Fixtures.Workloads(smoke: true))
         {
             foreach (var pass in spec.Passes)

@@ -30,7 +30,7 @@ internal static class Program
                     workloads = Fixtures.Workloads(args.Contains("--smoke")).Select(spec => new
                     {
                         spec,
-                        fixture_digest = Fixtures.Digest(Fixtures.Definitions(spec.FlagCount) + JsonSerializer.Serialize(Fixtures.Options, Json) + JsonSerializer.Serialize(spec, Json)),
+                        fixture_digest = Fixtures.FixtureDigest(spec),
                     }),
                 }, Json));
             }

@@ -89,6 +89,7 @@ def describe(worker, smoke):
             ["dotnet", str(worker), "describe", *(["--smoke"] if smoke else [])],
             env=environment(),
             text=True,
+            timeout=TIMEOUT,
         )
     )
 

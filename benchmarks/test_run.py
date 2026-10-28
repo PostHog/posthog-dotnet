@@ -150,6 +150,24 @@ class CoordinatorTests(unittest.TestCase):
         self.assertNotIn("CORECLR_ENABLE_PROFILING", env)
         self.assertEqual(env["DOTNET_GCHeapHardLimit"], "20000000")
 
+    def test_describe_has_deadline_and_propagates_timeout(self):
+        with patch.object(
+            run.subprocess,
+            "check_output",
+            side_effect=subprocess.TimeoutExpired("dotnet", run.TIMEOUT),
+        ) as describe:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                run.describe(Path("worker.dll"), False)
+        self.assertEqual(describe.call_args.kwargs["timeout"], run.TIMEOUT)
+
+    def test_describe_returns_metadata(self):
+        with patch.object(
+            run.subprocess, "check_output", return_value='{"runtime": ".NET"}'
+        ):
+            self.assertEqual(
+                run.describe(Path("worker.dll"), True), {"runtime": ".NET"}
+            )
+
     def test_timeout_kills_and_reaps_worker(self):
         process = MagicMock()
         process.__enter__.return_value = process
