@@ -3128,6 +3128,9 @@ public class TheUnresolvedFlagReasons
     const string DependsOnCheckout = """
         {"key": "checkout", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["checkout"]}
         """;
+    const string DistinctIdIsUser = """{"key": "distinct_id", "type": "person", "value": "user-123", "operator": "exact"}""";
+    const string DistinctIdIsSomeoneElse = """{"key": "distinct_id", "type": "person", "value": "user-456", "operator": "exact"}""";
+    const string InCohortThatMatchesBeforeUnknownOperator = """{"key": "id", "type": "cohort", "value": 1}""";
 
     const string CheckoutWithExperienceContinuity = """
         {"id": 2, "key": "checkout", "active": true, "ensure_experience_continuity": true,
@@ -3184,6 +3187,7 @@ public class TheUnresolvedFlagReasons
         yield return [new[] { Condition(PlanIsPro), Condition(DependsOnMembers) }, UnresolvedFlagReason.UnresolvedDependency];
         yield return [new[] { Condition(DependsOnMembers), Condition(UnknownOperator) }, UnresolvedFlagReason.UnsupportedDefinition];
         yield return [new[] { Condition(UnknownOperator), Condition(DependsOnMembers) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(DistinctIdIsSomeoneElse, UnknownOperator), Condition(DependsOnMembers) }, UnresolvedFlagReason.UnsupportedDefinition];
         // Within one condition.
         yield return [new[] { Condition(PlanIsPro, DependsOnCheckout) }, UnresolvedFlagReason.UnresolvedDependency];
         yield return [new[] { Condition(DependsOnCheckout, PlanIsPro) }, UnresolvedFlagReason.UnresolvedDependency];
@@ -3193,13 +3197,20 @@ public class TheUnresolvedFlagReasons
         yield return [new[] { Condition(PlanIsPro, StaticCohort) }, UnresolvedFlagReason.UnsupportedDefinition];
         yield return [new[] { Condition(DependsOnMembers, UnknownOperator) }, UnresolvedFlagReason.UnsupportedDefinition];
         yield return [new[] { Condition(UnknownOperator, DependsOnMembers) }, UnresolvedFlagReason.UnsupportedDefinition];
+        // Within cohorts.
+        yield return [new[] { Condition(DependsOnMembers, InCohortThatMatchesBeforeUnknownOperator) }, UnresolvedFlagReason.UnsupportedDefinition];
+        yield return [new[] { Condition(InCohortThatMatchesBeforeUnknownOperator, DependsOnMembers) }, UnresolvedFlagReason.UnsupportedDefinition];
     }
 
     [Theory]
     [MemberData(nameof(PrecedenceCases))]
     public void ReportsTheHighestPrecedenceReasonWhateverTheOrder(string[] conditions, UnresolvedFlagReason expected)
     {
-        var evaluator = CreateEvaluator(
+        var cohorts = $$$"""
+            {"1": {"type": "OR", "values": [{"type": "OR", "values": [{{{DistinctIdIsUser}}}, {{{UnknownOperator}}}]}]}}
+            """;
+        var evaluator = CreateEvaluatorWithCohorts(
+            cohorts,
             CheckoutWithExperienceContinuity,
             Flag("members", Condition(StaticCohort)),
             Flag("beta-ui", conditions));

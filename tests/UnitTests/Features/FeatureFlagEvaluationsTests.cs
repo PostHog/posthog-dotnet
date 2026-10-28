@@ -1123,7 +1123,9 @@ public class TheUnresolvedFlagsProperty
         Assert.False(snapshot.UnresolvedFlags.ContainsKey("checkout"));
     }
 
-    const string TargetDependsOnDep = """
+    static readonly string TargetDependsOnDep = TargetDependsOnDepThen();
+
+    static string TargetDependsOnDepThen(params string[] secondConditionFilters) => $$$"""
         {"id": 3, "key": "target", "active": true,
          "filters": {
              "multivariate": {"variants": [{"key": "a", "rollout_percentage": 50}, {"key": "b", "rollout_percentage": 50}]},
@@ -1131,7 +1133,7 @@ public class TheUnresolvedFlagsProperty
                  {"properties": [{"key": "dep", "type": "flag", "value": true, "operator": "flag_evaluates_to",
                                   "dependency_chain": ["dep"]}],
                   "rollout_percentage": 100, "variant": "a"},
-                 {"properties": [], "rollout_percentage": 100, "variant": "b"}]}}
+                 {"properties": [{{{string.Join(", ", secondConditionFilters)}}}], "rollout_percentage": 100, "variant": "b"}]}}
         """;
 
     static string DepWithFilter(string filter) => $$$"""
@@ -1178,6 +1180,28 @@ public class TheUnresolvedFlagsProperty
 
         Assert.Equal("a", await ReadTargetVariantAsync(client, read));
         Assert.Single(flagsHandler.ReceivedRequests);
+    }
+
+    [Theory]
+    [InlineData("get-feature-flag")]
+    [InlineData("scoped-snapshot")]
+    [InlineData("all-flags-snapshot")]
+    public async Task FlagWhoseDependencyNeedsServerDataFallsBackToTheServerDespiteMalformedLaterCondition(string read)
+    {
+        var malformedDependency = """
+            {"key": null, "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["dep"]}
+            """;
+        var container = CreateContainer(DepWithFilter(StaticCohort), TargetDependsOnDepThen(malformedDependency));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(
+            """{"featureFlags": {"dep": true, "target": "a"}}""");
+        var client = container.Activate<PostHogClient>();
+
+        Assert.Equal("a", await ReadTargetVariantAsync(client, read));
+        Assert.Single(flagsHandler.ReceivedRequests);
+        // The load-time warning logs the definition it cannot read. Evaluation must not log an error.
+        Assert.DoesNotContain(
+            container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error),
+            e => e.CategoryName != FakeLoggerProvider.GetCategoryName<LocalFeatureFlagsLoader>());
     }
 
     [Theory]

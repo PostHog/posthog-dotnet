@@ -218,18 +218,27 @@ internal sealed class LocalEvaluator
             return UnresolvedFlagReason.UnsupportedDefinition;
         }
 
-        return GetConditionsDefinitionReason(flag.Filters?.Groups ?? []);
-    }
-
-    // Returns UnsupportedDefinition when a filter in any of the conditions cannot be checked locally, whatever the
-    // call passes.
-    UnresolvedFlagReason? GetConditionsDefinitionReason(IEnumerable<FeatureFlagGroup> conditions)
-    {
         var visitedCohortIds = new HashSet<long>();
-        var usesUnsupportedFilter = conditions
+        var usesUnsupportedFilter = (flag.Filters?.Groups ?? [])
             .SelectMany(condition => condition.Properties ?? [])
             .Any(filter => IsUnsupportedFilter(filter, visitedCohortIds, inCohort: false));
         return usesUnsupportedFilter ? UnresolvedFlagReason.UnsupportedDefinition : null;
+    }
+
+    // Returns null when the definition cannot be read. The load-time warning already logs that, and a failed lookup
+    // must not stop the server fallback.
+    UnresolvedFlagReason? TryGetDefinitionUnresolvedReason(LocalFeatureFlag flag)
+    {
+        try
+        {
+            return GetDefinitionUnresolvedReason(flag);
+        }
+#pragma warning disable CA1031 // The reason is diagnostic only. A malformed definition must not fail a flag that the server can evaluate.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return null;
+        }
     }
 
     // Returns the server exception with a higher-precedence reason found elsewhere in the flag, so the flag still
@@ -392,9 +401,8 @@ internal sealed class LocalEvaluator
         UnresolvedFlagReason? inconclusiveReason = null;
         var flagVariants = filters?.Multivariate?.Variants ?? [];
 
-        for (var conditionIndex = 0; conditionIndex < flagConditions.Count; conditionIndex++)
+        foreach (var condition in flagConditions)
         {
-            var condition = flagConditions[conditionIndex];
             // Per-condition aggregation overrides only when the condition explicitly
             // sets its own AggregationGroupTypeIndex (mixed targeting). When absent,
             // fall back to the flag-level aggregation so existing pure person and
@@ -430,12 +438,12 @@ internal sealed class LocalEvaluator
             }
             catch (RequiresServerEvaluationException e)
             {
-                // Static cohort or other missing server-side data - must fallback to API. The reasons of earlier
-                // conditions and the definitions of later conditions, which are not evaluated, still count.
+                // Static cohort or other missing server-side data - must fallback to API. Evaluation stops here, so
+                // the definition of the whole flag also counts, including filters and cohorts it did not reach.
                 var reason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, e.Reason);
-                if (GetConditionsDefinitionReason(flagConditions.Skip(conditionIndex + 1)) is { } laterReason)
+                if (TryGetDefinitionUnresolvedReason(flag) is { } definitionReason)
                 {
-                    reason = UnresolvedFlagReasonExtensions.Pick(reason, laterReason);
+                    reason = UnresolvedFlagReasonExtensions.Pick(reason, definitionReason);
                 }
                 throw WithReason(e, reason);
             }
