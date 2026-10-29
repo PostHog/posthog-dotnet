@@ -1,0 +1,89 @@
+name: .NET SDK benchmarks
+
+on: [pull_request]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '9.0.109'
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12.12'
+
+      - name: Prepare pinned baseline
+        env:
+          TARGET_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          export BASE_WORKTREE="$RUNNER_TEMP/dotnet-benchmark-base"
+          export RESULTS="$RUNNER_TEMP/dotnet-benchmark-results"
+          printf 'BASE_WORKTREE=%s\nRESULTS=%s\n' "$BASE_WORKTREE" "$RESULTS" >> "$GITHUB_ENV"
+          BASE_SHA=$(git merge-base "$TARGET_SHA" "$HEAD_SHA")
+          git worktree add --detach "$BASE_WORKTREE" "$BASE_SHA"
+          mkdir -p "$RESULTS"
+          python -c 'import json, os, pathlib, sys; pathlib.Path(os.environ["RESULTS"], "revisions.json").write_text(json.dumps({"target": os.environ["TARGET_SHA"], "head": os.environ["HEAD_SHA"], "base": sys.argv[1]}, indent=2))' "$BASE_SHA"
+
+      - name: Test coordinator controls
+        run: python -B -m unittest discover -s benchmarks -p 'test_*.py'
+
+      - name: Build, test native controls and measure paired base and head
+        id: measure
+        timeout-minutes: 10
+        run: |
+          python -B benchmarks/run.py \
+            --base "$BASE_WORKTREE" \
+            --head "$GITHUB_WORKSPACE" \
+            --build-directory "$RUNNER_TEMP/dotnet-benchmark-build" \
+            --output "$RESULTS" \
+            --repetitions 6
+
+      - name: Render benchmark comparison
+        if: ${{ !cancelled() && (steps.measure.outcome == 'success' || steps.measure.outcome == 'failure') }}
+        uses: PostHog/.github/.github/actions/benchmark-report@04f8421ec4daa7f4066eaeb4c53621ba79ddc3ca # SDK benchmark reporting
+        with:
+          mode: render
+          source-status: ${{ steps.measure.outcome }}
+          base-results: ${{ runner.temp }}/dotnet-benchmark-results/base.json
+          head-results: ${{ runner.temp }}/dotnet-benchmark-results/head.json
+          output-directory: ${{ runner.temp }}/dotnet-benchmark-report
+
+      - name: Upload rendered comparison
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dotnet-benchmark-report
+          path: ${{ runner.temp }}/dotnet-benchmark-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload raw benchmark results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dotnet-benchmark-results
+          path: |
+            ${{ runner.temp }}/dotnet-benchmark-results/base.json
+            ${{ runner.temp }}/dotnet-benchmark-results/head.json
+            ${{ runner.temp }}/dotnet-benchmark-results/revisions.json
+          if-no-files-found: warn
+          retention-days: 14
