@@ -261,6 +261,77 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    [Fact]
+    public async Task SendAsyncDecodesMultibyteCharactersSplitAcrossStreamReads()
+    {
+        // Arrange
+        var requestBody = new
+        {
+            model = "gpt-4",
+            messages = new[] { new { role = "user", content = "Say hi" } },
+            stream = true,
+        };
+
+        // Each read returns a single byte, so every multibyte character is split across reads.
+        var sseBytes = new UTF8Encoding(false).GetBytes(
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Café \"}}]}\n\n"
+                + "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"😀 ñ\"}}]}\n\n"
+                + "data: [DONE]\n\n"
+        );
+        var streamContent = new StreamContent(new OneByteAtATimeStream(sseBytes));
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = streamContent,
+        };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        // Act
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await _client.PostAsync(
+                new Uri("/v1/chat/completions", UriKind.Relative),
+                requestContent
+            );
+
+            var resultStream = await response.Content.ReadAsStreamAsync();
+            using (var reader = new StreamReader(resultStream))
+            {
+                await reader.ReadToEndAsync();
+            }
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        // Assert
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props => VerifyMultibyteContent(props)),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    private static bool VerifyMultibyteContent(Dictionary<string, object> props)
+    {
+        return props.TryGetValue(PostHogAIFieldNames.OutputChoices, out var choicesObj)
+            && choicesObj is JsonArray choices
+            && choices[0]?["message"]?["content"]?.ToString() == "Café 😀 ñ";
+    }
+
     private static bool VerifyStreamingProps(Dictionary<string, object> props)
     {
         if (
@@ -1130,6 +1201,24 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         _handler.Dispose();
         _innerHandler.Dispose();
         _postHogClient.Dispose();
+    }
+
+    private sealed class OneByteAtATimeStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override int Read(byte[] buffer, int offset, int count) =>
+            base.Read(buffer, offset, Math.Min(count, 1));
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        ) => base.ReadAsync(buffer, offset, Math.Min(count, 1), cancellationToken);
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        ) => base.ReadAsync(buffer[..Math.Min(buffer.Length, 1)], cancellationToken);
     }
 
     private sealed class MockHttpMessageHandler : HttpMessageHandler
