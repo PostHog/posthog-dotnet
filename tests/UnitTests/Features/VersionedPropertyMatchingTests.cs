@@ -149,7 +149,7 @@ public class VersionedPropertyMatchingTests
         {
             Assert.Equal(expected, evaluator.EvaluateFeatureFlag(flag.Key, "person", groups, properties));
         }
-        var (all, fallback) = evaluator.EvaluateAllFlags("person", groups, properties);
+        var (all, fallback, _) = evaluator.EvaluateAllFlags("person", groups, properties);
         Assert.False(fallback);
         Assert.Equal(4, all.Count);
         Assert.All(all.Values, flag => Assert.Equal(expected, flag.IsEnabled));

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using PostHog.Api;
+using PostHog.Features;
 using PostHog.Library;
 using static PostHog.Library.Ensure;
 using static PostHog.Library.SemanticVersion;
@@ -918,40 +919,44 @@ public class PropertyFilterValue
     public bool IsDateBefore(object? overrideValue, DateTimeOffset now)
     {
         // Question: Should we support DateOnly and TimeOnly?
-        var overrideDate = ParseDate(overrideValue);
+        // Parse the filter first, so a bad filter is reported even when the override value is bad too.
+        var comparand = ParseFilterDate();
+        var overrideDate = ParseDate(overrideValue, UnresolvedFlagReason.MissingContext);
 
-        if (RelativeDate.TryParseRelativeDate(StringValue, out var relativeDate))
+        return comparand switch
         {
-            return overrideDate is DateTimeOffset overrideDateTimeOffset && relativeDate.IsDateBefore(overrideDateTimeOffset, now)
-                   || (overrideDate is DateTime overrideDateTime && relativeDate.IsDateBefore(overrideDateTime, now));
-        }
-
-        return ParseDate(StringValue) switch
-        {
+            RelativeDate relativeDate => overrideDate is DateTimeOffset overrideDateTimeOffset && relativeDate.IsDateBefore(overrideDateTimeOffset, now)
+                                         || (overrideDate is DateTime overrideDateTime && relativeDate.IsDateBefore(overrideDateTime, now)),
             DateTimeOffset comparandDate => overrideDate is DateTimeOffset overrideDateTimeOffset && overrideDateTimeOffset < comparandDate,
             DateTime comparandDate => overrideDate is DateTimeOffset overrideDateTimeOffset && overrideDateTimeOffset < comparandDate,
-            _ => throw new InconclusiveMatchException("The date provided is not a valid format")
+            _ => throw new InconclusiveMatchException("The date provided is not a valid format", UnresolvedFlagReason.UnsupportedDefinition)
         };
+    }
 
-        object? ParseDate(object? value)
-        {
-            if (value is DateTime or DateTimeOffset
+    // Returns a RelativeDate, or the absolute date the filter value names.
+    internal object? ParseFilterDate()
+        => RelativeDate.TryParseRelativeDate(StringValue, out var relativeDate)
+            ? relativeDate
+            : ParseDate(StringValue, UnresolvedFlagReason.UnsupportedDefinition);
+
+    static object? ParseDate(object? value, UnresolvedFlagReason reason)
+    {
+        if (value is DateTime or DateTimeOffset
 #if NET5_0_OR_GREATER
-                or DateOnly
+            or DateOnly
 #endif
 )
-            {
-                return value;
-            }
-
-            return value is string dateString
-                ? DateTimeOffset.TryParse(dateString, out var dto)
-                    ? dto
-                    : DateTime.TryParse(dateString, out var dt)
-                        ? dt
-                        : throw new InconclusiveMatchException("The date provided is not a valid format")
-                : throw new InconclusiveMatchException("The date provided must be a string, DateTime, or DateTimeOffset, object");
+        {
+            return value;
         }
+
+        return value is string dateString
+            ? DateTimeOffset.TryParse(dateString, out var dto)
+                ? dto
+                : DateTime.TryParse(dateString, out var dt)
+                    ? dt
+                    : throw new InconclusiveMatchException("The date provided is not a valid format", reason)
+            : throw new InconclusiveMatchException("The date provided must be a string, DateTime, or DateTimeOffset, object", reason);
     }
 
     /// <summary>
@@ -991,18 +996,33 @@ public class PropertyFilterValue
         var overrideVersionString = ToInvariantString(overrideValue);
         if (!SemanticVersion.TryParse(overrideVersionString, out var version))
         {
-            throw new InconclusiveMatchException($"Cannot parse override value '{overrideVersionString}' as a semantic version");
+            throw new InconclusiveMatchException(
+                $"Cannot parse override value '{overrideVersionString}' as a semantic version",
+                UnresolvedFlagReason.MissingContext);
         }
         return version.Value;
     }
 
-    SemanticVersion ParseFilterSemver()
+    internal SemanticVersion ParseFilterSemver()
     {
         if (!SemanticVersion.TryParse(StringValue, out var version))
         {
-            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a semantic version");
+            throw new InconclusiveMatchException(
+                $"Cannot parse filter value '{StringValue}' as a semantic version",
+                UnresolvedFlagReason.UnsupportedDefinition);
         }
         return version.Value;
+    }
+
+    internal (SemanticVersion Lower, SemanticVersion Upper) ParseFilterWildcard()
+    {
+        if (!TryParseWildcard(StringValue, out var lower, out var upper))
+        {
+            throw new InconclusiveMatchException(
+                $"Cannot parse filter value '{StringValue}' as a wildcard pattern",
+                UnresolvedFlagReason.UnsupportedDefinition);
+        }
+        return (lower.Value, upper.Value);
     }
 
     /// <summary>
@@ -1013,9 +1033,8 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
     public int CompareSemver(object? overrideValue)
     {
-        var overrideVersion = ParseOverrideSemver(overrideValue);
         var filterVersion = ParseFilterSemver();
-        return overrideVersion.CompareTo(filterVersion);
+        return ParseOverrideSemver(overrideValue).CompareTo(filterVersion);
     }
 
     /// <summary>
@@ -1027,10 +1046,8 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
     public bool IsSemverTildeMatch(object? overrideValue)
     {
-        var overrideVersion = ParseOverrideSemver(overrideValue);
-        var filterVersion = ParseFilterSemver();
-        var (lower, upper) = filterVersion.GetTildeBounds();
-        return overrideVersion.IsInRange(lower, upper);
+        var (lower, upper) = ParseFilterSemver().GetTildeBounds();
+        return ParseOverrideSemver(overrideValue).IsInRange(lower, upper);
     }
 
     /// <summary>
@@ -1045,10 +1062,8 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed as a valid semver.</exception>
     public bool IsSemverCaretMatch(object? overrideValue)
     {
-        var overrideVersion = ParseOverrideSemver(overrideValue);
-        var filterVersion = ParseFilterSemver();
-        var (lower, upper) = filterVersion.GetCaretBounds();
-        return overrideVersion.IsInRange(lower, upper);
+        var (lower, upper) = ParseFilterSemver().GetCaretBounds();
+        return ParseOverrideSemver(overrideValue).IsInRange(lower, upper);
     }
 
     /// <summary>
@@ -1061,14 +1076,8 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if either value cannot be parsed.</exception>
     public bool IsSemverWildcardMatch(object? overrideValue)
     {
-        var overrideVersion = ParseOverrideSemver(overrideValue);
-
-        if (!TryParseWildcard(StringValue, out var lower, out var upper))
-        {
-            throw new InconclusiveMatchException($"Cannot parse filter value '{StringValue}' as a wildcard pattern");
-        }
-
-        return overrideVersion.IsInRange(lower.Value, upper.Value);
+        var (lower, upper) = ParseFilterWildcard();
+        return ParseOverrideSemver(overrideValue).IsInRange(lower, upper);
     }
 
     /// <summary>

@@ -33,6 +33,9 @@ internal sealed class LocalFeatureFlagsLoader(
     readonly PeriodicTimer _timer = new(options.Value.FeatureFlagPollInterval, timeProvider);
     readonly ILogger<LocalFeatureFlagsLoader> _logger = loggerFactory.CreateLogger<LocalFeatureFlagsLoader>();
     readonly ILogger<LocalEvaluator> _localEvaluatorLogger = loggerFactory.CreateLogger<LocalEvaluator>();
+    readonly object _warnedUnresolvableFlagsLock = new();
+    // The definition and reason of each flag already warned about as never locally resolvable.
+    Dictionary<string, (LocalFeatureFlag Definition, UnresolvedFlagReason Reason)> _warnedUnresolvableFlags = new(StringComparer.Ordinal);
 
     void StartPollingIfNotStarted()
     {
@@ -115,7 +118,65 @@ internal sealed class LocalFeatureFlagsLoader(
         var localEvaluator = new LocalEvaluator(response.Result, timeProvider, _localEvaluatorLogger);
         Interlocked.Exchange(ref _localEvaluator, localEvaluator);
         Interlocked.Exchange(ref _flagDefinitionsLoadedAtMs, timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
+        try
+        {
+            WarnAboutUnresolvableFlags(localEvaluator);
+        }
+#pragma warning disable CA1031 // The warning is diagnostic only. A definition the scan cannot read must not stop polling or fail a flag call.
+        catch (Exception e)
+#pragma warning restore CA1031
+        {
+            _logger.LogErrorUnexpectedException(e);
+        }
         return localEvaluator;
+    }
+
+    // Warns once about each flag whose definition local evaluation can never resolve, until its definition changes.
+    void WarnAboutUnresolvableFlags(LocalEvaluator localEvaluator)
+    {
+        List<string>? experienceContinuityFlags = null;
+        List<string>? unsupportedDefinitionFlags = null;
+        lock (_warnedUnresolvableFlagsLock)
+        {
+            // Rebuilt from the current definitions, so a flag that is deleted or becomes resolvable is forgotten
+            // and warns again if it later returns with an unresolvable definition.
+            var warnedFlags = new Dictionary<string, (LocalFeatureFlag Definition, UnresolvedFlagReason Reason)>(StringComparer.Ordinal);
+            foreach (var flag in localEvaluator.LocalEvaluationApiResult.Flags)
+            {
+                if (localEvaluator.GetDefinitionUnresolvedReason(flag) is not { } reason)
+                {
+                    continue;
+                }
+
+                warnedFlags[flag.Key] = (flag, reason);
+                if (_warnedUnresolvableFlags.TryGetValue(flag.Key, out var warned)
+                    && warned.Reason == reason
+                    && warned.Definition.Equals(flag))
+                {
+                    continue;
+                }
+
+                if (reason is UnresolvedFlagReason.ExperienceContinuity)
+                {
+                    (experienceContinuityFlags ??= []).Add(flag.Key);
+                }
+                else
+                {
+                    (unsupportedDefinitionFlags ??= []).Add(flag.Key);
+                }
+            }
+            _warnedUnresolvableFlags = warnedFlags;
+        }
+
+        if (experienceContinuityFlags is not null)
+        {
+            _logger.LogWarningExperienceContinuityFlags(experienceContinuityFlags.Count, string.Join(", ", experienceContinuityFlags));
+        }
+
+        if (unsupportedDefinitionFlags is not null)
+        {
+            _logger.LogWarningUnsupportedDefinitionFlags(unsupportedDefinitionFlags.Count, string.Join(", ", unsupportedDefinitionFlags));
+        }
     }
 
     async Task PollForFeatureFlagsAsync(CancellationToken cancellationToken)
@@ -214,4 +275,30 @@ internal static partial class LocalFeatureFlagsLoaderLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] Quota exceeded, resetting feature flag data. Learn more about billing limits at https://posthog.com/docs/billing/limits-alerts")]
     public static partial void LogWarningQuotaExceeded(this ILogger<LocalFeatureFlagsLoader> logger, Exception e);
+
+    [LoggerMessage(
+        EventId = 502,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] You are using local evaluation but {Count} flag(s) have experience continuity enabled "
+                  + "and cannot be resolved locally (reason: experience_continuity): {FlagKeys}. Evaluating these flags "
+                  + "makes a server request, or leaves them unresolved when OnlyEvaluateLocally is true. To evaluate them "
+                  + "locally, disable experience continuity on these flags in PostHog.")]
+    public static partial void LogWarningExperienceContinuityFlags(
+        this ILogger<LocalFeatureFlagsLoader> logger,
+        int count,
+        string flagKeys);
+
+    [LoggerMessage(
+        EventId = 503,
+        Level = LogLevel.Warning,
+        Message = "[FEATURE FLAGS] You are using local evaluation but {Count} flag(s) use something local evaluation "
+                  + "does not support, such as a static cohort, an unknown operator, or a missing or circular flag "
+                  + "dependency (reason: unsupported_definition): {FlagKeys}. Evaluating these flags falls back to a "
+                  + "server request when evaluation reaches that part, or leaves them unresolved when "
+                  + "OnlyEvaluateLocally is true. To evaluate them locally, change these flags in PostHog or upgrade "
+                  + "the PostHog .NET SDK.")]
+    public static partial void LogWarningUnsupportedDefinitionFlags(
+        this ILogger<LocalFeatureFlagsLoader> logger,
+        int count,
+        string flagKeys);
 }

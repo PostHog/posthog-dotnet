@@ -19,6 +19,11 @@ internal static class FeatureFlagError
     public const string FlagMissing = "flag_missing";
 
     /// <summary>
+    /// Flag has a loaded local definition but local evaluation could not resolve it
+    /// </summary>
+    public const string LocalEvaluationInconclusive = "local_evaluation_inconclusive";
+
+    /// <summary>
     /// Rate/quota limit exceeded (when quotaLimited contains "feature_flags")
     /// </summary>
     public const string QuotaLimited = "quota_limited";

@@ -130,7 +130,8 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
         string? requestId,
         long? evaluatedAt,
         long? flagDefinitionsLoadedAt,
-        IReadOnlyCollection<string> errors)
+        IReadOnlyCollection<string> errors,
+        bool unresolved)
     {
     }
 

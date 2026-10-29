@@ -1,4 +1,5 @@
 using System;
+using PostHog.Features;
 
 namespace PostHog.Exceptions
 {
@@ -35,5 +36,18 @@ namespace PostHog.Exceptions
             : base(message, innerException)
         {
         }
+
+        internal RequiresServerEvaluationException(string message, UnresolvedFlagReason reason, Exception innerException)
+            : base(message, innerException)
+        {
+            Reason = reason;
+        }
+
+        /// <summary>
+        /// Why local evaluation could not resolve the flag: <see cref="UnresolvedFlagReason.UnsupportedDefinition"/>
+        /// for server data the flag uses itself, or <see cref="UnresolvedFlagReason.UnresolvedDependency"/> for server
+        /// data that a flag dependency uses.
+        /// </summary>
+        internal UnresolvedFlagReason Reason { get; } = UnresolvedFlagReason.UnsupportedDefinition;
     }
 }

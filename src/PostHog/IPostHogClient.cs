@@ -253,7 +253,9 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// <c>/flags</c> request, and the returned snapshot. Requested keys missing from local definitions
     /// trigger remote fallback unless <see cref="AllFeatureFlagsOptions.OnlyEvaluateLocally"/> is
     /// <c>true</c>. <see cref="FeatureFlagEvaluations.Only(System.Collections.Generic.IEnumerable{string})"/>
-    /// filters an already-evaluated snapshot in memory.
+    /// filters an already-evaluated snapshot in memory. Flags with a loaded local definition that neither local
+    /// evaluation nor the fallback resolved are absent from the snapshot and listed with a reason in
+    /// <see cref="FeatureFlagEvaluations.UnresolvedFlags"/>.
     /// </remarks>
     Task<FeatureFlagEvaluations> EvaluateFlagsAsync(
         string distinctId,

@@ -11,6 +11,13 @@ PostHog.Api.FlagsResult.MinimalFlagCalledEvents.init -> void
 PostHog.Features.FeatureFlag.HasExperiment.get -> bool?
 PostHog.Features.FeatureFlag.HasExperiment.init -> void
 PostHog.Features.FeatureFlagEvaluations.IsEnabled(string! key, bool defaultValue) -> bool
+PostHog.Features.FeatureFlagEvaluations.UnresolvedFlags.get -> System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Features.UnresolvedFlagReason>!
+PostHog.Features.UnresolvedFlagReason
+PostHog.Features.UnresolvedFlagReason.ExperienceContinuity = 0 -> PostHog.Features.UnresolvedFlagReason
+PostHog.Features.UnresolvedFlagReason.MissingContext = 3 -> PostHog.Features.UnresolvedFlagReason
+PostHog.Features.UnresolvedFlagReason.UnresolvedDependency = 2 -> PostHog.Features.UnresolvedFlagReason
+PostHog.Features.UnresolvedFlagReason.UnsupportedDefinition = 1 -> PostHog.Features.UnresolvedFlagReason
+PostHog.Features.UnresolvedFlagReasonExtensions
 PostHog.Json.PropertyFilterValue.IsPrefixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.Json.PropertyFilterValue.IsSuffixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?
@@ -19,3 +26,4 @@ PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void
 PostHog.PostHogOptions.SecretKey.get -> string?
 PostHog.PostHogOptions.SecretKey.set -> void
+static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
