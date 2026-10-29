@@ -576,6 +576,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
         private readonly Action<string?, JsonNode?> _onComplete;
         private readonly StringBuilder? _accumulatedContent;
         private readonly StringBuilder _lineBuffer = new(capacity: 512);
+        // Stateful so a multibyte character split across two reads is decoded once complete.
+        private readonly Decoder _decoder = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetDecoder();
         private JsonNode? _usage;
         private bool _completed;
 
@@ -655,10 +657,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
 #pragma warning disable CA1031 // Do not catch general exception types
             try
             {
-                var chunk = Encoding.UTF8.GetString(buffer, offset, count);
+                var chars = new char[_decoder.GetCharCount(buffer, offset, count, flush: false)];
+                var charCount = _decoder.GetChars(buffer, offset, count, chars, 0, flush: false);
 
                 // Append chunk to line buffer
-                _lineBuffer.Append(chunk);
+                _lineBuffer.Append(chars, 0, charCount);
 
                 // Convert to string once per ProcessChunk call to avoid O(n²) ToString() per iteration
                 var bufferText = _lineBuffer.ToString();
