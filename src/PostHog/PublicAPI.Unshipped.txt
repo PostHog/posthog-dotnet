@@ -22,6 +22,8 @@ PostHog.Json.PropertyFilterValue.IsPrefixOf(object? other, System.StringComparis
 PostHog.Json.PropertyFilterValue.IsSuffixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?
 PostHog.PostHogOptions.BeforeSend.set -> void
+PostHog.PostHogOptions.CaptureUnhandledExceptions.get -> bool
+PostHog.PostHogOptions.CaptureUnhandledExceptions.set -> void
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void
 PostHog.PostHogOptions.SecretKey.get -> string?
