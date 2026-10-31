@@ -39,6 +39,79 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task SendAsyncRecordsCachedPromptTokensFromPromptTokensDetails()
+    {
+        // Arrange
+        var requestBody = new
+        {
+            model = "gpt-4o",
+            messages = new[] { new { role = "user", content = "Hello" } },
+        };
+
+        var responseBody = new
+        {
+            id = "chatcmpl-123",
+            @object = "chat.completion",
+            model = "gpt-4o-2024-08-06",
+            choices = new[]
+            {
+                new
+                {
+                    index = 0,
+                    message = new { role = "assistant", content = "Hi there!" },
+                    finish_reason = "stop",
+                },
+            },
+            usage = new
+            {
+                prompt_tokens = 2006,
+                completion_tokens = 300,
+                total_tokens = 2306,
+                prompt_tokens_details = new { cached_tokens = 1920 },
+            },
+        };
+
+        using var responseContent = new StringContent(
+            JsonSerializer.Serialize(responseBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        // Act
+        using var response = await _client.PostAsync(
+            new Uri("/v1/chat/completions", UriKind.Relative),
+            requestContent
+        );
+
+        // Assert
+        Assert.True(response.IsSuccessStatusCode);
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey(PostHogAIFieldNames.CacheReadInputTokens)
+                    && Equals(props[PostHogAIFieldNames.CacheReadInputTokens], 1920)
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    [Fact]
     public async Task SendAsyncCapturesEventOnSuccess()
     {
         // Arrange
