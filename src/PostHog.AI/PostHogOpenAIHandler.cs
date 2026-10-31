@@ -378,6 +378,19 @@ public class PostHogOpenAIHandler : DelegatingHandler
                                 : cacheReadTokens.ToString();
                     }
 
+                    // OpenAI reports prompt cache hits under prompt_tokens_details.cached_tokens
+                    if (
+                        !eventProperties.ContainsKey(PostHogAIFieldNames.CacheReadInputTokens)
+                        && usage["prompt_tokens_details"] is JsonObject promptDetails
+                        && promptDetails["cached_tokens"] is JsonValue cachedTokens
+                    )
+                    {
+                        eventProperties[PostHogAIFieldNames.CacheReadInputTokens] =
+                            cachedTokens.TryGetValue<int>(out var cachedInt)
+                                ? cachedInt
+                                : cachedTokens.ToString();
+                    }
+
                     if (usage["cache_creation_input_tokens"] is JsonValue cacheCreationTokens)
                     {
                         eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
