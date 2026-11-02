@@ -46,12 +46,24 @@ public class ReadonlyDictionaryJsonConverter<TKey, TValue> : JsonConverter<IRead
     /// <inheritdoc />
     public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<TKey, TValue> value, JsonSerializerOptions options)
     {
-        var entries = new Dictionary<TKey, TValue>(NotNull(value).Count);
+        NotNull(writer);
+        NotNull(value);
+        var keyConverter = (JsonConverter<TKey>)NotNull(options).GetConverter(typeof(TKey));
+        writer.WriteStartObject();
         foreach (var pair in value)
         {
-            entries[pair.Key] = pair.Value;
+            if (pair.Key is string name && options.DictionaryKeyPolicy is { } keyPolicy)
+            {
+                writer.WritePropertyName(keyPolicy.ConvertName(name));
+            }
+            else
+            {
+                keyConverter.WriteAsPropertyName(writer, pair.Key, options);
+            }
+
+            JsonSerializer.Serialize(writer, pair.Value, options);
         }
 
-        JsonSerializer.Serialize(writer, entries, options);
+        writer.WriteEndObject();
     }
 }

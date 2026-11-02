@@ -94,6 +94,41 @@ public class TheSendAsyncMethodWithATemplate
     }
 
     [Fact]
+    public async Task KeepsKeysThatOnlyTheSourceComparerTellsApart()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        var utc = new DateTimeOffset(2026, 11, 2, 10, 0, 0, TimeSpan.Zero);
+
+        await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
+        {
+            To = "user@example.com",
+            TemplateId = TemplateId,
+            TemplateData = new Dictionary<string, object>
+            {
+                ["visits"] = new ReadOnlyDictionary<DateTimeOffset, object>(
+                    new Dictionary<DateTimeOffset, object>(new OffsetSensitiveComparer())
+                    {
+                        [utc] = 1,
+                        [utc.ToOffset(TimeSpan.FromHours(1))] = 2,
+                    }),
+            },
+        });
+
+        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
+        var visits = body.RootElement.GetProperty("message_data").GetProperty("visits");
+        Assert.Equal(1, visits.GetProperty("2026-11-02T10:00:00+00:00").GetInt32());
+        Assert.Equal(2, visits.GetProperty("2026-11-02T11:00:00+01:00").GetInt32());
+    }
+
+    sealed class OffsetSensitiveComparer : IEqualityComparer<DateTimeOffset>
+    {
+        public bool Equals(DateTimeOffset x, DateTimeOffset y) => x.EqualsExact(y);
+
+        public int GetHashCode(DateTimeOffset obj) => HashCode.Combine(obj.UtcDateTime, obj.Offset);
+    }
+
+    [Fact]
     public async Task SendsEmptyTemplateDataAndNoDistinctIdWhenLeftOut()
     {
         await using var harness = new EmailHarness();
