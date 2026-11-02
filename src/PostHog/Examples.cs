@@ -158,4 +158,42 @@ public static class Examples
                 ]
             });
     }
+
+    /// <summary>
+    /// Runs the transactional email snippets used by the documentation.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+    internal static async Task SendEmails()
+    {
+        await using var posthog = new PostHogClient(new PostHogOptions
+        {
+            ProjectToken = "<ph_project_token>",
+            // A project secret API key with the hog_flow:write scope.
+            SecretKey = Environment.GetEnvironmentVariable("PostHog__SecretKey"),
+        });
+
+        // A template made transactional in PostHog
+        var sent = await posthog.Emails.SendAsync(new Emails.SendTemplateEmailOptions
+        {
+            To = "user@example.com",
+            TemplateId = Guid.Parse("<template_id>"),
+            TemplateData = new Dictionary<string, object> { ["name"] = "Max" },
+            DistinctId = "distinct_id_of_the_user",
+            IdempotencyKey = "welcome:distinct_id_of_the_user",
+        });
+
+        // Content your app rendered, such as React Email output, named by a key
+        await posthog.Emails.SendAsync(new Emails.SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "password-reset",
+            Subject = "Reset your password",
+            Html = "<p>Reset your password</p>",
+            DistinctId = "distinct_id_of_the_user",
+        });
+
+        // The status of a queued email
+        var status = await posthog.Emails.GetAsync(sent.Id);
+        Console.WriteLine(status.Status);
+    }
 }

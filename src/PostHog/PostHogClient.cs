@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PostHog.Api;
+using PostHog.Emails;
 using PostHog.ErrorTracking;
 using PostHog.Exceptions;
 using PostHog.Features;
@@ -19,6 +20,7 @@ public sealed class PostHogClient : IPostHogClient
 {
     readonly AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext> _asyncBatchHandler;
     readonly PostHogApiClient _apiClient;
+    readonly EmailSender _emails;
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
     readonly MemoryCache _featureFlagCalledEventCache;
@@ -90,12 +92,19 @@ public sealed class PostHogClient : IPostHogClient
         var projectTokenMissing = NormalizeOptions(_options.Value, _logger);
         _isDisabled = _options.Value.Disabled || projectTokenMissing;
 
+        var httpClient = httpClientFactory.CreateClient(nameof(PostHogClient));
         _apiClient = new PostHogApiClient(
-            httpClientFactory.CreateClient(nameof(PostHogClient)),
+            httpClient,
             options,
             _timeProvider,
             loggerFactory.CreateLogger<PostHogApiClient>()
         );
+        _emails = new EmailSender(
+            httpClient,
+            _options.Value,
+            _isDisabled,
+            _timeProvider,
+            loggerFactory.CreateLogger<EmailSender>());
         _asyncBatchHandler = new AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext>(
             CaptureBatchAsync,
             batchContextFunc: () => new CapturedEventBatchContext(
@@ -1419,6 +1428,9 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
+    public IPostHogEmails Emails => _emails;
+
+    /// <inheritdoc/>
     public string Version => VersionConstants.Version;
 
     // HACK: Temporary hack until we come up with a better approach. This is to support Feature Management
@@ -1470,6 +1482,8 @@ public sealed class PostHogClient : IPostHogClient
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
         try
         {
+            // Email requests in flight, retries included, settle before the HTTP client goes away.
+            await _emails.CloseAsync();
             await _asyncBatchHandler.DisposeAsync();
             await _featureFlagsLoader.DisposeAsync();
         }

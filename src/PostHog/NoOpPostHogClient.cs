@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PostHog;
 using PostHog.Api;
+using PostHog.Emails;
 using PostHog.Features;
 using PostHog.Json;
 
@@ -112,6 +113,8 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
 
     public Task FlushAsync()
         => Task.CompletedTask;
+
+    public IPostHogEmails Emails => EmailSender.Disabled;
 
     public string Version => Versioning.VersionConstants.Version;
 

@@ -8,6 +8,80 @@ PostHog.Api.ComparisonOperator.StartsWith = 25 -> PostHog.Api.ComparisonOperator
 PostHog.Api.ComparisonOperator.Unknown = 29 -> PostHog.Api.ComparisonOperator
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.get -> bool
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.init -> void
+PostHog.Emails.EmailException
+PostHog.Emails.EmailException.Code.get -> string!
+PostHog.Emails.EmailException.DocsUrl.get -> System.Uri?
+PostHog.Emails.EmailException.EmailException() -> void
+PostHog.Emails.EmailException.EmailException(string! message) -> void
+PostHog.Emails.EmailException.EmailException(string! message, System.Exception! innerException) -> void
+PostHog.Emails.EmailException.Field.get -> string?
+PostHog.Emails.EmailException.Fix.get -> string?
+PostHog.Emails.EmailException.Name.get -> string!
+PostHog.Emails.EmailException.RetryAfter.get -> System.TimeSpan?
+PostHog.Emails.EmailException.StatusCode.get -> System.Net.HttpStatusCode?
+PostHog.Emails.EmailException.Why.get -> string?
+PostHog.Emails.EmailStatus
+PostHog.Emails.EmailStatus.CreatedAt.get -> System.DateTimeOffset
+PostHog.Emails.EmailStatus.CreatedAt.init -> void
+PostHog.Emails.EmailStatus.EmailStatus() -> void
+PostHog.Emails.EmailStatus.Id.get -> string!
+PostHog.Emails.EmailStatus.Id.init -> void
+PostHog.Emails.EmailStatus.Reason.get -> string?
+PostHog.Emails.EmailStatus.Reason.init -> void
+PostHog.Emails.EmailStatus.Status.get -> string!
+PostHog.Emails.EmailStatus.Status.init -> void
+PostHog.Emails.EmailStatus.StatusAt.get -> System.DateTimeOffset
+PostHog.Emails.EmailStatus.StatusAt.init -> void
+PostHog.Emails.EmailWarning
+PostHog.Emails.EmailWarning.Code.get -> string!
+PostHog.Emails.EmailWarning.Code.init -> void
+PostHog.Emails.EmailWarning.EmailWarning() -> void
+PostHog.Emails.EmailWarning.Fix.get -> string?
+PostHog.Emails.EmailWarning.Fix.init -> void
+PostHog.Emails.EmailWarning.Message.get -> string!
+PostHog.Emails.EmailWarning.Message.init -> void
+PostHog.Emails.IPostHogEmails
+PostHog.Emails.IPostHogEmails.GetAsync(string! messageId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Emails.EmailStatus!>!
+PostHog.Emails.IPostHogEmails.SendAsync(PostHog.Emails.SendEmailOptions! email, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Emails.SendEmailResult!>!
+PostHog.Emails.SendCodeEmailOptions
+PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.get -> bool
+PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.init -> void
+PostHog.Emails.SendCodeEmailOptions.From.get -> string?
+PostHog.Emails.SendCodeEmailOptions.From.init -> void
+PostHog.Emails.SendCodeEmailOptions.Html.get -> string?
+PostHog.Emails.SendCodeEmailOptions.Html.init -> void
+PostHog.Emails.SendCodeEmailOptions.ReplyTo.get -> System.Collections.Generic.IReadOnlyList<string!>?
+PostHog.Emails.SendCodeEmailOptions.ReplyTo.init -> void
+PostHog.Emails.SendCodeEmailOptions.SendCodeEmailOptions() -> void
+PostHog.Emails.SendCodeEmailOptions.Subject.get -> string!
+PostHog.Emails.SendCodeEmailOptions.Subject.init -> void
+PostHog.Emails.SendCodeEmailOptions.TemplateKey.get -> string!
+PostHog.Emails.SendCodeEmailOptions.TemplateKey.init -> void
+PostHog.Emails.SendCodeEmailOptions.Text.get -> string?
+PostHog.Emails.SendCodeEmailOptions.Text.init -> void
+PostHog.Emails.SendEmailOptions
+PostHog.Emails.SendEmailOptions.DistinctId.get -> string?
+PostHog.Emails.SendEmailOptions.DistinctId.init -> void
+PostHog.Emails.SendEmailOptions.IdempotencyKey.get -> string?
+PostHog.Emails.SendEmailOptions.IdempotencyKey.init -> void
+PostHog.Emails.SendEmailOptions.MaxRetries.get -> int?
+PostHog.Emails.SendEmailOptions.MaxRetries.init -> void
+PostHog.Emails.SendEmailOptions.To.get -> string!
+PostHog.Emails.SendEmailOptions.To.init -> void
+PostHog.Emails.SendEmailResult
+PostHog.Emails.SendEmailResult.Id.get -> string!
+PostHog.Emails.SendEmailResult.Id.init -> void
+PostHog.Emails.SendEmailResult.Replayed.get -> bool
+PostHog.Emails.SendEmailResult.Replayed.init -> void
+PostHog.Emails.SendEmailResult.SendEmailResult() -> void
+PostHog.Emails.SendEmailResult.Warnings.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.EmailWarning!>!
+PostHog.Emails.SendEmailResult.Warnings.init -> void
+PostHog.Emails.SendTemplateEmailOptions
+PostHog.Emails.SendTemplateEmailOptions.SendTemplateEmailOptions() -> void
+PostHog.Emails.SendTemplateEmailOptions.TemplateData.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>?
+PostHog.Emails.SendTemplateEmailOptions.TemplateData.init -> void
+PostHog.Emails.SendTemplateEmailOptions.TemplateId.get -> System.Guid
+PostHog.Emails.SendTemplateEmailOptions.TemplateId.init -> void
 PostHog.Features.FeatureFlag.HasExperiment.get -> bool?
 PostHog.Features.FeatureFlag.HasExperiment.init -> void
 PostHog.Features.FeatureFlagEvaluations.IsEnabled(string! key, bool defaultValue) -> bool
@@ -18,12 +92,22 @@ PostHog.Features.UnresolvedFlagReason.MissingContext = 3 -> PostHog.Features.Unr
 PostHog.Features.UnresolvedFlagReason.UnresolvedDependency = 2 -> PostHog.Features.UnresolvedFlagReason
 PostHog.Features.UnresolvedFlagReason.UnsupportedDefinition = 1 -> PostHog.Features.UnresolvedFlagReason
 PostHog.Features.UnresolvedFlagReasonExtensions
+PostHog.IPostHogClient.Emails.get -> PostHog.Emails.IPostHogEmails!
 PostHog.Json.PropertyFilterValue.IsPrefixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.Json.PropertyFilterValue.IsSuffixOf(object? other, System.StringComparison stringComparison) -> bool
+PostHog.PostHogClient.Emails.get -> PostHog.Emails.IPostHogEmails!
+PostHog.PostHogOptions.AppHost.get -> System.Uri?
+PostHog.PostHogOptions.AppHost.set -> void
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?
 PostHog.PostHogOptions.BeforeSend.set -> void
+PostHog.PostHogOptions.EmailRequestMaxRetries.get -> int
+PostHog.PostHogOptions.EmailRequestMaxRetries.set -> void
+PostHog.PostHogOptions.EmailRequestTimeout.get -> System.TimeSpan
+PostHog.PostHogOptions.EmailRequestTimeout.set -> void
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void
+PostHog.PostHogOptions.MigratedFrom.get -> string?
+PostHog.PostHogOptions.MigratedFrom.set -> void
 PostHog.PostHogOptions.SecretKey.get -> string?
 PostHog.PostHogOptions.SecretKey.set -> void
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!

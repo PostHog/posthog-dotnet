@@ -140,6 +140,39 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public Uri HostUrl { get; set; } = new("https://us.i.posthog.com");
 
     /// <summary>
+    /// Your PostHog app host, such as <c>https://posthog.example.com</c>. <see cref="IPostHogClient.Emails"/> sends
+    /// there.
+    /// </summary>
+    /// <remarks>
+    /// Not needed on PostHog Cloud: a cloud <see cref="HostUrl"/>, such as <c>https://eu.i.posthog.com</c>, maps to
+    /// its region's app host. Any other <see cref="HostUrl"/> may be a reverse proxy for ingestion, which must not
+    /// receive <see cref="SecretKey"/>, so without this option email requests fail with <c>missing_app_host</c>.
+    /// Self-hosted instances set it.
+    /// </remarks>
+    public Uri? AppHost { get; set; }
+
+    /// <summary>
+    /// The timeout for each attempt of an <see cref="IPostHogClient.Emails"/> request. (Default: 15 seconds)
+    /// </summary>
+    public TimeSpan EmailRequestTimeout { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// How many times an <see cref="IPostHogClient.Emails"/> request is retried after a network error, a rate limit,
+    /// an idempotency key still in flight, or an unavailable service. (Default: 2)
+    /// </summary>
+    /// <remarks>
+    /// Set it to <c>0</c> when a job runner already retries the send, and pass an idempotency key that names the
+    /// email, such as <c>welcome:user_123</c>.
+    /// </remarks>
+    public int EmailRequestMaxRetries { get; set; } = 2;
+
+    /// <summary>
+    /// The email provider your email moved from, such as <c>resend</c>. Sent with every
+    /// <see cref="IPostHogClient.Emails"/> request, so PostHog knows where your sends came from.
+    /// </summary>
+    public string? MigratedFrom { get; set; }
+
+    /// <summary>
     /// Default properties to send when capturing events. These properties override any properties with the same
     /// key sent with the event.
     /// </summary>
