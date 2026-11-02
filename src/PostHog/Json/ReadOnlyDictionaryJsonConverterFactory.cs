@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static PostHog.Library.Ensure;
 
 namespace PostHog.Json;
 
@@ -45,6 +47,17 @@ public class ReadonlyDictionaryJsonConverter<TKey, TValue> : JsonConverter<IRead
     /// <inheritdoc />
     public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<TKey, TValue> value, JsonSerializerOptions options)
     {
-        JsonSerializer.Serialize(writer, value, options);
+        NotNull(writer);
+        NotNull(value);
+        NotNull(options);
+        writer.WriteStartObject();
+        foreach (var pair in value)
+        {
+            var key = Convert.ToString(pair.Key, CultureInfo.InvariantCulture) ?? string.Empty;
+            writer.WritePropertyName(options.DictionaryKeyPolicy?.ConvertName(key) ?? key);
+            JsonSerializer.Serialize(writer, pair.Value, options);
+        }
+
+        writer.WriteEndObject();
     }
 }

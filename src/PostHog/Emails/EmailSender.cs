@@ -39,7 +39,6 @@ internal sealed class EmailSender : IPostHogEmails
     readonly bool _isDisabled;
     readonly TimeProvider _timeProvider;
     readonly ILogger _logger;
-    readonly Func<double> _jitter;
     readonly object _gate = new();
     int _inFlight;
     bool _closed;
@@ -60,15 +59,13 @@ internal sealed class EmailSender : IPostHogEmails
         PostHogOptions options,
         bool isDisabled,
         TimeProvider timeProvider,
-        ILogger logger,
-        Func<double>? jitter = null)
+        ILogger logger)
     {
         _httpClient = httpClient;
         _options = options;
         _isDisabled = isDisabled || httpClient is null;
         _timeProvider = timeProvider;
         _logger = logger;
-        _jitter = jitter ?? SharedJitter.Next;
     }
 
     public async Task<SendEmailResult> SendAsync(SendEmailOptions email, CancellationToken cancellationToken = default)
@@ -82,8 +79,9 @@ internal sealed class EmailSender : IPostHogEmails
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
             async () => ParseSendReply(
-                await RequestAsync(HttpMethod.Post, url, secretKey, prepared.Body, prepared.IdempotencyKey, cancellationToken)),
-            cancellationToken);
+                await RequestAsync(HttpMethod.Post, url, secretKey, prepared.Body, prepared.IdempotencyKey, cancellationToken)
+                    .ConfigureAwait(false)),
+            cancellationToken).ConfigureAwait(false);
         foreach (var warning in result.Warnings)
         {
             _logger.LogWarningEmailWarning(warning.Code, warning.Message);
@@ -107,8 +105,9 @@ internal sealed class EmailSender : IPostHogEmails
         return await WithRetriesAsync(
             MaxRetriesOption,
             async () => ParseStatusReply(
-                await RequestAsync(HttpMethod.Get, url, secretKey, body: null, idempotencyKey: null, cancellationToken)),
-            cancellationToken);
+                await RequestAsync(HttpMethod.Get, url, secretKey, body: null, idempotencyKey: null, cancellationToken)
+                    .ConfigureAwait(false)),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -170,12 +169,7 @@ internal sealed class EmailSender : IPostHogEmails
     (string AppHost, string SecretKey) Connect(string nothingDone, string missingSecretKey)
     {
         var appHost = ResolveAppHost(_options.HostUrl, _options.AppHost)
-                      ?? throw new EmailException(
-                          "missing_app_host",
-                          "The client's HostUrl is not PostHog Cloud, so the client can't tell where to send email "
-                          + $"and {nothingDone}. Set AppHost to your PostHog app host in PostHogOptions.");
-        // A custom host is often an ingestion proxy, which must not receive the secret key, so the check above
-        // comes before any use of the key.
+                      ?? throw new EmailException("missing_app_host", MissingAppHostMessage(nothingDone));
         var secretKey = _options.SecretKey?.Trim();
         if (string.IsNullOrEmpty(secretKey))
         {
@@ -191,6 +185,11 @@ internal sealed class EmailSender : IPostHogEmails
 
         return (appHost, secretKey!);
     }
+
+    string MissingAppHostMessage(string nothingDone) => _options.AppHost is null
+        ? "The client's HostUrl is not PostHog Cloud, so the client can't tell where to send email "
+          + $"and {nothingDone}. Set AppHost to your PostHog app host in PostHogOptions."
+        : $"AppHost must be an absolute http or https URL, such as https://posthog.example.com, so {nothingDone}.";
 
     /// <summary>
     /// The app host for an email request, or <c>null</c> when the client can't tell it. PostHog Cloud ingestion hosts
@@ -223,7 +222,7 @@ internal sealed class EmailSender : IPostHogEmails
             EmailException error;
             try
             {
-                return await attemptOnce();
+                return await attemptOnce().ConfigureAwait(false);
             }
             catch (EmailException e)
             {
@@ -236,18 +235,17 @@ internal sealed class EmailSender : IPostHogEmails
                 throw error;
             }
 
-            await DelayAsync(delay.Value, cancellationToken);
+            await DelayAsync(delay.Value, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    TimeSpan? RetryDelay(EmailException error, int attempt, int maxRetries)
+    static TimeSpan? RetryDelay(EmailException error, int attempt, int maxRetries)
     {
         if (attempt >= maxRetries || !IsRetryable(error))
         {
             return null;
         }
 
-        // Retrying before a longer Retry-After would break the server's rate limit.
         if (error.RetryAfter > MaxRetryDelay)
         {
             return null;
@@ -255,19 +253,17 @@ internal sealed class EmailSender : IPostHogEmails
 
         var backoffMs = Math.Min(
             MaxRetryDelay.TotalMilliseconds,
-            1000 * Math.Pow(2, attempt) * (0.8 + (_jitter() * 0.4)));
+            1000 * Math.Pow(2, attempt) * (0.8 + (SharedJitter.Next() * 0.4)));
         var backoff = TimeSpan.FromMilliseconds(backoffMs);
         return error.RetryAfter > backoff ? error.RetryAfter : backoff;
     }
 
     static bool IsRetryable(EmailException error)
     {
-        // A send carries an idempotency key, so a retry can't queue a second email. A status read changes nothing.
         return error.StatusCode switch
         {
             null => error.Code == "network_error",
             HttpStatusCode.Conflict => error.Code == "idempotency_key_in_flight",
-            // Waiting doesn't fix a monthly quota.
             (HttpStatusCode)429 => error.Code != "quota_limited",
             HttpStatusCode.ServiceUnavailable => true,
             _ => false,
@@ -315,8 +311,7 @@ internal sealed class EmailSender : IPostHogEmails
         HttpResponseMessage response;
         try
         {
-            // The default completion option reads the whole body inside SendAsync, so the timeout covers it too.
-            response = await _httpClient!.SendAsync(request, timeout.Token);
+            response = await _httpClient!.SendAsync(request, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
@@ -333,26 +328,11 @@ internal sealed class EmailSender : IPostHogEmails
 
         using (response)
         {
-            string text;
-            try
-            {
 #if NET5_0_OR_GREATER
-                text = await response.Content.ReadAsStringAsync(cancellationToken);
+            var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else
-                text = await response.Content.ReadAsStringAsync();
+            var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #endif
-            }
-            catch (Exception e) when (e is IOException or HttpRequestException)
-            {
-                // An accepted send may already be queued, so a failed read stays a retryable network error.
-                if (response.IsSuccessStatusCode)
-                {
-                    throw NetworkError("Reading PostHog's answer failed.", e);
-                }
-
-                // The status and Retry-After still decide the retry when an error body can't be read.
-                text = string.Empty;
-            }
 
             return new Reply(response.StatusCode, ParseObject(text), ReadRetryAfter(response));
         }

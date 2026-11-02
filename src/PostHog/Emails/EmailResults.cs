@@ -6,7 +6,7 @@ namespace PostHog.Emails;
 public sealed class SendEmailResult
 {
     /// <summary>
-    /// The queued email's message ID. Pass it to <see cref="IPostHogEmails.GetAsync"/>.
+    /// The queued email's message ID, a UUID. Pass it to <see cref="IPostHogEmails.GetAsync"/>.
     /// </summary>
     public required string Id { get; init; }
 

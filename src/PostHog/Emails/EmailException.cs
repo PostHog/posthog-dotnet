@@ -130,7 +130,6 @@ public sealed class EmailException : Exception
             403 => "invalid_permission",
             404 => "not_found",
             409 => code == "template_outdated" ? "validation_error" : "concurrent_idempotent_requests",
-            // The send route also answers 422 for send checks, such as recipient_suppressed.
             422 => code == "idempotency_key_reused" ? "invalid_idempotent_request" : "validation_error",
             429 => code == "quota_limited" ? "monthly_quota_exceeded" : "rate_limit_exceeded",
             503 => "service_unavailable",

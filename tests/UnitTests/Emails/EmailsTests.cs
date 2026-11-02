@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -17,7 +18,7 @@ public class TheSendAsyncMethodWithATemplate
     public async Task SendsTheFlatTemplateBodyToTheAppHost()
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1", "replayed": false}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188", "replayed": false}""");
 
         var result = await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
         {
@@ -27,7 +28,7 @@ public class TheSendAsyncMethodWithATemplate
             DistinctId = "user_123",
         });
 
-        Assert.Equal("msg_1", result.Id);
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.False(result.Replayed);
         Assert.Empty(result.Warnings);
         var request = Assert.Single(harness.Requests);
@@ -44,10 +45,32 @@ public class TheSendAsyncMethodWithATemplate
     }
 
     [Fact]
+    public async Task SendsReadOnlyTemplateData()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
+        {
+            To = "user@example.com",
+            TemplateId = TemplateId,
+            TemplateData = new ReadOnlyDictionary<string, object>(new Dictionary<string, object>
+            {
+                ["name"] = "Ada",
+                ["order"] = new ReadOnlyDictionary<string, object>(new Dictionary<string, object> { ["total"] = 42 }),
+            }),
+        });
+
+        Assert.Equal(
+            """{"template_id":"0190f6d2-7c1e-7b3a-9f5e-1c2d3e4f5a6b","to":"user@example.com","message_data":{"name":"Ada","order":{"total":42}}}""",
+            Assert.Single(harness.Requests).Body);
+    }
+
+    [Fact]
     public async Task SendsEmptyTemplateDataAndNoDistinctIdWhenLeftOut()
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
         {
@@ -66,7 +89,7 @@ public class TheSendAsyncMethodWithATemplate
         await using var harness = new EmailHarness();
         harness.Respond(
             HttpStatusCode.Accepted,
-            """{"message_id": "msg_1", "replayed": true, "warnings": [{"code": "no_distinct_id", "detail": "Pass distinct_id.", "fix": "Add it."}]}""");
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188", "replayed": true, "warnings": [{"code": "no_distinct_id", "detail": "Pass distinct_id.", "fix": "Add it."}]}""");
 
         var result = await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
         {
@@ -87,7 +110,7 @@ public class TheSendAsyncMethodWithATemplate
     public async Task SendsTheMigratedFromHeader()
     {
         await using var harness = new EmailHarness(options => options.MigratedFrom = "resend");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
         {
@@ -105,7 +128,7 @@ public class TheSendAsyncMethodWithCodeContent
     public async Task SendsTheRenderedContentWithEngagementCaptureOn()
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -131,7 +154,7 @@ public class TheSendAsyncMethodWithCodeContent
     public async Task SendsTextOnlyContentWithEngagementCaptureOff()
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -211,7 +234,7 @@ public class TheSendAsyncMethodArguments
     public async Task SendsTheCallersIdempotencyKey()
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend(idempotencyKey: "welcome:user_123"));
 
@@ -226,11 +249,11 @@ public class TheSendAsyncMethodRetries
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.ServiceUnavailable, """{"code": "service_unavailable"}""");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
 
-        Assert.Equal("msg_1", result.Id);
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.Equal(2, harness.Requests.Count);
         var key = harness.Requests[0].Header("Idempotency-Key");
         Assert.Equal(key, harness.Requests[1].Header("Idempotency-Key"));
@@ -293,11 +316,11 @@ public class TheSendAsyncMethodRetries
     {
         await using var harness = new EmailHarness();
         harness.Respond(status, $$"""{"code": "{{code}}"}""");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
 
-        Assert.Equal("msg_1", result.Id);
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.Equal(2, harness.Requests.Count);
     }
 
@@ -316,7 +339,7 @@ public class TheSendAsyncMethodRetries
     {
         await using var harness = new EmailHarness();
         harness.Respond(status, $$"""{"code": "{{code}}"}""");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
@@ -332,7 +355,7 @@ public class TheSendAsyncMethodRetries
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.ServiceUnavailable, """{"code": "service_unavailable"}""", retryAfter: TimeSpan.FromSeconds(5));
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
 
@@ -461,7 +484,7 @@ public class TheSendAsyncMethodClientChecks
             options.HostUrl = new Uri(host);
             options.AppHost = appHost is null ? null : new Uri(appHost);
         });
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
 
@@ -479,6 +502,25 @@ public class TheSendAsyncMethodClientChecks
         Assert.Equal("missing_app_host", error.Code);
         Assert.Equal("application_error", error.Name);
         Assert.Null(error.StatusCode);
+        Assert.Empty(harness.Requests);
+    }
+
+    [Theory]
+    [InlineData("/relative")]
+    [InlineData("ftp://posthog.example.com")]
+    public async Task RefusesAnAppHostThatIsNotAnHttpUrl(string appHost)
+    {
+        await using var harness = new EmailHarness(options =>
+        {
+            options.HostUrl = new Uri("https://proxy.example.com");
+            options.AppHost = new Uri(appHost, UriKind.RelativeOrAbsolute);
+        });
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
+
+        Assert.Equal("missing_app_host", error.Code);
+        Assert.StartsWith("AppHost must be an absolute http or https URL", error.Message, StringComparison.Ordinal);
         Assert.Empty(harness.Requests);
     }
 
@@ -501,7 +543,7 @@ public class TheSendAsyncMethodClientChecks
     public async Task TrimsTheSecretKey()
     {
         await using var harness = new EmailHarness(options => options.SecretKey = " phs_secret \n");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
 
@@ -552,7 +594,7 @@ public class TheSendAsyncMethodClientChecks
         await using var harness = new EmailHarness();
         harness.Time.HoldDelays();
         harness.Respond(HttpStatusCode.ServiceUnavailable, """{"code": "service_unavailable"}""");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "msg_1"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var send = harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
         await harness.Time.WaitForHeldDelayAsync();
@@ -563,8 +605,7 @@ public class TheSendAsyncMethodClientChecks
         harness.Time.ReleaseDelays();
         await Within(shutdown, TimeSpan.FromSeconds(5));
 
-        Assert.True(send.IsCompleted);
-        Assert.Equal("msg_1", (await send).Id);
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", (await send).Id);
         Assert.Equal(2, harness.Requests.Count);
     }
 

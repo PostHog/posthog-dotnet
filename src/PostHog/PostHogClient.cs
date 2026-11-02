@@ -1482,9 +1482,7 @@ public sealed class PostHogClient : IPostHogClient
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
         try
         {
-            // Email requests in flight, retries included, settle before the HTTP client goes away.
-            await _emails.CloseAsync();
-            await _asyncBatchHandler.DisposeAsync();
+            await Task.WhenAll(_emails.CloseAsync(), _asyncBatchHandler.DisposeAsync().AsTask());
             await _featureFlagsLoader.DisposeAsync();
         }
         finally
