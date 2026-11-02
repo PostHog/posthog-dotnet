@@ -67,6 +67,33 @@ public class TheSendAsyncMethodWithATemplate
     }
 
     [Fact]
+    public async Task KeepsEveryKeyOfReadOnlyTemplateDataWithNonStringKeys()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        var second = new DateTime(2026, 11, 2, 10, 0, 0, DateTimeKind.Utc);
+
+        await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
+        {
+            To = "user@example.com",
+            TemplateId = TemplateId,
+            TemplateData = new Dictionary<string, object>
+            {
+                ["visits"] = new ReadOnlyDictionary<DateTime, object>(new Dictionary<DateTime, object>
+                {
+                    [second] = 1,
+                    [second.AddMilliseconds(1)] = 2,
+                }),
+            },
+        });
+
+        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
+        var visits = body.RootElement.GetProperty("message_data").GetProperty("visits");
+        Assert.Equal(1, visits.GetProperty("2026-11-02T10:00:00Z").GetInt32());
+        Assert.Equal(2, visits.GetProperty("2026-11-02T10:00:00.001Z").GetInt32());
+    }
+
+    [Fact]
     public async Task SendsEmptyTemplateDataAndNoDistinctIdWhenLeftOut()
     {
         await using var harness = new EmailHarness();
