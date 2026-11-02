@@ -250,6 +250,8 @@ internal sealed class LocalEvaluator
     {
         switch (filter)
         {
+            case UnsupportedFilter:
+                return true;
             case FilterSet filterSet:
                 return (filterSet.Values ?? []).Any(child => IsUnsupportedFilter(child, visitedCohortIds, inCohort));
             case PropertyFilter property when inCohort && IsCohortRegexUnsupported(property):
@@ -687,85 +689,45 @@ internal sealed class LocalEvaluator
 
         UnresolvedFlagReason? inconclusiveReason = null;
 
-        // Test the first element to see what type of filters we're dealing with here.
-        var isFilterSet = filters[0] is FilterSet;
-
-        if (isFilterSet)
-        {
-            // A nested property group.
-            // We expect every filter to be a filter set. At least this is how the other client libraries work.
-            foreach (var filter in filters)
-            {
-                if (filter is not FilterSet childFilterSet)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues);
-                    if (childFilterSet.Type is FilterType.And)
-                    {
-                        if (!isMatch)
-                        {
-                            return false;
-                        }
-                    }
-                    else
-                    {
-                        // OR group
-                        if (isMatch)
-                        {
-                            return true;
-                        }
-                    }
-                }
-                catch (InconclusiveMatchException e)
-                {
-                    _logger.LogDebugFailedToComputeProperty(e, filter);
-                    inconclusiveReason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, e.Reason);
-                }
-            }
-
-            if (inconclusiveReason is { } reason)
-            {
-                throw new InconclusiveMatchException("Can't match cohort without a given cohort property value", reason);
-            }
-
-            // if we get here, all matched in AND case, or none matched in OR case
-            return filterSet.Type is FilterType.And;
-        }
-
         foreach (var filter in filters)
         {
-            if (filter is not PropertyFilter propertyFilter)
-            {
-                continue;
-            }
             try
             {
-                if (filter.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(propertyFilter, propertyValues))
+                bool isMatch;
+                var negation = false;
+                if (filter is FilterSet childFilterSet)
                 {
-                    // Same result as MatchProperty for an absent key, without the cost of throwing for every
-                    // missing filter.
-                    AssertFilterSupported(propertyFilter);
-                    if (IsCohortRegexUnsupported(propertyFilter))
-                    {
-                        throw new InconclusiveMatchException(
-                            "Invalid regex cohort property requires server evaluation",
-                            UnresolvedFlagReason.UnsupportedDefinition);
-                    }
-                    inconclusiveReason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, UnresolvedFlagReason.MissingContext);
-                    continue;
+                    isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues);
                 }
+                else if (filter is PropertyFilter propertyFilter)
+                {
+                    if (filter.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(propertyFilter, propertyValues))
+                    {
+                        // Same result as MatchProperty for an absent key, without the cost of throwing for every
+                        // missing filter.
+                        AssertFilterSupported(propertyFilter);
+                        if (IsCohortRegexUnsupported(propertyFilter))
+                        {
+                            throw new InconclusiveMatchException(
+                                "Invalid regex cohort property requires server evaluation",
+                                UnresolvedFlagReason.UnsupportedDefinition);
+                        }
+                        inconclusiveReason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, UnresolvedFlagReason.MissingContext);
+                        continue;
+                    }
 
-                var isMatch = filter.Type is FilterType.Cohort
-                    ? MatchCohort(propertyFilter, distinctId, propertyValues)
-                    : MatchProperty(propertyFilter, distinctId, propertyValues)
-                        ?? throw new InconclusiveMatchException(
-                            "Invalid regex cohort property requires server evaluation",
-                            UnresolvedFlagReason.UnsupportedDefinition);
-                var negation = propertyFilter.Negation;
+                    isMatch = filter.Type is FilterType.Cohort
+                        ? MatchCohort(propertyFilter, distinctId, propertyValues)
+                        : MatchProperty(propertyFilter, distinctId, propertyValues)
+                            ?? throw new InconclusiveMatchException(
+                                "Invalid regex cohort property requires server evaluation",
+                                UnresolvedFlagReason.UnsupportedDefinition);
+                    negation = propertyFilter.Negation;
+                }
+                else
+                {
+                    throw new InconclusiveMatchException("Unsupported cohort filter", UnresolvedFlagReason.UnsupportedDefinition);
+                }
 
                 if (filterSet.Type is FilterType.And)
                 {

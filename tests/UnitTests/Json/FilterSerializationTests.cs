@@ -61,6 +61,36 @@ public class TheDeserializeAsyncMethod
             propertyFilter);
     }
 
+    [Fact]
+    public async Task CanDeserializeFlagDependencyInCohort()
+    {
+        const string json = """
+            {"type": "flag", "key": "checkout", "operator": "flag_evaluates_to",
+             "value": true, "dependency_chain": ["checkout"]}
+            """;
+
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
+
+        var propertyFilter = Assert.IsType<PropertyFilter>(result);
+        Assert.Equal(FilterType.Flag, propertyFilter.Type);
+        Assert.Equal("checkout", propertyFilter.Key);
+        Assert.Equal(ComparisonOperator.FlagEvaluatesTo, propertyFilter.Operator);
+        Assert.Equal(new[] { "checkout" }, propertyFilter.DependencyChain);
+    }
+
+    [Theory]
+    [InlineData("""{"type":"future_filter","negation":true,"custom":{"value":[1,null,"test"]}}""")]
+    [InlineData("""{"type":"XOR","values":[{"type":"person","key":"plan","value":"pro","operator":"exact"}]}""")]
+    public async Task PreservesUnrecognizedFilterWhenRoundTripping(string json)
+    {
+        var result = await JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<Filter>(json);
+        Assert.NotNull(result);
+
+        var serialized = await JsonSerializerHelper.SerializeToCamelCaseJsonStringAsync(result);
+
+        JsonAssert.Equal(json, serialized);
+    }
+
     [Theory]
     [InlineData("starts_with", ComparisonOperator.StartsWith)]
     [InlineData("not_starts_with", ComparisonOperator.NotStartsWith)]
