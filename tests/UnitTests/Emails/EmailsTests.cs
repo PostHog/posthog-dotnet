@@ -679,13 +679,26 @@ public class TheSendAsyncMethodClientChecks
         harness.Respond(HttpStatusCode.ServiceUnavailable, """{"code": "service_unavailable"}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
-        var send = harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
-        await harness.Time.WaitForHeldDelayAsync();
+        var sendStarted = new TaskCompletionSource<Task<SendEmailResult>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var disposeNow = new ManualResetEventSlim();
         var dispose = Task.Run(() =>
         {
+            var previous = SynchronizationContext.Current;
             SynchronizationContext.SetSynchronizationContext(new BlockedContext());
-            harness.Client.Dispose();
+            try
+            {
+                sendStarted.SetResult(harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
+                disposeNow.Wait();
+                harness.Client.Dispose();
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previous);
+            }
         });
+        var send = await sendStarted.Task;
+        await harness.Time.WaitForHeldDelayAsync();
+        disposeNow.Set();
         await Task.Delay(50);
         Assert.False(dispose.IsCompleted);
 

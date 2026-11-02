@@ -168,11 +168,9 @@ public static class Examples
         await using var posthog = new PostHogClient(new PostHogOptions
         {
             ProjectToken = "<ph_project_token>",
-            // A project secret API key with the hog_flow:write scope.
             SecretKey = Environment.GetEnvironmentVariable("PostHog__SecretKey"),
         });
 
-        // A template made transactional in PostHog
         var sent = await posthog.Emails.SendAsync(new Emails.SendTemplateEmailOptions
         {
             To = "user@example.com",
@@ -182,7 +180,6 @@ public static class Examples
             IdempotencyKey = "welcome:distinct_id_of_the_user",
         });
 
-        // Content your app rendered, such as React Email output, named by a key
         await posthog.Emails.SendAsync(new Emails.SendCodeEmailOptions
         {
             To = "user@example.com",
@@ -192,7 +189,6 @@ public static class Examples
             DistinctId = "distinct_id_of_the_user",
         });
 
-        // The status of a queued email
         var status = await posthog.Emails.GetAsync(sent.Id);
         Console.WriteLine(status.Status);
     }
