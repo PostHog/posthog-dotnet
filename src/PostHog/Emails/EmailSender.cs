@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
 
@@ -43,16 +42,6 @@ internal sealed class EmailSender : IPostHogEmails
     int _inFlight;
     bool _closed;
     TaskCompletionSource<bool>? _drained;
-
-    /// <summary>
-    /// The emails API of a client that has none: every call fails with <c>client_disabled</c>.
-    /// </summary>
-    internal static EmailSender Disabled { get; } = new(
-        httpClient: null,
-        new PostHogOptions(),
-        isDisabled: true,
-        TimeProvider.System,
-        NullLogger.Instance);
 
     public EmailSender(
         HttpClient? httpClient,

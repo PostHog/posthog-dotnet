@@ -140,7 +140,7 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public Uri HostUrl { get; set; } = new("https://us.i.posthog.com");
 
     /// <summary>
-    /// Your PostHog app host, such as <c>https://posthog.example.com</c>. <see cref="IPostHogClient.Emails"/> sends
+    /// Your PostHog app host, such as <c>https://posthog.example.com</c>. <see cref="PostHogClient.Emails"/> sends
     /// there.
     /// </summary>
     /// <remarks>
@@ -152,12 +152,12 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public Uri? AppHost { get; set; }
 
     /// <summary>
-    /// The timeout for each attempt of an <see cref="IPostHogClient.Emails"/> request. (Default: 15 seconds)
+    /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request. (Default: 15 seconds)
     /// </summary>
     public TimeSpan EmailRequestTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
-    /// How many times an <see cref="IPostHogClient.Emails"/> request is retried after a network error, a rate limit,
+    /// How many times an <see cref="PostHogClient.Emails"/> request is retried after a network error, a rate limit,
     /// an idempotency key still in flight, or an unavailable service. (Default: 2)
     /// </summary>
     /// <remarks>
@@ -168,7 +168,7 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
 
     /// <summary>
     /// The email provider your email moved from, such as <c>resend</c>. Sent with every
-    /// <see cref="IPostHogClient.Emails"/> request, so PostHog knows where your sends came from.
+    /// <see cref="PostHogClient.Emails"/> request, so PostHog knows where your sends came from.
     /// </summary>
     public string? MigratedFrom { get; set; }
 

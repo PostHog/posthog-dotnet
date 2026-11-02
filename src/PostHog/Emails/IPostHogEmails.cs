@@ -2,7 +2,8 @@ namespace PostHog.Emails;
 
 /// <summary>
 /// Sends transactional email, from email templates made in PostHog or from content your code rendered, and reads
-/// the status of each email it sent. Reach it through <see cref="IPostHogClient.Emails"/>.
+/// the status of each email it sent. Reach it through <see cref="PostHogClient.Emails"/>, or inject it when you
+/// register PostHog with <c>AddPostHog</c>.
 /// </summary>
 /// <remarks>
 /// Needs <see cref="PostHogOptions.SecretKey"/> set to a project secret API key (<c>phs_...</c>) with the

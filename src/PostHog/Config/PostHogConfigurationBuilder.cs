@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PostHog.Emails;
 using PostHog.Library;
 using static PostHog.Library.Ensure;
 
@@ -42,10 +43,17 @@ public class PostHogConfigurationBuilder : IPostHogConfigurationBuilder
         _services.TryAddSingleton<IFeatureFlagCache>(_ => NullFeatureFlagCache.Instance);
         _services.TryAddSingleton<ITaskScheduler, TaskRunTaskScheduler>();
         _services.TryAddSingleton<IPostHogClient, PostHogClient>();
+        _services.TryAddSingleton<IPostHogEmails>(EmailsOf);
         _services.TryAddSingleton<TimeProvider>(_ => TimeProvider.System);
 
         return _services;
     }
+
+    static IPostHogEmails EmailsOf(IServiceProvider services)
+        => services.GetRequiredService<IPostHogClient>() as PostHogClient is { } client
+            ? client.Emails
+            : throw new InvalidOperationException(
+                "IPostHogEmails needs PostHogClient registered as IPostHogClient.");
 
     /// <inheritdoc />
     public IPostHogConfigurationBuilder Use(Action<IServiceCollection>? configurationAction)

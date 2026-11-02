@@ -1,6 +1,5 @@
 using System.Text.Json;
 using PostHog.Api;
-using PostHog.Emails;
 using PostHog.Features;
 using PostHog.Json;
 
@@ -285,18 +284,6 @@ public interface IPostHogClient : IDisposable, IAsyncDisposable
     /// </summary>
     /// <returns>A <see cref="Task"/>.</returns>
     Task FlushAsync();
-
-    /// <summary>
-    /// Sends transactional email and reads the status of each email it sent. Needs
-    /// <see cref="PostHogOptions.SecretKey"/> set to a project secret API key.
-    /// </summary>
-    IPostHogEmails Emails
-#if NETSTANDARD2_0
-    { get; }
-#else
-        => throw new NotSupportedException(
-            "Emails requires PostHogClient. Custom IPostHogClient implementers must override this member.");
-#endif
 
     /// <summary>
     /// The version of this library.

@@ -671,6 +671,37 @@ public class TheSendAsyncMethodClientChecks
         Assert.Equal(2, harness.Requests.Count);
     }
 
+    [Fact]
+    public async Task SynchronousDisposeOnABlockedContextWaitsForASendWithoutDeadlocking()
+    {
+        await using var harness = new EmailHarness();
+        harness.Time.HoldDelays();
+        harness.Respond(HttpStatusCode.ServiceUnavailable, """{"code": "service_unavailable"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        var send = harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+        await harness.Time.WaitForHeldDelayAsync();
+        var dispose = Task.Run(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new BlockedContext());
+            harness.Client.Dispose();
+        });
+        await Task.Delay(50);
+        Assert.False(dispose.IsCompleted);
+
+        harness.Time.ReleaseDelays();
+        await Within(dispose, TimeSpan.FromSeconds(5));
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", (await send).Id);
+    }
+
+    sealed class BlockedContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+        }
+    }
+
     static async Task Within(Task task, TimeSpan timeout)
     {
         if (await Task.WhenAny(task, Task.Delay(timeout)) != task)

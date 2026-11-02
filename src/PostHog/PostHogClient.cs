@@ -1427,7 +1427,11 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Sends transactional email and reads the status of each email it sent. Needs
+    /// <see cref="PostHogOptions.SecretKey"/> set to a project secret API key. With dependency injection, inject
+    /// <see cref="IPostHogEmails"/> instead.
+    /// </summary>
     public IPostHogEmails Emails => _emails;
 
     /// <inheritdoc/>
@@ -1460,7 +1464,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+    public void Dispose() => Task.Run(() => DisposeAsync().AsTask()).GetAwaiter().GetResult();
 
     /// <summary>
     /// Clears the local flags cache.
@@ -1482,7 +1486,7 @@ public sealed class PostHogClient : IPostHogClient
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
         try
         {
-            await Task.WhenAll(_emails.CloseAsync(), _asyncBatchHandler.DisposeAsync().AsTask());
+            await Task.WhenAll(_emails.CloseAsync(), _asyncBatchHandler.DisposeAsync().AsTask()).ConfigureAwait(false);
             await _featureFlagsLoader.DisposeAsync();
         }
         finally

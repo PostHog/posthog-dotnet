@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PostHog;
 using PostHog.Config;
+using PostHog.Emails;
 using PostHog.Library;
 
 namespace RegistrationTests;
@@ -33,6 +34,23 @@ public class TheAddPostHogMethod
         // Make sure I can create an instance of PostHogClient.
         var client = provider.GetRequiredService<IPostHogClient>();
         Assert.NotNull(client);
+    }
+
+    [Fact]
+    public void RegistersTheClientsEmailsApi()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+
+        services.AddPostHog();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+        var client = Assert.IsType<PostHogClient>(provider.GetRequiredService<IPostHogClient>());
+        Assert.Same(client.Emails, provider.GetRequiredService<IPostHogEmails>());
     }
 
     [Fact]
