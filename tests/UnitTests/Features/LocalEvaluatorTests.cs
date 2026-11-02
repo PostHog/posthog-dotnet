@@ -315,6 +315,37 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
+    [InlineData("enterprise", true)]
+    [InlineData("pro", true)]
+    [InlineData("free", false)]
+    public void EvaluatesOrOfAndCohortWithoutUnsupportedFilters(string plan, bool expected)
+    {
+        const string json = """
+            {
+                "flags": [{"key": "cohort-flag", "active": true,
+                    "filters": {"groups": [{"properties": [
+                        {"type": "cohort", "key": "id", "value": 42}
+                    ]}]}}],
+                "cohorts": {"42": {"type": "OR", "values": [
+                    {"type": "AND", "values": [
+                        {"type": "person", "key": "plan", "value": "enterprise", "operator": "exact"}
+                    ]},
+                    {"type": "AND", "values": [
+                        {"type": "person", "key": "plan", "value": "pro", "operator": "exact"}
+                    ]}
+                ]}}
+            }
+            """;
+        var definitions = JsonSerializer.Deserialize<LocalEvaluationApiResult>(json, JsonSerializerHelper.Options);
+        Assert.NotNull(definitions);
+        var evaluator = new LocalEvaluator(definitions);
+
+        var result = evaluator.EvaluateFeatureFlag("cohort-flag", "user", personProperties: new() { ["plan"] = plan });
+
+        Assert.Equal(expected, result.Value);
+    }
+
+    [Theory]
     [InlineData(42, ComparisonOperator.Exact, true)]
     [InlineData(42.5, ComparisonOperator.Exact, true)]
     [InlineData("42.5", ComparisonOperator.Exact, true)]
