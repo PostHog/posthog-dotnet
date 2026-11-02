@@ -358,6 +358,51 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         return true;
     }
 
+    [Theory]
+    [InlineData(
+        "/v1/chat/completions",
+        "{\"model\":\"gpt-4\",\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":12,\"total_tokens\":112,\"prompt_tokens_details\":{\"cached_tokens\":64}}}"
+    )]
+    [InlineData(
+        "/v1/responses",
+        "{\"model\":\"gpt-4\",\"output\":[],\"usage\":{\"input_tokens\":100,\"output_tokens\":12,\"total_tokens\":112,\"input_tokens_details\":{\"cached_tokens\":64}}}"
+    )]
+    public async Task SendAsyncCapturesOpenAICachedAndResponsesApiTokens(
+        string path,
+        string responseJson
+    )
+    {
+        using var responseContent = new StringContent(responseJson, Encoding.UTF8, "application/json");
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+        using var requestContent = new StringContent(
+            "{\"model\":\"gpt-4\"}",
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        using var response = await _client.PostAsync(new Uri(path, UriKind.Relative), requestContent);
+
+        Assert.True(response.IsSuccessStatusCode);
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey(PostHogAIFieldNames.InputTokens)
+                    && (int)props[PostHogAIFieldNames.InputTokens] == 100
+                    && (int)props[PostHogAIFieldNames.OutputTokens] == 12
+                    && (int)props[PostHogAIFieldNames.CacheReadInputTokens] == 64
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
     private static bool VerifyProps(Dictionary<string, object> props)
     {
         if (
