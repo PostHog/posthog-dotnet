@@ -52,15 +52,7 @@ public class ReadonlyDictionaryJsonConverter<TKey, TValue> : JsonConverter<IRead
         writer.WriteStartObject();
         foreach (var pair in value)
         {
-            if (pair.Key is string name && options.DictionaryKeyPolicy is { } keyPolicy)
-            {
-                writer.WritePropertyName(keyPolicy.ConvertName(name));
-            }
-            else
-            {
-                keyConverter.WriteAsPropertyName(writer, pair.Key, options);
-            }
-
+            keyConverter.WriteAsPropertyName(writer, pair.Key, options);
             JsonSerializer.Serialize(writer, pair.Value, options);
         }
 
