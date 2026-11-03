@@ -64,7 +64,7 @@ public sealed class EmailException : Exception
 
     /// <summary>
     /// PostHog's error code, such as <c>recipient_suppressed</c> or <c>quota_limited</c>, or a client code:
-    /// <c>missing_secret_key</c>, <c>missing_app_host</c>, <c>client_disabled</c>, <c>client_closed</c>,
+    /// <c>missing_secret_key</c>, <c>missing_app_host</c>, <c>insecure_app_host</c>, <c>client_disabled</c>, <c>client_closed</c>,
     /// <c>network_error</c>, <c>api_error</c> (an answer without a code) or <c>unexpected_error</c>.
     /// </summary>
     public string Code { get; }

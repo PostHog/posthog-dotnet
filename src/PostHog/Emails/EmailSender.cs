@@ -159,6 +159,14 @@ internal sealed class EmailSender : IPostHogEmails
     {
         var appHost = ResolveAppHost(_options.HostUrl, _options.AppHost)
                       ?? throw new EmailException("missing_app_host", MissingAppHostMessage(nothingDone));
+        if (!_options.AllowInsecureAppHost && appHost.StartsWith("http:", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new EmailException(
+                "insecure_app_host",
+                $"AppHost {appHost} uses http, which would send SecretKey unencrypted, so {nothingDone}. "
+                + "Use an https AppHost, or set AllowInsecureAppHost for local development.");
+        }
+
         var secretKey = _options.SecretKey?.Trim();
         if (string.IsNullOrEmpty(secretKey))
         {

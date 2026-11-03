@@ -95,6 +95,8 @@ PostHog.Features.UnresolvedFlagReasonExtensions
 PostHog.Json.PropertyFilterValue.IsPrefixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.Json.PropertyFilterValue.IsSuffixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.PostHogClient.Emails.get -> PostHog.Emails.IPostHogEmails!
+PostHog.PostHogOptions.AllowInsecureAppHost.get -> bool
+PostHog.PostHogOptions.AllowInsecureAppHost.set -> void
 PostHog.PostHogOptions.AppHost.get -> System.Uri?
 PostHog.PostHogOptions.AppHost.set -> void
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?

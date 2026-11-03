@@ -587,6 +587,42 @@ public class TheSendAsyncMethodClientChecks
     }
 
     [Theory]
+    [InlineData("http://posthog.example.com")]
+    [InlineData("HTTP://localhost:8010")]
+    public async Task RefusesAnHttpAppHostWithoutTheOptIn(string appHost)
+    {
+        await using var harness = new EmailHarness(options => options.AppHost = new Uri(appHost));
+
+        var send = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
+        var status = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.GetAsync("01a18356-c56c-0001-e494-7666bc915188"));
+
+        Assert.Equal("insecure_app_host", send.Code);
+        Assert.Equal("application_error", send.Name);
+        Assert.Contains("no email was sent", send.Message, StringComparison.Ordinal);
+        Assert.Equal("insecure_app_host", status.Code);
+        Assert.Empty(harness.Requests);
+    }
+
+    [Fact]
+    public async Task SendsToAnHttpAppHostWithTheOptIn()
+    {
+        await using var harness = new EmailHarness(options =>
+        {
+            options.AppHost = new Uri("http://localhost:8010");
+            options.AllowInsecureAppHost = true;
+        });
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal(
+            "http://localhost:8010/api/projects/@current/messaging/send/email/",
+            Assert.Single(harness.Requests).Url);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("   ")]
     public async Task RefusesAClientWithoutASecretKey(string? secretKey)

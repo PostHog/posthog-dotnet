@@ -147,9 +147,19 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// Not needed on PostHog Cloud: a cloud <see cref="HostUrl"/>, such as <c>https://eu.i.posthog.com</c>, maps to
     /// its region's app host. Any other <see cref="HostUrl"/> may be a reverse proxy for ingestion, which must not
     /// receive <see cref="SecretKey"/>, so without this option email requests fail with <c>missing_app_host</c>.
-    /// Self-hosted instances set it.
+    /// Self-hosted instances set it. It must use https unless <see cref="AllowInsecureAppHost"/> is set.
     /// </remarks>
     public Uri? AppHost { get; set; }
+
+    /// <summary>
+    /// Lets <see cref="PostHogClient.Emails"/> send to an http <see cref="AppHost"/>, such as
+    /// <c>http://localhost:8010</c> during local development. (Default: <c>false</c>)
+    /// </summary>
+    /// <remarks>
+    /// Email requests carry <see cref="SecretKey"/> and the email itself, so over http both travel unencrypted.
+    /// Without this option an http <see cref="AppHost"/> fails with <c>insecure_app_host</c> before any request.
+    /// </remarks>
+    public bool AllowInsecureAppHost { get; set; }
 
     /// <summary>
     /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request. (Default: 15 seconds)
