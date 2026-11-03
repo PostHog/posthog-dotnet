@@ -125,6 +125,9 @@ measured refreshes only reload definitions and check that each made a request.
   distinct scopes. No forced GC occurs within measured work or checkpoint callbacks;
   full collections bracket memory measurement. GC heap bytes and RSS are not
   interchangeable; releasing objects need not reduce RSS.
+- Definition response bodies for every used generation are serialized and UTF-8 encoded
+  before measurement. The transport retains these fixture buffers, so idle heap/RSS
+  includes them; measured reloads serve cached bytes without rebuilding the fixture.
 - Public `IHttpClientFactory` injection supplies offline definitions and acknowledges
   batches. Measurements include in-process transport JSON parsing and validation, with
   compression disabled through public options. This is not a network or remote

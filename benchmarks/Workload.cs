@@ -12,6 +12,10 @@ namespace PostHog.Benchmarks;
 internal sealed class Transport(Workload spec) : HttpMessageHandler, IHttpClientFactory
 {
     readonly string _payload = new('x', spec.PayloadBytes);
+    readonly byte[][] _definitions = spec.FlagCount > 0
+        ? Enumerable.Range(0, spec.Mode == "refresh" ? Math.Max(2, spec.Operations) + 1 : 1)
+            .Select(generation => Encoding.UTF8.GetBytes(Fixtures.Definitions(spec.FlagCount, generation))).ToArray()
+        : [];
     readonly bool[] _seen = new bool[Math.Max(100, spec.Operations)];
     readonly object _deliveryLock = new();
     int _expected;
@@ -62,7 +66,7 @@ internal sealed class Transport(Workload spec) : HttpMessageHandler, IHttpClient
         if (request.Method == HttpMethod.Get && request.RequestUri?.AbsolutePath.TrimEnd('/') == "/flags/definitions")
         {
             Interlocked.Increment(ref DefinitionRequests);
-            return Response(Fixtures.Definitions(spec.FlagCount, Generation));
+            return Response(_definitions[Generation]);
         }
         if (request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath.TrimEnd('/') == "/batch")
         {
@@ -85,9 +89,14 @@ internal sealed class Transport(Workload spec) : HttpMessageHandler, IHttpClient
         throw new InvalidOperationException($"Unexpected request: {request.Method} {request.RequestUri?.AbsolutePath}");
     }
 
-    static HttpResponseMessage Response(string json) => new(HttpStatusCode.OK)
+    static HttpResponseMessage Response(string json) => Response(Encoding.UTF8.GetBytes(json));
+
+    static HttpResponseMessage Response(byte[] json) => new(HttpStatusCode.OK)
     {
-        Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        Content = new ByteArrayContent(json)
+        {
+            Headers = { ContentType = new("application/json") { CharSet = "utf-8" } },
+        },
     };
 }
 

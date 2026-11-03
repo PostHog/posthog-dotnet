@@ -160,6 +160,26 @@ internal static class Controls
         }
     }
 
+    static async Task CheckDefinitionResponses()
+    {
+        var spec = Fixtures.Workloads(false).Single(s => s.Mode == "refresh");
+        using var transport = new Transport(spec);
+        using var client = transport.CreateClient("benchmark");
+        var uri = new Uri("http://benchmark.invalid/flags/definitions");
+        using (await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead)) { }
+        for (var generation = 0; generation <= spec.Operations; generation++)
+        {
+            transport.Generation = generation;
+            var expected = Fixtures.Definitions(spec.FlagCount, generation);
+            var before = GC.GetTotalAllocatedBytes(precise: true);
+            using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+            var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+            Program.Require(allocated < 32768, "Definition response rebuilt or copied its fixture during a request");
+            Program.Require(response.Content.Headers.ContentType?.ToString() == "application/json; charset=utf-8", "Incorrect definitions content type");
+            Program.Require(await response.Content.ReadAsStringAsync() == expected, "Incorrect cached definition generation");
+        }
+    }
+
     static async Task CheckFailedDelivery()
     {
         foreach (var strategy in new[] { "steady", "burst" })
@@ -183,6 +203,7 @@ internal static class Controls
         CheckInventory();
         CheckReceiver();
         await CheckSchedulesAndRefresh();
+        await CheckDefinitionResponses();
         await CheckFailedDelivery();
         foreach (var spec in Fixtures.Workloads(smoke: true))
         {
