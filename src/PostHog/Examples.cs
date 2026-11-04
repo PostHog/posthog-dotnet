@@ -158,4 +158,27 @@ public static class Examples
                 ]
             });
     }
+
+    /// <summary>
+    /// Runs the prompt management snippets used by the documentation.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+    internal static async Task FetchPrompts()
+    {
+        await using var posthog = new PostHogClient(new PostHogOptions
+        {
+            ProjectToken = "<ph_project_token>",
+            SecretKey = Environment.GetEnvironmentVariable("PostHog__SecretKey"),
+        });
+
+        var prompt = await posthog.Prompts.GetAsync("support-system-prompt", new Prompts.GetPromptOptions
+        {
+            Label = "production",
+            Fallback = "You are a helpful assistant.",
+        });
+
+        Console.WriteLine(prompt.Prompt);
+        Console.WriteLine(prompt.Source);
+        Console.WriteLine(prompt.Config?.GetProperty("model").GetString());
+    }
 }

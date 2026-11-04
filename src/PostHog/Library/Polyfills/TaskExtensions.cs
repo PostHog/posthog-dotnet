@@ -49,7 +49,11 @@ internal static class TaskExtensions
     /// </summary>
     public static async Task WaitAsync(this Task task, CancellationToken cancellationToken)
     {
-        var delayTask = Task.Delay(Timeout.Infinite, cancellationToken);
+        // The delay listens on a linked source, not on the caller's token directly, so disposing the source
+        // releases the registration when the task wins. Otherwise a long-lived token keeps one registration
+        // per completed wait until it is cancelled.
+        using var delayCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delayTask = Task.Delay(Timeout.Infinite, delayCancellation.Token);
 
         var completedTask = await Task.WhenAny(task, delayTask);
         if (completedTask == delayTask)
@@ -57,7 +61,22 @@ internal static class TaskExtensions
             throw new OperationCanceledException(cancellationToken);
         }
 
+        delayCancellation.Cancel();
         await task; // Ensure exception is thrown if the original task failed
+    }
+
+    /// <summary>
+    /// Waits for a <see cref="Task{TResult}"/> to complete, or throws <see cref="OperationCanceledException"/>
+    /// when <paramref name="cancellationToken"/> is cancelled first. The task itself keeps running.
+    /// </summary>
+    public static async Task<TResult> WaitAsync<TResult>(this Task<TResult> task, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.CanBeCanceled)
+        {
+            await ((Task)task).WaitAsync(cancellationToken);
+        }
+
+        return await task;
     }
 }
 

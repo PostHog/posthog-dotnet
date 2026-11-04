@@ -158,6 +158,16 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public TimeSpan FeatureFlagPollInterval { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// How long a prompt fetched by <see cref="PostHogClient.Prompts"/> is served from the cache before it is fetched
+    /// again. (Default: 5 minutes)
+    /// </summary>
+    /// <remarks>
+    /// Each <c>GetAsync</c> call can override it. <see cref="TimeSpan.Zero"/> fetches on every call. Prompt fetches
+    /// are rate limited per key, so a short TTL on a busy service can hit that limit.
+    /// </remarks>
+    public TimeSpan PromptCacheTtl { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// The size limit of the $feature_flag_sent cache.
     /// </summary>
     /// <remarks>
