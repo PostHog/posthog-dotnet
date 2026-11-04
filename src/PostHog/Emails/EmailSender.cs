@@ -623,7 +623,6 @@ internal sealed class EmailSender : IPostHogEmails
 
     static Dictionary<string, object> AttachmentBody(EmailAttachment file)
     {
-        // System.Text.Json writes ReadOnlyMemory<byte> as standard Base64.
         var body = new Dictionary<string, object>
         {
             ["filename"] = file.Filename,
