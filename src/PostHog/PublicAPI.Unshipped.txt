@@ -23,6 +23,8 @@ PostHog.Json.PropertyFilterValue.IsSuffixOf(object? other, System.StringComparis
 PostHog.PostHogClient.Prompts.get -> PostHog.Prompts.IPostHogPrompts!
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?
 PostHog.PostHogOptions.BeforeSend.set -> void
+PostHog.PostHogOptions.CaptureUnhandledExceptions.get -> bool
+PostHog.PostHogOptions.CaptureUnhandledExceptions.set -> void
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void
 PostHog.PostHogOptions.PromptCacheTtl.get -> System.TimeSpan

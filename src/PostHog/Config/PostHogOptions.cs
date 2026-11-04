@@ -135,6 +135,15 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public bool Disabled { get; set; }
 
     /// <summary>
+    /// Captures unhandled runtime exceptions and unobserved task exceptions. Defaults to <c>false</c>.
+    /// An unhandled runtime exception triggers a best-effort flush before process termination.
+    /// </summary>
+    /// <remarks>
+    /// Read once during <see cref="PostHogClient"/> construction. Dispose the client to remove the runtime handlers.
+    /// </remarks>
+    public bool CaptureUnhandledExceptions { get; set; }
+
+    /// <summary>
     /// PostHog API host, usually 'https://us.i.posthog.com' (default) or 'https://eu.i.posthog.com'
     /// </summary>
     public Uri HostUrl { get; set; } = new("https://us.i.posthog.com");
