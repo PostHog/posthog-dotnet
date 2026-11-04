@@ -408,6 +408,10 @@ public class TheGetAsyncMethod
 
         Assert.Equal("rate_limited", next.Code);
         Assert.Empty(retried.ReceivedRequests);
+        // The failure is still logged although nobody waited for it, so the outage does not stay hidden
+        // behind fallbacks for the whole cooldown.
+        var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Contains("nothing is cached", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -431,7 +435,7 @@ public class TheGetAsyncMethod
         Assert.Equal(PromptSource.CodeFallback, inCooldown.Source);
         // The failed fetch warns once. The calls it puts in cooldown serve the fallback quietly.
         var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
-        Assert.Contains("fallback", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("nothing is cached", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]
