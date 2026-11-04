@@ -1,8 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-#if NETSTANDARD2_0
-using System.Runtime.InteropServices;
-#endif
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -624,12 +621,13 @@ internal sealed class EmailSender : IPostHogEmails
         return body;
     }
 
-    static Dictionary<string, string> AttachmentBody(EmailAttachment file)
+    static Dictionary<string, object> AttachmentBody(EmailAttachment file)
     {
-        var body = new Dictionary<string, string>
+        // System.Text.Json writes ReadOnlyMemory<byte> as standard Base64.
+        var body = new Dictionary<string, object>
         {
             ["filename"] = file.Filename,
-            ["content"] = Base64(file.Content),
+            ["content"] = file.Content,
         };
         if (file.ContentType is not null)
         {
@@ -643,15 +641,6 @@ internal sealed class EmailSender : IPostHogEmails
 
         return body;
     }
-
-#if NETSTANDARD2_0
-    static string Base64(ReadOnlyMemory<byte> content) =>
-        MemoryMarshal.TryGetArray(content, out var segment)
-            ? Convert.ToBase64String(segment.Array!, segment.Offset, segment.Count)
-            : Convert.ToBase64String(content.ToArray());
-#else
-    static string Base64(ReadOnlyMemory<byte> content) => Convert.ToBase64String(content.Span);
-#endif
 
     static bool IsTemplateKey(string? key)
     {

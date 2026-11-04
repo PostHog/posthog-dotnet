@@ -62,6 +62,11 @@ public sealed class SendTemplateEmailOptions : SendEmailOptions
 /// <remarks>
 /// Needs <see cref="Html"/>, <see cref="Text"/> or both. To send a React email, render it to HTML in your app first
 /// and pass it as <see cref="Html"/>.
+/// <para>
+/// A PostHog version that doesn't take <see cref="Cc"/>, <see cref="Bcc"/> or <see cref="Attachments"/> yet refuses
+/// the send with a <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. It never sends
+/// the email without them.
+/// </para>
 /// </remarks>
 public sealed class SendCodeEmailOptions : SendEmailOptions
 {
@@ -109,11 +114,6 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// <summary>
     /// Files sent with the email. At most 10, and 512 KB in total.
     /// </summary>
-    /// <remarks>
-    /// A PostHog version that doesn't take <see cref="Cc"/>, <see cref="Bcc"/> or <see cref="Attachments"/> yet
-    /// refuses the send with a <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. It
-    /// never sends the email without them.
-    /// </remarks>
     public IReadOnlyList<EmailAttachment>? Attachments { get; init; }
 
     /// <summary>
