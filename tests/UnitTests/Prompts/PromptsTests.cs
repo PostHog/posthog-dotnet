@@ -387,13 +387,44 @@ public class TheGetAsyncMethod
     }
 
     [Fact]
+    public async Task StartsTheCooldownWhenEveryCallerCancelledBeforeTheFetchFailed()
+    {
+        var container = CreateContainer();
+        var gate = new TaskCompletionSource<HttpResponseMessage>();
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, () => gate.Task);
+        var retried = container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        var client = container.Activate<PostHogClient>();
+        using var cancellation = new CancellationTokenSource();
+
+        // Started off the test's synchronization context, so the shared fetch continues inline when the gate
+        // completes and has failed before the next call is made.
+        var cancelled = Task.Run(() => client.Prompts.GetAsync(PromptName, cancellationToken: cancellation.Token));
+        await cancellation.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        var rateLimited = StatusResponse(HttpStatusCode.TooManyRequests);
+        rateLimited.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
+        gate.SetResult(rateLimited);
+        var next = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAsync(PromptName));
+
+        Assert.Equal("rate_limited", next.Code);
+        Assert.Empty(retried.ReceivedRequests);
+        // The failure is still logged although nobody waited for it, so the outage does not stay hidden
+        // behind fallbacks for the whole cooldown.
+        var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Contains("nothing is cached", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ReturnsTheFallbackWhenNothingIsCachedAndTheFetchFails()
     {
         var container = CreateContainer();
         container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, StatusResponse(HttpStatusCode.InternalServerError));
         var client = container.Activate<PostHogClient>();
 
-        var result = await client.Prompts.GetAsync(PromptName, new GetPromptOptions { Fallback = "You are a helpful assistant." });
+        var withFallback = new GetPromptOptions { Fallback = "You are a helpful assistant." };
+
+        var result = await client.Prompts.GetAsync(PromptName, withFallback);
+        var inCooldown = await client.Prompts.GetAsync(PromptName, withFallback);
 
         Assert.Equal(PromptSource.CodeFallback, result.Source);
         Assert.Equal("You are a helpful assistant.", result.Prompt);
@@ -401,8 +432,10 @@ public class TheGetAsyncMethod
         Assert.Null(result.Version);
         Assert.Null(result.Label);
         Assert.Null(result.Config);
+        Assert.Equal(PromptSource.CodeFallback, inCooldown.Source);
+        // The failed fetch warns once. The calls it puts in cooldown serve the fallback quietly.
         var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
-        Assert.Contains("fallback", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("nothing is cached", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]

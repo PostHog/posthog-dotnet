@@ -82,12 +82,6 @@ internal sealed class PromptFetcher : IPostHogPrompts
             }
             catch (PromptFetchException e)
             {
-                StartCooldown(key, e);
-                if (cached is not null)
-                {
-                    _logger.LogWarningServingStaleCache(e, Describe(key));
-                }
-
                 error = e;
             }
         }
@@ -99,7 +93,6 @@ internal sealed class PromptFetcher : IPostHogPrompts
 
         if (options?.Fallback is { } fallback)
         {
-            _logger.LogWarningServingFallback(error, Describe(key));
             return new PromptResult { Source = PromptSource.CodeFallback, Prompt = fallback };
         }
 
@@ -114,7 +107,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
             ? failure.Error
             : null;
 
-    void StartCooldown(PromptCacheKey key, PromptFetchException error)
+    DateTimeOffset StartCooldown(PromptCacheKey key, PromptFetchException error)
     {
         var cooldown = error.RetryAfter ?? DefaultRefetchCooldown;
         if (cooldown > MaxRefetchCooldown)
@@ -123,7 +116,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
         }
 
         var failure = new FailedFetch(_timeProvider.GetUtcNow() + cooldown, error);
-        _failures.AddOrUpdate(key, failure, (_, existing) => existing.RetryNotBefore >= failure.RetryNotBefore ? existing : failure);
+        return _failures.AddOrUpdate(key, failure, (_, existing) => existing.RetryNotBefore >= failure.RetryNotBefore ? existing : failure).RetryNotBefore;
     }
 
     /// <summary>
@@ -153,6 +146,22 @@ internal sealed class PromptFetcher : IPostHogPrompts
             _cache[key] = fetched;
             _failures.TryRemove(key, out _);
             return fetched;
+        }
+        catch (PromptFetchException e)
+        {
+            // The fetch records and logs its own failure, once, so neither depends on a caller still waiting
+            // for it. Callers serve the stale version, their fallback or the error without logging again.
+            var retryNotBefore = StartCooldown(key, e);
+            if (_cache.ContainsKey(key))
+            {
+                _logger.LogWarningServingStaleCache(e, Describe(key), retryNotBefore);
+            }
+            else
+            {
+                _logger.LogWarningNothingCached(e, Describe(key), retryNotBefore);
+            }
+
+            throw;
         }
         finally
         {
@@ -388,14 +397,14 @@ internal static partial class PromptFetcherLoggerExtensions
     [LoggerMessage(
         EventId = 1300,
         Level = LogLevel.Warning,
-        Message = "[PROMPTS] Failed to fetch {Prompt}, serving the stale cached version")]
-    public static partial void LogWarningServingStaleCache(this ILogger<PromptFetcher> logger, Exception exception, string prompt);
+        Message = "[PROMPTS] Failed to fetch {Prompt}, serving the stale cached version. No new request before {RetryNotBefore}")]
+    public static partial void LogWarningServingStaleCache(this ILogger<PromptFetcher> logger, Exception exception, string prompt, DateTimeOffset retryNotBefore);
 
     [LoggerMessage(
         EventId = 1301,
         Level = LogLevel.Warning,
-        Message = "[PROMPTS] Failed to fetch {Prompt}, serving the fallback")]
-    public static partial void LogWarningServingFallback(this ILogger<PromptFetcher> logger, Exception exception, string prompt);
+        Message = "[PROMPTS] Failed to fetch {Prompt} and nothing is cached. Callers get their fallback or this error, with no new request before {RetryNotBefore}")]
+    public static partial void LogWarningNothingCached(this ILogger<PromptFetcher> logger, Exception exception, string prompt, DateTimeOffset retryNotBefore);
 
     [LoggerMessage(
         EventId = 1302,
