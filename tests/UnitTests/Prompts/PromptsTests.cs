@@ -90,19 +90,22 @@ public class TheGetAsyncMethod
         Assert.Equal("Production text", result.Prompt);
         Assert.Equal(2, result.Version);
         Assert.Equal("production", result.Label);
+        Assert.Empty(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
     }
 
-    [Fact]
-    public async Task WarnsWhenTheServerIgnoresTheLabel()
+    [Theory]
+    [InlineData("""{"name": "support-system-prompt", "prompt": "Text", "version": 3}""", null)]
+    [InlineData("""{"name": "support-system-prompt", "prompt": "Text", "version": 3, "label": "staging"}""", "staging")]
+    public async Task WarnsWhenTheServerDoesNotResolveTheRequestedLabel(string body, string? resolvedLabel)
     {
         var container = CreateContainer();
-        container.FakeHttpMessageHandler.AddResponse(PromptUrl(query: "&label=production"), HttpMethod.Get, LatestPromptJson);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(query: "&label=production"), HttpMethod.Get, body);
         var client = container.Activate<PostHogClient>();
 
         var result = await client.Prompts.GetAsync(PromptName, new GetPromptOptions { Label = "production" });
 
         Assert.Equal(PromptSource.Api, result.Source);
-        Assert.Null(result.Label);
+        Assert.Equal(resolvedLabel, result.Label);
         var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
         Assert.Contains("\"production\"", warning.Message, StringComparison.Ordinal);
         Assert.Contains("labels", warning.Message, StringComparison.Ordinal);
