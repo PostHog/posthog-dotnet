@@ -73,6 +73,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
         // A failed fetch put this key in cooldown. Not sending another request on every call keeps a throttled
         // client from staying throttled. A zero TTL asks for a fetch on every call, so it opts out.
         var error = ttl > TimeSpan.Zero ? ErrorInCooldown(key) : null;
+        var inCooldown = error is not null;
         if (error is null)
         {
             try
@@ -82,24 +83,28 @@ internal sealed class PromptFetcher : IPostHogPrompts
             }
             catch (PromptFetchException e)
             {
-                StartCooldown(key, e);
-                if (cached is not null)
-                {
-                    _logger.LogWarningServingStaleCache(e, Describe(key));
-                }
-
                 error = e;
             }
         }
 
+        // A call inside the cooldown serves the same thing the failed fetch did, so it does not warn again.
         if (cached is not null)
         {
+            if (!inCooldown)
+            {
+                _logger.LogWarningServingStaleCache(error, Describe(key));
+            }
+
             return cached.ToResult(PromptSource.StaleCache);
         }
 
         if (options?.Fallback is { } fallback)
         {
-            _logger.LogWarningServingFallback(error, Describe(key));
+            if (!inCooldown)
+            {
+                _logger.LogWarningServingFallback(error, Describe(key));
+            }
+
             return new PromptResult { Source = PromptSource.CodeFallback, Prompt = fallback };
         }
 
@@ -153,6 +158,13 @@ internal sealed class PromptFetcher : IPostHogPrompts
             _cache[key] = fetched;
             _failures.TryRemove(key, out _);
             return fetched;
+        }
+        catch (PromptFetchException e)
+        {
+            // Recorded by the fetch, not by its callers, so the cooldown still starts when every caller
+            // cancelled before the failure arrived.
+            StartCooldown(key, e);
+            throw;
         }
         finally
         {
