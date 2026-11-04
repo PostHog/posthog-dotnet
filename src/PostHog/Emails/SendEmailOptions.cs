@@ -97,6 +97,26 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public IReadOnlyList<string>? ReplyTo { get; init; }
 
     /// <summary>
+    /// Bare addresses, such as <c>finance@example.com</c>, that get a visible copy. At most 10.
+    /// </summary>
+    public IReadOnlyList<string>? Cc { get; init; }
+
+    /// <summary>
+    /// Bare addresses that get a copy the other recipients never see. At most 10.
+    /// </summary>
+    public IReadOnlyList<string>? Bcc { get; init; }
+
+    /// <summary>
+    /// Files sent with the email. At most 10, and 512 KB in total.
+    /// </summary>
+    /// <remarks>
+    /// A PostHog version that doesn't take <see cref="Cc"/>, <see cref="Bcc"/> or <see cref="Attachments"/> yet
+    /// refuses the send with a <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. It
+    /// never sends the email without them.
+    /// </remarks>
+    public IReadOnlyList<EmailAttachment>? Attachments { get; init; }
+
+    /// <summary>
     /// Whether PostHog captures the email's engagement events (sent, delivered, opened, clicked, bounced) as events
     /// of the recipient. (Default: <c>true</c>)
     /// </summary>
@@ -105,4 +125,31 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// in PostHog follows the project's setting, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
     /// </remarks>
     public bool CaptureEngagement { get; init; } = true;
+}
+
+/// <summary>
+/// A file sent with a <see cref="SendCodeEmailOptions"/> email.
+/// </summary>
+public sealed class EmailAttachment
+{
+    /// <summary>
+    /// The file name the recipient sees, such as <c>invoice.pdf</c>. No path.
+    /// </summary>
+    public required string Filename { get; init; }
+
+    /// <summary>
+    /// The file's bytes. The client encodes them as Base64. PostHog can't fetch a file from a path or URL, so read
+    /// the file first.
+    /// </summary>
+    public required ReadOnlyMemory<byte> Content { get; init; }
+
+    /// <summary>
+    /// The MIME type, such as <c>application/pdf</c>. Without it, the type follows from <see cref="Filename"/>.
+    /// </summary>
+    public string? ContentType { get; init; }
+
+    /// <summary>
+    /// Shows the file inline: with <c>logo</c> here, reference it in the HTML as <c>&lt;img src="cid:logo"&gt;</c>.
+    /// </summary>
+    public string? ContentId { get; init; }
 }

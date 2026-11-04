@@ -232,8 +232,67 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Single(harness.Requests).Body);
     }
 
+    [Fact]
+    public async Task SendsCopiesAndAttachments()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        byte[] file = [0x00, 0x25, 0x50, 0x44, 0x46, 0xFF];
+
+        await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "invoice",
+            Subject = "Your invoice",
+            Html = "<img src=\"cid:logo\">",
+            Cc = ["finance@example.com"],
+            Bcc = ["audit@example.com", "legal@example.com"],
+            Attachments =
+            [
+                new EmailAttachment
+                {
+                    Filename = "invoice.pdf",
+                    Content = file.AsMemory(1, 4),
+                    ContentType = "application/pdf",
+                },
+                new EmailAttachment { Filename = "logo.png", Content = file, ContentId = "logo" },
+            ],
+        });
+
+        Assert.Equal(
+            """{"template_key":"invoice","to":"user@example.com","subject":"Your invoice","html":"\u003Cimg src=\u0022cid:logo\u0022\u003E","cc":["finance@example.com"],"bcc":["audit@example.com","legal@example.com"],"attachments":[{"filename":"invoice.pdf","content":"JVBERg==","content_type":"application/pdf"},{"filename":"logo.png","content":"ACVQREb/","content_id":"logo"}],"capture_engagement":true}""",
+            Assert.Single(harness.Requests).Body);
+    }
+
+    [Fact]
+    public async Task LeavesOutEmptyCopyAndAttachmentLists()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "receipt",
+            Subject = "Your receipt",
+            Text = "Thanks!",
+            Cc = [],
+            Bcc = [],
+            Attachments = [],
+        });
+
+        Assert.Equal(
+            """{"template_key":"receipt","to":"user@example.com","subject":"Your receipt","text":"Thanks!","capture_engagement":true}""",
+            Assert.Single(harness.Requests).Body);
+    }
+
     public static TheoryData<string, SendCodeEmailOptions> InvalidCodeSends => new()
     {
+        { "Cc", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Cc = [" "] } },
+        { "Bcc", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Bcc = [null!] } },
+        { "Attachments", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Attachments = [null!] } },
+        { "Filename", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Attachments = [new EmailAttachment { Filename = " ", Content = new byte[] { 1 } }] } },
+        { "Filename", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Attachments = [new EmailAttachment { Filename = null!, Content = new byte[] { 1 } }] } },
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "password reset", Subject = "s", Html = "h" } },
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "", Subject = "s", Html = "h" } },
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = new string('k', 401), Subject = "s", Html = "h" } },

@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
+#if NETSTANDARD2_0
+using System.Runtime.InteropServices;
+#endif
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -551,6 +554,26 @@ internal sealed class EmailSender : IPostHogEmails
             throw new ArgumentException("ReplyTo must not hold a blank address.", nameof(email));
         }
 
+        if (email.Cc is { } cc && cc.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Cc must not hold a blank address.", nameof(email));
+        }
+
+        if (email.Bcc is { } bcc && bcc.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Bcc must not hold a blank address.", nameof(email));
+        }
+
+        if (email.Attachments is { } attachments && attachments.Any(file => file is null))
+        {
+            throw new ArgumentException("Attachments must not hold a null file.", nameof(email));
+        }
+
+        if (email.Attachments is { } named && named.Any(file => string.IsNullOrWhiteSpace(file.Filename)))
+        {
+            throw new ArgumentException("Every attachment needs a Filename, such as invoice.pdf.", nameof(email));
+        }
+
         var body = new Dictionary<string, object?>
         {
             ["template_key"] = email.TemplateKey,
@@ -577,6 +600,21 @@ internal sealed class EmailSender : IPostHogEmails
             body["reply_to"] = email.ReplyTo;
         }
 
+        if (email.Cc is { Count: > 0 })
+        {
+            body["cc"] = email.Cc;
+        }
+
+        if (email.Bcc is { Count: > 0 })
+        {
+            body["bcc"] = email.Bcc;
+        }
+
+        if (email.Attachments is { Count: > 0 })
+        {
+            body["attachments"] = email.Attachments.Select(AttachmentBody).ToList();
+        }
+
         body["capture_engagement"] = email.CaptureEngagement;
         if (email.DistinctId is not null)
         {
@@ -585,6 +623,35 @@ internal sealed class EmailSender : IPostHogEmails
 
         return body;
     }
+
+    static Dictionary<string, string> AttachmentBody(EmailAttachment file)
+    {
+        var body = new Dictionary<string, string>
+        {
+            ["filename"] = file.Filename,
+            ["content"] = Base64(file.Content),
+        };
+        if (file.ContentType is not null)
+        {
+            body["content_type"] = file.ContentType;
+        }
+
+        if (file.ContentId is not null)
+        {
+            body["content_id"] = file.ContentId;
+        }
+
+        return body;
+    }
+
+#if NETSTANDARD2_0
+    static string Base64(ReadOnlyMemory<byte> content) =>
+        MemoryMarshal.TryGetArray(content, out var segment)
+            ? Convert.ToBase64String(segment.Array!, segment.Offset, segment.Count)
+            : Convert.ToBase64String(content.ToArray());
+#else
+    static string Base64(ReadOnlyMemory<byte> content) => Convert.ToBase64String(content.Span);
+#endif
 
     static bool IsTemplateKey(string? key)
     {
