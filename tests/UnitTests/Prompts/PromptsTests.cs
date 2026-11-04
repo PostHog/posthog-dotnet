@@ -320,6 +320,31 @@ public class TheGetAsyncMethod
     }
 
     [Fact]
+    public async Task BacksOffOnAColdCacheToo()
+    {
+        var container = CreateContainer();
+        var rateLimited = StatusResponse(HttpStatusCode.TooManyRequests);
+        rateLimited.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(30));
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, rateLimited);
+        var recovered = container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        var client = container.Activate<PostHogClient>();
+        var withFallback = new GetPromptOptions { Fallback = "Fallback text" };
+
+        var failed = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAsync(PromptName));
+        container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(29));
+        var inCooldown = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAsync(PromptName));
+        var fallback = await client.Prompts.GetAsync(PromptName, withFallback);
+        container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(1));
+        var afterCooldown = await client.Prompts.GetAsync(PromptName, withFallback);
+
+        Assert.Equal("rate_limited", failed.Code);
+        Assert.Equal("rate_limited", inCooldown.Code);
+        Assert.Equal(PromptSource.CodeFallback, fallback.Source);
+        Assert.Equal(PromptSource.Api, afterCooldown.Source);
+        Assert.Single(recovered.ReceivedRequests);
+    }
+
+    [Fact]
     public async Task ConcurrentCallersShareOneRequest()
     {
         var container = CreateContainer();

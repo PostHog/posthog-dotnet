@@ -18,8 +18,8 @@ internal sealed class PromptFetcher : IPostHogPrompts
 {
     const string PromptsPath = "/api/environments/@current/llm_prompts/name/";
 
-    // After a refetch fails, the stale entry is served without another request for this long,
-    // or for the Retry-After the server sent, capped so a bad header cannot park a prompt for days.
+    // After a fetch fails, no request is sent for this key for this long, or for the Retry-After the server
+    // sent, capped so a bad header cannot park a prompt for days.
     static readonly TimeSpan DefaultRefetchCooldown = TimeSpan.FromSeconds(60);
     static readonly TimeSpan MaxRefetchCooldown = TimeSpan.FromHours(1);
 
@@ -30,6 +30,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
     readonly ILogger<PromptFetcher> _logger;
     readonly ConcurrentDictionary<PromptCacheKey, CachedPrompt> _cache = new();
     readonly ConcurrentDictionary<PromptCacheKey, Lazy<Task<CachedPrompt>>> _inFlight = new();
+    readonly ConcurrentDictionary<PromptCacheKey, FailedFetch> _failures = new();
 
     public PromptFetcher(
         HttpClient httpClient,
@@ -63,49 +64,57 @@ internal sealed class PromptFetcher : IPostHogPrompts
         var key = new PromptCacheKey(name, options?.Version, options?.Label);
         var ttl = options?.CacheTtl ?? _options.PromptCacheTtl;
 
-        if (_cache.TryGetValue(key, out var cached))
+        _cache.TryGetValue(key, out var cached);
+        if (cached is not null && IsFresh(cached, ttl))
         {
-            if (IsFresh(cached, ttl))
-            {
-                return cached.ToResult(PromptSource.Cache);
-            }
+            return cached.ToResult(PromptSource.Cache);
+        }
 
-            // A failed refetch put this entry in cooldown. Serving it keeps a throttled client from
-            // sending another request on every call. A zero TTL asks for a fetch on every call, so it opts out.
-            if (ttl > TimeSpan.Zero && cached.RetryNotBefore is { } retryNotBefore && _timeProvider.GetUtcNow() < retryNotBefore)
+        // A failed fetch put this key in cooldown. Not sending another request on every call keeps a throttled
+        // client from staying throttled. A zero TTL asks for a fetch on every call, so it opts out.
+        var error = ttl > TimeSpan.Zero ? ErrorInCooldown(key) : null;
+        if (error is null)
+        {
+            try
             {
-                return cached.ToResult(PromptSource.StaleCache);
+                var fetched = await FetchOnceAsync(key, ttl, cancellationToken).ConfigureAwait(false);
+                return fetched.ToResult(PromptSource.Api);
+            }
+            catch (PromptFetchException e)
+            {
+                StartCooldown(key, e);
+                if (cached is not null)
+                {
+                    _logger.LogWarningServingStaleCache(e, Describe(key));
+                }
+
+                error = e;
             }
         }
 
-        try
+        if (cached is not null)
         {
-            var fetched = await FetchOnceAsync(key, ttl, cancellationToken).ConfigureAwait(false);
-            return fetched.ToResult(PromptSource.Api);
+            return cached.ToResult(PromptSource.StaleCache);
         }
-        catch (PromptFetchException e)
+
+        if (options?.Fallback is { } fallback)
         {
-            if (cached is not null)
-            {
-                StartCooldown(key, cached, e);
-                _logger.LogWarningServingStaleCache(e, Describe(key));
-                return cached.ToResult(PromptSource.StaleCache);
-            }
-
-            if (options?.Fallback is { } fallback)
-            {
-                _logger.LogWarningServingFallback(e, Describe(key));
-                return new PromptResult { Source = PromptSource.CodeFallback, Prompt = fallback };
-            }
-
-            throw;
+            _logger.LogWarningServingFallback(error, Describe(key));
+            return new PromptResult { Source = PromptSource.CodeFallback, Prompt = fallback };
         }
+
+        throw error;
     }
 
     bool IsFresh(CachedPrompt cached, TimeSpan ttl)
         => ttl > TimeSpan.Zero && _timeProvider.GetUtcNow() - cached.FetchedAt < ttl;
 
-    void StartCooldown(PromptCacheKey key, CachedPrompt cached, PromptFetchException error)
+    PromptFetchException? ErrorInCooldown(PromptCacheKey key)
+        => _failures.TryGetValue(key, out var failure) && _timeProvider.GetUtcNow() < failure.RetryNotBefore
+            ? failure.Error
+            : null;
+
+    void StartCooldown(PromptCacheKey key, PromptFetchException error)
     {
         var cooldown = error.RetryAfter ?? DefaultRefetchCooldown;
         if (cooldown > MaxRefetchCooldown)
@@ -113,14 +122,8 @@ internal sealed class PromptFetcher : IPostHogPrompts
             cooldown = MaxRefetchCooldown;
         }
 
-        var retryNotBefore = _timeProvider.GetUtcNow() + cooldown;
-        if (cached.RetryNotBefore is { } existing && existing >= retryNotBefore)
-        {
-            return;
-        }
-
-        // A fetch that succeeded in the meantime replaced the entry, and that entry must stay as it is.
-        _cache.TryUpdate(key, cached.WithRetryNotBefore(retryNotBefore), cached);
+        var failure = new FailedFetch(_timeProvider.GetUtcNow() + cooldown, error);
+        _failures.AddOrUpdate(key, failure, (_, existing) => existing.RetryNotBefore >= failure.RetryNotBefore ? existing : failure);
     }
 
     /// <summary>
@@ -148,6 +151,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
             // Cached before the in-flight entry is released, so a caller that arrives in between
             // finds the entry instead of starting a request.
             _cache[key] = fetched;
+            _failures.TryRemove(key, out _);
             return fetched;
         }
         finally
@@ -352,24 +356,20 @@ internal sealed class PromptFetcher : IPostHogPrompts
 
     readonly record struct PromptCacheKey(string Name, int? Version, string? Label);
 
+    /// <summary>
+    /// The last failed fetch for a key and until when no request is sent for it.
+    /// </summary>
+    sealed record FailedFetch(DateTimeOffset RetryNotBefore, PromptFetchException Error);
+
     sealed class CachedPrompt(
         string prompt,
         string name,
         int version,
         string? label,
         JsonElement? config,
-        DateTimeOffset fetchedAt,
-        DateTimeOffset? retryNotBefore = null)
+        DateTimeOffset fetchedAt)
     {
         public DateTimeOffset FetchedAt { get; } = fetchedAt;
-
-        /// <summary>
-        /// Until when a failed refetch holds this entry in cooldown, or <c>null</c> when it is not in cooldown.
-        /// </summary>
-        public DateTimeOffset? RetryNotBefore { get; } = retryNotBefore;
-
-        public CachedPrompt WithRetryNotBefore(DateTimeOffset value)
-            => new(prompt, name, version, label, config, FetchedAt, value);
 
         public PromptResult ToResult(PromptSource source) => new()
         {
