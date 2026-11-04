@@ -5,6 +5,9 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PostHog.Library;
 using static PostHog.Library.Ensure;
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+using PostHog.Library.Polyfills;
+#endif
 
 namespace PostHog.Prompts;
 
@@ -15,12 +18,18 @@ internal sealed class PromptFetcher : IPostHogPrompts
 {
     const string PromptsPath = "/api/environments/@current/llm_prompts/name/";
 
+    // After a refetch fails, the stale entry is served without another request for this long,
+    // or for the Retry-After the server sent, capped so a bad header cannot park a prompt for days.
+    static readonly TimeSpan DefaultRefetchCooldown = TimeSpan.FromSeconds(60);
+    static readonly TimeSpan MaxRefetchCooldown = TimeSpan.FromHours(1);
+
     readonly HttpClient _httpClient;
     readonly PostHogOptions _options;
     readonly bool _isDisabled;
     readonly TimeProvider _timeProvider;
     readonly ILogger<PromptFetcher> _logger;
     readonly ConcurrentDictionary<PromptCacheKey, CachedPrompt> _cache = new();
+    readonly ConcurrentDictionary<PromptCacheKey, Lazy<Task<CachedPrompt>>> _inFlight = new();
 
     public PromptFetcher(
         HttpClient httpClient,
@@ -54,21 +63,31 @@ internal sealed class PromptFetcher : IPostHogPrompts
         var key = new PromptCacheKey(name, options?.Version, options?.Label);
         var ttl = options?.CacheTtl ?? _options.PromptCacheTtl;
 
-        if (_cache.TryGetValue(key, out var cached) && IsFresh(cached, ttl))
+        if (_cache.TryGetValue(key, out var cached))
         {
-            return cached.ToResult(PromptSource.Cache);
+            if (IsFresh(cached, ttl))
+            {
+                return cached.ToResult(PromptSource.Cache);
+            }
+
+            // A failed refetch put this entry in cooldown. Serving it keeps a throttled client from
+            // sending another request on every call. A zero TTL asks for a fetch on every call, so it opts out.
+            if (ttl > TimeSpan.Zero && cached.RetryNotBefore is { } retryNotBefore && _timeProvider.GetUtcNow() < retryNotBefore)
+            {
+                return cached.ToResult(PromptSource.StaleCache);
+            }
         }
 
         try
         {
-            var fetched = await FetchAsync(key, cancellationToken).ConfigureAwait(false);
-            _cache[key] = fetched;
+            var fetched = await FetchOnceAsync(key, ttl, cancellationToken).ConfigureAwait(false);
             return fetched.ToResult(PromptSource.Api);
         }
         catch (PromptFetchException e)
         {
             if (cached is not null)
             {
+                StartCooldown(key, cached, e);
                 _logger.LogWarningServingStaleCache(e, Describe(key));
                 return cached.ToResult(PromptSource.StaleCache);
             }
@@ -85,6 +104,57 @@ internal sealed class PromptFetcher : IPostHogPrompts
 
     bool IsFresh(CachedPrompt cached, TimeSpan ttl)
         => ttl > TimeSpan.Zero && _timeProvider.GetUtcNow() - cached.FetchedAt < ttl;
+
+    void StartCooldown(PromptCacheKey key, CachedPrompt cached, PromptFetchException error)
+    {
+        var cooldown = error.RetryAfter ?? DefaultRefetchCooldown;
+        if (cooldown > MaxRefetchCooldown)
+        {
+            cooldown = MaxRefetchCooldown;
+        }
+
+        var retryNotBefore = _timeProvider.GetUtcNow() + cooldown;
+        if (cached.RetryNotBefore is { } existing && existing >= retryNotBefore)
+        {
+            return;
+        }
+
+        // A fetch that succeeded in the meantime replaced the entry, and that entry must stay as it is.
+        _cache.TryUpdate(key, cached.WithRetryNotBefore(retryNotBefore), cached);
+    }
+
+    /// <summary>
+    /// Fetches a prompt, sharing one request with every other caller that wants the same key at the same time.
+    /// </summary>
+    async Task<CachedPrompt> FetchOnceAsync(PromptCacheKey key, TimeSpan ttl, CancellationToken cancellationToken)
+    {
+        // Another caller may have finished a fetch since this caller's cache check.
+        if (_cache.TryGetValue(key, out var cached) && IsFresh(cached, ttl))
+        {
+            return cached;
+        }
+
+        var pending = _inFlight.GetOrAdd(key, k => new Lazy<Task<CachedPrompt>>(() => FetchAndCacheAsync(k)));
+        return await pending.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task<CachedPrompt> FetchAndCacheAsync(PromptCacheKey key)
+    {
+        try
+        {
+            // The request is shared by every caller waiting on this key, so one caller's cancellation
+            // must not cancel it. Callers stop waiting through their own token instead.
+            var fetched = await FetchAsync(key, CancellationToken.None).ConfigureAwait(false);
+            // Cached before the in-flight entry is released, so a caller that arrives in between
+            // finds the entry instead of starting a request.
+            _cache[key] = fetched;
+            return fetched;
+        }
+        finally
+        {
+            _inFlight.TryRemove(key, out _);
+        }
+    }
 
     async Task<CachedPrompt> FetchAsync(PromptCacheKey key, CancellationToken cancellationToken)
     {
@@ -226,6 +296,13 @@ internal sealed class PromptFetcher : IPostHogPrompts
                 label = labelElement.GetString();
             }
 
+            // An older PostHog server ignores the label parameter and returns the latest version without a label.
+            // The other SDKs warn and still serve that version, so this one does the same.
+            if (key.Label is { } requestedLabel && label != requestedLabel)
+            {
+                _logger.LogWarningLabelMismatch(requestedLabel, key.Name, label);
+            }
+
             // Older servers do not send config; a non-object value is treated as absent, like the other SDKs.
             JsonElement? config = null;
             if (root.TryGetProperty("config", out var configElement) && configElement.ValueKind == JsonValueKind.Object)
@@ -281,9 +358,18 @@ internal sealed class PromptFetcher : IPostHogPrompts
         int version,
         string? label,
         JsonElement? config,
-        DateTimeOffset fetchedAt)
+        DateTimeOffset fetchedAt,
+        DateTimeOffset? retryNotBefore = null)
     {
         public DateTimeOffset FetchedAt { get; } = fetchedAt;
+
+        /// <summary>
+        /// Until when a failed refetch holds this entry in cooldown, or <c>null</c> when it is not in cooldown.
+        /// </summary>
+        public DateTimeOffset? RetryNotBefore { get; } = retryNotBefore;
+
+        public CachedPrompt WithRetryNotBefore(DateTimeOffset value)
+            => new(prompt, name, version, label, config, FetchedAt, value);
 
         public PromptResult ToResult(PromptSource source) => new()
         {
@@ -310,4 +396,10 @@ internal static partial class PromptFetcherLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[PROMPTS] Failed to fetch {Prompt}, serving the fallback")]
     public static partial void LogWarningServingFallback(this ILogger<PromptFetcher> logger, Exception exception, string prompt);
+
+    [LoggerMessage(
+        EventId = 1302,
+        Level = LogLevel.Warning,
+        Message = "[PROMPTS] Requested label \"{RequestedLabel}\" for prompt \"{Name}\" but the server resolved label \"{ResolvedLabel}\". It may not support prompt labels yet and returned the latest version instead")]
+    public static partial void LogWarningLabelMismatch(this ILogger<PromptFetcher> logger, string requestedLabel, string name, string? resolvedLabel);
 }

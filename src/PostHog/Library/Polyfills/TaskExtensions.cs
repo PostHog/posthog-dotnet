@@ -59,6 +59,20 @@ internal static class TaskExtensions
 
         await task; // Ensure exception is thrown if the original task failed
     }
+
+    /// <summary>
+    /// Waits for a <see cref="Task{TResult}"/> to complete, or throws <see cref="OperationCanceledException"/>
+    /// when <paramref name="cancellationToken"/> is cancelled first. The task itself keeps running.
+    /// </summary>
+    public static async Task<TResult> WaitAsync<TResult>(this Task<TResult> task, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.CanBeCanceled)
+        {
+            await ((Task)task).WaitAsync(cancellationToken);
+        }
+
+        return await task;
+    }
 }
 
 #endif

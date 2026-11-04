@@ -93,6 +93,22 @@ public class TheGetAsyncMethod
     }
 
     [Fact]
+    public async Task WarnsWhenTheServerIgnoresTheLabel()
+    {
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(query: "&label=production"), HttpMethod.Get, LatestPromptJson);
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.Prompts.GetAsync(PromptName, new GetPromptOptions { Label = "production" });
+
+        Assert.Equal(PromptSource.Api, result.Source);
+        Assert.Null(result.Label);
+        var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Contains("\"production\"", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("labels", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UrlEncodesThePromptName()
     {
         var container = CreateContainer();
@@ -245,6 +261,101 @@ public class TheGetAsyncMethod
         Assert.Equal("gpt-4o", result.Config!.Value.GetProperty("model").GetString());
         var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
         Assert.Contains("stale", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BacksOffForAMinuteAfterAFailedRefetch()
+    {
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, StatusResponse(HttpStatusCode.InternalServerError));
+        var recovered = container.FakeHttpMessageHandler.AddResponse(
+            PromptUrl(),
+            HttpMethod.Get,
+            """{"name": "support-system-prompt", "prompt": "Newer text", "version": 4}""");
+        var client = container.Activate<PostHogClient>();
+
+        await client.Prompts.GetAsync(PromptName);
+        container.FakeTimeProvider.Advance(TimeSpan.FromMinutes(5));
+        var failed = await client.Prompts.GetAsync(PromptName);
+        container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(59));
+        var inCooldown = await client.Prompts.GetAsync(PromptName);
+        container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(1));
+        var afterCooldown = await client.Prompts.GetAsync(PromptName);
+
+        Assert.Equal(PromptSource.StaleCache, failed.Source);
+        Assert.Equal(PromptSource.StaleCache, inCooldown.Source);
+        Assert.Equal(PromptSource.Api, afterCooldown.Source);
+        Assert.Equal(4, afterCooldown.Version);
+        Assert.Single(recovered.ReceivedRequests);
+        Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+    }
+
+    [Fact]
+    public async Task BacksOffForTheRetryAfterDelayWhenRateLimited()
+    {
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        var rateLimited = StatusResponse(HttpStatusCode.TooManyRequests);
+        rateLimited.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMinutes(10));
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, rateLimited);
+        var recovered = container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        var client = container.Activate<PostHogClient>();
+
+        await client.Prompts.GetAsync(PromptName);
+        container.FakeTimeProvider.Advance(TimeSpan.FromMinutes(5));
+        var failed = await client.Prompts.GetAsync(PromptName);
+        container.FakeTimeProvider.Advance(TimeSpan.FromMinutes(9));
+        var inCooldown = await client.Prompts.GetAsync(PromptName);
+        container.FakeTimeProvider.Advance(TimeSpan.FromMinutes(1));
+        var afterCooldown = await client.Prompts.GetAsync(PromptName);
+
+        Assert.Equal(PromptSource.StaleCache, failed.Source);
+        Assert.Equal(PromptSource.StaleCache, inCooldown.Source);
+        Assert.Equal(PromptSource.Api, afterCooldown.Source);
+        Assert.Single(recovered.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task ConcurrentCallersShareOneRequest()
+    {
+        var container = CreateContainer();
+        var gate = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var shared = container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, () => gate.Task);
+        var extra = container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        var client = container.Activate<PostHogClient>();
+
+        var first = client.Prompts.GetAsync(PromptName);
+        var second = client.Prompts.GetAsync(PromptName);
+        gate.SetResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(LatestPromptJson) });
+        var results = await Task.WhenAll(first, second);
+
+        Assert.All(results, result => Assert.Equal(PromptSource.Api, result.Source));
+        Assert.All(results, result => Assert.Equal(3, result.Version));
+        Assert.Single(shared.ReceivedRequests);
+        Assert.Empty(extra.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task ACancelledCallerDoesNotCancelTheSharedRequest()
+    {
+        var container = CreateContainer();
+        var gate = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, () => gate.Task);
+        var client = container.Activate<PostHogClient>();
+        using var cancellation = new CancellationTokenSource();
+
+        var cancelled = client.Prompts.GetAsync(PromptName, cancellationToken: cancellation.Token);
+        var waiting = client.Prompts.GetAsync(PromptName);
+        await cancellation.CancelAsync();
+        // Bounded so a fetcher that passes the caller's token to the shared request fails here instead of hanging.
+        Assert.Same(cancelled, await Task.WhenAny(cancelled, Task.Delay(TimeSpan.FromSeconds(5))));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        gate.SetResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(LatestPromptJson) });
+        var result = await waiting;
+
+        Assert.Equal(PromptSource.Api, result.Source);
+        Assert.Equal(3, result.Version);
     }
 
     [Fact]
