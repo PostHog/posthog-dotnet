@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PostHog.Api;
+using PostHog.Emails;
 using PostHog.ErrorTracking;
 using PostHog.Exceptions;
 using PostHog.Features;
@@ -20,6 +21,7 @@ public sealed class PostHogClient : IPostHogClient
 {
     readonly AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext> _asyncBatchHandler;
     readonly PostHogApiClient _apiClient;
+    readonly EmailSender _emails;
     readonly PromptFetcher _prompts;
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
@@ -99,6 +101,12 @@ public sealed class PostHogClient : IPostHogClient
             _timeProvider,
             loggerFactory.CreateLogger<PostHogApiClient>()
         );
+        _emails = new EmailSender(
+            httpClient,
+            _options.Value,
+            _isDisabled,
+            _timeProvider,
+            loggerFactory.CreateLogger<EmailSender>());
         _prompts = new PromptFetcher(
             httpClient,
             _options.Value,
@@ -1434,6 +1442,13 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
+    /// <summary>
+    /// Sends transactional email and reads the status of each email it sent. Needs
+    /// <see cref="PostHogOptions.SecretKey"/> set to a project secret API key. With dependency injection, inject
+    /// <see cref="IPostHogEmails"/> instead.
+    /// </summary>
+    public IPostHogEmails Emails => _emails;
+
     /// <inheritdoc/>
     public string Version => VersionConstants.Version;
 
@@ -1464,7 +1479,7 @@ public sealed class PostHogClient : IPostHogClient
     }
 
     /// <inheritdoc/>
-    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+    public void Dispose() => Task.Run(() => DisposeAsync().AsTask()).GetAwaiter().GetResult();
 
     /// <summary>
     /// Clears the local flags cache.
@@ -1486,7 +1501,7 @@ public sealed class PostHogClient : IPostHogClient
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
         try
         {
-            await _asyncBatchHandler.DisposeAsync();
+            await Task.WhenAll(_emails.CloseAsync(), _asyncBatchHandler.DisposeAsync().AsTask()).ConfigureAwait(false);
             await _featureFlagsLoader.DisposeAsync();
         }
         finally

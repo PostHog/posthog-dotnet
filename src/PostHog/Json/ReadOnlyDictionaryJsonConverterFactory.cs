@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static PostHog.Library.Ensure;
 
 namespace PostHog.Json;
 
@@ -45,6 +46,16 @@ public class ReadonlyDictionaryJsonConverter<TKey, TValue> : JsonConverter<IRead
     /// <inheritdoc />
     public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<TKey, TValue> value, JsonSerializerOptions options)
     {
-        JsonSerializer.Serialize(writer, value, options);
+        NotNull(writer);
+        NotNull(value);
+        var keyConverter = (JsonConverter<TKey>)NotNull(options).GetConverter(typeof(TKey));
+        writer.WriteStartObject();
+        foreach (var pair in value)
+        {
+            keyConverter.WriteAsPropertyName(writer, pair.Key, options);
+            JsonSerializer.Serialize(writer, pair.Value, options);
+        }
+
+        writer.WriteEndObject();
     }
 }

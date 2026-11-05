@@ -113,6 +113,7 @@ internal sealed class NoOpPostHogClient : IPostHogClient, IFeatureFlagEvaluation
     public Task FlushAsync()
         => Task.CompletedTask;
 
+
     public string Version => Versioning.VersionConstants.Version;
 
     public void Dispose()
