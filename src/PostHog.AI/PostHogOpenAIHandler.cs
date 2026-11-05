@@ -770,6 +770,31 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         _usage = JsonNode.Parse(usageElement.GetRawText());
                     }
 
+                    // Responses API streaming: usage is nested under response.usage on the
+                    // terminal event, and text arrives as response.output_text.delta events.
+                    if (
+                        _usage == null
+                        && root.TryGetProperty("response", out var responseElement)
+                        && responseElement.ValueKind == JsonValueKind.Object
+                        && responseElement.TryGetProperty("usage", out var responseUsage)
+                        && responseUsage.ValueKind == JsonValueKind.Object
+                    )
+                    {
+                        _usage = JsonNode.Parse(responseUsage.GetRawText());
+                    }
+
+                    if (
+                        _accumulatedContent != null
+                        && root.TryGetProperty("type", out var typeElement)
+                        && typeElement.ValueKind == JsonValueKind.String
+                        && typeElement.GetString() == "response.output_text.delta"
+                        && root.TryGetProperty("delta", out var textDelta)
+                        && textDelta.ValueKind == JsonValueKind.String
+                    )
+                    {
+                        _accumulatedContent.Append(textDelta.GetString());
+                    }
+
                     // Check for delta content (skip in privacy mode)
                     if (
                         _accumulatedContent != null
