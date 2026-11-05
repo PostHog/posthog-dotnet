@@ -10,6 +10,7 @@ using PostHog.Exceptions;
 using PostHog.Features;
 using PostHog.Json;
 using PostHog.Library;
+using PostHog.Prompts;
 using PostHog.Versioning;
 using static PostHog.Library.Ensure;
 
@@ -21,6 +22,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext> _asyncBatchHandler;
     readonly PostHogApiClient _apiClient;
     readonly EmailSender _emails;
+    readonly PromptFetcher _prompts;
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
     readonly MemoryCache _featureFlagCalledEventCache;
@@ -105,6 +107,12 @@ public sealed class PostHogClient : IPostHogClient
             _isDisabled,
             _timeProvider,
             loggerFactory.CreateLogger<EmailSender>());
+        _prompts = new PromptFetcher(
+            httpClient,
+            _options.Value,
+            _isDisabled,
+            _timeProvider,
+            loggerFactory.CreateLogger<PromptFetcher>());
         _asyncBatchHandler = new AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext>(
             CaptureBatchAsync,
             batchContextFunc: () => new CapturedEventBatchContext(
@@ -133,6 +141,13 @@ public sealed class PostHogClient : IPostHogClient
         _evaluationsHost = new EvaluationsHost(this);
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
     }
+
+    /// <summary>
+    /// Fetches LLM prompts managed in PostHog. Needs <see cref="PostHogOptions.SecretKey"/> set to a personal API
+    /// key with the <c>llm_prompt:read</c> scope. With dependency injection, inject <see cref="IPostHogPrompts"/>
+    /// instead.
+    /// </summary>
+    public IPostHogPrompts Prompts => _prompts;
 
     static bool NormalizeOptions(PostHogOptions options, ILogger<PostHogClient> logger)
     {
