@@ -1,5 +1,55 @@
 # PostHog
 
+## 2.20.0
+
+### Minor Changes
+
+- f2c19aa: The new `PostHogClient.Emails` sends transactional email from your .NET code and reads each email's delivery status.
+  
+  ```csharp
+  using PostHog.Emails;
+  
+  await using var posthog = new PostHogClient(new PostHogOptions
+  {
+      ProjectToken = "phc_...",
+      SecretKey = "phs_...",
+  });
+  
+  var sent = await posthog.Emails.SendAsync(new SendCodeEmailOptions
+  {
+      To = "user@example.com",
+      DistinctId = "user_123",
+      TemplateKey = "password-reset",
+      Subject = "Reset your password",
+      Html = renderedHtml,
+  });
+  
+  var status = await posthog.Emails.GetAsync(sent.Id);
+  Console.WriteLine(status.Status); // "delivered", "bounced", ...
+  ```
+  
+  You can also send a template made in PostHog with `SendTemplateEmailOptions` and its `TemplateId`.
+  
+  You need a project secret API key, the kind that starts with `phs_`. Create one under **Project secret API keys** in your project settings. Set its **Transactional email** scope to Write to send emails, or to Read for a key that only reads statuses. Set it as `SecretKey` on `PostHogOptions`, or as `PostHog:SecretKey` in your configuration when you use `AddPostHog`. Set `AppHost` to your PostHog app URL when you self-host PostHog or send through a reverse proxy.
+  
+  PostHog records each email's delivery, opens and clicks on the person with that `DistinctId`. It groups every email with the same `TemplateKey`, so you see their metrics and logs in one place. The SDK retries a request that hits a network error, a rate limit or an outage twice by default. Every send carries an idempotency key, so a retry never sends the email twice. Pass your own `IdempotencyKey`, such as `welcome:user_123`, and your job runner's retries are safe too.
+  
+  `SendCodeEmailOptions` also takes `From`, `ReplyTo` and `CaptureEngagement = false`. Set `MigratedFrom` on `PostHogOptions` to tell PostHog which email provider you moved from. A failed call throws an `EmailException` with PostHog's `Code` and the HTTP `StatusCode`.
+  
+  Docs: [Send transactional emails with .NET](https://posthog.com/docs/workflows/transactional-emails/dotnet) and the [transactional email overview](https://posthog.com/docs/workflows/transactional-emails).
+
+## 2.19.1
+
+### Patch Changes
+
+- 2a74e62: `Prompts.GetAsync` now starts the refetch cooldown inside the shared request, so a fetch that fails after every waiting caller cancelled still backs off. The failed fetch logs one warning, whether or not a caller was still waiting for it, and calls served from the cooldown do not log again.
+
+## 2.19.0
+
+### Minor Changes
+
+- b70dcf8: Add `PostHogClient.Prompts`, also registered as `IPostHogPrompts` by `AddPostHog`, to fetch LLM prompts managed in PostHog. `GetAsync` fetches a prompt by name, at its latest version or a pinned `Version` or `Label`, with an in-memory cache (`PostHogOptions.PromptCacheTtl`, default 5 minutes, per-call override), the stale cached version when a refetch fails (with a cooldown before the next attempt that honors `Retry-After`), and an optional `Fallback`. Concurrent calls for the same prompt share one request. It needs `SecretKey` set to a personal API key with the `llm_prompt:read` scope.
+
 ## 2.18.1
 
 ### Patch Changes

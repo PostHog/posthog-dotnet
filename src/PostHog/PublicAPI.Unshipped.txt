@@ -111,6 +111,7 @@ PostHog.Features.UnresolvedFlagReasonExtensions
 PostHog.Json.PropertyFilterValue.IsPrefixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.Json.PropertyFilterValue.IsSuffixOf(object? other, System.StringComparison stringComparison) -> bool
 PostHog.PostHogClient.Emails.get -> PostHog.Emails.IPostHogEmails!
+PostHog.PostHogClient.Prompts.get -> PostHog.Prompts.IPostHogPrompts!
 PostHog.PostHogOptions.AllowInsecureAppHost.get -> bool
 PostHog.PostHogOptions.AllowInsecureAppHost.set -> void
 PostHog.PostHogOptions.AppHost.get -> System.Uri?
@@ -125,6 +126,49 @@ PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.get -> int
 PostHog.PostHogOptions.FeatureFlagRequestMaxRetries.set -> void
 PostHog.PostHogOptions.MigratedFrom.get -> string?
 PostHog.PostHogOptions.MigratedFrom.set -> void
+PostHog.PostHogOptions.PromptCacheTtl.get -> System.TimeSpan
+PostHog.PostHogOptions.PromptCacheTtl.set -> void
 PostHog.PostHogOptions.SecretKey.get -> string?
 PostHog.PostHogOptions.SecretKey.set -> void
+PostHog.Prompts.GetPromptOptions
+PostHog.Prompts.GetPromptOptions.CacheTtl.get -> System.TimeSpan?
+PostHog.Prompts.GetPromptOptions.CacheTtl.init -> void
+PostHog.Prompts.GetPromptOptions.Fallback.get -> string?
+PostHog.Prompts.GetPromptOptions.Fallback.init -> void
+PostHog.Prompts.GetPromptOptions.GetPromptOptions() -> void
+PostHog.Prompts.GetPromptOptions.Label.get -> string?
+PostHog.Prompts.GetPromptOptions.Label.init -> void
+PostHog.Prompts.GetPromptOptions.Version.get -> int?
+PostHog.Prompts.GetPromptOptions.Version.init -> void
+PostHog.Prompts.IPostHogPrompts
+PostHog.Prompts.IPostHogPrompts.GetAsync(string! name, PostHog.Prompts.GetPromptOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Prompts.PromptResult!>!
+PostHog.Prompts.PromptFetchException
+PostHog.Prompts.PromptFetchException.Code.get -> string!
+PostHog.Prompts.PromptFetchException.Label.get -> string?
+PostHog.Prompts.PromptFetchException.PromptFetchException() -> void
+PostHog.Prompts.PromptFetchException.PromptFetchException(string! message) -> void
+PostHog.Prompts.PromptFetchException.PromptFetchException(string! message, System.Exception! innerException) -> void
+PostHog.Prompts.PromptFetchException.PromptName.get -> string?
+PostHog.Prompts.PromptFetchException.RetryAfter.get -> System.TimeSpan?
+PostHog.Prompts.PromptFetchException.StatusCode.get -> System.Net.HttpStatusCode?
+PostHog.Prompts.PromptFetchException.Version.get -> int?
+PostHog.Prompts.PromptResult
+PostHog.Prompts.PromptResult.Config.get -> System.Text.Json.JsonElement?
+PostHog.Prompts.PromptResult.Config.init -> void
+PostHog.Prompts.PromptResult.Label.get -> string?
+PostHog.Prompts.PromptResult.Label.init -> void
+PostHog.Prompts.PromptResult.Name.get -> string?
+PostHog.Prompts.PromptResult.Name.init -> void
+PostHog.Prompts.PromptResult.Prompt.get -> string!
+PostHog.Prompts.PromptResult.Prompt.init -> void
+PostHog.Prompts.PromptResult.PromptResult() -> void
+PostHog.Prompts.PromptResult.Source.get -> PostHog.Prompts.PromptSource
+PostHog.Prompts.PromptResult.Source.init -> void
+PostHog.Prompts.PromptResult.Version.get -> int?
+PostHog.Prompts.PromptResult.Version.init -> void
+PostHog.Prompts.PromptSource
+PostHog.Prompts.PromptSource.Api = 0 -> PostHog.Prompts.PromptSource
+PostHog.Prompts.PromptSource.Cache = 1 -> PostHog.Prompts.PromptSource
+PostHog.Prompts.PromptSource.CodeFallback = 3 -> PostHog.Prompts.PromptSource
+PostHog.Prompts.PromptSource.StaleCache = 2 -> PostHog.Prompts.PromptSource
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!

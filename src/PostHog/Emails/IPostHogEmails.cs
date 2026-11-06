@@ -7,9 +7,9 @@ namespace PostHog.Emails;
 /// </summary>
 /// <remarks>
 /// Needs <see cref="PostHogOptions.SecretKey"/> set to a project secret API key (<c>phs_...</c>) with the
-/// <c>hog_flow:write</c> scope to send, or <c>hog_flow:read</c> to read a status. Requests go to the PostHog app
-/// host: PostHog Cloud hosts map to theirs, and any other <see cref="PostHogOptions.HostUrl"/> needs
-/// <see cref="PostHogOptions.AppHost"/>.
+/// <c>transactional_email:write</c> scope to send, or <c>transactional_email:read</c> to read a status. Keys made
+/// with <c>hog_flow:write</c> still work. Requests go to the PostHog app host: PostHog Cloud hosts map to theirs,
+/// and any other <see cref="PostHogOptions.HostUrl"/> needs <see cref="PostHogOptions.AppHost"/>.
 /// </remarks>
 public interface IPostHogEmails
 {

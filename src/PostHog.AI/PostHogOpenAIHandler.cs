@@ -355,11 +355,16 @@ public class PostHogOpenAIHandler : DelegatingHandler
                 // Usage
                 if (responseJson["usage"] is JsonObject usage)
                 {
-                    if (usage["prompt_tokens"] is JsonValue inputTokens)
+                    // Chat Completions uses prompt_tokens/completion_tokens; the Responses API
+                    // uses input_tokens/output_tokens.
+                    if ((usage["prompt_tokens"] ?? usage["input_tokens"]) is JsonValue inputTokens)
                         eventProperties[PostHogAIFieldNames.InputTokens] =
                             inputTokens.GetValue<int>();
 
-                    if (usage["completion_tokens"] is JsonValue outputTokens)
+                    if (
+                        (usage["completion_tokens"] ?? usage["output_tokens"])
+                        is JsonValue outputTokens
+                    )
                         eventProperties[PostHogAIFieldNames.OutputTokens] =
                             outputTokens.GetValue<int>();
 
@@ -376,6 +381,19 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             cacheReadTokens.TryGetValue<int>(out var cacheReadInt)
                                 ? cacheReadInt
                                 : cacheReadTokens.ToString();
+                    }
+
+                    // OpenAI reports cached prompt tokens under *_tokens_details.cached_tokens.
+                    if (
+                        !eventProperties.ContainsKey(PostHogAIFieldNames.CacheReadInputTokens)
+                        && (
+                            (usage["prompt_tokens_details"] as JsonObject)?["cached_tokens"]
+                            ?? (usage["input_tokens_details"] as JsonObject)?["cached_tokens"]
+                        ) is JsonValue cachedTokens
+                        && cachedTokens.TryGetValue<int>(out var cachedInt)
+                    )
+                    {
+                        eventProperties[PostHogAIFieldNames.CacheReadInputTokens] = cachedInt;
                     }
 
                     if (usage["cache_creation_input_tokens"] is JsonValue cacheCreationTokens)

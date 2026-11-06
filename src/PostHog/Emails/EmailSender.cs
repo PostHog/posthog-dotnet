@@ -63,7 +63,7 @@ internal sealed class EmailSender : IPostHogEmails
         using var _ = Enter("no email was sent");
         var (appHost, secretKey) = Connect(
             "no email was sent",
-            "Sending email needs SecretKey, a project secret API key with the hog_flow:write scope.");
+            "Sending email needs SecretKey, a project secret API key with the transactional_email:write scope.");
         var url = new Uri(appHost + SendPath);
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
@@ -89,7 +89,7 @@ internal sealed class EmailSender : IPostHogEmails
         using var _ = Enter("no email status was read");
         var (appHost, secretKey) = Connect(
             "no email status was read",
-            "Reading an email status needs SecretKey, a project secret API key with the hog_flow:read or hog_flow:write scope.");
+            "Reading an email status needs SecretKey, a project secret API key with the transactional_email:read or transactional_email:write scope.");
         var url = new Uri(appHost + StatusPath + id.ToString("D") + "/");
         return await WithRetriesAsync(
             MaxRetriesOption,

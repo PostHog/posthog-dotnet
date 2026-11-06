@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.8
+
+### Patch Changes
+
+- 96e5046: Capture OpenAI cached prompt tokens and Responses API token usage in `$ai_generation` events.
+
 ## 0.1.7
 
 ### Patch Changes

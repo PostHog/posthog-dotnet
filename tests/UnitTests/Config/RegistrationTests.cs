@@ -6,6 +6,7 @@ using PostHog;
 using PostHog.Config;
 using PostHog.Emails;
 using PostHog.Library;
+using PostHog.Prompts;
 
 namespace RegistrationTests;
 
@@ -34,6 +35,7 @@ public class TheAddPostHogMethod
         // Make sure I can create an instance of PostHogClient.
         var client = provider.GetRequiredService<IPostHogClient>();
         Assert.NotNull(client);
+        Assert.Same(((PostHogClient)client).Prompts, provider.GetRequiredService<IPostHogPrompts>());
     }
 
     [Fact]
