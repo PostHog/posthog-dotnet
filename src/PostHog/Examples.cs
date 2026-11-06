@@ -214,5 +214,15 @@ public static class Examples
         Console.WriteLine(prompt.Prompt);
         Console.WriteLine(prompt.Source);
         Console.WriteLine(prompt.Config?.GetProperty("model").GetString());
+
+        var systemPrompt = prompt.Compile(new Dictionary<string, object>
+        {
+            ["company"] = "Acme Corp",
+            ["tier"] = "premium",
+        });
+        Console.WriteLine(systemPrompt);
+
+        // After you publish a new version, remove the cached one so the next call fetches it.
+        posthog.Prompts.ClearCache("support-system-prompt");
     }
 }

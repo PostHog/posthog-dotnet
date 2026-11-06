@@ -125,6 +125,7 @@ PostHog.Prompts.GetPromptOptions.Label.init -> void
 PostHog.Prompts.GetPromptOptions.Version.get -> int?
 PostHog.Prompts.GetPromptOptions.Version.init -> void
 PostHog.Prompts.IPostHogPrompts
+PostHog.Prompts.IPostHogPrompts.ClearCache(string? name = null, int? version = null) -> void
 PostHog.Prompts.IPostHogPrompts.GetAsync(string! name, PostHog.Prompts.GetPromptOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Prompts.PromptResult!>!
 PostHog.Prompts.PromptFetchException
 PostHog.Prompts.PromptFetchException.Code.get -> string!
@@ -137,6 +138,7 @@ PostHog.Prompts.PromptFetchException.RetryAfter.get -> System.TimeSpan?
 PostHog.Prompts.PromptFetchException.StatusCode.get -> System.Net.HttpStatusCode?
 PostHog.Prompts.PromptFetchException.Version.get -> int?
 PostHog.Prompts.PromptResult
+PostHog.Prompts.PromptResult.Compile(System.Collections.Generic.IReadOnlyDictionary<string!, object!>! variables) -> string!
 PostHog.Prompts.PromptResult.Config.get -> System.Text.Json.JsonElement?
 PostHog.Prompts.PromptResult.Config.init -> void
 PostHog.Prompts.PromptResult.Label.get -> string?

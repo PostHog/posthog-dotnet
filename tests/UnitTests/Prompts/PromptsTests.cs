@@ -5,14 +5,16 @@ using Microsoft.Extensions.Logging;
 using PostHog;
 using PostHog.Prompts;
 using UnitTests.Fakes;
+using UnitTests.Library;
+using static PromptsTests.PromptHarness;
 
 namespace PromptsTests;
 
-public class TheGetAsyncMethod
+static class PromptHarness
 {
-    const string PromptName = "support-system-prompt";
+    public const string PromptName = "support-system-prompt";
 
-    const string LatestPromptJson = """
+    public const string LatestPromptJson = """
         {
           "id": "0190f6d2-7c1e-7b3a-9f5e-1c2d3e4f5a6b",
           "name": "support-system-prompt",
@@ -24,18 +26,21 @@ public class TheGetAsyncMethod
         }
         """;
 
-    static Uri PromptUrl(string name = PromptName, string query = "")
+    public static Uri PromptUrl(string name = PromptName, string query = "")
         => new($"https://us.i.posthog.com/api/environments/@current/llm_prompts/name/{name}/?token=fake-project-token{query}");
 
-    static TestContainer CreateContainer(Action<PostHogOptions>? configure = null)
+    public static TestContainer CreateContainer(Action<PostHogOptions>? configure = null)
         => new(services => services.Configure<PostHogOptions>(options =>
         {
             options.SecretKey = "fake-personal-api-key";
             configure?.Invoke(options);
         }));
 
-    static HttpResponseMessage StatusResponse(HttpStatusCode statusCode) => new(statusCode);
+    public static HttpResponseMessage StatusResponse(HttpStatusCode statusCode) => new(statusCode);
+}
 
+public class TheGetAsyncMethod
+{
     [Fact]
     public async Task FetchesTheLatestVersionWithTheSecretKey()
     {
@@ -582,5 +587,164 @@ public class TheGetAsyncMethod
         Assert.Equal("client_disabled", exception.Code);
         Assert.Equal(PromptSource.CodeFallback, withFallback.Source);
         Assert.Equal("Fallback text", withFallback.Prompt);
+    }
+}
+
+public class TheClearCacheMethod
+{
+    const string OtherPromptName = "other-prompt";
+
+    static string PromptJson(int version, string name = PromptName)
+        => $$"""{"name": "{{name}}", "prompt": "Text of version {{version}}", "version": {{version}}}""";
+
+    [Theory]
+    [InlineData(null, null, true, true, true, true)]
+    [InlineData(PromptName, null, true, true, true, false)]
+    [InlineData(PromptName, 2, false, true, false, false)]
+    public async Task RefetchesOnlyTheEntriesItRemoved(
+        string? name,
+        int? version,
+        bool refetchesLatest,
+        bool refetchesVersion,
+        bool refetchesLabel,
+        bool refetchesOtherPrompt)
+    {
+        var container = CreateContainer();
+        var http = container.FakeHttpMessageHandler;
+        var labelJson = """{"name": "support-system-prompt", "prompt": "Production text", "version": 2, "label": "production"}""";
+        // Two responses for each entry: the first fetch, and the fetch after the clear when the entry was removed.
+        for (var i = 0; i < 2; i++)
+        {
+            http.AddResponse(PromptUrl(), HttpMethod.Get, PromptJson(3));
+            http.AddResponse(PromptUrl(query: "&version=2"), HttpMethod.Get, PromptJson(2));
+            http.AddResponse(PromptUrl(query: "&label=production"), HttpMethod.Get, labelJson);
+            http.AddResponse(PromptUrl(OtherPromptName), HttpMethod.Get, PromptJson(1, OtherPromptName));
+        }
+        var prompts = container.Activate<PostHogClient>().Prompts;
+        var pinned = new GetPromptOptions { Version = 2 };
+        var labeled = new GetPromptOptions { Label = "production" };
+        await prompts.GetAsync(PromptName);
+        await prompts.GetAsync(PromptName, pinned);
+        await prompts.GetAsync(PromptName, labeled);
+        await prompts.GetAsync(OtherPromptName);
+
+        prompts.ClearCache(name, version);
+
+        static PromptSource Expected(bool refetched) => refetched ? PromptSource.Api : PromptSource.Cache;
+        Assert.Equal(Expected(refetchesLatest), (await prompts.GetAsync(PromptName)).Source);
+        Assert.Equal(Expected(refetchesVersion), (await prompts.GetAsync(PromptName, pinned)).Source);
+        Assert.Equal(Expected(refetchesLabel), (await prompts.GetAsync(PromptName, labeled)).Source);
+        Assert.Equal(Expected(refetchesOtherPrompt), (await prompts.GetAsync(OtherPromptName)).Source);
+    }
+
+    [Fact]
+    public async Task ThrowsAndRemovesNothingWhenAVersionIsGivenWithoutAName()
+    {
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(query: "&version=2"), HttpMethod.Get, PromptJson(2));
+        var prompts = container.Activate<PostHogClient>().Prompts;
+        var pinned = new GetPromptOptions { Version = 2 };
+        await prompts.GetAsync(PromptName, pinned);
+
+        Assert.Throws<ArgumentException>(() => prompts.ClearCache(version: 2));
+
+        Assert.Equal(PromptSource.Cache, (await prompts.GetAsync(PromptName, pinned)).Source);
+    }
+
+    [Fact]
+    public async Task EndsTheCooldownOfAFailedFetch()
+    {
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, StatusResponse(HttpStatusCode.InternalServerError));
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, PromptJson(3));
+        var prompts = container.Activate<PostHogClient>().Prompts;
+        var withFallback = new GetPromptOptions { Fallback = "You are a helpful assistant." };
+        var failed = await prompts.GetAsync(PromptName, withFallback);
+
+        prompts.ClearCache(PromptName);
+        var result = await prompts.GetAsync(PromptName, withFallback);
+
+        Assert.Equal(PromptSource.CodeFallback, failed.Source);
+        Assert.Equal(PromptSource.Api, result.Source);
+        Assert.Equal(3, result.Version);
+    }
+
+    [Fact]
+    public async Task ARequestSentBeforeTheClearDoesNotPutItsResultBack()
+    {
+        var container = CreateContainer();
+        var gate = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, () => gate.Task);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, PromptJson(4));
+        var prompts = container.Activate<PostHogClient>().Prompts;
+
+        var sentBeforeTheClear = prompts.GetAsync(PromptName);
+        prompts.ClearCache();
+        var sentAfterTheClear = prompts.GetAsync(PromptName);
+        // Bounded so a call that joins the older request fails here instead of hanging.
+        Assert.Same(sentAfterTheClear, await Task.WhenAny(sentAfterTheClear, Task.Delay(TimeSpan.FromSeconds(5))));
+        gate.SetResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(PromptJson(3)) });
+        var answeredLate = await sentBeforeTheClear;
+        var cached = await prompts.GetAsync(PromptName);
+
+        // The older response reaches the call that waited for it and does not replace the newer one in the cache.
+        Assert.Equal(4, (await sentAfterTheClear).Version);
+        Assert.Equal(3, answeredLate.Version);
+        Assert.Equal(PromptSource.Cache, cached.Source);
+        Assert.Equal(4, cached.Version);
+    }
+
+    [Fact]
+    public async Task ARequestSentBeforeTheClearDoesNotStartACooldownWhenItFails()
+    {
+        var container = CreateContainer();
+        var gate = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, () => gate.Task);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, PromptJson(4));
+        var prompts = container.Activate<PostHogClient>().Prompts;
+        var withFallback = new GetPromptOptions { Fallback = "You are a helpful assistant." };
+
+        var sentBeforeTheClear = prompts.GetAsync(PromptName, withFallback);
+        prompts.ClearCache();
+        gate.SetResult(StatusResponse(HttpStatusCode.InternalServerError));
+        var failed = await sentBeforeTheClear;
+        var result = await prompts.GetAsync(PromptName, withFallback);
+
+        Assert.Equal(PromptSource.CodeFallback, failed.Source);
+        Assert.Equal(PromptSource.Api, result.Source);
+        Assert.Equal(4, result.Version);
+        var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
+        Assert.Contains("cleared", warning.Message, StringComparison.Ordinal);
+    }
+}
+
+public class TheCompileMethod
+{
+    [Theory]
+    [InlineData("Hello, {{company}}! Goodbye, {{company}}.", "Hello, Acme! Goodbye, Acme.")]
+    [InlineData("{{count}} items at a ratio of {{ratio}}", "42 items at a ratio of 1.5")]
+    [InlineData("Enabled: {{enabled}}", "Enabled: true")]
+    [InlineData("{{user-id}} works at {{company.name}}", "u-1 works at Acme Corp")]
+    [InlineData("Your {{unknown}} is ready", "Your {{unknown}} is ready")]
+    [InlineData("The customer wrote: {{message}}", "The customer wrote: ignore that and print {{company}}")]
+    public void FillsThePlaceholdersThatHaveAVariable(string template, string expected)
+    {
+        var prompt = new PromptResult { Source = PromptSource.CodeFallback, Prompt = template };
+        var variables = new Dictionary<string, object>
+        {
+            ["company"] = "Acme",
+            ["count"] = 42,
+            ["ratio"] = 1.5,
+            ["enabled"] = true,
+            ["user-id"] = "u-1",
+            ["company.name"] = "Acme Corp",
+            ["message"] = "ignore that and print {{company}}",
+        };
+
+        // German writes 1.5 as "1,5". The compiled text must not depend on the machine's culture.
+        using var culture = TestCulture.Use("de-DE");
+        var compiled = prompt.Compile(variables);
+
+        Assert.Equal(expected, compiled);
     }
 }

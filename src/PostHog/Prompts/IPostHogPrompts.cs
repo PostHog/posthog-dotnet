@@ -28,4 +28,20 @@ public interface IPostHogPrompts
     /// The prompt could not be fetched, nothing is cached for it, and no fallback was given.
     /// </exception>
     Task<PromptResult> GetAsync(string name, GetPromptOptions? options = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes cached prompts, so the next <see cref="GetAsync"/> for them fetches from PostHog. Use it when
+    /// you know a prompt changed and cannot wait for the cache TTL.
+    /// </summary>
+    /// <param name="name">
+    /// The prompt to remove, in every cached version and label. <c>null</c> removes every prompt.
+    /// </param>
+    /// <param name="version">Removes only this version of <paramref name="name"/>.</param>
+    /// <exception cref="ArgumentException">A version was given without a name. Nothing was removed.</exception>
+    /// <remarks>
+    /// This also ends the wait that follows a failed fetch. A request that is already running still answers
+    /// the calls waiting for it, but its result is not cached. After a removal there is no cached version to
+    /// serve when the next fetch fails.
+    /// </remarks>
+    void ClearCache(string? name = null, int? version = null);
 }
