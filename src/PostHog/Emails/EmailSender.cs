@@ -551,6 +551,26 @@ internal sealed class EmailSender : IPostHogEmails
             throw new ArgumentException("ReplyTo must not hold a blank address.", nameof(email));
         }
 
+        if (email.Cc is { } cc && cc.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Cc must not hold a blank address.", nameof(email));
+        }
+
+        if (email.Bcc is { } bcc && bcc.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Bcc must not hold a blank address.", nameof(email));
+        }
+
+        if (email.Attachments is { } attachments && attachments.Any(file => file is null))
+        {
+            throw new ArgumentException("Attachments must not hold a null file.", nameof(email));
+        }
+
+        if (email.Attachments is { } named && named.Any(file => string.IsNullOrWhiteSpace(file.Filename)))
+        {
+            throw new ArgumentException("Every attachment needs a Filename, such as invoice.pdf.", nameof(email));
+        }
+
         var body = new Dictionary<string, object?>
         {
             ["template_key"] = email.TemplateKey,
@@ -577,10 +597,45 @@ internal sealed class EmailSender : IPostHogEmails
             body["reply_to"] = email.ReplyTo;
         }
 
+        if (email.Cc is { Count: > 0 })
+        {
+            body["cc"] = email.Cc;
+        }
+
+        if (email.Bcc is { Count: > 0 })
+        {
+            body["bcc"] = email.Bcc;
+        }
+
+        if (email.Attachments is { Count: > 0 })
+        {
+            body["attachments"] = email.Attachments.Select(AttachmentBody).ToList();
+        }
+
         body["capture_engagement"] = email.CaptureEngagement;
         if (email.DistinctId is not null)
         {
             body["distinct_id"] = email.DistinctId;
+        }
+
+        return body;
+    }
+
+    static Dictionary<string, object> AttachmentBody(EmailAttachment file)
+    {
+        var body = new Dictionary<string, object>
+        {
+            ["filename"] = file.Filename,
+            ["content"] = file.Content,
+        };
+        if (file.ContentType is not null)
+        {
+            body["content_type"] = file.ContentType;
+        }
+
+        if (file.ContentId is not null)
+        {
+            body["content_id"] = file.ContentId;
         }
 
         return body;

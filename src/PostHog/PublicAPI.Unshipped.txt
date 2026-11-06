@@ -43,7 +43,23 @@ PostHog.Emails.EmailWarning.Message.init -> void
 PostHog.Emails.IPostHogEmails
 PostHog.Emails.IPostHogEmails.GetAsync(string! messageId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Emails.EmailStatus!>!
 PostHog.Emails.IPostHogEmails.SendAsync(PostHog.Emails.SendEmailOptions! email, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Emails.SendEmailResult!>!
+PostHog.Emails.EmailAttachment
+PostHog.Emails.EmailAttachment.Content.get -> System.ReadOnlyMemory<byte>
+PostHog.Emails.EmailAttachment.Content.init -> void
+PostHog.Emails.EmailAttachment.ContentId.get -> string?
+PostHog.Emails.EmailAttachment.ContentId.init -> void
+PostHog.Emails.EmailAttachment.ContentType.get -> string?
+PostHog.Emails.EmailAttachment.ContentType.init -> void
+PostHog.Emails.EmailAttachment.EmailAttachment() -> void
+PostHog.Emails.EmailAttachment.Filename.get -> string!
+PostHog.Emails.EmailAttachment.Filename.init -> void
 PostHog.Emails.SendCodeEmailOptions
+PostHog.Emails.SendCodeEmailOptions.Attachments.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.EmailAttachment!>?
+PostHog.Emails.SendCodeEmailOptions.Attachments.init -> void
+PostHog.Emails.SendCodeEmailOptions.Bcc.get -> System.Collections.Generic.IReadOnlyList<string!>?
+PostHog.Emails.SendCodeEmailOptions.Bcc.init -> void
+PostHog.Emails.SendCodeEmailOptions.Cc.get -> System.Collections.Generic.IReadOnlyList<string!>?
+PostHog.Emails.SendCodeEmailOptions.Cc.init -> void
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.get -> bool
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.init -> void
 PostHog.Emails.SendCodeEmailOptions.From.get -> string?
