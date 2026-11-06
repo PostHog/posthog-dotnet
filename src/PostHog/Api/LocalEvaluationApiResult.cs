@@ -104,6 +104,12 @@ internal record LocalFeatureFlag
     public required string Key { get; init; }
 
     /// <summary>
+    /// The evaluation runtime reported by the definition, or <c>null</c> when unknown.
+    /// </summary>
+    [JsonPropertyName("evaluation_runtime")]
+    public string? EvaluationRuntime { get; init; }
+
+    /// <summary>
     /// The set of filters that determine who sees what variant of the feature.
     /// </summary>
     public FeatureFlagFilters? Filters { get; init; }

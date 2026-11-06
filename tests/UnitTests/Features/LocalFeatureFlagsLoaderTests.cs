@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PostHog;
 using PostHog.Api;
@@ -259,6 +260,146 @@ public class TheUnresolvableFlagWarning
         Assert.Contains("checkout", warning, StringComparison.Ordinal);
         Assert.Single(GetWarnings(container, "unsupported_definition"));
         Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    static string WithRuntime(string flag, string? runtimeJson) => runtimeJson is null
+        ? flag
+        : flag.Insert(1, $"\"evaluation_runtime\": {runtimeJson}, ");
+
+    static string RuntimeDefinitions(string? runtimeJson) => Definitions(
+        WithRuntime(CheckoutWithExperienceContinuity, runtimeJson),
+        WithRuntime(Flag("static-cohort", """{"key": "id", "type": "cohort", "value": 999}"""), runtimeJson));
+
+    [Theory]
+    [InlineData("\"client\"", 0)]
+    [InlineData("\"server\"", 1)]
+    [InlineData("\"all\"", 1)]
+    [InlineData("null", 1)]
+    [InlineData(null, 1)]
+    [InlineData("\"Client\"", 1)]
+    [InlineData("\"future\"", 1)]
+    [InlineData("\"\"", 1)]
+    public async Task RuntimeExcludesOnlyExactClientFromBothWarningReasons(string? runtimeJson, int expectedWarnings)
+    {
+        var (container, client, flagsHandler) = CreateClient();
+        await using var disposableClient = client;
+        var definitions = RuntimeDefinitions(runtimeJson);
+        await LoadAsync(container, client, definitions);
+        await LoadAsync(container, client, definitions);
+        var notModified = container.FakeHttpMessageHandler.AddLocalEvaluationNotModifiedResponse();
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+
+        Assert.Single(notModified.ReceivedRequests);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        foreach (var (reason, key) in new[] { ("experience_continuity", "checkout"), ("unsupported_definition", "static-cohort") })
+        {
+            var warnings = GetWarnings(container, reason);
+            Assert.Equal(expectedWarnings, warnings.Count);
+            Assert.All(warnings, warning => Assert.Contains($": {key}.", warning, StringComparison.Ordinal));
+        }
+        Assert.Equal(expectedWarnings * 2, container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning).Count);
+    }
+
+    [Theory]
+    [InlineData("\"client\"", "client")]
+    [InlineData("\"server\"", "server")]
+    [InlineData("\"all\"", "all")]
+    [InlineData("null", null)]
+    [InlineData(null, null)]
+    [InlineData("\"Client\"", "Client")]
+    [InlineData("\"future\"", "future")]
+    [InlineData("\"\"", "")]
+    public void RuntimeMetadataSurvivesJsonDecodingAndParticipatesInRecordEquality(string? runtimeJson, string? expected)
+    {
+        var definitions = RuntimeDefinitions(runtimeJson);
+        var decoded = JsonSerializer.Deserialize<LocalEvaluationApiResult>(definitions, JsonSerializerHelper.Options)!;
+        var repeated = JsonSerializer.Deserialize<LocalEvaluationApiResult>(definitions, JsonSerializerHelper.Options)!;
+
+        Assert.Equal(decoded, repeated);
+        Assert.All(decoded.Flags, flag =>
+        {
+            Assert.Equal(expected, flag.EvaluationRuntime);
+            Assert.Equal(flag, flag with { EvaluationRuntime = expected });
+            Assert.Equal(flag.GetHashCode(), (flag with { EvaluationRuntime = expected }).GetHashCode());
+            Assert.NotEqual(flag, flag with { EvaluationRuntime = "different-runtime" });
+        });
+    }
+
+    [Fact]
+    public async Task RuntimeMixedDefinitionsWarnWithOnlyEligibleCountsAndNames()
+    {
+        var (container, client, flagsHandler) = CreateClient();
+        await using var disposableClient = client;
+        var definitions = Definitions(
+            WithRuntime(Flag("client-continuity", experienceContinuity: true), "\"client\""),
+            WithRuntime(Flag("server-continuity", experienceContinuity: true), "\"server\""),
+            WithRuntime(Flag("all-continuity", experienceContinuity: true), "\"all\""),
+            WithRuntime(Flag("client-cohort", """{"key": "id", "type": "cohort", "value": 999}"""), "\"client\""),
+            WithRuntime(Flag("null-cohort", """{"key": "id", "type": "cohort", "value": 999}"""), "null"),
+            Flag("legacy-cohort", """{"key": "id", "type": "cohort", "value": 999}"""));
+        await LoadAsync(container, client, definitions);
+        await LoadAsync(container, client, definitions);
+
+        var continuity = Assert.Single(GetWarnings(container, "experience_continuity"));
+        Assert.Contains("2 flag(s)", continuity, StringComparison.Ordinal);
+        Assert.Contains(": server-continuity, all-continuity.", continuity, StringComparison.Ordinal);
+        var unsupported = Assert.Single(GetWarnings(container, "unsupported_definition"));
+        Assert.Contains("2 flag(s)", unsupported, StringComparison.Ordinal);
+        Assert.Contains(": null-cohort, legacy-cohort.", unsupported, StringComparison.Ordinal);
+        Assert.DoesNotContain("client-", continuity, StringComparison.Ordinal);
+        Assert.DoesNotContain("client-", unsupported, StringComparison.Ordinal);
+        Assert.Equal(2, container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning).Count);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Theory]
+    [InlineData("\"server\"")]
+    [InlineData("\"all\"")]
+    [InlineData("null")]
+    [InlineData(null)]
+    public async Task RuntimeReturningFromClientToOriginalDefinitionWarnsAgain(string? runtimeJson)
+    {
+        var (container, client, flagsHandler) = CreateClient();
+        await using var disposableClient = client;
+        var original = RuntimeDefinitions(runtimeJson);
+        await LoadAsync(container, client, original);
+        await LoadAsync(container, client, original);
+        await LoadAsync(container, client, RuntimeDefinitions("\"client\""));
+        await LoadAsync(container, client, RuntimeDefinitions("\"client\""));
+        Assert.Single(GetWarnings(container, "experience_continuity"));
+        Assert.Single(GetWarnings(container, "unsupported_definition"));
+
+        await LoadAsync(container, client, original);
+        await LoadAsync(container, client, original);
+        container.FakeHttpMessageHandler.AddLocalEvaluationNotModifiedResponse();
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+
+        Assert.Equal(2, GetWarnings(container, "experience_continuity").Count);
+        Assert.Equal(2, GetWarnings(container, "unsupported_definition").Count);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task RuntimeClientDefinitionsKeepLocalValuesAndUnresolvedReasons()
+    {
+        var (container, client, flagsHandler) = CreateClient();
+        await using var disposableClient = client;
+        await LoadAsync(container, client, Definitions(
+            WithRuntime(Flag("client-flag"), "\"client\""),
+            WithRuntime(CheckoutWithExperienceContinuity, "\"client\""),
+            WithRuntime(Flag("static-cohort", """{"key": "id", "type": "cohort", "value": 999}"""), "\"client\"")));
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user-123", new FeatureFlagOptions { OnlyEvaluateLocally = true }, CancellationToken.None);
+
+        Assert.Equal("client-flag", Assert.Single(snapshot.Keys));
+        Assert.True(snapshot.IsEnabled("client-flag"));
+        Assert.Equal(2, snapshot.UnresolvedFlags.Count);
+        Assert.Equal(UnresolvedFlagReason.ExperienceContinuity, snapshot.UnresolvedFlags["checkout"]);
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, snapshot.UnresolvedFlags["static-cohort"]);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+        Assert.Empty(GetWarnings(container, "experience_continuity"));
+        Assert.Empty(GetWarnings(container, "unsupported_definition"));
     }
 
     [Fact]
