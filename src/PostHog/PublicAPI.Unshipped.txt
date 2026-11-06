@@ -125,7 +125,6 @@ PostHog.Prompts.GetPromptOptions.Label.init -> void
 PostHog.Prompts.GetPromptOptions.Version.get -> int?
 PostHog.Prompts.GetPromptOptions.Version.init -> void
 PostHog.Prompts.IPostHogPrompts
-PostHog.Prompts.IPostHogPrompts.ClearCache(string? name = null, int? version = null) -> void
 PostHog.Prompts.IPostHogPrompts.GetAsync(string! name, PostHog.Prompts.GetPromptOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Prompts.PromptResult!>!
 PostHog.Prompts.PromptFetchException
 PostHog.Prompts.PromptFetchException.Code.get -> string!
@@ -157,4 +156,6 @@ PostHog.Prompts.PromptSource.Api = 0 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.Cache = 1 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.CodeFallback = 3 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.StaleCache = 2 -> PostHog.Prompts.PromptSource
+PostHog.PromptsExtensions
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
+static PostHog.PromptsExtensions.ClearCache(this PostHog.Prompts.IPostHogPrompts! prompts, string? name = null, int? version = null) -> void

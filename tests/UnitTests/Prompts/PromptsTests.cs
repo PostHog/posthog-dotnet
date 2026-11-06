@@ -716,6 +716,20 @@ public class TheClearCacheMethod
         var warning = Assert.Single(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning));
         Assert.Contains("cleared", warning.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void DoesNothingOnAnImplementationWithoutTheClientCache()
+    {
+        IPostHogPrompts testDouble = new PromptsTestDouble();
+
+        testDouble.ClearCache(PromptName);
+    }
+
+    sealed class PromptsTestDouble : IPostHogPrompts
+    {
+        public Task<PromptResult> GetAsync(string name, GetPromptOptions? options = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(new PromptResult { Source = PromptSource.CodeFallback, Prompt = "Text" });
+    }
 }
 
 public class TheCompileMethod
