@@ -403,6 +403,46 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    [Theory]
+    [InlineData(
+        "/v1/chat/completions",
+        "{\"model\":\"o3\",\"choices\":[],\"usage\":{\"prompt_tokens\":50,\"completion_tokens\":300,\"total_tokens\":350,\"completion_tokens_details\":{\"reasoning_tokens\":256}}}"
+    )]
+    [InlineData(
+        "/v1/responses",
+        "{\"model\":\"o3\",\"output\":[],\"usage\":{\"input_tokens\":50,\"output_tokens\":300,\"total_tokens\":350,\"output_tokens_details\":{\"reasoning_tokens\":256}}}"
+    )]
+    public async Task SendAsyncCapturesOpenAIReasoningTokens(string path, string responseJson)
+    {
+        using var responseContent = new StringContent(responseJson, Encoding.UTF8, "application/json");
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+        using var requestContent = new StringContent(
+            "{\"model\":\"o3\"}",
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        using var response = await _client.PostAsync(new Uri(path, UriKind.Relative), requestContent);
+
+        Assert.True(response.IsSuccessStatusCode);
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    (int)props[PostHogAIFieldNames.OutputTokens] == 300
+                    && (int)props[PostHogAIFieldNames.ReasoningTokens] == 256
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
     private static bool VerifyProps(Dictionary<string, object> props)
     {
         if (
