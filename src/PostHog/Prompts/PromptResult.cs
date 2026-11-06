@@ -1,4 +1,5 @@
 using System.Text.Json;
+using static PostHog.Library.Ensure;
 
 namespace PostHog.Prompts;
 
@@ -38,4 +39,19 @@ public sealed class PromptResult
     /// <see cref="PromptSource.CodeFallback"/> result.
     /// </summary>
     public JsonElement? Config { get; init; }
+
+    /// <summary>
+    /// Returns <see cref="Prompt"/> with each <c>{{name}}</c> placeholder replaced by the value of the variable
+    /// with that name. A placeholder with no matching variable stays as it is.
+    /// </summary>
+    /// <param name="variables">
+    /// The values by placeholder name. A name can contain letters, digits, <c>_</c>, <c>.</c> and <c>-</c>.
+    /// </param>
+    /// <returns>The prompt text with the placeholders filled in.</returns>
+    /// <remarks>
+    /// Numbers and dates are written with the invariant culture, so the text is the same on every machine.
+    /// Booleans are written as <c>true</c> and <c>false</c>.
+    /// </remarks>
+    public string Compile(IReadOnlyDictionary<string, object> variables)
+        => PromptTemplate.Compile(Prompt, NotNull(variables));
 }

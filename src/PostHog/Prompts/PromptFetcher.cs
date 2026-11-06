@@ -29,8 +29,13 @@ internal sealed class PromptFetcher : IPostHogPrompts
     readonly TimeProvider _timeProvider;
     readonly ILogger<PromptFetcher> _logger;
     readonly ConcurrentDictionary<PromptCacheKey, CachedPrompt> _cache = new();
-    readonly ConcurrentDictionary<PromptCacheKey, Lazy<Task<CachedPrompt>>> _inFlight = new();
+    readonly ConcurrentDictionary<PromptCacheKey, PendingFetch> _inFlight = new();
     readonly ConcurrentDictionary<PromptCacheKey, FailedFetch> _failures = new();
+
+    // Held while a fetch records its outcome and while ClearCache removes entries. A fetch records its outcome
+    // only while it is still the in-flight entry for its key, and a clear removes that entry, so a request
+    // sent before a clear cannot put its result back afterwards.
+    readonly object _outcomeLock = new();
 
     public PromptFetcher(
         HttpClient httpClient,
@@ -99,6 +104,28 @@ internal sealed class PromptFetcher : IPostHogPrompts
         throw error;
     }
 
+    public void ClearCache(string? name = null, int? version = null)
+    {
+        if (name is null && version is not null)
+        {
+            throw new ArgumentException("A version needs the name of its prompt.", nameof(version));
+        }
+
+        // A labeled entry has no version in its key, so a version only matches the entry fetched by that version.
+        bool Matches(PromptCacheKey key)
+            => name is null || (key.Name == name && (version is null || key.Version == version));
+
+        lock (_outcomeLock)
+        {
+            foreach (var key in _cache.Keys.Concat(_failures.Keys).Concat(_inFlight.Keys).Where(Matches))
+            {
+                _cache.TryRemove(key, out _);
+                _failures.TryRemove(key, out _);
+                _inFlight.TryRemove(key, out _);
+            }
+        }
+    }
+
     bool IsFresh(CachedPrompt cached, TimeSpan ttl)
         => ttl > TimeSpan.Zero && _timeProvider.GetUtcNow() - cached.FetchedAt < ttl;
 
@@ -130,44 +157,68 @@ internal sealed class PromptFetcher : IPostHogPrompts
             return cached;
         }
 
-        var pending = _inFlight.GetOrAdd(key, k => new Lazy<Task<CachedPrompt>>(() => FetchAndCacheAsync(k)));
-        return await pending.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var pending = _inFlight.GetOrAdd(key, k => new PendingFetch(this, k));
+        return await pending.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    async Task<CachedPrompt> FetchAndCacheAsync(PromptCacheKey key)
+    async Task<CachedPrompt> FetchAndCacheAsync(PromptCacheKey key, PendingFetch self)
     {
         try
         {
             // The request is shared by every caller waiting on this key, so one caller's cancellation
             // must not cancel it. Callers stop waiting through their own token instead.
             var fetched = await FetchAsync(key, CancellationToken.None).ConfigureAwait(false);
-            // Cached before the in-flight entry is released, so a caller that arrives in between
-            // finds the entry instead of starting a request.
-            _cache[key] = fetched;
-            _failures.TryRemove(key, out _);
+            lock (_outcomeLock)
+            {
+                // Cached before the in-flight entry is released, so a caller that arrives in between
+                // finds the entry instead of starting a request.
+                if (IsInFlight(key, self))
+                {
+                    _cache[key] = fetched;
+                    _failures.TryRemove(key, out _);
+                }
+            }
+
             return fetched;
         }
         catch (PromptFetchException e)
         {
             // The fetch records and logs its own failure, once, so neither depends on a caller still waiting
             // for it. Callers serve the stale version, their fallback or the error without logging again.
-            var retryNotBefore = StartCooldown(key, e);
-            if (_cache.ContainsKey(key))
+            DateTimeOffset? retryNotBefore;
+            bool hasCachedVersion;
+            lock (_outcomeLock)
             {
-                _logger.LogWarningServingStaleCache(e, Describe(key), retryNotBefore);
+                retryNotBefore = IsInFlight(key, self) ? StartCooldown(key, e) : null;
+                hasCachedVersion = _cache.ContainsKey(key);
+            }
+
+            if (retryNotBefore is not { } notBefore)
+            {
+                _logger.LogWarningFailedAfterClear(e, Describe(key));
+            }
+            else if (hasCachedVersion)
+            {
+                _logger.LogWarningServingStaleCache(e, Describe(key), notBefore);
             }
             else
             {
-                _logger.LogWarningNothingCached(e, Describe(key), retryNotBefore);
+                _logger.LogWarningNothingCached(e, Describe(key), notBefore);
             }
 
             throw;
         }
         finally
         {
-            _inFlight.TryRemove(key, out _);
+            // Removes the entry only while it is still this fetch. After a clear, the key may already
+            // belong to a newer request.
+            ((ICollection<KeyValuePair<PromptCacheKey, PendingFetch>>)_inFlight)
+                .Remove(new KeyValuePair<PromptCacheKey, PendingFetch>(key, self));
         }
     }
+
+    bool IsInFlight(PromptCacheKey key, PendingFetch fetch)
+        => _inFlight.TryGetValue(key, out var current) && ReferenceEquals(current, fetch);
 
     async Task<CachedPrompt> FetchAsync(PromptCacheKey key, CancellationToken cancellationToken)
     {
@@ -366,6 +417,20 @@ internal sealed class PromptFetcher : IPostHogPrompts
     readonly record struct PromptCacheKey(string Name, int? Version, string? Label);
 
     /// <summary>
+    /// One request for a key, shared by every caller that waits for it. The request starts when the first
+    /// caller reads <see cref="Task"/>.
+    /// </summary>
+    sealed class PendingFetch
+    {
+        readonly Lazy<Task<CachedPrompt>> _task;
+
+        public PendingFetch(PromptFetcher fetcher, PromptCacheKey key)
+            => _task = new Lazy<Task<CachedPrompt>>(() => fetcher.FetchAndCacheAsync(key, this));
+
+        public Task<CachedPrompt> Task => _task.Value;
+    }
+
+    /// <summary>
     /// The last failed fetch for a key and until when no request is sent for it.
     /// </summary>
     sealed record FailedFetch(DateTimeOffset RetryNotBefore, PromptFetchException Error);
@@ -411,4 +476,10 @@ internal static partial class PromptFetcherLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[PROMPTS] Requested label \"{RequestedLabel}\" for prompt \"{Name}\" but the server resolved label \"{ResolvedLabel}\". It may not support prompt labels yet and returned the latest version instead")]
     public static partial void LogWarningLabelMismatch(this ILogger<PromptFetcher> logger, string requestedLabel, string name, string? resolvedLabel);
+
+    [LoggerMessage(
+        EventId = 1303,
+        Level = LogLevel.Warning,
+        Message = "[PROMPTS] Failed to fetch {Prompt}. The cache was cleared while the request ran, so the next call sends a new request")]
+    public static partial void LogWarningFailedAfterClear(this ILogger<PromptFetcher> logger, Exception exception, string prompt);
 }

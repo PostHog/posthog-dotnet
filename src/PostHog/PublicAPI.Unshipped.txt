@@ -137,6 +137,7 @@ PostHog.Prompts.PromptFetchException.RetryAfter.get -> System.TimeSpan?
 PostHog.Prompts.PromptFetchException.StatusCode.get -> System.Net.HttpStatusCode?
 PostHog.Prompts.PromptFetchException.Version.get -> int?
 PostHog.Prompts.PromptResult
+PostHog.Prompts.PromptResult.Compile(System.Collections.Generic.IReadOnlyDictionary<string!, object!>! variables) -> string!
 PostHog.Prompts.PromptResult.Config.get -> System.Text.Json.JsonElement?
 PostHog.Prompts.PromptResult.Config.init -> void
 PostHog.Prompts.PromptResult.Label.get -> string?
@@ -155,4 +156,6 @@ PostHog.Prompts.PromptSource.Api = 0 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.Cache = 1 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.CodeFallback = 3 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.StaleCache = 2 -> PostHog.Prompts.PromptSource
+PostHog.PromptsExtensions
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
+static PostHog.PromptsExtensions.ClearCache(this PostHog.Prompts.IPostHogPrompts! prompts, string? name = null, int? version = null) -> void
