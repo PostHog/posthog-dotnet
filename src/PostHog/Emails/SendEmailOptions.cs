@@ -98,11 +98,12 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
 
     /// <summary>
     /// Whether PostHog captures the email's engagement events (sent, delivered, opened, clicked, bounced) as events
-    /// of the recipient. (Default: <c>true</c>)
+    /// on the recipient's person. (Default: <c>true</c>)
     /// </summary>
     /// <remarks>
-    /// A project whose admin turned engagement capture off captures nothing, whatever the send asks. A template made
-    /// in PostHog follows the project's setting, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
+    /// Turning it off doesn't change the email: PostHog still adds its open pixel and rewrites links to count opens
+    /// and clicks. A project whose admin turned engagement capture off captures nothing, whatever the send asks. A
+    /// template made in PostHog follows the project's setting, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
     /// </remarks>
     public bool CaptureEngagement { get; init; } = true;
 }
