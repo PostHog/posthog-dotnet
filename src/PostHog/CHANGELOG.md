@@ -1,5 +1,17 @@
 # PostHog
 
+## 2.21.1
+
+### Patch Changes
+
+- ffad0c1: Exclude client-only feature flags from definition-load warnings about experience continuity and unsupported local evaluation definitions, without changing local evaluation behavior.
+
+## 2.21.0
+
+### Minor Changes
+
+- f5f9a13: Add `PromptResult.Compile`, which fills the `{{variable}}` placeholders of a fetched prompt, and `Prompts.ClearCache`, which removes cached prompts so the next `GetAsync` fetches them again. `ClearCache` takes no arguments to remove everything, a prompt name to remove every cached version and label of it, or a name and a version. It is an extension method, so `IPostHogPrompts` is unchanged.
+
 ## 2.20.0
 
 ### Minor Changes

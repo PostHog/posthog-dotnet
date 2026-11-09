@@ -143,7 +143,8 @@ internal sealed class LocalFeatureFlagsLoader(
             var warnedFlags = new Dictionary<string, (LocalFeatureFlag Definition, UnresolvedFlagReason Reason)>(StringComparer.Ordinal);
             foreach (var flag in localEvaluator.LocalEvaluationApiResult.Flags)
             {
-                if (localEvaluator.GetDefinitionUnresolvedReason(flag) is not { } reason)
+                if (flag.EvaluationRuntime is "client"
+                    || localEvaluator.GetDefinitionUnresolvedReason(flag) is not { } reason)
                 {
                     continue;
                 }
