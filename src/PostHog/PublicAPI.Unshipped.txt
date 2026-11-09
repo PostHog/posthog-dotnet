@@ -59,6 +59,8 @@ PostHog.Emails.SendCodeEmailOptions.TemplateKey.get -> string!
 PostHog.Emails.SendCodeEmailOptions.TemplateKey.init -> void
 PostHog.Emails.SendCodeEmailOptions.Text.get -> string?
 PostHog.Emails.SendCodeEmailOptions.Text.init -> void
+PostHog.Emails.SendCodeEmailOptions.TrackOpensAndClicks.get -> bool?
+PostHog.Emails.SendCodeEmailOptions.TrackOpensAndClicks.init -> void
 PostHog.Emails.SendEmailOptions
 PostHog.Emails.SendEmailOptions.DistinctId.get -> string?
 PostHog.Emails.SendEmailOptions.DistinctId.init -> void

@@ -105,4 +105,17 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// in PostHog follows the project's setting, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
     /// </remarks>
     public bool CaptureEngagement { get; init; } = true;
+
+    /// <summary>
+    /// Whether the email carries open and click tracking: PostHog's open pixel and links rewritten to count clicks.
+    /// (Default: <c>true</c>)
+    /// </summary>
+    /// <remarks>
+    /// With <c>false</c>, the email goes out without either, so PostHog can't count its opens and clicks. It is
+    /// independent of <see cref="CaptureEngagement"/>, which decides whether engagement events are captured on the
+    /// recipient's person. Left unset, the send doesn't include it and PostHog applies its default. Needs PostHog's
+    /// API support for <c>track_opens_and_clicks</c>, which is rolling out; until then PostHog refuses a send that
+    /// sets it.
+    /// </remarks>
+    public bool? TrackOpensAndClicks { get; init; }
 }

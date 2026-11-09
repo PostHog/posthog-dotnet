@@ -212,8 +212,13 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("<p>Hi</p>", body.RootElement.GetProperty("html").GetString());
     }
 
-    [Fact]
-    public async Task SendsTextOnlyContentWithEngagementCaptureOff()
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData(false, ""","track_opens_and_clicks":false""")]
+    [InlineData(true, ""","track_opens_and_clicks":true""")]
+    public async Task SendsTextOnlyContentWithEngagementCaptureOffAndTrackingOnlyWhenSet(
+        bool? trackOpensAndClicks,
+        string trackingField)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
@@ -225,10 +230,11 @@ public class TheSendAsyncMethodWithCodeContent
             Subject = "Your receipt",
             Text = "Thanks!",
             CaptureEngagement = false,
+            TrackOpensAndClicks = trackOpensAndClicks,
         });
 
         Assert.Equal(
-            """{"template_key":"receipt_2","to":"user@example.com","subject":"Your receipt","text":"Thanks!","capture_engagement":false}""",
+            $$"""{"template_key":"receipt_2","to":"user@example.com","subject":"Your receipt","text":"Thanks!","capture_engagement":false{{trackingField}}}""",
             Assert.Single(harness.Requests).Body);
     }
 
