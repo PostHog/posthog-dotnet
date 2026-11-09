@@ -233,38 +233,6 @@ public class TheSendAsyncMethodWithCodeContent
     }
 
     [Fact]
-    public async Task SendsCopiesAndAttachments()
-    {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
-        byte[] file = [0x00, 0x25, 0x50, 0x44, 0x46, 0xFF];
-
-        await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
-        {
-            To = "user@example.com",
-            TemplateKey = "invoice",
-            Subject = "Your invoice",
-            Html = "<img src=\"cid:logo\">",
-            Cc = ["finance@example.com"],
-            Bcc = ["audit@example.com", "legal@example.com"],
-            Attachments =
-            [
-                new EmailAttachment
-                {
-                    Filename = "invoice.pdf",
-                    Content = file.AsMemory(1, 4),
-                    ContentType = "application/pdf",
-                },
-                new EmailAttachment { Filename = "logo.png", Content = file, ContentId = "logo" },
-            ],
-        });
-
-        Assert.Equal(
-            """{"template_key":"invoice","to":"user@example.com","subject":"Your invoice","html":"\u003Cimg src=\u0022cid:logo\u0022\u003E","cc":["finance@example.com"],"bcc":["audit@example.com","legal@example.com"],"attachments":[{"filename":"invoice.pdf","content":"JVBERg==","content_type":"application/pdf"},{"filename":"logo.png","content":"ACVQREb/","content_id":"logo"}],"capture_engagement":true}""",
-            Assert.Single(harness.Requests).Body);
-    }
-
-    [Fact]
     public async Task LeavesOutEmptyCopyAndAttachmentLists()
     {
         await using var harness = new EmailHarness();
@@ -312,6 +280,266 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Contains(named, error.Message, StringComparison.Ordinal);
         Assert.Empty(harness.Requests);
     }
+}
+
+public class TheSendAsyncMethodWithAttachments
+{
+    const string UploadsUrl = "https://us.posthog.com/api/projects/@current/messaging/attachments/uploads/";
+    const string SendUrl = "https://us.posthog.com/api/projects/@current/messaging/send/email/";
+    const string BucketUrl = "https://files.example.com/team/1/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027?X-Amz-Signature=abc";
+    const string PdfSha256 = "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027";
+    const string LogoSha256 = "8e7652aa029be65c2bb4cdda52986ac4f9af69cff8582fa6124dde57409da460";
+    const string Accepted = """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""";
+    static readonly byte[] Bytes = [0x00, 0x25, 0x50, 0x44, 0x46, 0xFF];
+
+    static string UploadSlot(string sha256) => $$"""
+        {"sha256": "{{sha256}}", "status": "upload", "url": "{{BucketUrl}}", "method": "PUT",
+         "headers": {"Content-Length": "4", "x-amz-checksum-sha256": "MV1Cm3cUzttq0ErDEkAUUldpJjBFfzyIJTxb7OrHYCc="},
+         "url_expires_at": "2026-11-09T12:15:00Z"}
+        """;
+
+    static string PresentSlot(string sha256) => $$"""
+        {"sha256": "{{sha256}}", "status": "present", "expires_at": "2026-12-16T12:00:00Z"}
+        """;
+
+    static string Slots(params string[] slots) => $$"""{"files": [{{string.Join(",", slots)}}]}""";
+
+    static SendCodeEmailOptions Invoice(params EmailAttachment[] attachments) => new()
+    {
+        To = "user@example.com",
+        TemplateKey = "invoice",
+        Subject = "Your invoice",
+        Html = "<p>Thanks!</p>",
+        Attachments = attachments,
+    };
+
+    static EmailAttachment Pdf() => new()
+    {
+        Filename = "invoice.pdf",
+        Content = Bytes.AsMemory(1, 4),
+        ContentType = "application/pdf",
+    };
+
+    static EmailAttachment Logo() => new() { Filename = "logo.png", Content = Bytes, ContentId = "logo" };
+
+    [Fact]
+    public async Task UploadsTheFilesPostHogLacksThenSendsTheirHashes()
+    {
+        await using var harness = new EmailHarness(options => options.MigratedFrom = "resend");
+        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256), PresentSlot(LogoSha256)));
+        harness.Respond(HttpStatusCode.OK, "", contentType: "application/xml");
+        harness.Respond(HttpStatusCode.Accepted, Accepted);
+
+        var result = await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "invoice",
+            Subject = "Your invoice",
+            Html = "<img src=\"cid:logo\">",
+            Cc = ["finance@example.com"],
+            Bcc = ["audit@example.com", "legal@example.com"],
+            Attachments = [Pdf(), Logo()],
+        });
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        Assert.Equal(3, harness.Requests.Count);
+        var (uploads, upload, send) = (harness.Requests[0], harness.Requests[1], harness.Requests[2]);
+        Assert.Equal(HttpMethod.Post, uploads.Method);
+        Assert.Equal(UploadsUrl, uploads.Url);
+        Assert.Equal("Bearer phs_secret", uploads.Header("Authorization"));
+        Assert.Equal(
+            $$"""{"files":[{"sha256":"{{PdfSha256}}","size":4},{"sha256":"{{LogoSha256}}","size":6}]}""",
+            uploads.Body);
+        Assert.Equal(HttpMethod.Put, upload.Method);
+        Assert.Equal(BucketUrl, upload.Url);
+        Assert.Equal("4", upload.Header("Content-Length"));
+        Assert.Equal("MV1Cm3cUzttq0ErDEkAUUldpJjBFfzyIJTxb7OrHYCc=", upload.Header("x-amz-checksum-sha256"));
+        Assert.Null(upload.Header("Authorization"));
+        Assert.Null(upload.Header("X-PostHog-Migrated-From"));
+        Assert.Equal(Bytes[1..5], upload.BodyBytes);
+        Assert.Equal(SendUrl, send.Url);
+        Assert.Equal(
+            """{"template_key":"invoice","to":"user@example.com","subject":"Your invoice","html":"\u003Cimg src=\u0022cid:logo\u0022\u003E","cc":["finance@example.com"],"bcc":["audit@example.com","legal@example.com"],"attachments":[{"sha256":"315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027","filename":"invoice.pdf","content_type":"application/pdf"},{"sha256":"8e7652aa029be65c2bb4cdda52986ac4f9af69cff8582fa6124dde57409da460","filename":"logo.png","content_id":"logo"}],"capture_engagement":true}""",
+            send.Body);
+    }
+
+    [Fact]
+    public async Task AsksOnceForAFileAttachedTwice()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, Slots(PresentSlot(LogoSha256)));
+        harness.Respond(HttpStatusCode.Accepted, Accepted);
+
+        await harness.Client.Emails.SendAsync(
+            Invoice(Logo(), new EmailAttachment { Filename = "copy.png", Content = Bytes.ToArray() }));
+
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.Equal($$"""{"files":[{"sha256":"{{LogoSha256}}","size":6}]}""", harness.Requests[0].Body);
+        Assert.Contains(
+            $$"""[{"sha256":"{{LogoSha256}}","filename":"logo.png","content_id":"logo"},{"sha256":"{{LogoSha256}}","filename":"copy.png"}]""",
+            harness.Requests[1].Body,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SendsNothingWhenTheBucketRefusesAnUpload()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, Slots(PresentSlot(LogoSha256), UploadSlot(PdfSha256)));
+        harness.Respond(
+            HttpStatusCode.BadRequest,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>BadDigest</Code><Message>The SHA256 you specified did not match the calculated checksum.</Message></Error>",
+            contentType: "application/xml");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(Invoice(Logo(), Pdf())));
+
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.Equal("attachment_upload_failed", error.Code);
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal("attachments__1", error.Field);
+        Assert.Contains("invoice.pdf", error.Message, StringComparison.Ordinal);
+        Assert.Contains("no email was sent", error.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "The file storage answered HTTP 400 BadDigest: The SHA256 you specified did not match the calculated checksum.",
+            error.Why);
+        Assert.NotNull(error.Fix);
+    }
+
+    [Fact]
+    public async Task KeepsTheBucketsAnswerWhenItIsNotAnError()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
+        harness.Respond(HttpStatusCode.Forbidden, "Forbidden by proxy", contentType: "text/plain");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Equal("The file storage answered HTTP 403: Forbidden by proxy", error.Why);
+    }
+
+    [Fact]
+    public async Task RetriesAnUnavailableBucketThenSends()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
+        harness.Respond(
+            HttpStatusCode.ServiceUnavailable,
+            "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>",
+            contentType: "application/xml");
+        harness.Respond(HttpStatusCode.OK, "", contentType: "application/xml");
+        harness.Respond(HttpStatusCode.Accepted, Accepted);
+
+        await harness.Client.Emails.SendAsync(Invoice(Pdf()));
+
+        Assert.Equal(
+            [HttpMethod.Post, HttpMethod.Put, HttpMethod.Put, HttpMethod.Post],
+            harness.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
+    public async Task RetriesAnUnavailableUploadRouteWithoutRetryingADailyCap()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.ServiceUnavailable, """{"code": "delivery_unavailable"}""");
+        harness.Respond((HttpStatusCode)429, """{"code": "upload_quota_exceeded", "detail": "This project uploaded as many file bytes as it can today."}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.All(harness.Requests, request => Assert.Equal(UploadsUrl, request.Url));
+        Assert.Equal("upload_quota_exceeded", error.Code);
+    }
+
+    [Fact]
+    public async Task SendsNothingWhenPostHogRefusesTheUploads()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.BadRequest,
+            """{"type": "invalid_request", "code": "field_not_accepted", "attr": "files", "detail": "This project can't send files yet, so PostHog didn't prepare the uploads.", "why": "Sending files isn't available to this project yet.", "fix": "Send the email without files."}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Equal("field_not_accepted", error.Code);
+        Assert.Equal("validation_error", error.Name);
+        Assert.Equal("files", error.Field);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"files": []}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload"}]}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "/relative", "method": "PUT", "headers": {}}]}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "archived"}]}""")]
+    public async Task SendsNothingWhenAFileHasNoUsableAnswer(string body)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, body);
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Equal("api_error", error.Code);
+    }
+
+    [Fact]
+    public async Task RefusesMoreThanTenFilesBeforeAnyRequest()
+    {
+        await using var harness = new EmailHarness();
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(Invoice(Enumerable.Range(0, 11).Select(_ => Logo()).ToArray())));
+
+        Assert.Empty(harness.Requests);
+        Assert.Equal("too_many_attachments", error.Code);
+        Assert.Equal("validation_error", error.Name);
+        Assert.Equal("attachments", error.Field);
+        Assert.Null(error.StatusCode);
+        Assert.NotNull(error.Why);
+        Assert.NotNull(error.Fix);
+    }
+
+    [Fact]
+    public async Task SendsTheLargestFileThatFitsTheMessageEstimate()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, Slots(PresentSlot("28f197eae8bd57e7c2a94d2062d2cef0a04b34e7fd3e0c743d88cda2217f069c")));
+        harness.Respond(HttpStatusCode.Accepted, Accepted);
+
+        await harness.Client.Emails.SendAsync(LargestFileWith(html: ""));
+
+        Assert.Contains("\"size\":29182875", harness.Requests[0].Body, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("x", null)]
+    [InlineData("", "x")]
+    public async Task RefusesAMessageOverTheEstimateBeforeAnyRequest(string html, string? text)
+    {
+        await using var harness = new EmailHarness();
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(LargestFileWith(html, text)));
+
+        Assert.Empty(harness.Requests);
+        Assert.Equal("message_too_large", error.Code);
+        Assert.Equal("validation_error", error.Name);
+        Assert.Equal("attachments", error.Field);
+        Assert.Contains("40 MB", error.Why, StringComparison.Ordinal);
+        Assert.Contains("about 29 MB of files", error.Fix, StringComparison.Ordinal);
+    }
+
+    static SendCodeEmailOptions LargestFileWith(string html, string? text = null) => new()
+    {
+        To = "user@example.com",
+        TemplateKey = "archive",
+        Subject = "Your archive",
+        Html = html,
+        Text = text,
+        Attachments = [new EmailAttachment { Filename = "archive.zip", Content = new byte[29_182_875] }],
+    };
 }
 
 public class TheSendAsyncMethodArguments
@@ -1015,8 +1243,14 @@ sealed class EmailHarness : IAsyncDisposable
     }
 }
 
-sealed record RecordedRequest(HttpMethod Method, string Url, IReadOnlyDictionary<string, string> Headers, string? Body)
+sealed record RecordedRequest(
+    HttpMethod Method,
+    string Url,
+    IReadOnlyDictionary<string, string> Headers,
+    byte[]? BodyBytes)
 {
+    public string? Body => BodyBytes is null ? null : Encoding.UTF8.GetString(BodyBytes);
+
     public string? Header(string name) => Headers.TryGetValue(name, out var value) ? value : null;
 }
 
@@ -1048,7 +1282,7 @@ sealed class RecordingHandler : HttpMessageHandler
             headers[header.Key] = string.Join(", ", header.Value);
         }
 
-        string? body = null;
+        byte[]? body = null;
         if (request.Content is not null)
         {
             foreach (var header in request.Content.Headers)
@@ -1057,9 +1291,9 @@ sealed class RecordingHandler : HttpMessageHandler
             }
 
 #if NET5_0_OR_GREATER
-            body = await request.Content.ReadAsStringAsync(cancellationToken);
+            body = await request.Content.ReadAsByteArrayAsync(cancellationToken);
 #else
-            body = await request.Content.ReadAsStringAsync();
+            body = await request.Content.ReadAsByteArrayAsync();
 #endif
         }
 
