@@ -6,8 +6,9 @@ namespace PostHog.Prompts;
 /// <c>AddPostHog</c>.
 /// </summary>
 /// <remarks>
-/// Needs <see cref="PostHogOptions.SecretKey"/> set to a personal API key (<c>phx_...</c>) with the
-/// <c>llm_prompt:read</c> scope. Fetched prompts are cached for <see cref="PostHogOptions.PromptCacheTtl"/>.
+/// Needs <see cref="PostHogOptions.SecretKey"/> set to a personal API key (<c>phx_...</c>) or a project secret
+/// API key (<c>phs_...</c>) with the <c>llm_prompt:read</c> scope. Fetched prompts are cached for
+/// <see cref="PostHogOptions.PromptCacheTtl"/>.
 /// When a fetch fails, the last cached version is served; when there is no cached version, the
 /// <see cref="GetPromptOptions.Fallback"/> is returned, or a <see cref="PromptFetchException"/> is thrown.
 /// </remarks>

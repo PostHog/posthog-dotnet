@@ -460,7 +460,7 @@ public class TheGetAsyncMethod
 
     [Theory]
     [InlineData(HttpStatusCode.NotFound, "not_found", "was not found")]
-    [InlineData(HttpStatusCode.Unauthorized, "unauthorized", "personal API key (phx_...)")]
+    [InlineData(HttpStatusCode.Unauthorized, "unauthorized", "project secret API key (phs_...)")]
     [InlineData(HttpStatusCode.Forbidden, "forbidden", "llm_prompt:read")]
     [InlineData(HttpStatusCode.TooManyRequests, "rate_limited", "rate limited")]
     public async Task MapsHttpStatusesToCodes(HttpStatusCode statusCode, string expectedCode, string expectedMessagePart)
@@ -572,6 +572,7 @@ public class TheGetAsyncMethod
 
         Assert.Equal("missing_secret_key", exception.Code);
         Assert.Contains("phx_", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("phs_", exception.Message, StringComparison.Ordinal);
         Assert.Equal(PromptSource.CodeFallback, withFallback.Source);
     }
 
