@@ -118,6 +118,18 @@ internal sealed class EmailSender : IPostHogEmails
             return;
         }
 
+        if (_httpClient!.DefaultRequestHeaders.Authorization is not null)
+        {
+            throw new EmailException(
+                "client_authorization_header",
+                "The HttpClient PostHog uses sets a default Authorization header, so no email was sent.",
+                why: "Files upload straight to PostHog's file storage through that HttpClient, so the header would "
+                     + "reach the file storage, which refuses it.",
+                fix: "Add the header in a handler that sends it only to your own host, instead of in the "
+                     + "HttpClient's DefaultRequestHeaders.",
+                field: "attachments");
+        }
+
         var url = new Uri(appHost + UploadsPath);
         var body = JsonSerializer.Serialize(
             new Dictionary<string, object>

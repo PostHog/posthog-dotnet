@@ -66,7 +66,8 @@ public sealed class EmailException : Exception
     /// PostHog's error code, such as <c>recipient_suppressed</c> or <c>quota_limited</c>, or a client code:
     /// <c>missing_secret_key</c>, <c>missing_app_host</c>, <c>insecure_app_host</c>, <c>client_disabled</c>, <c>client_closed</c>,
     /// <c>network_error</c>, <c>api_error</c> (an answer without a code), <c>attachment_upload_failed</c> (the file
-    /// storage refused an upload) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
+    /// storage refused an upload), <c>client_authorization_header</c> (the <see cref="System.Net.Http.HttpClient"/>
+    /// would send a default <c>Authorization</c> header to the file storage) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
     /// <c>message_too_large</c> itself before any request, as PostHog would.
     /// </summary>
     public string Code { get; }
@@ -111,18 +112,18 @@ public sealed class EmailException : Exception
 
     static string NameOf(HttpStatusCode? statusCode, string code)
     {
-        if (code == "missing_secret_key" || statusCode == HttpStatusCode.Unauthorized)
-        {
-            return "missing_api_key";
-        }
-
         if (code == "attachment_upload_failed")
         {
-            // The status is the file storage's, so PostHog's categories don't apply: a 403 there is an expired
-            // upload URL, not a missing scope.
+            // The status is the file storage's, so PostHog's categories don't apply: a 401 or 403 there is an
+            // expired or altered upload URL, not a missing key or scope.
             return statusCode is (HttpStatusCode)429 || (int?)statusCode >= 500
                 ? "service_unavailable"
                 : "application_error";
+        }
+
+        if (code == "missing_secret_key" || statusCode == HttpStatusCode.Unauthorized)
+        {
+            return "missing_api_key";
         }
 
         if (statusCode is null)

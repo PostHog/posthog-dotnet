@@ -80,7 +80,7 @@ internal sealed class HashedAttachments
 #if NET5_0_OR_GREATER
         var hash = SHA256.HashData(content.Span);
 #else
-        using var sha256 = new SHA256Managed();
+        using var sha256 = SHA256.Create();
         var hash = MemoryMarshal.TryGetArray(content, out var segment)
             ? sha256.ComputeHash(segment.Array!, segment.Offset, segment.Count)
             : sha256.ComputeHash(content.ToArray());

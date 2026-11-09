@@ -168,7 +168,8 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// An attachment's upload to PostHog's file storage can take longer for a large file, so it runs until the
     /// <see cref="HttpClient"/>'s own timeout instead: 100 seconds unless your app changed it. The upload goes
     /// through the same <see cref="HttpClient"/> as every other request, with its handlers, such as a proxy, and its
-    /// default headers, so keep credentials out of those and raise <see cref="HttpClient.Timeout"/> when your app
+    /// default headers, so keep credentials out of those (a default <c>Authorization</c> header fails a send with
+    /// files as <c>client_authorization_header</c>) and raise <see cref="HttpClient.Timeout"/> when your app
     /// sends large files over a slow link.
     /// </remarks>
     public TimeSpan EmailRequestTimeout { get; set; } = TimeSpan.FromSeconds(15);

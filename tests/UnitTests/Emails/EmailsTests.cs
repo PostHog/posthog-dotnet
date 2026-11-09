@@ -407,17 +407,20 @@ public class TheSendAsyncMethodWithAttachments
         Assert.NotNull(error.Fix);
     }
 
-    [Fact]
-    public async Task KeepsTheBucketsAnswerWhenItIsNotAnError()
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task KeepsTheBucketsAnswerWhenItIsNotAnError(HttpStatusCode status)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
-        harness.Respond(HttpStatusCode.Forbidden, "Forbidden by proxy", contentType: "text/plain");
+        harness.Respond(status, "Refused by proxy", contentType: "text/plain");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Equal("The file storage answered HTTP 403: Forbidden by proxy", error.Why);
-        Assert.Equal(HttpStatusCode.Forbidden, error.StatusCode);
+        Assert.Equal($"The file storage answered HTTP {(int)status}: Refused by proxy", error.Why);
+        Assert.Equal(status, error.StatusCode);
         Assert.Equal("application_error", error.Name);
     }
 
@@ -457,6 +460,20 @@ public class TheSendAsyncMethodWithAttachments
         Assert.Equal(3, harness.Requests.Count);
         Assert.Equal("attachment_upload_failed", error.Code);
         Assert.Equal("service_unavailable", error.Name);
+    }
+
+    [Fact]
+    public async Task RefusesFilesWhenTheHttpClientSendsADefaultAuthorization()
+    {
+        await using var harness = new EmailHarness();
+        harness.HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", "cHJveHk6c2VjcmV0");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Empty(harness.Requests);
+        Assert.Equal("client_authorization_header", error.Code);
+        Assert.Equal("attachments", error.Field);
+        Assert.NotNull(error.Fix);
     }
 
     [Fact]
@@ -1226,6 +1243,9 @@ sealed class EmailHarness : IAsyncDisposable
     }
 
     public PostHogClient Client { get; }
+
+    /// <summary>The <see cref="HttpClient"/> the client sends through, as an app configures it.</summary>
+    public HttpClient HttpClient => _httpClient;
 
     public RecordingTimeProvider Time { get; } = new();
 
