@@ -1,6 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+using Convert = PostHog.Library.Polyfills.Convert;
+#endif
 
 namespace PostHog.Emails;
 
@@ -78,14 +81,9 @@ internal sealed class HashedAttachments
             ? sha256.ComputeHash(segment.Array!, segment.Offset, segment.Count)
             : sha256.ComputeHash(content.ToArray());
 #endif
-        const string digits = "0123456789abcdef";
-        var hex = new StringBuilder(hash.Length * 2);
-        foreach (var b in hash)
-        {
-            hex.Append(digits[b >> 4]).Append(digits[b & 0xF]);
-        }
-
-        return hex.ToString();
+#pragma warning disable CA1308 // PostHog names files by lowercase hex.
+        return Convert.ToHexString(hash).ToLowerInvariant();
+#pragma warning restore CA1308
     }
 }
 
