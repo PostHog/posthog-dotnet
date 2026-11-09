@@ -80,7 +80,7 @@ public sealed class EmailException : Exception
     public string Name { get; }
 
     /// <summary>
-    /// The HTTP status, when PostHog answered.
+    /// The HTTP status, when PostHog answered, or the file storage's for <c>attachment_upload_failed</c>.
     /// </summary>
     public HttpStatusCode? StatusCode { get; }
 
@@ -114,6 +114,15 @@ public sealed class EmailException : Exception
         if (code == "missing_secret_key" || statusCode == HttpStatusCode.Unauthorized)
         {
             return "missing_api_key";
+        }
+
+        if (code == "attachment_upload_failed")
+        {
+            // The status is the file storage's, so PostHog's categories don't apply: a 403 there is an expired
+            // upload URL, not a missing scope.
+            return statusCode is (HttpStatusCode)429 || (int?)statusCode >= 500
+                ? "service_unavailable"
+                : "application_error";
         }
 
         if (statusCode is null)

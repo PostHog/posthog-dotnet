@@ -136,6 +136,19 @@ internal sealed class EmailSender : IPostHogEmails
             cancellationToken).ConfigureAwait(false);
         foreach (var (file, target) in uploads)
         {
+            if (!_options.AllowInsecureAppHost && target.Url.Scheme != Uri.UriSchemeHttps)
+            {
+                throw new EmailException(
+                    "insecure_app_host",
+                    $"PostHog answered with an http upload URL for {file.File.Filename}, so no email was sent.",
+                    why: "Over http the file would travel unencrypted.",
+                    fix: "Serve PostHog's file storage over https, or set AllowInsecureAppHost for local development.",
+                    field: $"attachments__{file.Index}");
+            }
+        }
+
+        foreach (var (file, target) in uploads)
+        {
             await WithRetriesAsync(
                 maxRetries,
                 () => PutAsync(file, target, cancellationToken),
@@ -276,7 +289,12 @@ internal sealed class EmailSender : IPostHogEmails
                     throw new EmailException(
                         "api_error",
                         $"PostHog answered without where to upload {file.File.Filename}, so no email was sent.",
-                        reply.Status);
+                        reply.Status,
+                        why: $"PostHog's answer about the file with SHA-256 {file.Sha256} is missing or has no "
+                             + "usable upload URL, method and headers.",
+                        fix: "Send the email again. If it keeps failing, check that your PostHog version supports "
+                             + "attachment uploads.",
+                        field: $"attachments__{file.Index}");
             }
         }
 
@@ -305,7 +323,14 @@ internal sealed class EmailSender : IPostHogEmails
             headers[header.Name] = header.Value.GetString()!;
         }
 
-        return new UploadTarget(url, new HttpMethod(method), headers);
+        try
+        {
+            return new UploadTarget(url, new HttpMethod(method), headers);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -472,6 +497,8 @@ internal sealed class EmailSender : IPostHogEmails
             HttpStatusCode.Conflict => error.Code == "idempotency_key_in_flight",
             (HttpStatusCode)429 => error.Code is not ("quota_limited" or "upload_quota_exceeded"),
             HttpStatusCode.ServiceUnavailable => true,
+            // File storage asks clients to retry its 5xx answers, and a PUT of the same bytes is safe to repeat.
+            >= HttpStatusCode.InternalServerError => error.Code == "attachment_upload_failed",
             _ => false,
         };
     }

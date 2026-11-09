@@ -396,6 +396,7 @@ public class TheSendAsyncMethodWithAttachments
 
         Assert.Equal(2, harness.Requests.Count);
         Assert.Equal("attachment_upload_failed", error.Code);
+        Assert.Equal("application_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments__1", error.Field);
         Assert.Contains("invoice.pdf", error.Message, StringComparison.Ordinal);
@@ -416,15 +417,21 @@ public class TheSendAsyncMethodWithAttachments
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
         Assert.Equal("The file storage answered HTTP 403: Forbidden by proxy", error.Why);
+        Assert.Equal(HttpStatusCode.Forbidden, error.StatusCode);
+        Assert.Equal("application_error", error.Name);
     }
 
-    [Fact]
-    public async Task RetriesAnUnavailableBucketThenSends()
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task RetriesAFailingBucketThenSends(HttpStatusCode status)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
         harness.Respond(
-            HttpStatusCode.ServiceUnavailable,
+            status,
             "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>",
             contentType: "application/xml");
         harness.Respond(HttpStatusCode.OK, "", contentType: "application/xml");
@@ -435,6 +442,34 @@ public class TheSendAsyncMethodWithAttachments
         Assert.Equal(
             [HttpMethod.Post, HttpMethod.Put, HttpMethod.Put, HttpMethod.Post],
             harness.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
+    public async Task ReportsABucketThatKeepsFailingAsUnavailable()
+    {
+        await using var harness = new EmailHarness(options => options.EmailRequestMaxRetries = 1);
+        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
+        harness.Respond(HttpStatusCode.InternalServerError, "<Error><Code>InternalError</Code><Message>Try again.</Message></Error>");
+        harness.Respond(HttpStatusCode.InternalServerError, "<Error><Code>InternalError</Code><Message>Try again.</Message></Error>");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Equal(3, harness.Requests.Count);
+        Assert.Equal("attachment_upload_failed", error.Code);
+        Assert.Equal("service_unavailable", error.Name);
+    }
+
+    [Fact]
+    public async Task UploadsNothingToAnHttpUrlUnlessAllowed()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256).Replace("https://files.", "http://files.", StringComparison.Ordinal)));
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Equal("insecure_app_host", error.Code);
+        Assert.Equal("attachments__0", error.Field);
     }
 
     [Fact]
@@ -472,6 +507,7 @@ public class TheSendAsyncMethodWithAttachments
     [InlineData("""{"files": []}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload"}]}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "/relative", "method": "PUT", "headers": {}}]}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "https://files.example.com/a", "method": "PUT ", "headers": {}}]}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "archived"}]}""")]
     public async Task SendsNothingWhenAFileHasNoUsableAnswer(string body)
     {
@@ -482,6 +518,8 @@ public class TheSendAsyncMethodWithAttachments
 
         Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
         Assert.Equal("api_error", error.Code);
+        Assert.Equal("attachments__0", error.Field);
+        Assert.Contains(PdfSha256, error.Why, StringComparison.Ordinal);
     }
 
     [Fact]

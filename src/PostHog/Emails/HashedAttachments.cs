@@ -18,16 +18,21 @@ internal sealed class HashedAttachments
     const long HeadersAndMimeBoundariesBytes = 64 * 1024;
     const string MessageLimit = "40 MB after Base64 encoding, about 29 MB of files";
 
-    HashedAttachments(IReadOnlyList<HashedAttachment> files) => Files = files;
+    HashedAttachments(IReadOnlyList<HashedAttachment> files)
+    {
+        Files = files;
+        Distinct = files
+            .GroupBy(file => file.Sha256, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+    }
 
     public static HashedAttachments None { get; } = new([]);
 
     public IReadOnlyList<HashedAttachment> Files { get; }
 
-    public IReadOnlyList<HashedAttachment> Distinct => Files
-        .GroupBy(file => file.Sha256, StringComparer.Ordinal)
-        .Select(group => group.First())
-        .ToList();
+    /// <summary>The files once per hash, in the order they first appear.</summary>
+    public IReadOnlyList<HashedAttachment> Distinct { get; }
 
     public static HashedAttachments Hash(IReadOnlyList<EmailAttachment> attachments, params string?[] bodies)
     {
@@ -41,11 +46,8 @@ internal sealed class HashedAttachments
                 field: "attachments");
         }
 
-        var files = attachments
-            .Select((file, index) => new HashedAttachment(index, file, Sha256Hex(file.Content)))
-            .ToList();
-        var sizes = files
-            .Select(file => (long)file.Size)
+        var sizes = attachments
+            .Select(file => (long)file.Content.Length)
             .Concat(bodies.Select(body => (long)Encoding.UTF8.GetByteCount(body ?? string.Empty)));
         if (EstimateMessageBytes(sizes) > MaxMessageBytes)
         {
@@ -59,7 +61,9 @@ internal sealed class HashedAttachments
                 field: "attachments");
         }
 
-        return new HashedAttachments(files);
+        return new HashedAttachments(attachments
+            .Select((file, index) => new HashedAttachment(index, file, Sha256Hex(file.Content)))
+            .ToList());
     }
 
     static long EstimateMessageBytes(IEnumerable<long> sizes)
