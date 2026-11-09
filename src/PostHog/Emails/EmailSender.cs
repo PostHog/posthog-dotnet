@@ -267,6 +267,13 @@ internal sealed class EmailSender : IPostHogEmails
         Reply reply,
         IReadOnlyList<HashedAttachment> files)
     {
+        if (reply.Status == HttpStatusCode.NotFound)
+        {
+            // A PostHog without the upload route and a project that can't send email from code both answer 404,
+            // and the client can't tell them apart, so it reports PostHog's own answer about the files.
+            throw ReplyError(reply, defaultCode: "not_found", defaultField: "attachments");
+        }
+
         if (!IsSuccess(reply.Status))
         {
             throw ReplyError(reply);
@@ -681,19 +688,19 @@ internal sealed class EmailSender : IPostHogEmails
 
     static bool IsSuccess(HttpStatusCode status) => (int)status is >= 200 and < 300;
 
-    static EmailException ReplyError(Reply reply)
+    static EmailException ReplyError(Reply reply, string defaultCode = "api_error", string? defaultField = null)
     {
         var docsUrl = Text(reply.Fields, "docs_url") is { } docs && Uri.TryCreate(docs, UriKind.Absolute, out var uri)
             ? uri
             : null;
         return new EmailException(
-            Text(reply.Fields, "code") ?? "api_error",
+            Text(reply.Fields, "code") ?? defaultCode,
             Text(reply.Fields, "detail") ?? $"PostHog answered HTTP {(int)reply.Status}.",
             reply.Status,
             why: Text(reply.Fields, "why"),
             fix: Text(reply.Fields, "fix"),
             docsUrl: docsUrl,
-            field: Text(reply.Fields, "attr"),
+            field: Text(reply.Fields, "attr") ?? defaultField,
             retryAfter: reply.RetryAfter);
     }
 

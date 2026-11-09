@@ -520,6 +520,25 @@ public class TheSendAsyncMethodWithAttachments
     }
 
     [Theory]
+    [InlineData("""{"type": "invalid_request", "code": "not_found", "detail": "Sending email from code isn't enabled for this project.", "attr": null}""", "Sending email from code isn't enabled for this project.")]
+    [InlineData("""{"type": "invalid_request", "code": "not_found", "detail": "Endpoint not found.", "attr": null}""", "Endpoint not found.")]
+    [InlineData("<h1>Not Found</h1>", "PostHog answered HTTP 404.")]
+    public async Task ReportsAMissingUploadRouteAsNotFound(string body, string message)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.NotFound, body, contentType: body.StartsWith('<') ? "text/html" : "application/json");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Equal("not_found", error.Code);
+        Assert.Equal("not_found", error.Name);
+        Assert.Equal("attachments", error.Field);
+        Assert.Equal(message, error.Message);
+        Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
+    }
+
+    [Theory]
     [InlineData("{}")]
     [InlineData("""{"files": []}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload"}]}""")]

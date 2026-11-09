@@ -65,8 +65,8 @@ public sealed class SendTemplateEmailOptions : SendEmailOptions
 /// <para>
 /// A PostHog version that doesn't take <see cref="Cc"/> or <see cref="Bcc"/> yet refuses the send with a
 /// <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. A project that can't send files
-/// yet gets <c>field_not_accepted</c>, and a PostHog version without file uploads answers <c>not_found</c>. None of
-/// them sends the email.
+/// yet gets <c>field_not_accepted</c>. A PostHog version without file uploads, or a project that can't send email
+/// from code, answers <c>not_found</c> on <c>attachments</c> with PostHog's reason. None of them sends the email.
 /// </para>
 /// </remarks>
 public sealed class SendCodeEmailOptions : SendEmailOptions
