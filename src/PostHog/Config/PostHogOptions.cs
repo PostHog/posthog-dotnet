@@ -162,8 +162,12 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public bool AllowInsecureAppHost { get; set; }
 
     /// <summary>
-    /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request. (Default: 15 seconds)
+    /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request to PostHog. (Default: 15 seconds)
     /// </summary>
+    /// <remarks>
+    /// An attachment's upload to PostHog's file storage can take longer for a large file, so it runs until the
+    /// <see cref="HttpClient"/>'s own timeout instead.
+    /// </remarks>
     public TimeSpan EmailRequestTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>

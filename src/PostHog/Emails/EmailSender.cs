@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Xml;
+using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
@@ -16,6 +19,7 @@ internal sealed class EmailSender : IPostHogEmails
 {
     const string SendPath = "/api/projects/@current/messaging/send/email/";
     const string StatusPath = "/api/projects/@current/messaging/emails/";
+    const string UploadsPath = "/api/projects/@current/messaging/attachments/uploads/";
     const int MaxTemplateKeyLength = 400;
     const int MaxIdempotencyKeyLength = 255;
     static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
@@ -64,6 +68,8 @@ internal sealed class EmailSender : IPostHogEmails
         var (appHost, secretKey) = Connect(
             "no email was sent",
             "Sending email needs SecretKey, a project secret API key with the transactional_email:write scope.");
+        await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
+            .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
@@ -97,6 +103,209 @@ internal sealed class EmailSender : IPostHogEmails
                 await RequestAsync(HttpMethod.Get, url, secretKey, body: null, idempotencyKey: null, cancellationToken)
                     .ConfigureAwait(false)),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task UploadAsync(
+        HashedAttachments attachments,
+        string appHost,
+        string secretKey,
+        int maxRetries,
+        CancellationToken cancellationToken)
+    {
+        var files = attachments.Distinct;
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        var url = new Uri(appHost + UploadsPath);
+        var body = JsonSerializer.Serialize(
+            new Dictionary<string, object>
+            {
+                ["files"] = files
+                    .Select(file => new Dictionary<string, object> { ["sha256"] = file.Sha256, ["size"] = file.Size })
+                    .ToList(),
+            },
+            JsonSerializerHelper.Options);
+        var uploads = await WithRetriesAsync(
+            maxRetries,
+            async () => ParseUploadsReply(
+                await RequestAsync(HttpMethod.Post, url, secretKey, body, idempotencyKey: null, cancellationToken)
+                    .ConfigureAwait(false),
+                files),
+            cancellationToken).ConfigureAwait(false);
+        foreach (var (file, target) in uploads)
+        {
+            await WithRetriesAsync(
+                maxRetries,
+                () => PutAsync(file, target, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    async Task<bool> PutAsync(HashedAttachment file, UploadTarget target, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(target.Method, target.Url) { Content = UploadContent(file) };
+        foreach (var header in target.Headers)
+        {
+            if (!request.Headers.TryAddWithoutValidation(header.Key, header.Value))
+            {
+                request.Content.Headers.Remove(header.Key);
+                request.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient!.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw NetworkError($"Uploading {file.File.Filename} timed out, so no email was sent.", e);
+        }
+        catch (HttpRequestException e)
+        {
+            throw NetworkError($"Uploading {file.File.Filename} failed, so no email was sent.", e);
+        }
+        catch (IOException e)
+        {
+            throw NetworkError($"Uploading {file.File.Filename} failed, so no email was sent.", e);
+        }
+
+        using (response)
+        {
+            if (IsSuccess(response.StatusCode))
+            {
+                return true;
+            }
+
+#if NET5_0_OR_GREATER
+            var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#else
+            var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+#endif
+            throw new EmailException(
+                "attachment_upload_failed",
+                $"Uploading {file.File.Filename} failed, so no email was sent.",
+                response.StatusCode,
+                why: $"The file storage answered {StorageAnswer(response.StatusCode, text)}",
+                fix: "Send the email again. If the upload keeps failing, check that nothing between your app and "
+                     + "the file storage, such as a proxy, changes the request.",
+                field: $"attachments__{file.Index}",
+                retryAfter: ReadRetryAfter(response));
+        }
+    }
+
+    static ByteArrayContent UploadContent(HashedAttachment file)
+        => MemoryMarshal.TryGetArray(file.File.Content, out var segment)
+            ? new ByteArrayContent(segment.Array!, segment.Offset, segment.Count)
+            : new ByteArrayContent(file.File.Content.ToArray());
+
+    static string StorageAnswer(HttpStatusCode status, string text)
+    {
+        const int maxAnswerLength = 500;
+        var answer = $"HTTP {(int)status}";
+        if (StorageError(text) is { } error)
+        {
+            return $"{answer} {error.Code}: {error.Message}";
+        }
+
+        var trimmed = text.Trim();
+        return trimmed.Length switch
+        {
+            0 => answer + ".",
+            > maxAnswerLength => $"{answer}: {trimmed.Substring(0, maxAnswerLength)}",
+            _ => $"{answer}: {trimmed}",
+        };
+    }
+
+    static (string Code, string Message)? StorageError(string text)
+    {
+        try
+        {
+            using var reader = XmlReader.Create(
+                new StringReader(text),
+                new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+            var error = XDocument.Load(reader).Root;
+            return error?.Name.LocalName == "Error" && error.Element("Code")?.Value is { Length: > 0 } code
+                ? (code, error.Element("Message")?.Value ?? string.Empty)
+                : null;
+        }
+        catch (XmlException)
+        {
+            return null;
+        }
+    }
+
+    static List<(HashedAttachment File, UploadTarget Target)> ParseUploadsReply(
+        Reply reply,
+        IReadOnlyList<HashedAttachment> files)
+    {
+        if (!IsSuccess(reply.Status))
+        {
+            throw ReplyError(reply);
+        }
+
+        var answers = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (reply.Fields is { } fields
+            && fields.TryGetProperty("files", out var list)
+            && list.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var answer in list.EnumerateArray())
+            {
+                if (Text(answer, "sha256") is { } sha256)
+                {
+                    answers[sha256] = answer;
+                }
+            }
+        }
+
+        var uploads = new List<(HashedAttachment, UploadTarget)>();
+        foreach (var file in files)
+        {
+            answers.TryGetValue(file.Sha256, out var answer);
+            switch (Text(answer, "status"))
+            {
+                case "present":
+                    continue;
+                case "upload" when ReadUploadTarget(answer) is { } target:
+                    uploads.Add((file, target));
+                    continue;
+                default:
+                    throw new EmailException(
+                        "api_error",
+                        $"PostHog answered without where to upload {file.File.Filename}, so no email was sent.",
+                        reply.Status);
+            }
+        }
+
+        return uploads;
+    }
+
+    static UploadTarget? ReadUploadTarget(JsonElement answer)
+    {
+        if (!Uri.TryCreate(Text(answer, "url"), UriKind.Absolute, out var url)
+            || (url.Scheme != Uri.UriSchemeHttps && url.Scheme != Uri.UriSchemeHttp)
+            || Text(answer, "method") is not { } method
+            || !answer.TryGetProperty("headers", out var headerFields)
+            || headerFields.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var header in headerFields.EnumerateObject())
+        {
+            if (header.Value.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            headers[header.Name] = header.Value.GetString()!;
+        }
+
+        return new UploadTarget(url, new HttpMethod(method), headers);
     }
 
     /// <summary>
@@ -261,7 +470,7 @@ internal sealed class EmailSender : IPostHogEmails
         {
             null => error.Code == "network_error",
             HttpStatusCode.Conflict => error.Code == "idempotency_key_in_flight",
-            (HttpStatusCode)429 => error.Code != "quota_limited",
+            (HttpStatusCode)429 => error.Code is not ("quota_limited" or "upload_quota_exceeded"),
             HttpStatusCode.ServiceUnavailable => true,
             _ => false,
         };
@@ -492,9 +701,9 @@ internal sealed class EmailSender : IPostHogEmails
             throw new ArgumentException("MaxRetries must not be negative.", nameof(email));
         }
 
-        var body = email switch
+        var (body, attachments) = email switch
         {
-            SendTemplateEmailOptions template => TemplateBody(template),
+            SendTemplateEmailOptions template => (TemplateBody(template), HashedAttachments.None),
             SendCodeEmailOptions code => CodeBody(code),
             _ => throw new ArgumentException(
                 "Send a SendTemplateEmailOptions or a SendCodeEmailOptions.",
@@ -502,6 +711,7 @@ internal sealed class EmailSender : IPostHogEmails
         };
         return new PreparedSend(
             JsonSerializer.Serialize(body, JsonSerializerHelper.Options),
+            attachments,
             email.IdempotencyKey ?? Guid.NewGuid().ToString("D"),
             email.MaxRetries ?? defaultMaxRetries);
     }
@@ -527,7 +737,7 @@ internal sealed class EmailSender : IPostHogEmails
         return body;
     }
 
-    static Dictionary<string, object?> CodeBody(SendCodeEmailOptions email)
+    static (Dictionary<string, object?> Body, HashedAttachments Attachments) CodeBody(SendCodeEmailOptions email)
     {
         if (!IsTemplateKey(email.TemplateKey))
         {
@@ -571,6 +781,9 @@ internal sealed class EmailSender : IPostHogEmails
             throw new ArgumentException("Every attachment needs a Filename, such as invoice.pdf.", nameof(email));
         }
 
+        var hashed = email.Attachments is { Count: > 0 } files
+            ? HashedAttachments.Hash(files, email.Html, email.Text)
+            : HashedAttachments.None;
         var body = new Dictionary<string, object?>
         {
             ["template_key"] = email.TemplateKey,
@@ -607,9 +820,9 @@ internal sealed class EmailSender : IPostHogEmails
             body["bcc"] = email.Bcc;
         }
 
-        if (email.Attachments is { Count: > 0 })
+        if (hashed.Files.Count > 0)
         {
-            body["attachments"] = email.Attachments.Select(AttachmentBody).ToList();
+            body["attachments"] = hashed.Files.Select(ReferenceBody).ToList();
         }
 
         body["capture_engagement"] = email.CaptureEngagement;
@@ -618,24 +831,24 @@ internal sealed class EmailSender : IPostHogEmails
             body["distinct_id"] = email.DistinctId;
         }
 
-        return body;
+        return (body, hashed);
     }
 
-    static Dictionary<string, object> AttachmentBody(EmailAttachment file)
+    static Dictionary<string, object> ReferenceBody(HashedAttachment attachment)
     {
         var body = new Dictionary<string, object>
         {
-            ["filename"] = file.Filename,
-            ["content"] = file.Content,
+            ["sha256"] = attachment.Sha256,
+            ["filename"] = attachment.File.Filename,
         };
-        if (file.ContentType is not null)
+        if (attachment.File.ContentType is not null)
         {
-            body["content_type"] = file.ContentType;
+            body["content_type"] = attachment.File.ContentType;
         }
 
-        if (file.ContentId is not null)
+        if (attachment.File.ContentId is not null)
         {
-            body["content_id"] = file.ContentId;
+            body["content_id"] = attachment.File.ContentId;
         }
 
         return body;
@@ -677,7 +890,13 @@ internal sealed class EmailSender : IPostHogEmails
         return true;
     }
 
-    readonly record struct PreparedSend(string Body, string IdempotencyKey, int MaxRetries);
+    readonly record struct PreparedSend(
+        string Body,
+        HashedAttachments Attachments,
+        string IdempotencyKey,
+        int MaxRetries);
+
+    sealed record UploadTarget(Uri Url, HttpMethod Method, IReadOnlyDictionary<string, string> Headers);
 
     readonly record struct Reply(HttpStatusCode Status, JsonElement? Fields, TimeSpan? RetryAfter);
 

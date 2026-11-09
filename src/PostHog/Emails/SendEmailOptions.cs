@@ -63,9 +63,10 @@ public sealed class SendTemplateEmailOptions : SendEmailOptions
 /// Needs <see cref="Html"/>, <see cref="Text"/> or both. To send a React email, render it to HTML in your app first
 /// and pass it as <see cref="Html"/>.
 /// <para>
-/// A PostHog version that doesn't take <see cref="Cc"/>, <see cref="Bcc"/> or <see cref="Attachments"/> yet refuses
-/// the send with a <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. It never sends
-/// the email without them.
+/// A PostHog version that doesn't take <see cref="Cc"/> or <see cref="Bcc"/> yet refuses the send with a
+/// <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. A project that can't send files
+/// yet gets <c>field_not_accepted</c>, and a PostHog version without file uploads answers <c>not_found</c>. None of
+/// them sends the email.
 /// </para>
 /// </remarks>
 public sealed class SendCodeEmailOptions : SendEmailOptions
@@ -112,8 +113,15 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public IReadOnlyList<string>? Bcc { get; init; }
 
     /// <summary>
-    /// Files sent with the email. At most 10, and 512 KB in total.
+    /// Files sent with the email: at most 10, and at most 40 MB for the whole email after Base64 encoding, which
+    /// leaves about 29 MB for the files.
     /// </summary>
+    /// <remarks>
+    /// The client checks both limits before any request. It then asks PostHog which files it lacks, uploads each of
+    /// those straight to PostHog's file storage, and sends the email only once every upload succeeded. A file this
+    /// project sent before is usually still stored and isn't uploaded again. Uploads go to the storage host PostHog
+    /// names, not to <see cref="PostHogOptions.AppHost"/>, and never carry the secret key.
+    /// </remarks>
     public IReadOnlyList<EmailAttachment>? Attachments { get; init; }
 
     /// <summary>
@@ -138,8 +146,8 @@ public sealed class EmailAttachment
     public required string Filename { get; init; }
 
     /// <summary>
-    /// The file's bytes. The client encodes them as Base64. PostHog can't fetch a file from a path or URL, so read
-    /// the file first.
+    /// The file's bytes. The client names the file by their SHA-256 and uploads them when PostHog doesn't have them
+    /// yet. PostHog can't fetch a file from a path or URL, so read the file first.
     /// </summary>
     public required ReadOnlyMemory<byte> Content { get; init; }
 

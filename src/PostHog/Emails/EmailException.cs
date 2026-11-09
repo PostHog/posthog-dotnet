@@ -65,7 +65,9 @@ public sealed class EmailException : Exception
     /// <summary>
     /// PostHog's error code, such as <c>recipient_suppressed</c> or <c>quota_limited</c>, or a client code:
     /// <c>missing_secret_key</c>, <c>missing_app_host</c>, <c>insecure_app_host</c>, <c>client_disabled</c>, <c>client_closed</c>,
-    /// <c>network_error</c>, <c>api_error</c> (an answer without a code) or <c>unexpected_error</c>.
+    /// <c>network_error</c>, <c>api_error</c> (an answer without a code), <c>attachment_upload_failed</c> (the file
+    /// storage refused an upload) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
+    /// <c>message_too_large</c> itself before any request, as PostHog would.
     /// </summary>
     public string Code { get; }
 
@@ -121,7 +123,9 @@ public sealed class EmailException : Exception
                 return "service_unavailable";
             }
 
-            return code.StartsWith("invalid_", StringComparison.Ordinal) ? "validation_error" : "application_error";
+            return code.StartsWith("invalid_", StringComparison.Ordinal) || code is "too_many_attachments" or "message_too_large"
+                ? "validation_error"
+                : "application_error";
         }
 
         return (int)statusCode switch
