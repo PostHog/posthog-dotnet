@@ -232,6 +232,27 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Single(harness.Requests).Body);
     }
 
+    [Theory]
+    [InlineData("product-updates", "product-updates")]
+    [InlineData(EmailCategories.Transactional, "transactional")]
+    public async Task SendsTheCategory(string category, string sent)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "weekly-digest",
+            Subject = "This week",
+            Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
+            Category = category,
+        });
+
+        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
+        Assert.Equal(sent, body.RootElement.GetProperty("category").GetString());
+    }
+
     public static TheoryData<string, SendCodeEmailOptions> InvalidCodeSends => new()
     {
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "password reset", Subject = "s", Html = "h" } },
@@ -240,6 +261,7 @@ public class TheSendAsyncMethodWithCodeContent
         { "Subject", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = null!, Html = "h" } },
         { "Html, Text or both", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s" } },
         { "ReplyTo", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", ReplyTo = [" "] } },
+        { "Category", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Category = "" } },
     };
 
     [Theory]

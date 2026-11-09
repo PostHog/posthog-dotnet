@@ -551,6 +551,13 @@ internal sealed class EmailSender : IPostHogEmails
             throw new ArgumentException("ReplyTo must not hold a blank address.", nameof(email));
         }
 
+        if (email.Category is { } category && string.IsNullOrWhiteSpace(category))
+        {
+            throw new ArgumentException(
+                "Category must not be blank. Leave it null to send transactional email.",
+                nameof(email));
+        }
+
         var body = new Dictionary<string, object?>
         {
             ["template_key"] = email.TemplateKey,
@@ -575,6 +582,11 @@ internal sealed class EmailSender : IPostHogEmails
         if (email.ReplyTo is not null)
         {
             body["reply_to"] = email.ReplyTo;
+        }
+
+        if (email.Category is not null)
+        {
+            body["category"] = email.Category;
         }
 
         body["capture_engagement"] = email.CaptureEngagement;

@@ -1,7 +1,7 @@
 namespace PostHog.Emails;
 
 /// <summary>
-/// One transactional email to send with <see cref="IPostHogEmails.SendAsync"/>. Pass a
+/// One email to send with <see cref="IPostHogEmails.SendAsync"/>. Pass a
 /// <see cref="SendTemplateEmailOptions"/> to send a template made in PostHog, or a
 /// <see cref="SendCodeEmailOptions"/> to send content your code rendered.
 /// </summary>
@@ -95,6 +95,19 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// The addresses replies go to.
     /// </summary>
     public IReadOnlyList<string>? ReplyTo { get; init; }
+
+    /// <summary>
+    /// The key of one of the project's marketing message categories, such as <c>product-updates</c>. Without it, or
+    /// with <see cref="EmailCategories.Transactional"/>, PostHog sends the email as transactional.
+    /// </summary>
+    /// <remarks>
+    /// A marketing email honors the recipient's opt-outs, and its <see cref="Html"/>, or its <see cref="Text"/> when
+    /// it has no <see cref="Html"/>, needs a <c>{{ unsubscribe_url }}</c> placeholder for the recipient's preferences
+    /// link. PostHog refuses a key that names no marketing category with <c>unknown_category</c>, content without
+    /// the placeholder with <c>unsubscribe_link_required</c>, and a recipient who opted out with
+    /// <c>recipient_opted_out</c>.
+    /// </remarks>
+    public string? Category { get; init; }
 
     /// <summary>
     /// Whether PostHog captures the email's engagement events (sent, delivered, opened, clicked, bounced) as events

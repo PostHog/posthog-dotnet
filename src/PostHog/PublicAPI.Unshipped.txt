@@ -8,6 +8,7 @@ PostHog.Api.ComparisonOperator.StartsWith = 25 -> PostHog.Api.ComparisonOperator
 PostHog.Api.ComparisonOperator.Unknown = 29 -> PostHog.Api.ComparisonOperator
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.get -> bool
 PostHog.Api.FlagsResult.MinimalFlagCalledEvents.init -> void
+PostHog.Emails.EmailCategories
 PostHog.Emails.EmailException
 PostHog.Emails.EmailException.Code.get -> string!
 PostHog.Emails.EmailException.DocsUrl.get -> System.Uri?
@@ -46,6 +47,8 @@ PostHog.Emails.IPostHogEmails.SendAsync(PostHog.Emails.SendEmailOptions! email, 
 PostHog.Emails.SendCodeEmailOptions
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.get -> bool
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.init -> void
+PostHog.Emails.SendCodeEmailOptions.Category.get -> string?
+PostHog.Emails.SendCodeEmailOptions.Category.init -> void
 PostHog.Emails.SendCodeEmailOptions.From.get -> string?
 PostHog.Emails.SendCodeEmailOptions.From.init -> void
 PostHog.Emails.SendCodeEmailOptions.Html.get -> string?
@@ -157,5 +160,6 @@ PostHog.Prompts.PromptSource.Cache = 1 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.CodeFallback = 3 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.StaleCache = 2 -> PostHog.Prompts.PromptSource
 PostHog.PromptsExtensions
+const PostHog.Emails.EmailCategories.Transactional = "transactional" -> string!
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
 static PostHog.PromptsExtensions.ClearCache(this PostHog.Prompts.IPostHogPrompts! prompts, string? name = null, int? version = null) -> void
