@@ -93,10 +93,10 @@ public class TheSendAsyncMethodOverTheNetwork
         {
             var options = new PostHogOptions();
             Configure(options);
-            // A plain factory, as services.AddHttpClient() gives an app: its clients follow redirects.
-            var factories = new ServiceCollection().AddHttpClient().BuildServiceProvider();
-            var client = new PostHogClient(options, httpClientFactory: factories.GetRequiredService<IHttpClientFactory>());
-            return new WiredClient(client.Emails, client, factories);
+            var appServices = new ServiceCollection().AddHttpClient().BuildServiceProvider();
+            var factoryWhoseClientsFollowRedirects = appServices.GetRequiredService<IHttpClientFactory>();
+            var client = new PostHogClient(options, httpClientFactory: factoryWhoseClientsFollowRedirects);
+            return new WiredClient(client.Emails, client, appServices);
         }
 
         var services = new ServiceCollection();
