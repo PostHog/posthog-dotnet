@@ -39,7 +39,8 @@ internal sealed class HashedAttachments
     public static HashedAttachments Hash(
         IReadOnlyList<EmailAttachment> attachments,
         string subject,
-        params string?[] bodies)
+        string? html,
+        string? text)
     {
         if (attachments.Count > MaxFiles)
         {
@@ -53,7 +54,8 @@ internal sealed class HashedAttachments
 
         var sizes = attachments
             .Select(file => (long)file.Content.Length)
-            .Concat(bodies.Select(body => (long)Encoding.UTF8.GetByteCount(body ?? string.Empty)));
+            .Concat(new[] { html, TextPostHogSends(html, text) }
+                .Select(body => (long)Encoding.UTF8.GetByteCount(body ?? string.Empty)));
         if (EstimateMessageBytes(subject, sizes) > MaxMessageBytes)
         {
             throw new EmailException(
@@ -70,6 +72,8 @@ internal sealed class HashedAttachments
             .Select((file, index) => new HashedAttachment(index, file, Sha256Hex(file.Content)))
             .ToList());
     }
+
+    static string? TextPostHogSends(string? html, string? text) => string.IsNullOrEmpty(text) ? html : text;
 
     static long EstimateMessageBytes(string subject, IEnumerable<long> sizes)
         => sizes.Aggregate(

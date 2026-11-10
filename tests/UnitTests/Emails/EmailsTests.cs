@@ -288,6 +288,8 @@ public class TheSendAsyncMethodWithAttachments
 {
     const string PdfSha256 = "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027";
     const int LargestFileBesideOneSubjectWord = 29_182_821;
+    const int FileBesideLongHtml = 29_170_000;
+    static readonly string LongHtml = new('x', 10_000);
     static readonly byte[] Bytes = [0x00, 0x25, 0x50, 0x44, 0x46, 0xFF];
 
     static SendCodeEmailOptions Invoice(params EmailAttachment[] attachments) => new()
@@ -464,6 +466,22 @@ public class TheSendAsyncMethodWithAttachments
         Assert.Equal(0, posthog.StorageWrites);
         Assert.Equal("insecure_app_host", error.Code);
         Assert.Equal("attachments__0", error.Field);
+        Assert.Contains("invoice.pdf", error.Message, StringComparison.Ordinal);
+        Assert.Contains("file storage over https", error.Fix, StringComparison.Ordinal);
+        Assert.DoesNotContain("files.example.com", error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UploadsToAnHttpUrlWithTheOptIn()
+    {
+        var posthog = new FakePostHogEmails { UploadScheme = "http" };
+        await using var harness = new EmailHarness(options => options.AllowInsecureAppHost = true, posthog);
+
+        await harness.Client.Emails.SendAsync(Invoice(Pdf()));
+
+        var file = Assert.Single(Assert.Single(posthog.Delivered).Attachments);
+        Assert.Equal(Bytes[1..5], file.Content);
+        Assert.Equal(1, posthog.StorageWrites);
     }
 
     [Fact]
@@ -569,24 +587,30 @@ public class TheSendAsyncMethodWithAttachments
         Assert.NotNull(error.Fix);
     }
 
-    public static TheoryData<string, int, string, string?> SendsThatFit => new()
+    public static TheoryData<string, int, string, string, string?> SendsThatFit => new()
     {
-        { "a one-word subject", LargestFileBesideOneSubjectWord, "Your archive", null },
-        { "a subject of 42 ASCII bytes", LargestFileBesideOneSubjectWord, new string('a', 42), null },
-        { "a subject of 21 two-byte characters", LargestFileBesideOneSubjectWord, new string('é', 21), null },
-        { "an empty subject", 29_182_875, "", null },
+        { "a one-word subject", LargestFileBesideOneSubjectWord, "Your archive", "", null },
+        { "a subject of 42 ASCII bytes", LargestFileBesideOneSubjectWord, new string('a', 42), "", null },
+        { "a subject of 21 two-byte characters", LargestFileBesideOneSubjectWord, new string('é', 21), "", null },
+        { "an empty subject", 29_182_875, "", "", null },
+        { "HTML with its own text", FileBesideLongHtml, "Your archive", LongHtml, "x" },
     };
 
     [Theory]
     [MemberData(nameof(SendsThatFit))]
-    public async Task SendsTheLargestFileThatFitsTheMessageEstimate(string beside, int size, string subject, string? text)
+    public async Task SendsTheLargestFileThatFitsTheMessageEstimate(
+        string beside,
+        int size,
+        string subject,
+        string html,
+        string? text)
     {
         var posthog = new FakePostHogEmails();
         var content = new byte[size];
         posthog.Store(content);
         await using var harness = new EmailHarness(posthog: posthog);
 
-        await harness.Client.Emails.SendAsync(Archive(content, subject, html: "", text));
+        await harness.Client.Emails.SendAsync(Archive(content, subject, html, text));
 
         var file = Assert.Single(Assert.Single(posthog.Delivered).Attachments);
         Assert.True(file.Content.Length == size, $"The file beside {beside} was sent.");
@@ -600,6 +624,8 @@ public class TheSendAsyncMethodWithAttachments
         { "one HTML byte", LargestFileBesideOneSubjectWord, "Your archive", "x", null },
         { "one text byte", LargestFileBesideOneSubjectWord, "Your archive", "", "x" },
         { "one more file byte beside an empty subject", 29_182_876, "", "", null },
+        { "HTML whose derived text PostHog sends too", FileBesideLongHtml, "Your archive", LongHtml, null },
+        { "HTML with an empty text", FileBesideLongHtml, "Your archive", LongHtml, "" },
     };
 
     [Theory]
