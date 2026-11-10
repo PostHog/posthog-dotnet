@@ -26,6 +26,23 @@ internal sealed class EmailSender : IPostHogEmails
     static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(15);
     const int DefaultMaxRetries = 2;
     const string UsAppHost = "https://us.posthog.com";
+
+    /// <summary>
+    /// The name of the <see cref="HttpClient"/> that uploads files. It never follows a redirect, so a file goes only
+    /// to the URL PostHog signed, and none of the app's handlers or default headers reach the file storage.
+    /// </summary>
+    internal const string UploadClientName = "PostHogClient.Uploads";
+
+    internal static HttpMessageHandler CreateUploadHandler() => new HttpClientHandler { AllowAutoRedirect = false };
+
+    /// <summary>
+    /// An upload client without a timeout of its own: each upload runs until the app's PostHog
+    /// <see cref="HttpClient.Timeout"/>.
+    /// </summary>
+#pragma warning disable CA2000 // The client owns its handler and disposes it.
+    internal static HttpClient CreateUploadClient()
+        => new(CreateUploadHandler(), disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
+#pragma warning restore CA2000
     const string EuAppHost = "https://eu.posthog.com";
 
     static readonly Dictionary<string, string> CloudAppHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -38,6 +55,7 @@ internal sealed class EmailSender : IPostHogEmails
     };
 
     readonly HttpClient? _httpClient;
+    readonly HttpClient? _uploadClient;
     readonly PostHogOptions _options;
     readonly bool _isDisabled;
     readonly TimeProvider _timeProvider;
@@ -49,14 +67,16 @@ internal sealed class EmailSender : IPostHogEmails
 
     public EmailSender(
         HttpClient? httpClient,
+        HttpClient? uploadClient,
         PostHogOptions options,
         bool isDisabled,
         TimeProvider timeProvider,
         ILogger logger)
     {
         _httpClient = httpClient;
+        _uploadClient = uploadClient;
         _options = options;
-        _isDisabled = isDisabled || httpClient is null;
+        _isDisabled = isDisabled || httpClient is null || uploadClient is null;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -118,18 +138,6 @@ internal sealed class EmailSender : IPostHogEmails
             return;
         }
 
-        if (_httpClient!.DefaultRequestHeaders.Authorization is not null)
-        {
-            throw new EmailException(
-                "client_authorization_header",
-                "The HttpClient PostHog uses sets a default Authorization header, so no email was sent.",
-                why: "Files upload straight to PostHog's file storage through that HttpClient, so the header would "
-                     + "reach the file storage, which refuses it.",
-                fix: "Add the header in a handler that sends it only to your own host, instead of in the "
-                     + "HttpClient's DefaultRequestHeaders.",
-                field: "attachments");
-        }
-
         var url = new Uri(appHost + UploadsPath);
         var body = JsonSerializer.Serialize(
             new Dictionary<string, object>
@@ -181,9 +189,11 @@ internal sealed class EmailSender : IPostHogEmails
         }
 
         HttpResponseMessage response;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_httpClient!.Timeout);
         try
         {
-            response = await _httpClient!.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            response = await _uploadClient!.SendAsync(request, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
@@ -203,6 +213,19 @@ internal sealed class EmailSender : IPostHogEmails
             if (IsSuccess(response.StatusCode))
             {
                 return true;
+            }
+
+            if ((int)response.StatusCode is >= 300 and < 400)
+            {
+                throw new EmailException(
+                    "attachment_upload_failed",
+                    $"Uploading {file.File.Filename} failed, so no email was sent.",
+                    response.StatusCode,
+                    why: $"The file storage answered HTTP {(int)response.StatusCode}, a redirect, and an upload "
+                         + "never follows one, so the file goes only where PostHog signed it to.",
+                    fix: "Send the email again. If it keeps failing, check that nothing between your app and the "
+                         + "file storage, such as a proxy, redirects the request.",
+                    field: $"attachments__{file.Index}");
             }
 
 #if NET5_0_OR_GREATER

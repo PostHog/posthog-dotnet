@@ -103,6 +103,7 @@ public sealed class PostHogClient : IPostHogClient
         );
         _emails = new EmailSender(
             httpClient,
+            httpClientFactory.CreateClient(EmailSender.UploadClientName),
             _options.Value,
             _isDisabled,
             _timeProvider,

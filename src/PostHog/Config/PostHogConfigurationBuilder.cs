@@ -24,6 +24,9 @@ public class PostHogConfigurationBuilder : IPostHogConfigurationBuilder
         _services = services;
         _services.AddLogging();
         _httpClientBuilder = _services.AddHttpClient(nameof(PostHogClient)); // Registers the IHttpClientFactory.
+        _services.AddHttpClient(EmailSender.UploadClientName)
+            .ConfigurePrimaryHttpMessageHandler(EmailSender.CreateUploadHandler)
+            .ConfigureHttpClient(client => client.Timeout = Timeout.InfiniteTimeSpan);
     }
 
     /// <inheritdoc />

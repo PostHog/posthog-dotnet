@@ -120,7 +120,8 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// The client checks both limits before any request. It then asks PostHog which files it lacks, uploads each of
     /// those straight to PostHog's file storage, and sends the email only once every upload succeeded. A file this
     /// project sent before is usually still stored and isn't uploaded again. Uploads go to the storage host PostHog
-    /// names, not to <see cref="PostHogOptions.AppHost"/>, and never carry the secret key.
+    /// names, not to <see cref="PostHogOptions.AppHost"/>, never carry the secret key, and never follow a redirect:
+    /// a redirect fails the send with <c>attachment_upload_failed</c>.
     /// </remarks>
     public IReadOnlyList<EmailAttachment>? Attachments { get; init; }
 

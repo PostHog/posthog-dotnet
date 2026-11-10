@@ -66,8 +66,7 @@ public sealed class EmailException : Exception
     /// PostHog's error code, such as <c>recipient_suppressed</c> or <c>quota_limited</c>, or a client code:
     /// <c>missing_secret_key</c>, <c>missing_app_host</c>, <c>insecure_app_host</c>, <c>client_disabled</c>, <c>client_closed</c>,
     /// <c>network_error</c>, <c>api_error</c> (an answer without a code), <c>attachment_upload_failed</c> (the file
-    /// storage refused an upload), <c>client_authorization_header</c> (the <see cref="System.Net.Http.HttpClient"/>
-    /// would send a default <c>Authorization</c> header to the file storage) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
+    /// storage refused or redirected an upload) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
     /// <c>message_too_large</c> itself before any request, as PostHog would.
     /// </summary>
     public string Code { get; }

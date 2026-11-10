@@ -19,7 +19,6 @@ sealed class FakePostHogEmails : HttpMessageHandler
     public const string MessageId = "01a18356-c56c-0001-e494-7666bc915188";
     const string UploadsPath = "/api/projects/@current/messaging/attachments/uploads/";
     const string SendPath = "/api/projects/@current/messaging/send/email/";
-    const string StorageHost = "files.example.com";
 
     static readonly string[] OlderSendFields =
     [
@@ -43,8 +42,8 @@ sealed class FakePostHogEmails : HttpMessageHandler
     /// <summary>Whether every upload URL expired before the client used it.</summary>
     public bool UploadUrlsExpired { get; set; }
 
-    /// <summary>The scheme of the upload URLs PostHog hands out.</summary>
-    public string UploadScheme { get; set; } = "https";
+    /// <summary>The scheme, host and port of the file storage that PostHog's upload URLs point to.</summary>
+    public string StorageOrigin { get; set; } = "https://files.example.com";
 
     public IReadOnlyList<DeliveredEmail> Delivered
     {
@@ -75,6 +74,15 @@ sealed class FakePostHogEmails : HttpMessageHandler
     public void FailStorage(HttpStatusCode status, string body, string contentType = "application/xml")
         => _storageFaults.Enqueue(() => Answer(status, body, contentType));
 
+    /// <summary>Answers the next signed PUT with a <c>307</c> to another URL, as a hijacked storage host would.</summary>
+    public void RedirectStorage(Uri location)
+        => _storageFaults.Enqueue(() =>
+        {
+            var answer = Answer(HttpStatusCode.TemporaryRedirect, $"Temporary Redirect. Redirecting to {location.AbsoluteUri}", "text/plain");
+            answer.Headers.Location = location;
+            return answer;
+        });
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
@@ -85,7 +93,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
 #else
         var body = request.Content is null ? Array.Empty<byte>() : await request.Content.ReadAsByteArrayAsync();
 #endif
-        if (uri.Host == StorageHost)
+        if (string.Equals(uri.GetLeftPart(UriPartial.Authority), StorageOrigin, StringComparison.OrdinalIgnoreCase))
         {
             return Store(request, uri, body);
         }
@@ -163,7 +171,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
         {
             ["sha256"] = sha256,
             ["status"] = "upload",
-            ["url"] = $"{UploadScheme}://{StorageHost}/team/1/{sha256}?X-Amz-Expires=900&X-Amz-Signature=signed",
+            ["url"] = $"{StorageOrigin}/team/1/{sha256}?X-Amz-Expires=900&X-Amz-Signature=signed",
             ["method"] = "PUT",
             ["headers"] = new Dictionary<string, string>
             {

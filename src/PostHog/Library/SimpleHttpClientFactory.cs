@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using PostHog.Emails;
 
 namespace PostHog.Library;
 
@@ -13,7 +14,7 @@ internal class SimpleHttpClientFactory : IHttpClientFactory
             return client;
         }
 
-        client = new HttpClient();
+        client = name == EmailSender.UploadClientName ? EmailSender.CreateUploadClient() : new HttpClient();
         _clients.TryAdd(name, client);
 
         return client;

@@ -439,25 +439,22 @@ public class TheSendAsyncMethodWithAttachments
     }
 
     [Fact]
-    public async Task RefusesFilesWhenTheHttpClientSendsADefaultAuthorization()
+    public async Task KeepsTheAppsDefaultAuthorizationOffUploads()
     {
         var posthog = new FakePostHogEmails();
         await using var harness = new EmailHarness(posthog: posthog);
         harness.HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", "cHJveHk6c2VjcmV0");
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+        await harness.Client.Emails.SendAsync(Invoice(Pdf()));
 
-        Assert.Empty(posthog.Delivered);
-        Assert.Equal(0, posthog.StorageWrites);
-        Assert.Equal("client_authorization_header", error.Code);
-        Assert.Equal("attachments", error.Field);
-        Assert.NotNull(error.Fix);
+        Assert.Equal(Bytes[1..5], Assert.Single(Assert.Single(posthog.Delivered).Attachments).Content);
+        Assert.Equal(1, posthog.StorageWrites);
     }
 
     [Fact]
     public async Task UploadsNothingToAnHttpUrlUnlessAllowed()
     {
-        var posthog = new FakePostHogEmails { UploadScheme = "http" };
+        var posthog = new FakePostHogEmails { StorageOrigin = "http://files.example.com" };
         await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
@@ -468,13 +465,16 @@ public class TheSendAsyncMethodWithAttachments
         Assert.Equal("attachments__0", error.Field);
         Assert.Contains("invoice.pdf", error.Message, StringComparison.Ordinal);
         Assert.Contains("file storage over https", error.Fix, StringComparison.Ordinal);
-        Assert.DoesNotContain("files.example.com", error.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "files.example.com",
+            string.Join("\n", error.Message, error.Why, error.Fix, error.ToString()),
+            StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task UploadsToAnHttpUrlWithTheOptIn()
     {
-        var posthog = new FakePostHogEmails { UploadScheme = "http" };
+        var posthog = new FakePostHogEmails { StorageOrigin = "http://files.example.com" };
         await using var harness = new EmailHarness(options => options.AllowInsecureAppHost = true, posthog);
 
         await harness.Client.Emails.SendAsync(Invoice(Pdf()));
@@ -1287,6 +1287,7 @@ sealed class EmailHarness : IAsyncDisposable
 {
     readonly RecordingHandler _handler = new();
     readonly HttpClient _httpClient;
+    readonly HttpClient _uploadClient;
 
     public EmailHarness(Action<PostHogOptions>? configure = null, HttpMessageHandler? posthog = null)
     {
@@ -1296,10 +1297,12 @@ sealed class EmailHarness : IAsyncDisposable
             SecretKey = "phs_secret",
         };
         configure?.Invoke(options);
-        _httpClient = new HttpClient(posthog ?? _handler);
+        var transport = posthog ?? _handler;
+        _httpClient = new HttpClient(transport, disposeHandler: false);
+        _uploadClient = new HttpClient(transport, disposeHandler: false) { Timeout = Timeout.InfiniteTimeSpan };
         Client = new PostHogClient(
             options,
-            httpClientFactory: new SingleHttpClientFactory(_httpClient),
+            httpClientFactory: new NamedHttpClientFactory(_httpClient, _uploadClient),
             timeProvider: Time,
             loggerFactory: Logs);
     }
@@ -1354,12 +1357,17 @@ sealed class EmailHarness : IAsyncDisposable
     {
         await Client.DisposeAsync();
         _httpClient.Dispose();
+        _uploadClient.Dispose();
         _handler.Dispose();
     }
 
-    sealed class SingleHttpClientFactory(HttpClient client) : IHttpClientFactory
+    /// <summary>
+    /// Hands out the app's PostHog client and the separate upload client, as IHttpClientFactory does, both over the
+    /// same fake transport.
+    /// </summary>
+    sealed class NamedHttpClientFactory(HttpClient client, HttpClient uploadClient) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => client;
+        public HttpClient CreateClient(string name) => name == "PostHogClient.Uploads" ? uploadClient : client;
     }
 }
 
