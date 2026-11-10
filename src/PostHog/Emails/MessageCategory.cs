@@ -38,7 +38,8 @@ public sealed class MessageCategory
     public required string Name { get; init; }
 
     /// <summary>
-    /// What the category's emails are about, such as <c>Monthly product news</c>.
+    /// What the category's emails are about, such as <c>Monthly product news</c>. Leave it null to keep the
+    /// category's description, or pass an empty string to clear it.
     /// </summary>
     public string? Description { get; init; }
 }

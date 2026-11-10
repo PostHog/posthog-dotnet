@@ -249,6 +249,10 @@ public class TheSendAsyncMethodWithCodeContent
             new MessageCategory { Key = "receipts", Type = MessageCategoryType.Transactional, Name = "Receipts" },
             """{"key":"receipts","type":"transactional","name":"Receipts"}"""
         },
+        {
+            new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter", Description = "" },
+            """{"key":"newsletter","type":"marketing","name":"Newsletter","description":""}"""
+        },
     };
 
     [Theory]
