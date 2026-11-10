@@ -187,7 +187,7 @@ public class TheSendAsyncMethodWithATemplate
 public class TheSendAsyncMethodWithCodeContent
 {
     [Fact]
-    public async Task SendsTheRenderedContentWithEngagementCaptureOn()
+    public async Task SendsTheRenderedContentWithoutUnsetFields()
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
@@ -206,7 +206,7 @@ public class TheSendAsyncMethodWithCodeContent
         var request = Assert.Single(harness.Requests);
         Assert.Equal("https://us.posthog.com/api/projects/@current/messaging/send/email/", request.Url);
         Assert.Equal(
-            """{"template_key":"password-reset","to":"user@example.com","subject":"Reset your password","html":"\u003Cp\u003EHi\u003C/p\u003E","from":"Acme \u003Csecurity@example.com\u003E","reply_to":["support@example.com"],"capture_engagement":true,"distinct_id":"user_123"}""",
+            """{"template_key":"password-reset","to":"user@example.com","subject":"Reset your password","html":"\u003Cp\u003EHi\u003C/p\u003E","from":"Acme \u003Csecurity@example.com\u003E","reply_to":["support@example.com"],"distinct_id":"user_123"}""",
             request.Body);
         using var body = JsonDocument.Parse(request.Body!);
         Assert.Equal("<p>Hi</p>", body.RootElement.GetProperty("html").GetString());
@@ -247,7 +247,7 @@ public class TheSendAsyncMethodWithCodeContent
 
     [Theory]
     [MemberData(nameof(TrackingSends))]
-    public async Task SendsTrackingInPlaceOfCaptureEngagement(EmailTracking tracking, string sent)
+    public async Task SendsTrackingOnlyWhenSet(EmailTracking tracking, string sent)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");

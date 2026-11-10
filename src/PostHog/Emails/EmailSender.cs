@@ -577,9 +577,9 @@ internal sealed class EmailSender : IPostHogEmails
             body["reply_to"] = email.ReplyTo;
         }
 
-        if (email.Tracking is null || email.CaptureEngagementIfSet is not null)
+        if (email.CaptureEngagementIfSet is { } captureEngagement)
         {
-            body["capture_engagement"] = email.CaptureEngagementIfSet ?? true;
+            body["capture_engagement"] = captureEngagement;
         }
 
         if (email.Tracking is not null)

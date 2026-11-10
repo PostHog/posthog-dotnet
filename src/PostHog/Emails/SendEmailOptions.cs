@@ -116,7 +116,7 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// </summary>
     /// <remarks>
     /// Deprecated: set <see cref="EmailTracking.Engagement"/> on <see cref="Tracking"/> instead. It still works, but a
-    /// send can't set both. The send includes it only when <see cref="Tracking"/> is unset, or when you set it. A
+    /// send can't set both. The send includes it only when you set it. A
     /// project whose admin turned engagement capture off captures nothing, whatever the send asks.
     /// </remarks>
     [Obsolete("Use Tracking = new EmailTracking { Engagement = false } instead. A send can't set both.")]
