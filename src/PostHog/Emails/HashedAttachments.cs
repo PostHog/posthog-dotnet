@@ -16,6 +16,8 @@ internal sealed class HashedAttachments
     const int MaxFiles = 10;
     const long MaxMessageBytes = 40_000_000;
     const long HeadersAndMimeBoundariesBytes = 64 * 1024;
+    const int SubjectBytesPerEncodedWord = 42;
+    const long FoldedEncodedWordBytes = 75;
     const string MessageLimit = "40 MB after Base64 encoding, about 29 MB of files";
 
     HashedAttachments(IReadOnlyList<HashedAttachment> files)
@@ -34,7 +36,10 @@ internal sealed class HashedAttachments
     /// <summary>The files once per hash, in the order they first appear.</summary>
     public IReadOnlyList<HashedAttachment> Distinct { get; }
 
-    public static HashedAttachments Hash(IReadOnlyList<EmailAttachment> attachments, params string?[] bodies)
+    public static HashedAttachments Hash(
+        IReadOnlyList<EmailAttachment> attachments,
+        string subject,
+        params string?[] bodies)
     {
         if (attachments.Count > MaxFiles)
         {
@@ -49,7 +54,7 @@ internal sealed class HashedAttachments
         var sizes = attachments
             .Select(file => (long)file.Content.Length)
             .Concat(bodies.Select(body => (long)Encoding.UTF8.GetByteCount(body ?? string.Empty)));
-        if (EstimateMessageBytes(sizes) > MaxMessageBytes)
+        if (EstimateMessageBytes(subject, sizes) > MaxMessageBytes)
         {
             throw new EmailException(
                 "message_too_large",
@@ -66,8 +71,17 @@ internal sealed class HashedAttachments
             .ToList());
     }
 
-    static long EstimateMessageBytes(IEnumerable<long> sizes)
-        => sizes.Aggregate(HeadersAndMimeBoundariesBytes, (total, size) => total + Base64TransferBytes(size));
+    static long EstimateMessageBytes(string subject, IEnumerable<long> sizes)
+        => sizes.Aggregate(
+            HeadersAndMimeBoundariesBytes + EncodedSubjectBytes(subject),
+            (total, size) => total + Base64TransferBytes(size));
+
+    static long EncodedSubjectBytes(string subject)
+    {
+        long bytes = Encoding.UTF8.GetByteCount(subject);
+        var encodedWords = (bytes + SubjectBytesPerEncodedWord - 1) / SubjectBytesPerEncodedWord;
+        return encodedWords * FoldedEncodedWordBytes;
+    }
 
     static long Base64TransferBytes(long size)
     {

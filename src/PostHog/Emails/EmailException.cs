@@ -114,11 +114,7 @@ public sealed class EmailException : Exception
     {
         if (code == "attachment_upload_failed")
         {
-            // The status is the file storage's, so PostHog's categories don't apply: a 401 or 403 there is an
-            // expired or altered upload URL, not a missing key or scope.
-            return statusCode is (HttpStatusCode)429 || (int?)statusCode >= 500
-                ? "service_unavailable"
-                : "application_error";
+            return NameOfFileStorageAnswer(statusCode);
         }
 
         if (code == "missing_secret_key" || statusCode == HttpStatusCode.Unauthorized)
@@ -150,4 +146,9 @@ public sealed class EmailException : Exception
             _ => "application_error",
         };
     }
+
+    static string NameOfFileStorageAnswer(HttpStatusCode? statusCode)
+        => statusCode is (HttpStatusCode)429 || (int?)statusCode >= 500
+            ? "service_unavailable"
+            : "application_error";
 }

@@ -233,10 +233,11 @@ public class TheSendAsyncMethodWithCodeContent
     }
 
     [Fact]
-    public async Task LeavesOutEmptyCopyAndAttachmentLists()
+    public async Task SendsEmptyCopyAndAttachmentListsToAnOlderPostHog()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        var posthog = new FakePostHogEmails();
+        posthog.RunAnOlderVersion();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -249,9 +250,9 @@ public class TheSendAsyncMethodWithCodeContent
             Attachments = [],
         });
 
-        Assert.Equal(
-            """{"template_key":"receipt","to":"user@example.com","subject":"Your receipt","text":"Thanks!","capture_engagement":true}""",
-            Assert.Single(harness.Requests).Body);
+        var email = Assert.Single(posthog.Delivered);
+        Assert.Equal("user@example.com", email.To);
+        Assert.Equal("Thanks!", email.Text);
     }
 
     public static TheoryData<string, SendCodeEmailOptions> InvalidCodeSends => new()
@@ -284,25 +285,9 @@ public class TheSendAsyncMethodWithCodeContent
 
 public class TheSendAsyncMethodWithAttachments
 {
-    const string UploadsUrl = "https://us.posthog.com/api/projects/@current/messaging/attachments/uploads/";
-    const string SendUrl = "https://us.posthog.com/api/projects/@current/messaging/send/email/";
-    const string BucketUrl = "https://files.example.com/team/1/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027?X-Amz-Signature=abc";
     const string PdfSha256 = "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027";
-    const string LogoSha256 = "8e7652aa029be65c2bb4cdda52986ac4f9af69cff8582fa6124dde57409da460";
-    const string Accepted = """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""";
+    const int LargestFileBesideOneSubjectWord = 29_182_821;
     static readonly byte[] Bytes = [0x00, 0x25, 0x50, 0x44, 0x46, 0xFF];
-
-    static string UploadSlot(string sha256) => $$"""
-        {"sha256": "{{sha256}}", "status": "upload", "url": "{{BucketUrl}}", "method": "PUT",
-         "headers": {"Content-Length": "4", "x-amz-checksum-sha256": "MV1Cm3cUzttq0ErDEkAUUldpJjBFfzyIJTxb7OrHYCc="},
-         "url_expires_at": "2026-11-09T12:15:00Z"}
-        """;
-
-    static string PresentSlot(string sha256) => $$"""
-        {"sha256": "{{sha256}}", "status": "present", "expires_at": "2026-12-16T12:00:00Z"}
-        """;
-
-    static string Slots(params string[] slots) => $$"""{"files": [{{string.Join(",", slots)}}]}""";
 
     static SendCodeEmailOptions Invoice(params EmailAttachment[] attachments) => new()
     {
@@ -323,12 +308,11 @@ public class TheSendAsyncMethodWithAttachments
     static EmailAttachment Logo() => new() { Filename = "logo.png", Content = Bytes, ContentId = "logo" };
 
     [Fact]
-    public async Task UploadsTheFilesPostHogLacksThenSendsTheirHashes()
+    public async Task UploadsTheFilesPostHogLacksThenSendsThemWithCopies()
     {
-        await using var harness = new EmailHarness(options => options.MigratedFrom = "resend");
-        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256), PresentSlot(LogoSha256)));
-        harness.Respond(HttpStatusCode.OK, "", contentType: "application/xml");
-        harness.Respond(HttpStatusCode.Accepted, Accepted);
+        var posthog = new FakePostHogEmails();
+        posthog.Store(Bytes);
+        await using var harness = new EmailHarness(options => options.MigratedFrom = "resend", posthog);
 
         var result = await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -341,69 +325,63 @@ public class TheSendAsyncMethodWithAttachments
             Attachments = [Pdf(), Logo()],
         });
 
-        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
-        Assert.Equal(3, harness.Requests.Count);
-        var (uploads, upload, send) = (harness.Requests[0], harness.Requests[1], harness.Requests[2]);
-        Assert.Equal(HttpMethod.Post, uploads.Method);
-        Assert.Equal(UploadsUrl, uploads.Url);
-        Assert.Equal("Bearer phs_secret", uploads.Header("Authorization"));
-        Assert.Equal(
-            $$"""{"files":[{"sha256":"{{PdfSha256}}","size":4},{"sha256":"{{LogoSha256}}","size":6}]}""",
-            uploads.Body);
-        Assert.Equal(HttpMethod.Put, upload.Method);
-        Assert.Equal(BucketUrl, upload.Url);
-        Assert.Equal("4", upload.Header("Content-Length"));
-        Assert.Equal("MV1Cm3cUzttq0ErDEkAUUldpJjBFfzyIJTxb7OrHYCc=", upload.Header("x-amz-checksum-sha256"));
-        Assert.Null(upload.Header("Authorization"));
-        Assert.Null(upload.Header("X-PostHog-Migrated-From"));
-        Assert.Equal(Bytes[1..5], upload.BodyBytes);
-        Assert.Equal(SendUrl, send.Url);
-        Assert.Equal(
-            """{"template_key":"invoice","to":"user@example.com","subject":"Your invoice","html":"\u003Cimg src=\u0022cid:logo\u0022\u003E","cc":["finance@example.com"],"bcc":["audit@example.com","legal@example.com"],"attachments":[{"sha256":"315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027","filename":"invoice.pdf","content_type":"application/pdf"},{"sha256":"8e7652aa029be65c2bb4cdda52986ac4f9af69cff8582fa6124dde57409da460","filename":"logo.png","content_id":"logo"}],"capture_engagement":true}""",
-            send.Body);
+        Assert.Equal(FakePostHogEmails.MessageId, result.Id);
+        var email = Assert.Single(posthog.Delivered);
+        Assert.Equal(["finance@example.com"], email.Cc);
+        Assert.Equal(["audit@example.com", "legal@example.com"], email.Bcc);
+        Assert.Equal("<img src=\"cid:logo\">", email.Html);
+        Assert.Collection(
+            email.Attachments,
+            pdf =>
+            {
+                Assert.Equal("invoice.pdf", pdf.Filename);
+                Assert.Equal("application/pdf", pdf.ContentType);
+                Assert.Null(pdf.ContentId);
+                Assert.Equal(Bytes[1..5], pdf.Content);
+            },
+            logo =>
+            {
+                Assert.Equal("logo.png", logo.Filename);
+                Assert.Null(logo.ContentType);
+                Assert.Equal("logo", logo.ContentId);
+                Assert.Equal(Bytes, logo.Content);
+            });
+        Assert.Equal(1, posthog.StorageWrites);
     }
 
     [Fact]
-    public async Task AsksOnceForAFileAttachedTwice()
+    public async Task UploadsAFileAttachedTwiceOnce()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Slots(PresentSlot(LogoSha256)));
-        harness.Respond(HttpStatusCode.Accepted, Accepted);
+        var posthog = new FakePostHogEmails();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         await harness.Client.Emails.SendAsync(
             Invoice(Logo(), new EmailAttachment { Filename = "copy.png", Content = Bytes.ToArray() }));
 
-        Assert.Equal(2, harness.Requests.Count);
-        Assert.Equal($$"""{"files":[{"sha256":"{{LogoSha256}}","size":6}]}""", harness.Requests[0].Body);
-        Assert.Contains(
-            $$"""[{"sha256":"{{LogoSha256}}","filename":"logo.png","content_id":"logo"},{"sha256":"{{LogoSha256}}","filename":"copy.png"}]""",
-            harness.Requests[1].Body,
-            StringComparison.Ordinal);
+        var email = Assert.Single(posthog.Delivered);
+        Assert.Equal(["logo.png", "copy.png"], email.Attachments.Select(file => file.Filename));
+        Assert.All(email.Attachments, file => Assert.Equal(Bytes, file.Content));
+        Assert.Equal(1, posthog.StorageWrites);
     }
 
     [Fact]
-    public async Task SendsNothingWhenTheBucketRefusesAnUpload()
+    public async Task SendsNothingWhenAnUploadUrlExpired()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Slots(PresentSlot(LogoSha256), UploadSlot(PdfSha256)));
-        harness.Respond(
-            HttpStatusCode.BadRequest,
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>BadDigest</Code><Message>The SHA256 you specified did not match the calculated checksum.</Message></Error>",
-            contentType: "application/xml");
+        var posthog = new FakePostHogEmails { UploadUrlsExpired = true };
+        posthog.Store(Bytes);
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(Invoice(Logo(), Pdf())));
 
-        Assert.Equal(2, harness.Requests.Count);
+        Assert.Empty(posthog.Delivered);
         Assert.Equal("attachment_upload_failed", error.Code);
         Assert.Equal("application_error", error.Name);
-        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, error.StatusCode);
         Assert.Equal("attachments__1", error.Field);
         Assert.Contains("invoice.pdf", error.Message, StringComparison.Ordinal);
         Assert.Contains("no email was sent", error.Message, StringComparison.Ordinal);
-        Assert.Equal(
-            "The file storage answered HTTP 400 BadDigest: The SHA256 you specified did not match the calculated checksum.",
-            error.Why);
+        Assert.Equal("The file storage answered HTTP 403 AccessDenied: Request has expired", error.Why);
         Assert.NotNull(error.Fix);
     }
 
@@ -411,14 +389,15 @@ public class TheSendAsyncMethodWithAttachments
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.Forbidden)]
     [InlineData(HttpStatusCode.NotFound)]
-    public async Task KeepsTheBucketsAnswerWhenItIsNotAnError(HttpStatusCode status)
+    public async Task QuotesAPlainTextStorageRefusalAsAnApplicationError(HttpStatusCode status)
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
-        harness.Respond(status, "Refused by proxy", contentType: "text/plain");
+        var posthog = new FakePostHogEmails();
+        posthog.FailStorage(status, "Refused by proxy", contentType: "text/plain");
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
+        Assert.Empty(posthog.Delivered);
         Assert.Equal($"The file storage answered HTTP {(int)status}: Refused by proxy", error.Why);
         Assert.Equal(status, error.StatusCode);
         Assert.Equal("application_error", error.Name);
@@ -429,35 +408,29 @@ public class TheSendAsyncMethodWithAttachments
     [InlineData(HttpStatusCode.BadGateway)]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.GatewayTimeout)]
-    public async Task RetriesAFailingBucketThenSends(HttpStatusCode status)
+    public async Task RetriesAFailingStorageThenSends(HttpStatusCode status)
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
-        harness.Respond(
-            status,
-            "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>",
-            contentType: "application/xml");
-        harness.Respond(HttpStatusCode.OK, "", contentType: "application/xml");
-        harness.Respond(HttpStatusCode.Accepted, Accepted);
+        var posthog = new FakePostHogEmails();
+        posthog.FailStorage(status, "<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message></Error>");
+        await using var harness = new EmailHarness(posthog: posthog);
 
         await harness.Client.Emails.SendAsync(Invoice(Pdf()));
 
-        Assert.Equal(
-            [HttpMethod.Post, HttpMethod.Put, HttpMethod.Put, HttpMethod.Post],
-            harness.Requests.Select(request => request.Method));
+        var file = Assert.Single(Assert.Single(posthog.Delivered).Attachments);
+        Assert.Equal(Bytes[1..5], file.Content);
     }
 
     [Fact]
-    public async Task ReportsABucketThatKeepsFailingAsUnavailable()
+    public async Task ReportsAStorageThatKeepsFailingAsUnavailable()
     {
-        await using var harness = new EmailHarness(options => options.EmailRequestMaxRetries = 1);
-        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256)));
-        harness.Respond(HttpStatusCode.InternalServerError, "<Error><Code>InternalError</Code><Message>Try again.</Message></Error>");
-        harness.Respond(HttpStatusCode.InternalServerError, "<Error><Code>InternalError</Code><Message>Try again.</Message></Error>");
+        var posthog = new FakePostHogEmails();
+        posthog.FailStorage(HttpStatusCode.InternalServerError, "<Error><Code>InternalError</Code><Message>Try again.</Message></Error>");
+        posthog.FailStorage(HttpStatusCode.InternalServerError, "<Error><Code>InternalError</Code><Message>Try again.</Message></Error>");
+        await using var harness = new EmailHarness(options => options.EmailRequestMaxRetries = 1, posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Equal(3, harness.Requests.Count);
+        Assert.Empty(posthog.Delivered);
         Assert.Equal("attachment_upload_failed", error.Code);
         Assert.Equal("service_unavailable", error.Name);
     }
@@ -465,12 +438,14 @@ public class TheSendAsyncMethodWithAttachments
     [Fact]
     public async Task RefusesFilesWhenTheHttpClientSendsADefaultAuthorization()
     {
-        await using var harness = new EmailHarness();
+        var posthog = new FakePostHogEmails();
+        await using var harness = new EmailHarness(posthog: posthog);
         harness.HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", "cHJveHk6c2VjcmV0");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Empty(harness.Requests);
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal(0, posthog.StorageWrites);
         Assert.Equal("client_authorization_header", error.Code);
         Assert.Equal("attachments", error.Field);
         Assert.NotNull(error.Fix);
@@ -479,12 +454,13 @@ public class TheSendAsyncMethodWithAttachments
     [Fact]
     public async Task UploadsNothingToAnHttpUrlUnlessAllowed()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Slots(UploadSlot(PdfSha256).Replace("https://files.", "http://files.", StringComparison.Ordinal)));
+        var posthog = new FakePostHogEmails { UploadScheme = "http" };
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal(0, posthog.StorageWrites);
         Assert.Equal("insecure_app_host", error.Code);
         Assert.Equal("attachments__0", error.Field);
     }
@@ -492,50 +468,63 @@ public class TheSendAsyncMethodWithAttachments
     [Fact]
     public async Task RetriesAnUnavailableUploadRouteWithoutRetryingADailyCap()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.ServiceUnavailable, """{"code": "delivery_unavailable"}""");
-        harness.Respond((HttpStatusCode)429, """{"code": "upload_quota_exceeded", "detail": "This project uploaded as many file bytes as it can today."}""");
+        var posthog = new FakePostHogEmails();
+        posthog.FailUploadRoute(HttpStatusCode.ServiceUnavailable, """{"code": "delivery_unavailable"}""");
+        posthog.FailUploadRoute((HttpStatusCode)429, """{"code": "upload_quota_exceeded", "detail": "This project uploaded as many file bytes as it can today."}""");
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Equal(2, harness.Requests.Count);
-        Assert.All(harness.Requests, request => Assert.Equal(UploadsUrl, request.Url));
+        Assert.Empty(posthog.Delivered);
         Assert.Equal("upload_quota_exceeded", error.Code);
     }
 
     [Fact]
-    public async Task SendsNothingWhenPostHogRefusesTheUploads()
+    public async Task SendsNothingWhenThisProjectCantSendFiles()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(
-            HttpStatusCode.BadRequest,
-            """{"type": "invalid_request", "code": "field_not_accepted", "attr": "files", "detail": "This project can't send files yet, so PostHog didn't prepare the uploads.", "why": "Sending files isn't available to this project yet.", "fix": "Send the email without files."}""");
+        var posthog = new FakePostHogEmails { FilesAllowed = false };
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Empty(posthog.Delivered);
         Assert.Equal("field_not_accepted", error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal("files", error.Field);
     }
 
-    [Theory]
-    [InlineData("""{"type": "invalid_request", "code": "not_found", "detail": "Sending email from code isn't enabled for this project.", "attr": null}""", "Sending email from code isn't enabled for this project.")]
-    [InlineData("""{"type": "invalid_request", "code": "not_found", "detail": "Endpoint not found.", "attr": null}""", "Endpoint not found.")]
-    [InlineData("<h1>Not Found</h1>", "PostHog answered HTTP 404.")]
-    public async Task ReportsAMissingUploadRouteAsNotFound(string body, string message)
+    [Fact]
+    public async Task ReportsAnOlderPostHogsMissingUploadRouteAsNotFound()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.NotFound, body, contentType: body.StartsWith('<') ? "text/html" : "application/json");
+        var posthog = new FakePostHogEmails();
+        posthog.RunAnOlderVersion();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Empty(posthog.Delivered);
         Assert.Equal("not_found", error.Code);
         Assert.Equal("not_found", error.Name);
         Assert.Equal("attachments", error.Field);
-        Assert.Equal(message, error.Message);
+        Assert.Equal("Endpoint not found.", error.Message);
         Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("""{"type": "invalid_request", "code": "not_found", "detail": "Sending email from code isn't enabled for this project.", "attr": null}""", "Sending email from code isn't enabled for this project.")]
+    [InlineData("<h1>Not Found</h1>", "PostHog answered HTTP 404.")]
+    public async Task ReportsAnyUploadRoute404AsNotFound(string body, string message)
+    {
+        var posthog = new FakePostHogEmails();
+        posthog.FailUploadRoute(HttpStatusCode.NotFound, body, contentType: body.StartsWith('<') ? "text/html" : "application/json");
+        await using var harness = new EmailHarness(posthog: posthog);
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
+
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal("not_found", error.Code);
+        Assert.Equal("attachments", error.Field);
+        Assert.Equal(message, error.Message);
     }
 
     [Theory]
@@ -547,26 +536,30 @@ public class TheSendAsyncMethodWithAttachments
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "archived"}]}""")]
     public async Task SendsNothingWhenAFileHasNoUsableAnswer(string body)
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, body);
+        var posthog = new FakePostHogEmails();
+        posthog.FailUploadRoute(HttpStatusCode.OK, body);
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(Invoice(Pdf())));
 
-        Assert.Equal(UploadsUrl, Assert.Single(harness.Requests).Url);
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal(0, posthog.StorageWrites);
         Assert.Equal("api_error", error.Code);
         Assert.Equal("attachments__0", error.Field);
         Assert.Contains(PdfSha256, error.Why, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task RefusesMoreThanTenFilesBeforeAnyRequest()
+    public async Task RefusesMoreThanTenFilesBeforeUploadingAny()
     {
-        await using var harness = new EmailHarness();
+        var posthog = new FakePostHogEmails();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(Invoice(Enumerable.Range(0, 11).Select(_ => Logo()).ToArray())));
 
-        Assert.Empty(harness.Requests);
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal(0, posthog.StorageWrites);
         Assert.Equal("too_many_attachments", error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal("attachments", error.Field);
@@ -575,29 +568,51 @@ public class TheSendAsyncMethodWithAttachments
         Assert.NotNull(error.Fix);
     }
 
-    [Fact]
-    public async Task SendsTheLargestFileThatFitsTheMessageEstimate()
+    public static TheoryData<string, int, string, string?> SendsThatFit => new()
     {
-        await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Slots(PresentSlot("28f197eae8bd57e7c2a94d2062d2cef0a04b34e7fd3e0c743d88cda2217f069c")));
-        harness.Respond(HttpStatusCode.Accepted, Accepted);
-
-        await harness.Client.Emails.SendAsync(LargestFileWith(html: ""));
-
-        Assert.Contains("\"size\":29182875", harness.Requests[0].Body, StringComparison.Ordinal);
-    }
+        { "a one-word subject", LargestFileBesideOneSubjectWord, "Your archive", null },
+        { "a subject of 42 ASCII bytes", LargestFileBesideOneSubjectWord, new string('a', 42), null },
+        { "a subject of 21 two-byte characters", LargestFileBesideOneSubjectWord, new string('é', 21), null },
+        { "an empty subject", 29_182_875, "", null },
+    };
 
     [Theory]
-    [InlineData("x", null)]
-    [InlineData("", "x")]
-    public async Task RefusesAMessageOverTheEstimateBeforeAnyRequest(string html, string? text)
+    [MemberData(nameof(SendsThatFit))]
+    public async Task SendsTheLargestFileThatFitsTheMessageEstimate(string beside, int size, string subject, string? text)
     {
-        await using var harness = new EmailHarness();
+        var posthog = new FakePostHogEmails();
+        var content = new byte[size];
+        posthog.Store(content);
+        await using var harness = new EmailHarness(posthog: posthog);
+
+        await harness.Client.Emails.SendAsync(Archive(content, subject, html: "", text));
+
+        var file = Assert.Single(Assert.Single(posthog.Delivered).Attachments);
+        Assert.True(file.Content.Length == size, $"The file beside {beside} was sent.");
+    }
+
+    public static TheoryData<string, int, string, string, string?> SendsOverTheEstimate => new()
+    {
+        { "one more file byte", LargestFileBesideOneSubjectWord + 1, "Your archive", "", null },
+        { "a subject of 43 ASCII bytes", LargestFileBesideOneSubjectWord, new string('a', 43), "", null },
+        { "a subject of 22 two-byte characters", LargestFileBesideOneSubjectWord, new string('é', 22), "", null },
+        { "one HTML byte", LargestFileBesideOneSubjectWord, "Your archive", "x", null },
+        { "one text byte", LargestFileBesideOneSubjectWord, "Your archive", "", "x" },
+        { "one more file byte beside an empty subject", 29_182_876, "", "", null },
+    };
+
+    [Theory]
+    [MemberData(nameof(SendsOverTheEstimate))]
+    public async Task RefusesAMessageOverTheEstimateBeforeUploadingAny(string named, int size, string subject, string html, string? text)
+    {
+        var posthog = new FakePostHogEmails();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(
-            () => harness.Client.Emails.SendAsync(LargestFileWith(html, text)));
+            () => harness.Client.Emails.SendAsync(Archive(new byte[size], subject, html, text)));
 
-        Assert.Empty(harness.Requests);
+        Assert.Empty(posthog.Delivered);
+        Assert.True(posthog.StorageWrites == 0, $"Nothing was uploaded for {named}.");
         Assert.Equal("message_too_large", error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal("attachments", error.Field);
@@ -605,14 +620,14 @@ public class TheSendAsyncMethodWithAttachments
         Assert.Contains("about 29 MB of files", error.Fix, StringComparison.Ordinal);
     }
 
-    static SendCodeEmailOptions LargestFileWith(string html, string? text = null) => new()
+    static SendCodeEmailOptions Archive(byte[] content, string subject, string html, string? text) => new()
     {
         To = "user@example.com",
         TemplateKey = "archive",
-        Subject = "Your archive",
+        Subject = subject,
         Html = html,
         Text = text,
-        Attachments = [new EmailAttachment { Filename = "archive.zip", Content = new byte[29_182_875] }],
+        Attachments = [new EmailAttachment { Filename = "archive.zip", Content = content }],
     };
 }
 
@@ -1245,7 +1260,7 @@ sealed class EmailHarness : IAsyncDisposable
     readonly RecordingHandler _handler = new();
     readonly HttpClient _httpClient;
 
-    public EmailHarness(Action<PostHogOptions>? configure = null)
+    public EmailHarness(Action<PostHogOptions>? configure = null, HttpMessageHandler? posthog = null)
     {
         var options = new PostHogOptions
         {
@@ -1253,7 +1268,7 @@ sealed class EmailHarness : IAsyncDisposable
             SecretKey = "phs_secret",
         };
         configure?.Invoke(options);
-        _httpClient = new HttpClient(_handler);
+        _httpClient = new HttpClient(posthog ?? _handler);
         Client = new PostHogClient(
             options,
             httpClientFactory: new SingleHttpClientFactory(_httpClient),

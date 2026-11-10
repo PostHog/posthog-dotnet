@@ -263,15 +263,16 @@ internal sealed class EmailSender : IPostHogEmails
         }
     }
 
+    static EmailException NoUploadRouteOrNoCodeSends(Reply reply)
+        => ReplyError(reply, defaultCode: "not_found", defaultField: "attachments");
+
     static List<(HashedAttachment File, UploadTarget Target)> ParseUploadsReply(
         Reply reply,
         IReadOnlyList<HashedAttachment> files)
     {
         if (reply.Status == HttpStatusCode.NotFound)
         {
-            // A PostHog without the upload route and a project that can't send email from code both answer 404,
-            // and the client can't tell them apart, so it reports PostHog's own answer about the files.
-            throw ReplyError(reply, defaultCode: "not_found", defaultField: "attachments");
+            throw NoUploadRouteOrNoCodeSends(reply);
         }
 
         if (!IsSuccess(reply.Status))
@@ -508,6 +509,8 @@ internal sealed class EmailSender : IPostHogEmails
         return error.RetryAfter > backoff ? error.RetryAfter : backoff;
     }
 
+    static bool IsRepeatableUpload(EmailException error) => error.Code == "attachment_upload_failed";
+
     static bool IsRetryable(EmailException error)
     {
         return error.StatusCode switch
@@ -516,8 +519,7 @@ internal sealed class EmailSender : IPostHogEmails
             HttpStatusCode.Conflict => error.Code == "idempotency_key_in_flight",
             (HttpStatusCode)429 => error.Code is not ("quota_limited" or "upload_quota_exceeded"),
             HttpStatusCode.ServiceUnavailable => true,
-            // File storage asks clients to retry its 5xx answers, and a PUT of the same bytes is safe to repeat.
-            >= HttpStatusCode.InternalServerError => error.Code == "attachment_upload_failed",
+            >= HttpStatusCode.InternalServerError => IsRepeatableUpload(error),
             _ => false,
         };
     }
@@ -828,7 +830,7 @@ internal sealed class EmailSender : IPostHogEmails
         }
 
         var hashed = email.Attachments is { Count: > 0 } files
-            ? HashedAttachments.Hash(files, email.Html, email.Text)
+            ? HashedAttachments.Hash(files, email.Subject, email.Html, email.Text)
             : HashedAttachments.None;
         var body = new Dictionary<string, object?>
         {
