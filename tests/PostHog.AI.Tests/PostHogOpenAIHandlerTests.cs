@@ -332,6 +332,85 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             && choices[0]?["message"]?["content"]?.ToString() == "Café 😀 ñ";
     }
 
+    [Theory]
+    [InlineData("completed", false, false)]
+    [InlineData("incomplete", false, false)]
+    [InlineData("failed", false, false)]
+    [InlineData("completed", true, false)]
+    [InlineData("completed", false, true)]
+    public async Task SendAsyncCapturesUsageAndOutputFromResponsesApiTerminalEvent(
+        string status,
+        bool privacyMode,
+        bool emptyOutput
+    )
+    {
+        var requestBody = new { model = "gpt-4o", input = "Tell me a joke", stream = true };
+        var expectedOutput = emptyOutput ? "[]" : """
+            [
+                {"type":"message","role":"assistant","content":[{"type":"output_text","text":"Why did the chicken","annotations":[]}]},
+                {"type":"function_call","id":"fc_123","call_id":"call_123","name":"get_weather","arguments":"{\"city\":\"Paris\"}"}
+            ]
+            """;
+        var terminalEvent = JsonSerializer.Serialize(new
+        {
+            type = $"response.{status}",
+            response = new
+            {
+                status,
+                output = JsonNode.Parse(expectedOutput),
+                usage = new { input_tokens = 10, output_tokens = 5, total_tokens = 15 },
+            },
+        });
+        var sse = "data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\",\"output\":[],\"usage\":null}}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Why did\"}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\" the chicken\"}\n\n"
+            + $"event: response.{status}\ndata: {terminalEvent}\n\n";
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+        };
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        using (PostHogAIContext.BeginScope(privacyMode: privacyMode))
+        {
+            using var response = await _client.PostAsync(
+                new Uri("/v1/responses", UriKind.Relative),
+                requestContent
+            );
+            Assert.Equal(sse, await response.Content.ReadAsStringAsync());
+        }
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Any<Dictionary<string, object>>(),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+        var capture = Assert.Single(_postHogClient.ReceivedCalls());
+        var props = Assert.IsType<Dictionary<string, object>>(capture.GetArguments()[2]);
+        Assert.Equal(10, props[PostHogAIFieldNames.InputTokens]);
+        Assert.Equal(5, props[PostHogAIFieldNames.OutputTokens]);
+        Assert.Equal(15, props[PostHogAIFieldNames.TotalTokens]);
+        if (privacyMode)
+        {
+            Assert.False(props.ContainsKey(PostHogAIFieldNames.Input));
+            Assert.False(props.ContainsKey(PostHogAIFieldNames.OutputChoices));
+        }
+        else
+        {
+            var output = Assert.IsType<JsonArray>(props[PostHogAIFieldNames.OutputChoices]);
+            Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expectedOutput), output));
+        }
+    }
+
     private static bool VerifyStreamingProps(Dictionary<string, object> props)
     {
         if (
