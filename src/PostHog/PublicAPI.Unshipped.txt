@@ -149,6 +149,7 @@ PostHog.Prompts.PromptResult.Prompt.init -> void
 PostHog.Prompts.PromptResult.PromptResult() -> void
 PostHog.Prompts.PromptResult.Source.get -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptResult.Source.init -> void
+PostHog.Prompts.PromptResult.ToTraceProperties() -> System.Collections.Generic.Dictionary<string!, object!>!
 PostHog.Prompts.PromptResult.Version.get -> int?
 PostHog.Prompts.PromptResult.Version.init -> void
 PostHog.Prompts.PromptSource

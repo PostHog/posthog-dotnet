@@ -222,6 +222,12 @@ public static class Examples
         });
         Console.WriteLine(systemPrompt);
 
+        // Link the LLM call to the prompt, so the trace in PostHog shows which prompt version produced the output.
+        var generation = prompt.ToTraceProperties();
+        generation["$ai_model"] = "gpt-4o";
+        generation["$ai_input"] = new[] { new { role = "system", content = systemPrompt } };
+        posthog.Capture("user-123", "$ai_generation", generation);
+
         // After you publish a new version, remove the cached one so the next call fetches it.
         posthog.Prompts.ClearCache("support-system-prompt");
     }
