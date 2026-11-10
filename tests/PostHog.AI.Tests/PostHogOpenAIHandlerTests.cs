@@ -332,91 +332,83 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             && choices[0]?["message"]?["content"]?.ToString() == "Café 😀 ñ";
     }
 
-    [Fact]
-    public async Task SendAsyncCapturesUsageFromResponsesApiStreaming()
+    [Theory]
+    [InlineData("completed", false, false)]
+    [InlineData("incomplete", false, false)]
+    [InlineData("failed", false, false)]
+    [InlineData("completed", true, false)]
+    [InlineData("completed", false, true)]
+    public async Task SendAsyncCapturesUsageAndOutputFromResponsesApiTerminalEvent(
+        string status,
+        bool privacyMode,
+        bool emptyOutput
+    )
     {
-        // Arrange
         var requestBody = new { model = "gpt-4o", input = "Tell me a joke", stream = true };
-
-        var sseStream = new MemoryStream();
-        using var writer = new StreamWriter(
-            sseStream,
-            new UTF8Encoding(false),
-            1024,
-            leaveOpen: true
-        );
-        await writer.WriteAsync(
-            "event: response.output_text.delta\ndata: {\"type\": \"response.output_text.delta\", \"delta\": \"Why did\"}\n\n"
-        );
-        await writer.WriteAsync(
-            "event: response.output_text.delta\ndata: {\"type\": \"response.output_text.delta\", \"delta\": \" the chicken\"}\n\n"
-        );
-        await writer.WriteAsync(
-            "event: response.completed\ndata: {\"type\": \"response.completed\", \"response\": {\"usage\": {\"input_tokens\": 10, \"output_tokens\": 5, \"total_tokens\": 15}}}\n\n"
-        );
-        await writer.FlushAsync();
-        sseStream.Position = 0;
-
-        var streamContent = new StreamContent(sseStream);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
-
+        var expectedOutput = emptyOutput ? "[]" : """
+            [
+                {"type":"message","role":"assistant","content":[{"type":"output_text","text":"Why did the chicken","annotations":[]}]},
+                {"type":"function_call","id":"fc_123","call_id":"call_123","name":"get_weather","arguments":"{\"city\":\"Paris\"}"}
+            ]
+            """;
+        var terminalEvent = JsonSerializer.Serialize(new
+        {
+            type = $"response.{status}",
+            response = new
+            {
+                status,
+                output = JsonNode.Parse(expectedOutput),
+                usage = new { input_tokens = 10, output_tokens = 5, total_tokens = 15 },
+            },
+        });
+        var sse = "data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\",\"output\":[],\"usage\":null}}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Why did\"}\n\n"
+            + "data: {\"type\":\"response.output_text.delta\",\"delta\":\" the chicken\"}\n\n"
+            + $"event: response.{status}\ndata: {terminalEvent}\n\n";
         _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = streamContent,
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
         };
-
         using var requestContent = new StringContent(
             JsonSerializer.Serialize(requestBody),
             Encoding.UTF8,
             "application/json"
         );
 
-        // Act
-        HttpResponseMessage? response = null;
-        try
+        using (PostHogAIContext.BeginScope(privacyMode: privacyMode))
         {
-            response = await _client.PostAsync(
+            using var response = await _client.PostAsync(
                 new Uri("/v1/responses", UriKind.Relative),
                 requestContent
             );
-
-            var resultStream = await response.Content.ReadAsStreamAsync();
-            using (var reader = new StreamReader(resultStream))
-            {
-                await reader.ReadToEndAsync();
-            }
-        }
-        finally
-        {
-            response?.Dispose();
+            Assert.Equal(sse, await response.Content.ReadAsStringAsync());
         }
 
-        // Assert
         _postHogClient
             .Received(1)
             .Capture(
                 Arg.Any<string>(),
                 PostHogAIFieldNames.Generation,
-                Arg.Is<Dictionary<string, object>>(props => VerifyResponsesStreamingProps(props)),
+                Arg.Any<Dictionary<string, object>>(),
                 null,
                 false,
                 Arg.Any<DateTimeOffset?>()
             );
-    }
-
-    private static bool VerifyResponsesStreamingProps(Dictionary<string, object> props)
-    {
-        if (
-            !props.TryGetValue(PostHogAIFieldNames.OutputChoices, out var choicesObj)
-            || choicesObj is not JsonArray choices
-            || choices[0]?["message"]?["content"]?.ToString() != "Why did the chicken"
-        )
-            return false;
-
-        return props.TryGetValue(PostHogAIFieldNames.InputTokens, out var inputTokens)
-            && (int)inputTokens == 10
-            && props.TryGetValue(PostHogAIFieldNames.OutputTokens, out var outputTokens)
-            && (int)outputTokens == 5;
+        var capture = Assert.Single(_postHogClient.ReceivedCalls());
+        var props = Assert.IsType<Dictionary<string, object>>(capture.GetArguments()[2]);
+        Assert.Equal(10, props[PostHogAIFieldNames.InputTokens]);
+        Assert.Equal(5, props[PostHogAIFieldNames.OutputTokens]);
+        Assert.Equal(15, props[PostHogAIFieldNames.TotalTokens]);
+        if (privacyMode)
+        {
+            Assert.False(props.ContainsKey(PostHogAIFieldNames.Input));
+            Assert.False(props.ContainsKey(PostHogAIFieldNames.OutputChoices));
+        }
+        else
+        {
+            var output = Assert.IsType<JsonArray>(props[PostHogAIFieldNames.OutputChoices]);
+            Assert.True(JsonNode.DeepEquals(JsonNode.Parse(expectedOutput), output));
+        }
     }
 
     private static bool VerifyStreamingProps(Dictionary<string, object> props)
