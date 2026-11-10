@@ -212,13 +212,8 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("<p>Hi</p>", body.RootElement.GetProperty("html").GetString());
     }
 
-    [Theory]
-    [InlineData(null, "")]
-    [InlineData(false, ""","track_opens_and_clicks":false""")]
-    [InlineData(true, ""","track_opens_and_clicks":true""")]
-    public async Task SendsTextOnlyContentWithEngagementCaptureOffAndTrackingOnlyWhenSet(
-        bool? trackOpensAndClicks,
-        string trackingField)
+    [Fact]
+    public async Task SendsTextOnlyContentWithEngagementCaptureOff()
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
@@ -229,12 +224,68 @@ public class TheSendAsyncMethodWithCodeContent
             TemplateKey = "receipt_2",
             Subject = "Your receipt",
             Text = "Thanks!",
+#pragma warning disable CS0618 // CaptureEngagement is deprecated but still sent when set.
             CaptureEngagement = false,
-            TrackOpensAndClicks = trackOpensAndClicks,
+#pragma warning restore CS0618
         });
 
         Assert.Equal(
-            $$"""{"template_key":"receipt_2","to":"user@example.com","subject":"Your receipt","text":"Thanks!","capture_engagement":false{{trackingField}}}""",
+            """{"template_key":"receipt_2","to":"user@example.com","subject":"Your receipt","text":"Thanks!","capture_engagement":false}""",
+            Assert.Single(harness.Requests).Body);
+    }
+
+    public static TheoryData<EmailTracking, string> TrackingSends => new()
+    {
+        { true, "true" },
+        { false, "false" },
+        { EmailTracking.All, "true" },
+        { EmailTracking.None, "false" },
+        { new EmailTracking { Clicks = true }, """{"clicks":true}""" },
+        { new EmailTracking { Opens = false, Engagement = false }, """{"opens":false,"engagement":false}""" },
+        { new EmailTracking(), "{}" },
+    };
+
+    [Theory]
+    [MemberData(nameof(TrackingSends))]
+    public async Task SendsTrackingInPlaceOfCaptureEngagement(EmailTracking tracking, string sent)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "receipt_2",
+            Subject = "Your receipt",
+            Text = "Thanks!",
+            Tracking = tracking,
+        });
+
+        Assert.Equal(
+            $$"""{"template_key":"receipt_2","to":"user@example.com","subject":"Your receipt","text":"Thanks!","tracking":{{sent}}}""",
+            Assert.Single(harness.Requests).Body);
+    }
+
+    [Fact]
+    public async Task SendsCaptureEngagementNextToTrackingWhenBothAreSet()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "receipt_2",
+            Subject = "Your receipt",
+            Text = "Thanks!",
+#pragma warning disable CS0618 // CaptureEngagement is deprecated but still sent when set.
+            CaptureEngagement = true,
+#pragma warning restore CS0618
+            Tracking = true,
+        });
+
+        Assert.Equal(
+            """{"template_key":"receipt_2","to":"user@example.com","subject":"Your receipt","text":"Thanks!","capture_engagement":true,"tracking":true}""",
             Assert.Single(harness.Requests).Body);
     }
 

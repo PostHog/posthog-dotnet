@@ -97,25 +97,34 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public IReadOnlyList<string>? ReplyTo { get; init; }
 
     /// <summary>
+    /// What PostHog tracks for the email: opens, clicks and engagement events. Left unset, PostHog counts opens and
+    /// captures engagement events, and doesn't track clicks.
+    /// </summary>
+    /// <remarks>
+    /// Set <see cref="EmailTracking.All"/> (or <c>true</c>) to turn on every kind, <see cref="EmailTracking.None"/>
+    /// (or <c>false</c>) to turn them all off, or an <see cref="EmailTracking"/> with <see cref="EmailTracking.Opens"/>,
+    /// <see cref="EmailTracking.Clicks"/> or <see cref="EmailTracking.Engagement"/> to set one kind. Left unset, the
+    /// send doesn't include it. Needs PostHog's API support for <c>tracking</c>, which is rolling out; until then
+    /// PostHog refuses a send that sets it. A template made in PostHog carries its own tracking setting, so
+    /// <see cref="SendTemplateEmailOptions"/> doesn't take it.
+    /// </remarks>
+    public EmailTracking? Tracking { get; init; }
+
+    /// <summary>
     /// Whether PostHog captures the email's engagement events (sent, delivered, opened, clicked, bounced) as events
     /// of the recipient. (Default: <c>true</c>)
     /// </summary>
     /// <remarks>
-    /// A project whose admin turned engagement capture off captures nothing, whatever the send asks. A template made
-    /// in PostHog follows the project's setting, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
+    /// Deprecated: set <see cref="EmailTracking.Engagement"/> on <see cref="Tracking"/> instead. It still works, but a
+    /// send can't set both. The send includes it only when <see cref="Tracking"/> is unset, or when you set it. A
+    /// project whose admin turned engagement capture off captures nothing, whatever the send asks.
     /// </remarks>
-    public bool CaptureEngagement { get; init; } = true;
+    [Obsolete("Use Tracking = new EmailTracking { Engagement = false } instead. A send can't set both.")]
+    public bool CaptureEngagement
+    {
+        get => CaptureEngagementIfSet ?? true;
+        init => CaptureEngagementIfSet = value;
+    }
 
-    /// <summary>
-    /// Whether PostHog tracks opens and clicks of the email. (Default: <c>true</c>)
-    /// </summary>
-    /// <remarks>
-    /// With <c>false</c>, the email goes out without PostHog's open pixel, so PostHog can't count its opens. PostHog
-    /// doesn't track clicks on emails sent from code, so their links are never rewritten either way. It is independent
-    /// of <see cref="CaptureEngagement"/>, which decides whether engagement events are captured on the recipient's
-    /// person. Left unset, the send doesn't include it and PostHog applies its default. Needs PostHog's API
-    /// support for <c>track_opens_and_clicks</c>, which is rolling out; until then PostHog refuses a send that sets
-    /// it.
-    /// </remarks>
-    public bool? TrackOpensAndClicks { get; init; }
+    internal bool? CaptureEngagementIfSet { get; private init; }
 }
