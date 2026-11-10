@@ -7,7 +7,9 @@ namespace PostHog.Emails;
 /// <remarks>
 /// PostHog creates or updates the project's category by <see cref="Key"/> when it accepts the send: an unknown key
 /// creates it, and a changed <see cref="Name"/> or <see cref="Description"/> updates it. A key that exists keeps its
-/// type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>.
+/// type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>. A send whose
+/// <see cref="SendCodeEmailOptions.TemplateKey"/> names a template sends in the template's category instead, and
+/// creates or updates no category.
 /// </remarks>
 public sealed class MessageCategory
 {
