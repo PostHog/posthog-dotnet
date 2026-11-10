@@ -396,6 +396,19 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         eventProperties[PostHogAIFieldNames.CacheReadInputTokens] = cachedInt;
                     }
 
+                    // Reasoning models report their hidden reasoning tokens under
+                    // *_tokens_details.reasoning_tokens (Chat Completions / Responses API).
+                    if (
+                        (
+                            (usage["completion_tokens_details"] as JsonObject)?["reasoning_tokens"]
+                            ?? (usage["output_tokens_details"] as JsonObject)?["reasoning_tokens"]
+                        ) is JsonValue reasoningTokens
+                        && reasoningTokens.TryGetValue<int>(out var reasoningInt)
+                    )
+                    {
+                        eventProperties[PostHogAIFieldNames.ReasoningTokens] = reasoningInt;
+                    }
+
                     if (usage["cache_creation_input_tokens"] is JsonValue cacheCreationTokens)
                     {
                         eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
