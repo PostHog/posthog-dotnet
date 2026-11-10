@@ -33,6 +33,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
     readonly ConcurrentQueue<Func<HttpResponseMessage>> _uploadRouteFaults = new();
     readonly ConcurrentQueue<Func<HttpResponseMessage>> _storageFaults = new();
     readonly ConcurrentQueue<TimeSpan> _storageDelays = new();
+    readonly TaskCompletionSource<bool> _storageHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
     readonly List<DeliveredEmail> _delivered = [];
     bool _olderVersion;
     int _storageWrites;
@@ -88,6 +89,9 @@ sealed class FakePostHogEmails : HttpMessageHandler
     /// would; <see cref="Timeout.InfiniteTimeSpan"/> stalls it until the client gives up.</summary>
     public void DelayStorage(TimeSpan delay) => _storageDelays.Enqueue(delay);
 
+    /// <summary>Completes once the storage holds a PUT that <see cref="DelayStorage"/> delays.</summary>
+    public Task StorageHeld => _storageHeld.Task;
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
@@ -102,6 +106,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
         {
             if (_storageDelays.TryDequeue(out var delay))
             {
+                _storageHeld.TrySetResult(true);
                 await Task.Delay(delay, cancellationToken);
             }
 

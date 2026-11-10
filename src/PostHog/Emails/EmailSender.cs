@@ -15,7 +15,7 @@ namespace PostHog.Emails;
 /// Sends one transactional email per call to the messaging send API on the app host, and reads the status of a sent
 /// email. Owns the attempt loop, so every attempt of a send carries the same idempotency key.
 /// </summary>
-internal sealed class EmailSender : IPostHogEmails, IDisposable
+internal sealed class EmailSender : IPostHogEmails
 {
     const string SendPath = "/api/projects/@current/messaging/send/email/";
     const string StatusPath = "/api/projects/@current/messaging/emails/";
@@ -28,6 +28,20 @@ internal sealed class EmailSender : IPostHogEmails, IDisposable
     const string UsAppHost = "https://us.posthog.com";
 
     const string EuAppHost = "https://eu.posthog.com";
+
+    /// <summary>
+    /// Makes the client that uploads files, whatever <see cref="IHttpClientFactory"/> the app supplied. Over the
+    /// default transport it never follows a redirect, so a file goes only to the URL PostHog signed, and none of the
+    /// app's handlers or default headers reach the file storage. It has no timeout of its own: each upload runs until
+    /// the app's PostHog <see cref="HttpClient.Timeout"/>. Its owner disposes it after the sends drain.
+    /// </summary>
+    /// <param name="transport">Stands in for the file storage in tests; null gives the default transport.</param>
+#pragma warning disable CA2000 // The client owns the handler it makes and disposes it with itself.
+    internal static HttpClient CreateUploadClient(HttpMessageHandler? transport) =>
+        new(transport ?? NoRedirectHandler(), disposeHandler: transport is null) { Timeout = Timeout.InfiniteTimeSpan };
+#pragma warning restore CA2000
+
+    static HttpClientHandler NoRedirectHandler() => new HttpClientHandler { AllowAutoRedirect = false };
 
     static readonly Dictionary<string, string> CloudAppHosts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -50,31 +64,21 @@ internal sealed class EmailSender : IPostHogEmails, IDisposable
     TaskCompletionSource<bool>? _drained;
 
     /// <param name="httpClient">The app's PostHog client, which talks to PostHog.</param>
-    /// <param name="uploadTransport">
-    /// Carries uploads to the file storage. Leave it null outside tests: the sender then makes its own transport,
-    /// which never follows a redirect, whatever <see cref="IHttpClientFactory"/> the app supplied, so a file goes
-    /// only to the URL PostHog signed and none of the app's handlers or default headers reach the file storage.
-    /// </param>
+    /// <param name="uploadClient">Carries uploads to the file storage: one from <see cref="CreateUploadClient"/>.</param>
     /// <param name="options">The PostHog options.</param>
     /// <param name="isDisabled">Whether the client is disabled.</param>
     /// <param name="timeProvider">The time provider.</param>
     /// <param name="logger">The logger.</param>
     public EmailSender(
         HttpClient? httpClient,
-        HttpMessageHandler? uploadTransport,
+        HttpClient uploadClient,
         PostHogOptions options,
         bool isDisabled,
         TimeProvider timeProvider,
         ILogger logger)
     {
         _httpClient = httpClient;
-        // Each upload runs until the app's PostHog HttpClient.Timeout, which PutAsync applies itself.
-#pragma warning disable CA2000 // The upload client owns the handler it makes and disposes it with itself.
-        _uploadClient = new HttpClient(uploadTransport ?? (HttpMessageHandler)NoRedirectHandler(), disposeHandler: uploadTransport is null)
-        {
-            Timeout = Timeout.InfiniteTimeSpan,
-        };
-#pragma warning restore CA2000
+        _uploadClient = uploadClient;
         _options = options;
         _isDisabled = isDisabled || httpClient is null;
         _timeProvider = timeProvider;
@@ -380,10 +384,6 @@ internal sealed class EmailSender : IPostHogEmails, IDisposable
     /// Stops new email requests, which then fail with <c>client_closed</c>, and waits until every send and status
     /// read in flight, retries included, has settled.
     /// </summary>
-    public void Dispose() => _uploadClient.Dispose();
-
-    static HttpClientHandler NoRedirectHandler() => new HttpClientHandler { AllowAutoRedirect = false };
-
     public Task CloseAsync()
     {
         lock (_gate)

@@ -494,7 +494,7 @@ public class TheSendAsyncMethodWithAttachments
 
         var send = harness.Client.Emails.SendAsync(Invoice(Pdf()));
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => Within(send, TimeSpan.FromSeconds(3)));
+        var error = await Assert.ThrowsAsync<EmailException>(() => send.WaitAsync(TimeSpan.FromSeconds(3), TimeProvider.System));
         Assert.Empty(posthog.Delivered);
         Assert.Equal(0, posthog.StorageWrites);
         Assert.Equal("network_error", error.Code);
@@ -511,7 +511,7 @@ public class TheSendAsyncMethodWithAttachments
 
         var send = harness.Client.Emails.SendAsync(Invoice(Pdf()), cancellation.Token);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Within(send, TimeSpan.FromSeconds(3)));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send.WaitAsync(TimeSpan.FromSeconds(3), TimeProvider.System));
         Assert.Empty(posthog.Delivered);
         Assert.Equal(0, posthog.StorageWrites);
     }
@@ -540,16 +540,6 @@ public class TheSendAsyncMethodWithAttachments
     /// harness close.
     /// </summary>
     static readonly TimeSpan StalledUpload = TimeSpan.FromSeconds(6);
-
-    static async Task Within(Task task, TimeSpan timeout)
-    {
-        if (await Task.WhenAny(task, Task.Delay(timeout)) != task)
-        {
-            throw new TimeoutException("The task did not finish in time.");
-        }
-
-        await task;
-    }
 
     [Fact]
     public async Task RetriesAnUnavailableUploadRouteWithoutRetryingADailyCap()

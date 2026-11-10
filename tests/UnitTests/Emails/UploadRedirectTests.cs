@@ -29,14 +29,7 @@ public class TheSendAsyncMethodOverTheNetwork
         posthog.RedirectStorage(new Uri(other.Origin + "/copy"));
         await using var client = Client(wiring, new Uri(app.Origin));
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => client.Emails.SendAsync(new SendCodeEmailOptions
-        {
-            To = "user@example.com",
-            TemplateKey = "invoice",
-            Subject = "Your invoice",
-            Html = "<p>Thanks!</p>",
-            Attachments = [new EmailAttachment { Filename = "invoice.pdf", Content = new byte[] { 0x25, 0x50, 0x44, 0x46 } }],
-        }));
+        var error = await Assert.ThrowsAsync<EmailException>(() => client.Emails.SendAsync(Invoice()));
 
         Assert.Empty(elsewhere.Requests);
         Assert.Empty(posthog.Delivered);
@@ -48,6 +41,34 @@ public class TheSendAsyncMethodOverTheNetwork
         Assert.DoesNotContain(other.Origin, shown, StringComparison.Ordinal);
         Assert.DoesNotContain(storage.Origin, shown, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task DeliversASendWithFilesInFlightWhenTheHostShutsDown()
+    {
+        var posthog = new FakePostHogEmails();
+        await using var app = LocalHttpServer.Serve(posthog);
+        await using var storage = LocalHttpServer.Serve(posthog);
+        posthog.StorageOrigin = storage.Origin;
+        posthog.DelayStorage(TimeSpan.FromMilliseconds(300));
+        await using var host = Client("services.AddPostHog", new Uri(app.Origin));
+
+        var send = host.Emails.SendAsync(Invoice());
+        await posthog.StorageHeld.WaitAsync(TimeSpan.FromSeconds(10), TimeProvider.System);
+        await host.DisposeAsync();
+
+        await send;
+        Assert.Equal("invoice.pdf", Assert.Single(Assert.Single(posthog.Delivered).Attachments).Filename);
+        Assert.Equal(1, posthog.StorageWrites);
+    }
+
+    static SendCodeEmailOptions Invoice() => new()
+    {
+        To = "user@example.com",
+        TemplateKey = "invoice",
+        Subject = "Your invoice",
+        Html = "<p>Thanks!</p>",
+        Attachments = [new EmailAttachment { Filename = "invoice.pdf", Content = new byte[] { 0x25, 0x50, 0x44, 0x46 } }],
+    };
 
     static WiredClient Client(string wiring, Uri appHost)
     {

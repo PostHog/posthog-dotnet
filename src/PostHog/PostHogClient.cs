@@ -22,6 +22,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext> _asyncBatchHandler;
     readonly PostHogApiClient _apiClient;
     readonly EmailSender _emails;
+    readonly HttpClient _uploadClient;
     readonly PromptFetcher _prompts;
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
@@ -119,7 +120,7 @@ public sealed class PostHogClient : IPostHogClient
         );
         _emails = new EmailSender(
             httpClient,
-            uploadTransport,
+            _uploadClient = EmailSender.CreateUploadClient(uploadTransport),
             _options.Value,
             _isDisabled,
             _timeProvider,
@@ -1524,7 +1525,7 @@ public sealed class PostHogClient : IPostHogClient
         finally
         {
             _apiClient.Dispose();
-            _emails.Dispose();
+            _uploadClient.Dispose();
             _featureFlagCalledEventCache.Dispose();
         }
     }
