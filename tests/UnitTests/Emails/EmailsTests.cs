@@ -232,10 +232,28 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Single(harness.Requests).Body);
     }
 
+    public static TheoryData<MessageCategory, string> Categories => new()
+    {
+        { MessageCategory.Transactional, "\"transactional\"" },
+        {
+            new MessageCategory
+            {
+                Key = "newsletter",
+                Type = MessageCategoryType.Marketing,
+                Name = "Newsletter",
+                Description = "Monthly product news",
+            },
+            """{"key":"newsletter","type":"marketing","name":"Newsletter","description":"Monthly product news"}"""
+        },
+        {
+            new MessageCategory { Key = "receipts", Type = MessageCategoryType.Transactional, Name = "Receipts" },
+            """{"key":"receipts","type":"transactional","name":"Receipts"}"""
+        },
+    };
+
     [Theory]
-    [InlineData("product-updates", "product-updates")]
-    [InlineData(EmailCategories.Transactional, "transactional")]
-    public async Task SendsTheCategory(string category, string sent)
+    [MemberData(nameof(Categories))]
+    public async Task SendsTheCategory(MessageCategory category, string sent)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
@@ -250,7 +268,7 @@ public class TheSendAsyncMethodWithCodeContent
         });
 
         using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
-        Assert.Equal(sent, body.RootElement.GetProperty("category").GetString());
+        Assert.Equal(sent, body.RootElement.GetProperty("category").GetRawText());
     }
 
     public static TheoryData<string, SendCodeEmailOptions> InvalidCodeSends => new()
@@ -261,8 +279,14 @@ public class TheSendAsyncMethodWithCodeContent
         { "Subject", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = null!, Html = "h" } },
         { "Html, Text or both", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s" } },
         { "ReplyTo", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", ReplyTo = [" "] } },
-        { "Category", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Category = "" } },
+        { "Category.Key", CodeSendIn(new MessageCategory { Key = " ", Type = MessageCategoryType.Marketing, Name = "News" }) },
+        { "Category.Key", CodeSendIn(new MessageCategory { Key = null!, Type = MessageCategoryType.Marketing, Name = "News" }) },
+        { "Category.Name", CodeSendIn(new MessageCategory { Key = "news", Type = MessageCategoryType.Marketing, Name = "" }) },
+        { "Category.Type", CodeSendIn(new MessageCategory { Key = "news", Type = (MessageCategoryType)7, Name = "News" }) },
     };
+
+    static SendCodeEmailOptions CodeSendIn(MessageCategory category)
+        => new() { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "{{ unsubscribe_url }}", Category = category };
 
     [Theory]
     [MemberData(nameof(InvalidCodeSends))]

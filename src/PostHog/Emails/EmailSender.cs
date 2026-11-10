@@ -551,13 +551,7 @@ internal sealed class EmailSender : IPostHogEmails
             throw new ArgumentException("ReplyTo must not hold a blank address.", nameof(email));
         }
 
-        if (email.Category is { } category && string.IsNullOrWhiteSpace(category))
-        {
-            throw new ArgumentException(
-                "Category must not be blank. Leave it null to send transactional email.",
-                nameof(email));
-        }
-
+        var category = email.Category is { } named ? CategoryBody(named, nameof(email)) : null;
         var body = new Dictionary<string, object?>
         {
             ["template_key"] = email.TemplateKey,
@@ -584,15 +578,51 @@ internal sealed class EmailSender : IPostHogEmails
             body["reply_to"] = email.ReplyTo;
         }
 
-        if (email.Category is not null)
+        if (category is not null)
         {
-            body["category"] = email.Category;
+            body["category"] = category;
         }
 
         body["capture_engagement"] = email.CaptureEngagement;
         if (email.DistinctId is not null)
         {
             body["distinct_id"] = email.DistinctId;
+        }
+
+        return body;
+    }
+
+    static object CategoryBody(MessageCategory category, string paramName)
+    {
+        if (ReferenceEquals(category, MessageCategory.Transactional))
+        {
+            return "transactional";
+        }
+
+        if (string.IsNullOrWhiteSpace(category.Key))
+        {
+            throw new ArgumentException("Category.Key must not be blank.", paramName);
+        }
+
+        if (string.IsNullOrWhiteSpace(category.Name))
+        {
+            throw new ArgumentException("Category.Name must not be blank.", paramName);
+        }
+
+        var body = new Dictionary<string, object?>
+        {
+            ["key"] = category.Key,
+            ["type"] = category.Type switch
+            {
+                MessageCategoryType.Marketing => "marketing",
+                MessageCategoryType.Transactional => "transactional",
+                _ => throw new ArgumentException("Category.Type must be Marketing or Transactional.", paramName),
+            },
+            ["name"] = category.Name,
+        };
+        if (category.Description is not null)
+        {
+            body["description"] = category.Description;
         }
 
         return body;

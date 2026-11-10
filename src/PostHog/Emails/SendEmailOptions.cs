@@ -97,17 +97,19 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public IReadOnlyList<string>? ReplyTo { get; init; }
 
     /// <summary>
-    /// The key of one of the project's marketing message categories, such as <c>product-updates</c>. Without it, or
-    /// with <see cref="EmailCategories.Transactional"/>, PostHog sends the email as transactional.
+    /// The message category to send the email in. Without it, or with <see cref="MessageCategory.Transactional"/>,
+    /// PostHog sends the email as transactional with no category.
     /// </summary>
     /// <remarks>
-    /// A marketing email honors the recipient's opt-outs, and its <see cref="Html"/>, or its <see cref="Text"/> when
-    /// it has no <see cref="Html"/>, needs a <c>{{ unsubscribe_url }}</c> placeholder for the recipient's preferences
-    /// link. PostHog refuses a key that names no marketing category with <c>unknown_category</c>, content without
-    /// the placeholder with <c>unsubscribe_link_required</c>, and a recipient who opted out with
-    /// <c>recipient_opted_out</c>.
+    /// A marketing category's email honors the recipient's opt-outs, and its <see cref="Html"/>, or its
+    /// <see cref="Text"/> when it has no <see cref="Html"/>, needs a <c>{{ unsubscribe_url }}</c> placeholder for the
+    /// recipient's preferences link. PostHog refuses the send with <c>category_mismatch</c> when the key names a
+    /// category of the other type, <c>too_many_categories</c> when it would create a category past the project's
+    /// limit, <c>unsubscribe_link_required</c> without the placeholder, <c>copies_not_allowed</c> when a marketing
+    /// email has copies, and <c>recipient_opted_out</c> when the recipient opted out of the category or of all
+    /// marketing.
     /// </remarks>
-    public string? Category { get; init; }
+    public MessageCategory? Category { get; init; }
 
     /// <summary>
     /// Whether PostHog captures the email's engagement events (sent, delivered, opened, clicked, bounced) as events
