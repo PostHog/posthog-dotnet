@@ -331,18 +331,18 @@ public class TheSendAsyncMethodWithCodeContent
     public async Task SendsInTheCategoryOfItsTemplateWhenLeftOut()
     {
         await using var harness = new EmailHarness();
-        var api = ServeANewsletterTemplate(harness);
+        var api = ServeAReceiptsTemplate(harness);
 
         await harness.Client.Emails.SendAsync(CodeSendIn(category: null));
 
-        Assert.Equal("newsletter", Assert.Single(api.Sends).CategoryKey);
+        Assert.Equal("receipts", Assert.Single(api.Sends).CategoryKey);
     }
 
     [Fact]
     public async Task ReportsTransactionalOnATemplateInACategory()
     {
         await using var harness = new EmailHarness();
-        var api = ServeANewsletterTemplate(harness);
+        var api = ServeAReceiptsTemplate(harness);
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(CodeSendIn(MessageCategory.Transactional)));
@@ -352,11 +352,11 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Empty(api.Sends);
     }
 
-    static FakeMessagingApi ServeANewsletterTemplate(EmailHarness harness)
+    static FakeMessagingApi ServeAReceiptsTemplate(EmailHarness harness)
     {
         var api = harness.ServeMessaging();
-        api.Seed(new StoredCategory("newsletter", "marketing", "Newsletter", ""));
-        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "newsletter");
+        api.Seed(new StoredCategory("receipts", "transactional", "Receipts", ""));
+        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "receipts");
         return api;
     }
 
