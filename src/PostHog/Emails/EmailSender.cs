@@ -347,7 +347,7 @@ internal sealed class EmailSender : IPostHogEmails
         {
             return new UploadTarget(url, new HttpMethod(method), headers);
         }
-        catch (FormatException)
+        catch (Exception e) when (e is FormatException or ArgumentException)
         {
             return null;
         }
