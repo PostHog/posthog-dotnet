@@ -829,6 +829,13 @@ internal sealed class EmailSender : IPostHogEmails
             throw new ArgumentException("Every attachment needs a Filename, such as invoice.pdf.", nameof(email));
         }
 
+        if (email.Attachments is { } filled && filled.Any(file => file.Content.IsEmpty))
+        {
+            throw new ArgumentException(
+                "Every attachment needs Content: PostHog doesn't send empty files.",
+                nameof(email));
+        }
+
         var hashed = email.Attachments is { Count: > 0 } files
             ? HashedAttachments.Hash(files, email.Subject, email.Html, email.Text)
             : HashedAttachments.None;

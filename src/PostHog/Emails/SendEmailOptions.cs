@@ -147,7 +147,8 @@ public sealed class EmailAttachment
 
     /// <summary>
     /// The file's bytes. The client names the file by their SHA-256 and uploads them when PostHog doesn't have them
-    /// yet. PostHog can't fetch a file from a path or URL, so read the file first.
+    /// yet. PostHog can't fetch a file from a path or URL, so read the file first. An empty file throws
+    /// <see cref="ArgumentException"/> before any request.
     /// </summary>
     public required ReadOnlyMemory<byte> Content { get; init; }
 

@@ -262,6 +262,7 @@ public class TheSendAsyncMethodWithCodeContent
         { "Attachments", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Attachments = [null!] } },
         { "Filename", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Attachments = [new EmailAttachment { Filename = " ", Content = new byte[] { 1 } }] } },
         { "Filename", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Attachments = [new EmailAttachment { Filename = null!, Content = new byte[] { 1 } }] } },
+        { "Content", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", Attachments = [new EmailAttachment { Filename = "empty.csv", Content = Array.Empty<byte>() }] } },
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "password reset", Subject = "s", Html = "h" } },
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "", Subject = "s", Html = "h" } },
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = new string('k', 401), Subject = "s", Html = "h" } },
@@ -1335,14 +1336,8 @@ sealed class EmailHarness : IAsyncDisposable
     }
 }
 
-sealed record RecordedRequest(
-    HttpMethod Method,
-    string Url,
-    IReadOnlyDictionary<string, string> Headers,
-    byte[]? BodyBytes)
+sealed record RecordedRequest(HttpMethod Method, string Url, IReadOnlyDictionary<string, string> Headers, string? Body)
 {
-    public string? Body => BodyBytes is null ? null : Encoding.UTF8.GetString(BodyBytes);
-
     public string? Header(string name) => Headers.TryGetValue(name, out var value) ? value : null;
 }
 
@@ -1374,7 +1369,7 @@ sealed class RecordingHandler : HttpMessageHandler
             headers[header.Key] = string.Join(", ", header.Value);
         }
 
-        byte[]? body = null;
+        string? body = null;
         if (request.Content is not null)
         {
             foreach (var header in request.Content.Headers)
@@ -1383,9 +1378,9 @@ sealed class RecordingHandler : HttpMessageHandler
             }
 
 #if NET5_0_OR_GREATER
-            body = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+            body = await request.Content.ReadAsStringAsync(cancellationToken);
 #else
-            body = await request.Content.ReadAsByteArrayAsync();
+            body = await request.Content.ReadAsStringAsync();
 #endif
         }
 
