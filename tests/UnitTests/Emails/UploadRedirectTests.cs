@@ -8,7 +8,12 @@ namespace EmailsTests;
 
 public class TheSendAsyncMethodOverTheNetwork
 {
-    public static TheoryData<string> Wirings => new() { "new PostHogClient", "services.AddPostHog" };
+    public static TheoryData<string> Wirings => new()
+    {
+        "new PostHogClient",
+        "new PostHogClient with the app's IHttpClientFactory",
+        "services.AddPostHog",
+    };
 
     [Theory]
     [MemberData(nameof(Wirings))]
@@ -63,16 +68,32 @@ public class TheSendAsyncMethodOverTheNetwork
             return new WiredClient(client.Emails, client);
         }
 
+        if (wiring == "new PostHogClient with the app's IHttpClientFactory")
+        {
+            var options = new PostHogOptions();
+            Configure(options);
+            // A plain factory, as services.AddHttpClient() gives an app: its clients follow redirects.
+            var factories = new ServiceCollection().AddHttpClient().BuildServiceProvider();
+            var client = new PostHogClient(options, httpClientFactory: factories.GetRequiredService<IHttpClientFactory>());
+            return new WiredClient(client.Emails, client, factories);
+        }
+
         var services = new ServiceCollection();
         services.AddPostHog(builder => builder.PostConfigure(Configure));
         var provider = services.BuildServiceProvider();
         return new WiredClient(provider.GetRequiredService<IPostHogEmails>(), provider);
     }
 
-    sealed class WiredClient(IPostHogEmails emails, IAsyncDisposable owner) : IAsyncDisposable
+    sealed class WiredClient(IPostHogEmails emails, params IAsyncDisposable[] owners) : IAsyncDisposable
     {
         public IPostHogEmails Emails { get; } = emails;
 
-        public ValueTask DisposeAsync() => owner.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var owner in owners)
+            {
+                await owner.DisposeAsync();
+            }
+        }
     }
 }

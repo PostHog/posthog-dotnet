@@ -168,8 +168,9 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// An attachment's upload to PostHog's file storage can take longer for a large file, so it runs until the
     /// <see cref="HttpClient"/>'s own timeout instead: 100 seconds unless your app changed it, so raise
     /// <see cref="HttpClient.Timeout"/> when your app sends large files over a slow link. Uploads go through an
-    /// <see cref="HttpClient"/> of their own, named <c>PostHogClient.Uploads</c>, that never follows a redirect and
-    /// carries none of your app's handlers or default headers. It uses the system proxy.
+    /// <see cref="HttpClient"/> the SDK makes for them, whatever <see cref="IHttpClientFactory"/> your app supplies:
+    /// it never follows a redirect and carries none of your app's handlers or default headers. It uses the system
+    /// proxy.
     /// </remarks>
     public TimeSpan EmailRequestTimeout { get; set; } = TimeSpan.FromSeconds(15);
 

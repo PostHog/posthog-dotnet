@@ -82,6 +82,22 @@ public sealed class PostHogClient : IPostHogClient
         ITaskScheduler? taskScheduler = null,
         TimeProvider? timeProvider = null,
         ILoggerFactory? loggerFactory = null)
+        : this(NotNull(options), featureFlagsCache, httpClientFactory, taskScheduler, timeProvider, loggerFactory, uploadTransport: null)
+    {
+    }
+
+    /// <summary>
+    /// Constructs a <see cref="PostHogClient"/> whose attachment uploads go through <paramref name="uploadTransport"/>,
+    /// so tests can stand in for the file storage. A null transport gives the SDK's own, which never follows a redirect.
+    /// </summary>
+    internal PostHogClient(
+        IOptions<PostHogOptions> options,
+        IFeatureFlagCache? featureFlagsCache,
+        IHttpClientFactory? httpClientFactory,
+        ITaskScheduler? taskScheduler,
+        TimeProvider? timeProvider,
+        ILoggerFactory? loggerFactory,
+        HttpMessageHandler? uploadTransport)
     {
         _options = NotNull(options);
         _featureFlagsCache = featureFlagsCache ?? NullFeatureFlagCache.Instance;
@@ -103,7 +119,7 @@ public sealed class PostHogClient : IPostHogClient
         );
         _emails = new EmailSender(
             httpClient,
-            httpClientFactory.CreateClient(EmailSender.UploadClientName),
+            uploadTransport,
             _options.Value,
             _isDisabled,
             _timeProvider,
@@ -1508,6 +1524,7 @@ public sealed class PostHogClient : IPostHogClient
         finally
         {
             _apiClient.Dispose();
+            _emails.Dispose();
             _featureFlagCalledEventCache.Dispose();
         }
     }

@@ -15,7 +15,7 @@ namespace PostHog.Emails;
 /// Sends one transactional email per call to the messaging send API on the app host, and reads the status of a sent
 /// email. Owns the attempt loop, so every attempt of a send carries the same idempotency key.
 /// </summary>
-internal sealed class EmailSender : IPostHogEmails
+internal sealed class EmailSender : IPostHogEmails, IDisposable
 {
     const string SendPath = "/api/projects/@current/messaging/send/email/";
     const string StatusPath = "/api/projects/@current/messaging/emails/";
@@ -27,22 +27,6 @@ internal sealed class EmailSender : IPostHogEmails
     const int DefaultMaxRetries = 2;
     const string UsAppHost = "https://us.posthog.com";
 
-    /// <summary>
-    /// The name of the <see cref="HttpClient"/> that uploads files. It never follows a redirect, so a file goes only
-    /// to the URL PostHog signed, and none of the app's handlers or default headers reach the file storage.
-    /// </summary>
-    internal const string UploadClientName = "PostHogClient.Uploads";
-
-    internal static HttpMessageHandler CreateUploadHandler() => new HttpClientHandler { AllowAutoRedirect = false };
-
-    /// <summary>
-    /// An upload client without a timeout of its own: each upload runs until the app's PostHog
-    /// <see cref="HttpClient.Timeout"/>.
-    /// </summary>
-#pragma warning disable CA2000 // The client owns its handler and disposes it.
-    internal static HttpClient CreateUploadClient()
-        => new(CreateUploadHandler(), disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
-#pragma warning restore CA2000
     const string EuAppHost = "https://eu.posthog.com";
 
     static readonly Dictionary<string, string> CloudAppHosts = new(StringComparer.OrdinalIgnoreCase)
@@ -55,7 +39,7 @@ internal sealed class EmailSender : IPostHogEmails
     };
 
     readonly HttpClient? _httpClient;
-    readonly HttpClient? _uploadClient;
+    readonly HttpClient _uploadClient;
     readonly PostHogOptions _options;
     readonly bool _isDisabled;
     readonly TimeProvider _timeProvider;
@@ -65,18 +49,34 @@ internal sealed class EmailSender : IPostHogEmails
     bool _closed;
     TaskCompletionSource<bool>? _drained;
 
+    /// <param name="httpClient">The app's PostHog client, which talks to PostHog.</param>
+    /// <param name="uploadTransport">
+    /// Carries uploads to the file storage. Leave it null outside tests: the sender then makes its own transport,
+    /// which never follows a redirect, whatever <see cref="IHttpClientFactory"/> the app supplied, so a file goes
+    /// only to the URL PostHog signed and none of the app's handlers or default headers reach the file storage.
+    /// </param>
+    /// <param name="options">The PostHog options.</param>
+    /// <param name="isDisabled">Whether the client is disabled.</param>
+    /// <param name="timeProvider">The time provider.</param>
+    /// <param name="logger">The logger.</param>
     public EmailSender(
         HttpClient? httpClient,
-        HttpClient? uploadClient,
+        HttpMessageHandler? uploadTransport,
         PostHogOptions options,
         bool isDisabled,
         TimeProvider timeProvider,
         ILogger logger)
     {
         _httpClient = httpClient;
-        _uploadClient = uploadClient;
+        // Each upload runs until the app's PostHog HttpClient.Timeout, which PutAsync applies itself.
+#pragma warning disable CA2000 // The upload client owns the handler it makes and disposes it with itself.
+        _uploadClient = new HttpClient(uploadTransport ?? (HttpMessageHandler)NoRedirectHandler(), disposeHandler: uploadTransport is null)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+#pragma warning restore CA2000
         _options = options;
-        _isDisabled = isDisabled || httpClient is null || uploadClient is null;
+        _isDisabled = isDisabled || httpClient is null;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -193,7 +193,7 @@ internal sealed class EmailSender : IPostHogEmails
         timeout.CancelAfter(_httpClient!.Timeout);
         try
         {
-            response = await _uploadClient!.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            response = await _uploadClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
@@ -380,6 +380,10 @@ internal sealed class EmailSender : IPostHogEmails
     /// Stops new email requests, which then fail with <c>client_closed</c>, and waits until every send and status
     /// read in flight, retries included, has settled.
     /// </summary>
+    public void Dispose() => _uploadClient.Dispose();
+
+    static HttpClientHandler NoRedirectHandler() => new HttpClientHandler { AllowAutoRedirect = false };
+
     public Task CloseAsync()
     {
         lock (_gate)

@@ -32,6 +32,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
     readonly ConcurrentDictionary<string, SignedUpload> _signed = new(StringComparer.Ordinal);
     readonly ConcurrentQueue<Func<HttpResponseMessage>> _uploadRouteFaults = new();
     readonly ConcurrentQueue<Func<HttpResponseMessage>> _storageFaults = new();
+    readonly ConcurrentQueue<TimeSpan> _storageDelays = new();
     readonly List<DeliveredEmail> _delivered = [];
     bool _olderVersion;
     int _storageWrites;
@@ -83,6 +84,10 @@ sealed class FakePostHogEmails : HttpMessageHandler
             return answer;
         });
 
+    /// <summary>Holds the next signed PUT for <paramref name="delay"/> before the storage answers it, as a slow link
+    /// would; <see cref="Timeout.InfiniteTimeSpan"/> stalls it until the client gives up.</summary>
+    public void DelayStorage(TimeSpan delay) => _storageDelays.Enqueue(delay);
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
@@ -95,6 +100,11 @@ sealed class FakePostHogEmails : HttpMessageHandler
 #endif
         if (string.Equals(uri.GetLeftPart(UriPartial.Authority), StorageOrigin, StringComparison.OrdinalIgnoreCase))
         {
+            if (_storageDelays.TryDequeue(out var delay))
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
+
             return Store(request, uri, body);
         }
 

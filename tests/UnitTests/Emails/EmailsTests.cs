@@ -485,6 +485,73 @@ public class TheSendAsyncMethodWithAttachments
     }
 
     [Fact]
+    public async Task GivesUpOnAStalledUploadAtTheAppsHttpClientTimeout()
+    {
+        var posthog = new FakePostHogEmails();
+        posthog.DelayStorage(StalledUpload);
+        await using var harness = new EmailHarness(options => options.EmailRequestMaxRetries = 0, posthog);
+        harness.HttpClient.Timeout = TimeSpan.FromMilliseconds(200);
+
+        var send = harness.Client.Emails.SendAsync(Invoice(Pdf()));
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => Within(send, TimeSpan.FromSeconds(3)));
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal(0, posthog.StorageWrites);
+        Assert.Equal("network_error", error.Code);
+        Assert.Equal("Uploading invoice.pdf timed out, so no email was sent.", error.Message);
+    }
+
+    [Fact]
+    public async Task LetsTheCallerCancelAStalledUpload()
+    {
+        var posthog = new FakePostHogEmails();
+        posthog.DelayStorage(StalledUpload);
+        await using var harness = new EmailHarness(options => options.EmailRequestMaxRetries = 0, posthog);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        var send = harness.Client.Emails.SendAsync(Invoice(Pdf()), cancellation.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Within(send, TimeSpan.FromSeconds(3)));
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal(0, posthog.StorageWrites);
+    }
+
+    [Fact]
+    public async Task LetsAnUploadOutlastTheEmailRequestTimeout()
+    {
+        var posthog = new FakePostHogEmails();
+        posthog.DelayStorage(TimeSpan.FromMilliseconds(500));
+        await using var harness = new EmailHarness(
+            options =>
+            {
+                options.EmailRequestTimeout = TimeSpan.FromMilliseconds(100);
+                options.EmailRequestMaxRetries = 0;
+            },
+            posthog);
+
+        await harness.Client.Emails.SendAsync(Invoice(Pdf()));
+
+        Assert.Equal(Bytes[1..5], Assert.Single(Assert.Single(posthog.Delivered).Attachments).Content);
+        Assert.Equal(1, posthog.StorageWrites);
+    }
+
+    /// <summary>
+    /// Longer than any test waits for a send, yet short enough that a client that never gives up still lets the
+    /// harness close.
+    /// </summary>
+    static readonly TimeSpan StalledUpload = TimeSpan.FromSeconds(6);
+
+    static async Task Within(Task task, TimeSpan timeout)
+    {
+        if (await Task.WhenAny(task, Task.Delay(timeout)) != task)
+        {
+            throw new TimeoutException("The task did not finish in time.");
+        }
+
+        await task;
+    }
+
+    [Fact]
     public async Task RetriesAnUnavailableUploadRouteWithoutRetryingADailyCap()
     {
         var posthog = new FakePostHogEmails();
@@ -1287,7 +1354,6 @@ sealed class EmailHarness : IAsyncDisposable
 {
     readonly RecordingHandler _handler = new();
     readonly HttpClient _httpClient;
-    readonly HttpClient _uploadClient;
 
     public EmailHarness(Action<PostHogOptions>? configure = null, HttpMessageHandler? posthog = null)
     {
@@ -1299,12 +1365,14 @@ sealed class EmailHarness : IAsyncDisposable
         configure?.Invoke(options);
         var transport = posthog ?? _handler;
         _httpClient = new HttpClient(transport, disposeHandler: false);
-        _uploadClient = new HttpClient(transport, disposeHandler: false) { Timeout = Timeout.InfiniteTimeSpan };
         Client = new PostHogClient(
             options,
-            httpClientFactory: new NamedHttpClientFactory(_httpClient, _uploadClient),
+            featureFlagsCache: null,
+            httpClientFactory: new SingleHttpClientFactory(_httpClient),
+            taskScheduler: null,
             timeProvider: Time,
-            loggerFactory: Logs);
+            loggerFactory: Logs,
+            uploadTransport: transport);
     }
 
     public PostHogClient Client { get; }
@@ -1357,17 +1425,13 @@ sealed class EmailHarness : IAsyncDisposable
     {
         await Client.DisposeAsync();
         _httpClient.Dispose();
-        _uploadClient.Dispose();
         _handler.Dispose();
     }
 
-    /// <summary>
-    /// Hands out the app's PostHog client and the separate upload client, as IHttpClientFactory does, both over the
-    /// same fake transport.
-    /// </summary>
-    sealed class NamedHttpClientFactory(HttpClient client, HttpClient uploadClient) : IHttpClientFactory
+    /// <summary>Hands out the app's PostHog client, as an app's IHttpClientFactory does.</summary>
+    sealed class SingleHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => name == "PostHogClient.Uploads" ? uploadClient : client;
+        public HttpClient CreateClient(string name) => client;
     }
 }
 
