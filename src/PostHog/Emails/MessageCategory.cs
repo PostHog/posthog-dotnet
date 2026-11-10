@@ -12,8 +12,9 @@ namespace PostHog.Emails;
 public sealed class MessageCategory
 {
     /// <summary>
-    /// Sends the email as transactional with no category, the same as leaving
-    /// <see cref="SendCodeEmailOptions.Category"/> out.
+    /// Sends the email as transactional with no category. Unlike leaving <see cref="SendCodeEmailOptions.Category"/>
+    /// out, it doesn't follow the category of the template that <see cref="SendCodeEmailOptions.TemplateKey"/> names:
+    /// PostHog refuses it with <c>category_mismatch</c> for a template in a category.
     /// </summary>
     public static MessageCategory Transactional { get; } = new()
     {

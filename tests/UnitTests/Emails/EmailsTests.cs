@@ -327,6 +327,39 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(receipts, api.Categories["receipts"]);
     }
 
+    [Fact]
+    public async Task SendsInTheCategoryOfItsTemplateWhenLeftOut()
+    {
+        await using var harness = new EmailHarness();
+        var api = ServeANewsletterTemplate(harness);
+
+        await harness.Client.Emails.SendAsync(CodeSendIn(category: null));
+
+        Assert.Equal("newsletter", Assert.Single(api.Sends).CategoryKey);
+    }
+
+    [Fact]
+    public async Task ReportsTransactionalOnATemplateInACategory()
+    {
+        await using var harness = new EmailHarness();
+        var api = ServeANewsletterTemplate(harness);
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(CodeSendIn(MessageCategory.Transactional)));
+
+        Assert.Equal("category_mismatch", error.Code);
+        Assert.Equal("category", error.Field);
+        Assert.Empty(api.Sends);
+    }
+
+    static FakeMessagingApi ServeANewsletterTemplate(EmailHarness harness)
+    {
+        var api = harness.ServeMessaging();
+        api.Seed(new StoredCategory("newsletter", "marketing", "Newsletter", ""));
+        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "newsletter");
+        return api;
+    }
+
     public static TheoryData<string, SendCodeEmailOptions> InvalidCodeSends => new()
     {
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "password reset", Subject = "s", Html = "h" } },

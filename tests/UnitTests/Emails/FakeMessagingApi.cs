@@ -10,7 +10,9 @@ namespace EmailsTests;
 /// send API does. It upserts a category by key, refuses a type change with <c>category_mismatch</c>, keeps a
 /// category's description when the field is missing and clears it on <c>""</c>, and refuses a marketing email
 /// without <c>{{ unsubscribe_url }}</c>. It refuses category fields outside the API's schema, so a misspelled field
-/// fails here instead of being dropped.
+/// fails here instead of being dropped. A send whose <c>template_key</c> names a template follows the template's
+/// category when it leaves <c>category</c> out, and is refused with <c>category_mismatch</c> when it names another,
+/// including <c>"transactional"</c> for a template in a category.
 /// </summary>
 sealed class FakeMessagingApi
 {
@@ -18,6 +20,7 @@ sealed class FakeMessagingApi
     static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
 
     readonly Dictionary<string, StoredCategory> _categories = new(StringComparer.Ordinal);
+    readonly Dictionary<string, string?> _templates = new(StringComparer.Ordinal);
     readonly List<AcceptedSend> _sends = [];
 
     public IReadOnlyDictionary<string, StoredCategory> Categories => _categories;
@@ -25,6 +28,8 @@ sealed class FakeMessagingApi
     public IReadOnlyList<AcceptedSend> Sends => _sends;
 
     public void Seed(StoredCategory category) => _categories[category.Key] = category;
+
+    public void SeedTemplate(string templateKey, string? categoryKey) => _templates[templateKey] = categoryKey;
 
     public Task<HttpResponseMessage> Answer(RecordedRequest request)
     {
@@ -35,6 +40,11 @@ sealed class FakeMessagingApi
 
         using var body = JsonDocument.Parse(request.Body ?? "{}");
         var email = body.RootElement;
+        if (Text(email, "template_key") is { } templateKey && _templates.TryGetValue(templateKey, out var templateCategory))
+        {
+            return SendForTemplate(email, templateCategory);
+        }
+
         if (!email.TryGetProperty("category", out var category)
             || category.ValueKind == JsonValueKind.Null
             || category is { ValueKind: JsonValueKind.String } && category.GetString() == "transactional")
@@ -89,6 +99,19 @@ sealed class FakeMessagingApi
             ? new StoredCategory(key, type, name, description ?? "")
             : stored with { Name = name, Description = description ?? stored.Description };
         return Accept(key);
+    }
+
+    Task<HttpResponseMessage> SendForTemplate(JsonElement email, string? templateCategory)
+    {
+        var leftOut = !email.TryGetProperty("category", out var category) || category.ValueKind == JsonValueKind.Null;
+        var matches = leftOut || (templateCategory is null
+            ? category is { ValueKind: JsonValueKind.String } && category.GetString() == "transactional"
+            : category.ValueKind == JsonValueKind.Object
+              && Text(category, "key") == templateCategory
+              && Text(category, "type") == _categories[templateCategory].Type);
+        return matches
+            ? Accept(templateCategory)
+            : Refuse("category_mismatch", "The send names another category than its template's.");
     }
 
     static bool HoldsUnsubscribeLink(JsonElement email)

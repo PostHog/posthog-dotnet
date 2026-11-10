@@ -97,17 +97,19 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public IReadOnlyList<string>? ReplyTo { get; init; }
 
     /// <summary>
-    /// The message category to send the email in. Without it, or with <see cref="MessageCategory.Transactional"/>,
-    /// PostHog sends the email as transactional with no category.
+    /// The message category to send the email in. Without it, PostHog sends the email in the category of the
+    /// template that <see cref="TemplateKey"/> names, or as transactional with no category when no template has
+    /// that key. <see cref="MessageCategory.Transactional"/> sends it as transactional with no category.
     /// </summary>
     /// <remarks>
     /// A marketing category's email honors the recipient's opt-outs, and its <see cref="Html"/>, or its
     /// <see cref="Text"/> when it has no <see cref="Html"/>, needs a <c>{{ unsubscribe_url }}</c> placeholder for the
     /// recipient's preferences link. PostHog refuses the send with <c>category_mismatch</c> when the key names a
-    /// category of the other type, <c>too_many_categories</c> when it would create a category past the project's
-    /// limit, <c>unsubscribe_link_required</c> without the placeholder, <c>copies_not_allowed</c> when a marketing
-    /// email has copies, and <c>recipient_opted_out</c> when the recipient opted out of the category or of all
-    /// marketing.
+    /// category of the other type, or when <see cref="TemplateKey"/> names a template in another category, including
+    /// <see cref="MessageCategory.Transactional"/> for a template in a category. It refuses the send with
+    /// <c>too_many_categories</c> when it would create a category past the project's limit,
+    /// <c>unsubscribe_link_required</c> without the placeholder, <c>copies_not_allowed</c> when a marketing email has
+    /// copies, and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing.
     /// </remarks>
     public MessageCategory? Category { get; init; }
 
