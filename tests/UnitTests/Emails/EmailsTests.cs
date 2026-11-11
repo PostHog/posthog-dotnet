@@ -289,6 +289,29 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Single(harness.Requests).Body);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SendsSensitiveNextToTheTrackingTheCallerSet(bool sensitive)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "user@example.com",
+            TemplateKey = "receipt_2",
+            Subject = "Your receipt",
+            Text = "Thanks!",
+            Sensitive = sensitive,
+            Tracking = new EmailTracking { Clicks = false },
+        });
+
+        Assert.Equal(
+            $$$"""{"template_key":"receipt_2","to":"user@example.com","subject":"Your receipt","text":"Thanks!","sensitive":{{{(sensitive ? "true" : "false")}}},"tracking":{"clicks":false}}""",
+            Assert.Single(harness.Requests).Body);
+    }
+
     public static TheoryData<string, SendCodeEmailOptions> InvalidCodeSends => new()
     {
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "password reset", Subject = "s", Html = "h" } },

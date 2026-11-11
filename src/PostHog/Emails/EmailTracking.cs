@@ -14,8 +14,8 @@ namespace PostHog.Emails;
 /// <see cref="Opens"/>, <see cref="Clicks"/> or <see cref="Engagement"/>. A kind left unset takes its default.
 /// </para>
 /// <para>
-/// Clicks are off by default because PostHog can't tell whether an email's links carry login or reset tokens: turn
-/// them on only when the links are safe to rewrite. Click tracking needs open tracking.
+/// Clicks are on by default unless the email is sensitive (see <see cref="SendCodeEmailOptions.Sensitive"/>). Turn
+/// them on for a sensitive email only when its links are safe to rewrite. Click tracking needs open tracking.
 /// </para>
 /// </remarks>
 [JsonConverter(typeof(EmailTrackingJsonConverter))]
@@ -47,7 +47,7 @@ public sealed class EmailTracking
 
     /// <summary>
     /// Whether PostHog rewrites the email's links to count clicks. Links you opt out one by one stay as they are.
-    /// (Default: <c>false</c>)
+    /// (Default: <c>true</c> unless the email is sensitive)
     /// </summary>
     public bool? Clicks { get; init; }
 

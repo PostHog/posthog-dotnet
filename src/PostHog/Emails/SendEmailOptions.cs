@@ -97,8 +97,22 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public IReadOnlyList<string>? ReplyTo { get; init; }
 
     /// <summary>
+    /// Whether the email is sensitive: set <c>true</c> when it carries login links, reset tokens or codes. A sensitive
+    /// email keeps its links unchanged unless <see cref="Tracking"/> turns clicks on, leaves its subject off
+    /// engagement events, and keeps its content out of logs.
+    /// </summary>
+    /// <remarks>
+    /// Left unset, the email takes the setting of the template made in PostHog whose key matches
+    /// <see cref="TemplateKey"/>, and is sensitive when no template matches. The send includes it only when you set it.
+    /// Needs PostHog's API support for <c>sensitive</c>, which is rolling out; until then PostHog refuses a send that
+    /// sets it. A template made in PostHog carries its own setting, so <see cref="SendTemplateEmailOptions"/> doesn't
+    /// take it.
+    /// </remarks>
+    public bool? Sensitive { get; init; }
+
+    /// <summary>
     /// What PostHog tracks for the email: opens, clicks and engagement events. Left unset, PostHog counts opens and
-    /// captures engagement events, and doesn't track clicks.
+    /// captures engagement events, and tracks clicks only when the email isn't <see cref="Sensitive"/>.
     /// </summary>
     /// <remarks>
     /// Set <see cref="EmailTracking.All"/> (or <c>true</c>) to turn on every kind, <see cref="EmailTracking.None"/>

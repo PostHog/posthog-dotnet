@@ -61,6 +61,8 @@ PostHog.Emails.SendCodeEmailOptions.Html.init -> void
 PostHog.Emails.SendCodeEmailOptions.ReplyTo.get -> System.Collections.Generic.IReadOnlyList<string!>?
 PostHog.Emails.SendCodeEmailOptions.ReplyTo.init -> void
 PostHog.Emails.SendCodeEmailOptions.SendCodeEmailOptions() -> void
+PostHog.Emails.SendCodeEmailOptions.Sensitive.get -> bool?
+PostHog.Emails.SendCodeEmailOptions.Sensitive.init -> void
 PostHog.Emails.SendCodeEmailOptions.Subject.get -> string!
 PostHog.Emails.SendCodeEmailOptions.Subject.init -> void
 PostHog.Emails.SendCodeEmailOptions.TemplateKey.get -> string!

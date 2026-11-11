@@ -582,6 +582,11 @@ internal sealed class EmailSender : IPostHogEmails
             body["capture_engagement"] = captureEngagement;
         }
 
+        if (email.Sensitive is { } sensitive)
+        {
+            body["sensitive"] = sensitive;
+        }
+
         if (email.Tracking is not null)
         {
             body["tracking"] = email.Tracking;
