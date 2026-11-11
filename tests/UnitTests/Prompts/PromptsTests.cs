@@ -763,3 +763,29 @@ public class TheCompileMethod
         Assert.Equal(expected, compiled);
     }
 }
+
+public class TheToTracePropertiesMethod
+{
+    [Theory]
+    [InlineData(PromptSource.Api)]
+    [InlineData(PromptSource.Cache)]
+    [InlineData(PromptSource.StaleCache)]
+    public void ReturnsTheNameAndVersionOfAFetchedPrompt(PromptSource source)
+    {
+        var prompt = new PromptResult { Source = source, Prompt = "Hello", Name = PromptName, Version = 3, Label = "production" };
+
+        var properties = prompt.ToTraceProperties();
+
+        Assert.Equal(
+            new Dictionary<string, object> { ["$ai_prompt_name"] = PromptName, ["$ai_prompt_version"] = 3 },
+            properties);
+    }
+
+    [Fact]
+    public void ReturnsNoPropertiesForACodeFallback()
+    {
+        var prompt = new PromptResult { Source = PromptSource.CodeFallback, Prompt = "Hello" };
+
+        Assert.Empty(prompt.ToTraceProperties());
+    }
+}
