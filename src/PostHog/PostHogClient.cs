@@ -63,8 +63,8 @@ public sealed class PostHogClient : IPostHogClient
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
     readonly bool _isDisabled;
-    readonly ConditionalWeakTable<Exception, object> _capturedUnhandledExceptions = new();
-    readonly object _capturedUnhandledExceptionsLock = new();
+    // Tracks exception instances already reported as unhandled so the runtime hooks don't report them again.
+    readonly ConditionalWeakTable<Exception, UnhandledCaptureMarker> _capturedUnhandledExceptions = new();
     volatile bool _runtimeExceptionHandlersRegistered;
     internal bool IsDisabled => _isDisabled;
     readonly IFeatureFlagEvaluationsHost _evaluationsHost;
@@ -543,10 +543,7 @@ public sealed class PostHogClient : IPostHogClient
         bool sendFeatureFlags,
         FeatureFlagEvaluations? flags,
         DateTimeOffset? timestamp,
-        bool handled = true,
-        string mechanismType = "generic",
-        string? source = null,
-        string level = "error")
+        ExceptionCaptureBoundary? boundary = null)
     {
         if (CheckDisabledAndLog(nameof(CaptureException)))
         {
@@ -571,9 +568,17 @@ public sealed class PostHogClient : IPostHogClient
             }
 
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{identity.DistinctId}";
-            properties = ExceptionPropertiesBuilder.Build(properties, exception, handled, mechanismType, source, level);
+            // An SDK integration (e.g. the ASP.NET Core middleware) may have entered a boundary for this exception.
+            boundary ??= ExceptionCaptureBoundary.ForException(exception);
+            properties = ExceptionPropertiesBuilder.Build(properties, exception, boundary);
 
-            return CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
+            var captured = CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
+            if (captured && boundary is { Handled: false } && _runtimeExceptionHandlersRegistered)
+            {
+                MarkCapturedAsUnhandled(exception);
+            }
+
+            return captured;
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception e)
@@ -584,32 +589,55 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
-    internal bool CaptureUnhandledException(
-        Exception exception,
-        string? distinctId,
-        Dictionary<string, object>? properties,
-        string mechanismType,
-        string source,
-        bool terminatesProcess)
-    {
-        lock (_capturedUnhandledExceptionsLock)
-        {
-            if (_capturedUnhandledExceptions.TryGetValue(exception, out _))
-            {
-                return false;
-            }
+    static readonly ExceptionCaptureBoundary UnhandledExceptionBoundary = new(
+        mechanismType: "onuncaughtexception",
+        source: "dotnet.appdomain_unhandled_exception",
+        handled: false);
 
-            var context = PostHogContextHelper.ResolveCaptureContext(distinctId, properties);
-            var captured = CaptureExceptionCore(
-                exception, context.DistinctId, context.Properties, groups: null, sendFeatureFlags: false,
-                flags: null, timestamp: null, handled: false, mechanismType: mechanismType, source: source,
-                level: terminatesProcess ? "fatal" : "error");
-            if (captured)
-            {
-                _capturedUnhandledExceptions.Add(exception, new object());
-            }
-            return captured;
+    static readonly ExceptionCaptureBoundary TerminatingUnhandledExceptionBoundary = new(
+        mechanismType: "onuncaughtexception",
+        source: "dotnet.appdomain_unhandled_exception",
+        handled: false,
+        level: "fatal");
+
+    static readonly ExceptionCaptureBoundary UnobservedTaskExceptionBoundary = new(
+        mechanismType: "task",
+        source: "dotnet.task_scheduler_unobserved_task_exception",
+        handled: false);
+
+    static readonly TimeSpan TerminatingFlushTimeout = TimeSpan.FromSeconds(2);
+
+    sealed class UnhandledCaptureMarker
+    {
+        public int Captured;
+    }
+
+    /// <summary>
+    /// Atomically claims an exception instance for a runtime hook. Returns <c>false</c> when the instance was
+    /// already reported as unhandled, by this hook or by another boundary such as the request middleware.
+    /// </summary>
+    bool TryClaimUnhandledCapture(Exception exception)
+        => Interlocked.Exchange(ref _capturedUnhandledExceptions.GetOrCreateValue(exception).Captured, 1) == 0;
+
+    void MarkCapturedAsUnhandled(Exception exception)
+        => Interlocked.Exchange(ref _capturedUnhandledExceptions.GetOrCreateValue(exception).Captured, 1);
+
+    bool WasCapturedAsUnhandled(Exception exception)
+        => _capturedUnhandledExceptions.TryGetValue(exception, out var marker)
+           && Volatile.Read(ref marker.Captured) == 1;
+
+    void CaptureRuntimeException(Exception exception, ExceptionCaptureBoundary boundary)
+    {
+        // Only the runtime hooks deduplicate. Explicit and middleware captures always report, because an
+        // application can legitimately rethrow one cached exception instance for many separate failures.
+        if (!TryClaimUnhandledCapture(exception))
+        {
+            return;
         }
+
+        CaptureExceptionCore(
+            exception, distinctId: null, properties: null, groups: null, sendFeatureFlags: false,
+            flags: null, timestamp: null, boundary: boundary);
     }
 
     internal void OnUnhandledException(object sender, UnhandledExceptionEventArgs args)
@@ -621,12 +649,14 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            CaptureUnhandledException(exception, distinctId: null, properties: null,
-                mechanismType: "unhandled", source: "appdomain.unhandled_exception",
-                terminatesProcess: args.IsTerminating);
+            CaptureRuntimeException(
+                exception,
+                args.IsTerminating ? TerminatingUnhandledExceptionBoundary : UnhandledExceptionBoundary);
             if (args.IsTerminating)
             {
-                FlushAsync().Wait(TimeSpan.FromSeconds(2));
+                // The crashing thread may own a SynchronizationContext (e.g. a UI thread). Flush from the thread
+                // pool so the flush continuations never need the thread that is blocked here.
+                Task.Run(FlushAsync).Wait(TerminatingFlushTimeout);
             }
         }
 #pragma warning disable CA1031 // Reporting a crash must not replace the original failure.
@@ -638,19 +668,30 @@ public sealed class PostHogClient : IPostHogClient
 
     internal void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs args)
     {
-        if (_runtimeExceptionHandlersRegistered)
+        if (!_runtimeExceptionHandlersRegistered)
         {
-            try
+            return;
+        }
+
+        try
+        {
+            // The runtime always wraps the task's failure in a fresh AggregateException. Report the real
+            // exception when there is exactly one, so the event is typed and deduplicated by what actually failed.
+            var aggregate = args.Exception;
+            var failures = aggregate.Flatten().InnerExceptions;
+            if (failures.Count > 1 && failures.All(WasCapturedAsUnhandled))
             {
-                CaptureUnhandledException(args.Exception, distinctId: null, properties: null,
-                    mechanismType: "task", source: "task_scheduler.unobserved_task_exception",
-                    terminatesProcess: false);
+                return;
             }
+
+            CaptureRuntimeException(
+                failures.Count == 1 ? failures[0] : aggregate,
+                UnobservedTaskExceptionBoundary);
+        }
 #pragma warning disable CA1031 // Reporting a task failure must not change task exception handling.
-            catch
+        catch
 #pragma warning restore CA1031
-            {
-            }
+        {
         }
     }
 

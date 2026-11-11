@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using PostHog.Api;
 using PostHog.AspNetCore;
+using PostHog.ErrorTracking;
 
 namespace PostHog;
 
@@ -82,6 +83,11 @@ internal sealed class PostHogRequestContextMiddleware(
         }
     }
 
+    static readonly ExceptionCaptureBoundary RequestBoundary = new(
+        mechanismType: "middleware",
+        source: "aspnetcore.request_context_middleware",
+        handled: false);
+
     static void TryCaptureException(
         IPostHogClient postHog,
         Exception exception,
@@ -89,17 +95,9 @@ internal sealed class PostHogRequestContextMiddleware(
     {
         try
         {
-            if (postHog is PostHogClient client)
-            {
-                client.CaptureUnhandledException(
-                    exception,
-                    distinctId: null,
-                    GetExceptionProperties(statusCode),
-                    mechanismType: "middleware",
-                    source: "aspnetcore.request_context_middleware",
-                    terminatesProcess: false);
-            }
-            else
+            // The boundary travels with the call rather than through the client type, so decorated or wrapped
+            // IPostHogClient registrations still report the request failure as unhandled.
+            using (ExceptionCaptureBoundary.Enter(exception, RequestBoundary))
             {
                 postHog.CaptureException(exception, GetExceptionProperties(statusCode));
             }

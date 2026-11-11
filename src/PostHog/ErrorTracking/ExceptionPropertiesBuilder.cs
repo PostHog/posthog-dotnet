@@ -22,17 +22,15 @@ internal class ExceptionPropertiesBuilder
     public static Dictionary<string, object> Build(
         Dictionary<string, object> properties,
         Exception exception,
-        bool handled = true,
-        string mechanismType = "generic",
-        string? source = null,
-        string level = "error")
+        ExceptionCaptureBoundary? boundary = null)
     {
         properties["$exception_type"] = exception.GetType().FullName ?? exception.GetType().Name;
         properties["$exception_message"] = exception.Message;
-        properties["$exception_level"] = level;
-        if (source is not null)
+        properties["$exception_level"] = boundary?.Level ?? "error";
+        // $exception_source is SDK-owned: only a capture boundary may set it, never the caller's property bag.
+        if (boundary is not null)
         {
-            properties["$exception_source"] = source;
+            properties["$exception_source"] = boundary.Source;
         }
         else
         {
@@ -44,7 +42,7 @@ internal class ExceptionPropertiesBuilder
         properties["$os_version"] = OperatingSystemInfo.Version;
         properties["$net_runtime"] = RuntimeInformation.FrameworkDescription;
 
-        properties["$exception_list"] = BuildExceptionList(exception, handled, mechanismType);
+        properties["$exception_list"] = BuildExceptionList(exception, boundary);
         TryAddTraceContext(properties);
 
         return properties;
@@ -80,7 +78,7 @@ internal class ExceptionPropertiesBuilder
     }
 
     private static List<Dictionary<string, object>> BuildExceptionList(
-        Exception exception, bool handled, string mechanismType)
+        Exception exception, ExceptionCaptureBoundary? boundary)
     {
         var list = new List<Dictionary<string, object>>();
         var seen = new HashSet<Exception>();
@@ -93,17 +91,28 @@ internal class ExceptionPropertiesBuilder
             var (ex, depth) = stack.Pop();
             if (!seen.Add(ex)) continue;
 
+            // The outermost entry carries the capture boundary. Nested entries are only known to be chained:
+            // their handled state is not independently known, so it is omitted rather than derived.
+            var mechanism = depth == 0
+                ? new Dictionary<string, object>
+                {
+                    ["type"] = boundary?.MechanismType ?? "generic",
+                    ["handled"] = boundary?.Handled ?? true,
+                    ["source"] = "",
+                    ["synthetic"] = false
+                }
+                : new Dictionary<string, object>
+                {
+                    ["type"] = "chained",
+                    ["source"] = "",
+                    ["synthetic"] = false
+                };
+
             list.Add(new Dictionary<string, object>
             {
                 ["type"] = ex.GetType().FullName ?? ex.GetType().Name,
                 ["value"] = ex.Message,
-                ["mechanism"] = new Dictionary<string, object>
-                {
-                    ["type"] = depth == 0 ? mechanismType : "generic",
-                    ["handled"] = depth == 0 ? handled : true,
-                    ["source"] = "",
-                    ["synthetic"] = false
-                },
+                ["mechanism"] = mechanism,
                 ["stacktrace"] = new Dictionary<string, object>
                 {
                     ["frames"] = BuildStackFrameList(ex),

@@ -387,13 +387,14 @@ public class ThePostHogRequestContextMiddleware
     }
 
     [Fact]
-    public async Task DoesNotDuplicateExceptionWhenRequestFailureReachesRuntimeHandler()
+    public async Task DoesNotDuplicateExceptionWhenRequestFailureReachesRuntimeHandlers()
     {
         var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
             options.CaptureUnhandledExceptions = true));
         var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
         await using var client = container.Activate<PostHogClient>();
-        var original = new InvalidOperationException("boom");
+        var message = $"boom {Guid.NewGuid()}";
+        var original = new InvalidOperationException(message);
         var middleware = CreateMiddleware(
             _ => throw original,
             client,
@@ -401,10 +402,70 @@ public class ThePostHogRequestContextMiddleware
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(CreateHttpContext()));
         client.OnUnhandledException(this, new UnhandledExceptionEventArgs(original, isTerminating: false));
+        // The runtime wraps an unobserved task failure in a new AggregateException each time.
+        client.OnUnobservedTaskException(this, new UnobservedTaskExceptionEventArgs(new AggregateException(original)));
         await client.FlushAsync();
 
-        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
-        Assert.Single(document.RootElement.GetProperty("batch").EnumerateArray());
+        Assert.Single(GetExceptionEvents(requestHandler, message));
+    }
+
+    [Fact]
+    public async Task CapturesSameExceptionInstanceForEveryFailingRequest()
+    {
+        // An app can rethrow one cached exception instance (a cached faulted task, Lazy<T>) on every request.
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+            options.CaptureUnhandledExceptions = true));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        await using var client = container.Activate<PostHogClient>();
+        var message = $"boom {Guid.NewGuid()}";
+        var cached = new InvalidOperationException(message);
+        var middleware = CreateMiddleware(
+            _ => throw cached,
+            client,
+            options => options.CaptureExceptions = true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(CreateHttpContext()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(CreateHttpContext()));
+        await client.FlushAsync();
+
+        Assert.Equal(2, GetExceptionEvents(requestHandler, message).Count);
+    }
+
+    [Fact]
+    public async Task ReportsUnhandledMetadataThroughWrappedClient()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        await using var client = container.Activate<PostHogClient>();
+        var wrapper = Substitute.For<IPostHogClient>();
+        wrapper.CaptureException(
+                Arg.Any<Exception>(),
+                Arg.Any<string>(),
+                Arg.Any<Dictionary<string, object>?>(),
+                Arg.Any<GroupCollection?>(),
+                Arg.Any<FeatureFlagEvaluations?>(),
+                Arg.Any<DateTimeOffset?>())
+            .Returns(call => client.CaptureException(
+                call.ArgAt<Exception>(0),
+                call.ArgAt<string>(1),
+                call.ArgAt<Dictionary<string, object>?>(2),
+                call.ArgAt<GroupCollection?>(3),
+                call.ArgAt<FeatureFlagEvaluations?>(4),
+                call.ArgAt<DateTimeOffset?>(5)));
+        var message = $"boom {Guid.NewGuid()}";
+        var middleware = CreateMiddleware(
+            _ => throw new InvalidOperationException(message),
+            wrapper,
+            options => options.CaptureExceptions = true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.InvokeAsync(CreateHttpContext()));
+        await client.FlushAsync();
+
+        var properties = Assert.Single(GetExceptionEvents(requestHandler, message));
+        Assert.Equal("aspnetcore.request_context_middleware", properties.GetProperty("$exception_source").GetString());
+        var mechanism = properties.GetProperty("$exception_list")[0].GetProperty("mechanism");
+        Assert.False(mechanism.GetProperty("handled").GetBoolean());
+        Assert.Equal("middleware", mechanism.GetProperty("type").GetString());
     }
 
     [Fact]
@@ -436,6 +497,20 @@ public class ThePostHogRequestContextMiddleware
             Arg.Any<GroupCollection?>(),
             Arg.Any<FeatureFlagEvaluations?>(),
             Arg.Any<DateTimeOffset?>());
+    }
+
+    // Filters on a unique message: a client with runtime capture enabled listens to process-wide events, so
+    // unrelated failures from tests running in parallel can land in the same batch.
+    static List<JsonElement> GetExceptionEvents(
+        FakeHttpMessageHandler.RequestHandler requestHandler,
+        string message)
+    {
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        return document.RootElement.GetProperty("batch").EnumerateArray()
+            .Select(item => item.GetProperty("properties"))
+            .Where(properties => properties.GetProperty("$exception_list")[0].GetProperty("value").GetString() == message)
+            .Select(properties => properties.Clone())
+            .ToList();
     }
 
     static PostHogRequestContextMiddleware CreateMiddleware(
