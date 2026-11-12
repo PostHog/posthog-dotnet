@@ -213,7 +213,11 @@ public static class Examples
 
         Console.WriteLine(prompt.Prompt);
         Console.WriteLine(prompt.Source);
-        Console.WriteLine(prompt.Config?.GetProperty("model").GetString());
+        // Config keys are optional, so read them with TryGetProperty and keep a default.
+        var model = (prompt.Config is { } config && config.TryGetProperty("model", out var configuredModel)
+            ? configuredModel.GetString()
+            : null) ?? "gpt-4o";
+        Console.WriteLine(model);
 
         var systemPrompt = prompt.Compile(new Dictionary<string, object>
         {
@@ -224,7 +228,7 @@ public static class Examples
 
         // Link the LLM call to the prompt, so the trace in PostHog shows which prompt version produced the output.
         var generation = prompt.ToTraceProperties();
-        generation["$ai_model"] = "gpt-4o";
+        generation["$ai_model"] = model;
         generation["$ai_input"] = new[] { new { role = "system", content = systemPrompt } };
         posthog.Capture("user-123", "$ai_generation", generation);
 

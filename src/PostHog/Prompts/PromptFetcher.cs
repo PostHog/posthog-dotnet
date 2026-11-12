@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -22,6 +23,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
     // sent, capped so a bad header cannot park a prompt for days.
     static readonly TimeSpan DefaultRefetchCooldown = TimeSpan.FromSeconds(60);
     static readonly TimeSpan MaxRefetchCooldown = TimeSpan.FromHours(1);
+    static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(10);
 
     readonly HttpClient _httpClient;
     readonly PostHogOptions _options;
@@ -237,30 +239,36 @@ internal sealed class PromptFetcher : IPostHogPrompts
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(key));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
 
-        HttpResponseMessage response;
+        // The timeout covers the whole request, including reading the body.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(RequestTimeout);
         try
         {
-            response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        }
-        catch (HttpRequestException e)
-        {
-            throw Error(key, "network_error", $"Fetching {Describe(key)} failed: {e.Message}", innerException: e);
-        }
-        catch (TaskCanceledException e) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw Error(key, "network_error", $"Fetching {Describe(key)} timed out.", innerException: e);
-        }
-
-        using (response)
-        {
+            using var response = await _httpClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 throw ErrorFromResponse(key, response);
             }
 
-            return await ReadPromptAsync(key, response, cancellationToken).ConfigureAwait(false);
+            return await ReadPromptAsync(key, response, timeout.Token).ConfigureAwait(false);
+        }
+        catch (HttpRequestException e)
+        {
+            throw Error(key, "network_error", $"Fetching {Describe(key)} failed: {e.Message}", innerException: e);
+        }
+        catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw Error(
+                key,
+                "network_error",
+                $"Fetching {Describe(key)} timed out after {RequestTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)}s.",
+                innerException: e);
         }
     }
+
+    TimeSpan RequestTimeout => _options.PromptRequestTimeout > TimeSpan.Zero
+        ? _options.PromptRequestTimeout
+        : DefaultRequestTimeout;
 
     Uri BuildUrl(PromptCacheKey key)
     {

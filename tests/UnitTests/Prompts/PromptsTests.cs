@@ -494,6 +494,24 @@ public class TheGetAsyncMethod
     }
 
     [Fact]
+    public async Task TreatsATimedOutRequestAsANetworkError()
+    {
+        var container = CreateContainer(options => options.PromptRequestTimeout = TimeSpan.FromMilliseconds(50));
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, async cancellationToken =>
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
+        });
+        var client = container.Activate<PostHogClient>();
+
+        var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAsync(PromptName));
+
+        Assert.Equal("network_error", exception.Code);
+        Assert.Contains("timed out after 0.05s", exception.Message, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<OperationCanceledException>(exception.InnerException);
+    }
+
+    [Fact]
     public async Task WrapsANetworkFailure()
     {
         var container = CreateContainer();
