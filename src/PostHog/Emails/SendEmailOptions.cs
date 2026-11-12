@@ -102,15 +102,16 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// that key. <see cref="MessageCategory.Transactional"/> sends it as transactional with no category.
     /// </summary>
     /// <remarks>
-    /// A marketing category's email honors the recipient's opt-outs, and its <see cref="Html"/>, or its
-    /// <see cref="Text"/> when it has no <see cref="Html"/>, needs a <c>{{ unsubscribe_url }}</c> placeholder for the
-    /// recipient's preferences link. PostHog refuses the send with status 400 and an <see cref="EmailException.Code"/>
-    /// of <c>category_mismatch</c> when the key names a category of the other type, or when <see cref="TemplateKey"/>
-    /// names a template in another category, including <see cref="MessageCategory.Transactional"/> for a template in a
-    /// category; <c>too_many_categories</c> when it would create a category past the project's limit;
-    /// <c>unsubscribe_link_required</c> without the placeholder; or <c>copies_not_allowed</c> when a marketing email
-    /// has copies. It refuses it with status 422 and <c>recipient_opted_out</c> when the recipient opted out of the
-    /// category or of all marketing.
+    /// A marketing category's email honors the recipient's opt-outs. Its <see cref="Html"/> needs a link whose
+    /// <c>href</c> is <c>{{ unsubscribe_url }}</c>, and its <see cref="Text"/>, when it has no <see cref="Html"/>, needs
+    /// the <c>{{ unsubscribe_url }}</c> placeholder. PostHog replaces it with the recipient's preferences link.
+    /// PostHog refuses the send with status 400 and an <see cref="EmailException.Code"/> of <c>category_mismatch</c>
+    /// when the key names a category of the other type, or when <see cref="TemplateKey"/> names a template in another
+    /// category, including <see cref="MessageCategory.Transactional"/> for a template in a category;
+    /// <c>too_many_categories</c> when it would create a category past the project's limit;
+    /// <c>unsubscribe_link_required</c> without that link or placeholder; or <c>copies_not_allowed</c> when a
+    /// marketing email has copies. It refuses it with status 422 and <c>recipient_opted_out</c> when the recipient
+    /// opted out of the category or of all marketing.
     /// </remarks>
     public MessageCategory? Category { get; init; }
 

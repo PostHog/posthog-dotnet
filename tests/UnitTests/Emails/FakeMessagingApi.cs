@@ -9,7 +9,7 @@ namespace EmailsTests;
 /// An in-memory stand-in for PostHog's code-send endpoint that keeps the project's message categories the way the
 /// send API does. It creates a category by key when it has none with that key and otherwise leaves it as it is,
 /// refuses a type change with <c>category_mismatch</c>, and refuses a marketing email
-/// without <c>{{ unsubscribe_url }}</c>. It refuses category fields outside the API's schema, so a misspelled field
+/// without a link to <c>{{ unsubscribe_url }}</c>. It refuses category fields outside the API's schema, so a misspelled field
 /// fails here instead of being dropped. A send whose <c>template_key</c> names a template follows the template's
 /// category when it leaves <c>category</c> out, and is refused with <c>category_mismatch</c> when it names another,
 /// including <c>"transactional"</c> for a template in a category.
@@ -18,6 +18,7 @@ sealed class FakeMessagingApi
 {
     static readonly HashSet<string> CategoryFields = ["key", "type", "name", "description"];
     static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
+    static readonly Regex UnsubscribeLink = new(@"<a\s[^>]*href\s*=\s*([""'])\s*\{\{\s*unsubscribe_url\s*\}\}\s*\1", RegexOptions.IgnoreCase);
 
     readonly Dictionary<string, StoredCategory> _categories = new(StringComparer.Ordinal);
     readonly Dictionary<string, string?> _templates = new(StringComparer.Ordinal);
@@ -114,8 +115,9 @@ sealed class FakeMessagingApi
 
     static bool HoldsUnsubscribeLink(JsonElement email)
     {
-        var content = Text(email, "html") ?? Text(email, "text");
-        return content is not null && UnsubscribePlaceholder.IsMatch(content);
+        return Text(email, "html") is { } html
+            ? UnsubscribeLink.IsMatch(html)
+            : Text(email, "text") is { } text && UnsubscribePlaceholder.IsMatch(text);
     }
 
     static string? Text(JsonElement element, string field)

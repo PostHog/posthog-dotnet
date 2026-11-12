@@ -376,7 +376,7 @@ public class TheSendAsyncMethodWithCodeContent
     };
 
     static SendCodeEmailOptions CodeSendIn(MessageCategory? category)
-        => new() { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "{{ unsubscribe_url }}", Category = category };
+        => new() { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>", Category = category };
 
     [Theory]
     [MemberData(nameof(InvalidCodeSends))]
