@@ -10,7 +10,8 @@ namespace PostHog.Emails;
 /// the category: a send never renames a category or changes its description, so change them later in PostHog. A key
 /// that exists keeps its type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>. A send
 /// whose <see cref="SendCodeEmailOptions.TemplateKey"/> names a template sends in the template's category instead, and
-/// creates no category.
+/// creates no category. Templates made in PostHog are transactional: PostHog refuses a send under a template in a
+/// marketing category with <c>marketing_template</c>.
 /// </remarks>
 public sealed class MessageCategory
 {

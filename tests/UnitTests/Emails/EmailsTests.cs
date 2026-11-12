@@ -353,6 +353,21 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Empty(api.Sends);
     }
 
+    [Fact]
+    public async Task ReportsATemplateInAMarketingCategory()
+    {
+        await using var harness = new EmailHarness();
+        var api = harness.ServeMessaging();
+        api.Seed(new StoredCategory("newsletter", "marketing", "Newsletter", ""));
+        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "newsletter");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(CodeSendIn(category: null)));
+
+        Assert.Equal("marketing_template", error.Code);
+        Assert.Empty(api.Sends);
+    }
+
     static FakeMessagingApi ServeAReceiptsTemplate(EmailHarness harness)
     {
         var api = harness.ServeMessaging();

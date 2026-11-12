@@ -12,7 +12,8 @@ namespace EmailsTests;
 /// without a link to <c>{{ unsubscribe_url }}</c>. It refuses category fields outside the API's schema, so a misspelled field
 /// fails here instead of being dropped. A send whose <c>template_key</c> names a template follows the template's
 /// category when it leaves <c>category</c> out, and is refused with <c>category_mismatch</c> when it names another,
-/// including <c>"transactional"</c> for a template in a category.
+/// including <c>"transactional"</c> for a template in a category. A template in a marketing category is refused with
+/// <c>marketing_template</c>, since templates made in PostHog are transactional.
 /// </summary>
 sealed class FakeMessagingApi
 {
@@ -102,6 +103,11 @@ sealed class FakeMessagingApi
 
     Task<HttpResponseMessage> SendForTemplate(JsonElement email, string? templateCategory)
     {
+        if (templateCategory is not null && _categories[templateCategory].Type == "marketing")
+        {
+            return Refuse("marketing_template", "The template is in a marketing category.", attr: null);
+        }
+
         var leftOut = !email.TryGetProperty("category", out var category) || category.ValueKind == JsonValueKind.Null;
         var matches = leftOut || (templateCategory is null
             ? category is { ValueKind: JsonValueKind.String } && category.GetString() == "transactional"
