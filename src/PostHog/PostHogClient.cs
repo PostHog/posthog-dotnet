@@ -605,6 +605,9 @@ public sealed class PostHogClient : IPostHogClient
         source: "dotnet.task_scheduler_unobserved_task_exception",
         handled: false);
 
+    // Kept short on purpose: this blocks a process that is already crashing, on the crashing thread.
+    static readonly TimeSpan TerminatingFlushTimeout = TimeSpan.FromSeconds(2);
+
     sealed class UnhandledCaptureMarker
     {
         public int Captured;
@@ -654,7 +657,7 @@ public sealed class PostHogClient : IPostHogClient
             {
                 // The crashing thread may own a SynchronizationContext (e.g. a UI thread). Flush from the thread
                 // pool so the flush continuations never need the thread that is blocked here.
-                Task.Run(FlushAsync).Wait(_options.Value.ShutdownTimeout);
+                Task.Run(FlushAsync).Wait(TerminatingFlushTimeout);
             }
         }
 #pragma warning disable CA1031 // Reporting a crash must not replace the original failure.

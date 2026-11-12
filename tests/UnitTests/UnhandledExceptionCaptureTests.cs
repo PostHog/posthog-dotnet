@@ -90,44 +90,6 @@ public class TheRuntimeExceptionHandlers
     }
 
     [Fact]
-    public async Task UsesConfiguredShutdownTimeoutForTerminatingFlush()
-    {
-        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
-        {
-            options.CaptureUnhandledExceptions = true;
-            options.ShutdownTimeout = TimeSpan.FromMilliseconds(100);
-        }));
-        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        container.FakeHttpMessageHandler.AddResponse(
-            new Uri("https://us.i.posthog.com/batch"),
-            HttpMethod.Post,
-            async () =>
-            {
-                await release.Task;
-                return new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("{\"status\":1}", Encoding.UTF8, "application/json")
-                };
-            });
-        await using var client = container.Activate<PostHogClient>();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            // The send never completes, so the handler returns only because the shutdown timeout elapsed.
-            client.OnUnhandledException(this, new UnhandledExceptionEventArgs(
-                new InvalidOperationException(UniqueMessage()), isTerminating: true));
-            stopwatch.Stop();
-        }
-        finally
-        {
-            release.SetResult(true);
-        }
-
-        // Well under the 2 second default, with slack for a loaded test machine.
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1.5), $"Handler blocked for {stopwatch.Elapsed}.");
-    }
-
-    [Fact]
     public async Task ManualCaptureIsNotSuppressedByRuntimeDeduplication()
     {
         var container = CreateContainer(enabled: true);
