@@ -144,6 +144,17 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public bool CaptureUnhandledExceptions { get; set; }
 
     /// <summary>
+    /// The longest the client blocks to deliver pending events when the process is about to terminate.
+    /// Defaults to 2 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Used for the flush that follows a terminating unhandled exception when
+    /// <see cref="CaptureUnhandledExceptions"/> is enabled. Delivery is best-effort: events still pending when the
+    /// timeout elapses are lost with the process. It does not bound <see cref="PostHogClient.DisposeAsync"/>.
+    /// </remarks>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// PostHog API host, usually 'https://us.i.posthog.com' (default) or 'https://eu.i.posthog.com'
     /// </summary>
     public Uri HostUrl { get; set; } = new("https://us.i.posthog.com");

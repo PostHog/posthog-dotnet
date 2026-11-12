@@ -24,9 +24,10 @@ public sealed class PostHogRequestContextOptions
     public bool UseTracingHeaders { get; set; } = true;
 
     /// <summary>
-    /// Captures unhandled downstream exceptions with the active request context, then rethrows them.
-    /// Defaults to <c>false</c> to avoid duplicate exception capture in applications that already
-    /// handle exceptions elsewhere.
+    /// Captures downstream exceptions with the active request context. An exception that escapes the downstream
+    /// pipeline is captured as unhandled and rethrown. An exception that a downstream error handler such as
+    /// <c>UseExceptionHandler</c> consumed is captured as handled. Defaults to <c>false</c> to avoid duplicate
+    /// exception capture in applications that already report exceptions elsewhere.
     /// </summary>
     public bool CaptureExceptions { get; set; }
 }

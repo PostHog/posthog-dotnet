@@ -605,8 +605,6 @@ public sealed class PostHogClient : IPostHogClient
         source: "dotnet.task_scheduler_unobserved_task_exception",
         handled: false);
 
-    static readonly TimeSpan TerminatingFlushTimeout = TimeSpan.FromSeconds(2);
-
     sealed class UnhandledCaptureMarker
     {
         public int Captured;
@@ -656,7 +654,7 @@ public sealed class PostHogClient : IPostHogClient
             {
                 // The crashing thread may own a SynchronizationContext (e.g. a UI thread). Flush from the thread
                 // pool so the flush continuations never need the thread that is blocked here.
-                Task.Run(FlushAsync).Wait(TerminatingFlushTimeout);
+                Task.Run(FlushAsync).Wait(_options.Value.ShutdownTimeout);
             }
         }
 #pragma warning disable CA1031 // Reporting a crash must not replace the original failure.
@@ -675,18 +673,27 @@ public sealed class PostHogClient : IPostHogClient
 
         try
         {
-            // The runtime always wraps the task's failure in a fresh AggregateException. Report the real
-            // exception when there is exactly one, so the event is typed and deduplicated by what actually failed.
-            var aggregate = args.Exception;
-            var failures = aggregate.Flatten().InnerExceptions;
-            if (failures.Count > 1 && failures.All(WasCapturedAsUnhandled))
+            // The runtime wraps the task's failure in a fresh AggregateException. Peel single-member wrappers
+            // one level at a time so the event is typed by what actually failed, and check every level on the
+            // way down: any of those instances may be the one another boundary already reported.
+            Exception failure = args.Exception;
+            while (failure is AggregateException { InnerExceptions.Count: 1 } wrapper)
+            {
+                if (WasCapturedAsUnhandled(wrapper))
+                {
+                    return;
+                }
+
+                failure = wrapper.InnerExceptions[0];
+            }
+
+            if (failure is AggregateException { InnerExceptions.Count: > 1 } failures
+                && failures.InnerExceptions.All(WasCapturedAsUnhandled))
             {
                 return;
             }
 
-            CaptureRuntimeException(
-                failures.Count == 1 ? failures[0] : aggregate,
-                UnobservedTaskExceptionBoundary);
+            CaptureRuntimeException(failure, UnobservedTaskExceptionBoundary);
         }
 #pragma warning disable CA1031 // Reporting a task failure must not change task exception handling.
         catch

@@ -1,6 +1,8 @@
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
@@ -407,6 +409,141 @@ public class ThePostHogRequestContextMiddleware
         await client.FlushAsync();
 
         Assert.Single(GetExceptionEvents(requestHandler, message));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task DoesNotDuplicateAggregateWhenItLaterSurfacesAsUnobservedTaskFailure(int memberCount)
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+            options.CaptureUnhandledExceptions = true));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        await using var client = container.Activate<PostHogClient>();
+        var message = $"aggregate {Guid.NewGuid()}";
+        var failure = new AggregateException(
+            message,
+            Enumerable.Range(0, memberCount).Select(i => new InvalidOperationException($"{message} member {i}")));
+        var middleware = CreateMiddleware(
+            _ => throw failure,
+            client,
+            options => options.CaptureExceptions = true);
+        await Assert.ThrowsAsync<AggregateException>(() => middleware.InvokeAsync(CreateHttpContext()));
+
+        // Go through the real finalizer event: the runtime wraps the aggregate in a new AggregateException.
+        var raised = 0;
+        EventHandler<UnobservedTaskExceptionEventArgs> probe = (_, args) =>
+        {
+            if (args.Exception.InnerExceptions.Any(inner => ReferenceEquals(inner, failure)))
+            {
+                Interlocked.Increment(ref raised);
+            }
+        };
+        TaskScheduler.UnobservedTaskException += probe;
+        try
+        {
+            LeaveUnobservedTask(failure);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Assert.Equal(1, Volatile.Read(ref raised));
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= probe;
+        }
+
+        await client.FlushAsync();
+
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var reports = document.RootElement.GetProperty("batch").EnumerateArray()
+            .Where(item => item.GetProperty("properties").GetProperty("$exception_list").EnumerateArray()
+                .Any(entry => entry.GetProperty("value").GetString()!.StartsWith(message, StringComparison.Ordinal)))
+            .ToArray();
+        var report = Assert.Single(reports);
+        Assert.Equal(
+            "System.AggregateException",
+            report.GetProperty("properties").GetProperty("$exception_type").GetString());
+    }
+
+    // The services UseExceptionHandler needs. The provider owns and disposes the listener.
+    static ServiceProvider CreateExceptionHandlerServices()
+        => new ServiceCollection()
+            .AddLogging()
+            .AddMetrics()
+            .AddSingleton(_ => new System.Diagnostics.DiagnosticListener("PostHogRequestContextMiddlewareTests"))
+            .BuildServiceProvider();
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static void LeaveUnobservedTask(Exception failure) => _ = Task.FromException(failure);
+
+    [Fact]
+    public async Task CapturesExceptionConsumedByDownstreamExceptionHandlerAsHandled()
+    {
+        var container = new TestContainer(services => services.Configure<PostHogOptions>(options =>
+            options.CaptureUnhandledExceptions = true));
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        await using var client = container.Activate<PostHogClient>();
+        var message = $"boom {Guid.NewGuid()}";
+
+        // PostHog middleware wraps UseExceptionHandler, which wraps a throwing endpoint.
+        using var pipelineServices = CreateExceptionHandlerServices();
+        var app = new ApplicationBuilder(pipelineServices);
+        app.UseExceptionHandler(errorApp => errorApp.Run(context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            return Task.CompletedTask;
+        }));
+        app.Run(_ => throw new InvalidOperationException(message));
+        var middleware = CreateMiddleware(
+            app.Build(),
+            client,
+            options => options.CaptureExceptions = true);
+        var httpContext = CreateHttpContext();
+        httpContext.RequestServices = pipelineServices;
+        httpContext.Request.Headers[PostHogTracingHeaders.DistinctId] = "exception-user";
+        httpContext.Request.Headers[PostHogTracingHeaders.SessionId] = "exception-session";
+
+        // The handler consumed the exception, so nothing escapes the PostHog middleware.
+        await middleware.InvokeAsync(httpContext);
+        await client.FlushAsync();
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, httpContext.Response.StatusCode);
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var batchItem = Assert.Single(
+            document.RootElement.GetProperty("batch").EnumerateArray(),
+            item => item.GetProperty("properties").GetProperty("$exception_list")[0]
+                .GetProperty("value").GetString() == message);
+        Assert.Equal("$exception", batchItem.GetProperty("event").GetString());
+        Assert.Equal("exception-user", batchItem.GetProperty("distinct_id").GetString());
+        var properties = batchItem.GetProperty("properties");
+        Assert.Equal("exception-session", properties.GetProperty("$session_id").GetString());
+        Assert.Equal("https://example.com/api/test", properties.GetProperty("$current_url").GetString());
+        Assert.Equal(503, properties.GetProperty("$response_status_code").GetInt32());
+        Assert.Equal("error", properties.GetProperty("$exception_level").GetString());
+        Assert.Equal("aspnetcore.request_context_middleware", properties.GetProperty("$exception_source").GetString());
+        var mechanism = properties.GetProperty("$exception_list")[0].GetProperty("mechanism");
+        Assert.True(mechanism.GetProperty("handled").GetBoolean());
+        Assert.Equal("middleware", mechanism.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task DoesNotCaptureConsumedExceptionWhenExceptionCaptureIsOff()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        await using var client = container.Activate<PostHogClient>();
+        using var pipelineServices = CreateExceptionHandlerServices();
+        var app = new ApplicationBuilder(pipelineServices);
+        app.UseExceptionHandler(errorApp => errorApp.Run(_ => Task.CompletedTask));
+        app.Run(_ => throw new InvalidOperationException("boom"));
+        var middleware = CreateMiddleware(app.Build(), client);
+        var httpContext = CreateHttpContext();
+        httpContext.RequestServices = pipelineServices;
+
+        await middleware.InvokeAsync(httpContext);
+        await client.FlushAsync();
+
+        Assert.Empty(requestHandler.ReceivedRequests);
     }
 
     [Fact]

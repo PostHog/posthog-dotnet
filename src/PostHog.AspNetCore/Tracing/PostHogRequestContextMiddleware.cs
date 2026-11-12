@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using PostHog.Api;
 using PostHog.AspNetCore;
@@ -60,9 +61,21 @@ internal sealed class PostHogRequestContextMiddleware(
                 TryCaptureException(
                     _postHog,
                     exception,
-                    GetExceptionStatusCode(httpContext));
+                    GetExceptionStatusCode(httpContext),
+                    EscapedRequestBoundary);
 
                 throw;
+            }
+
+            // A downstream error handler (UseExceptionHandler, the developer exception page) may have consumed
+            // the failure and written an error response, so nothing escaped to the catch block above.
+            if (GetConsumedException(httpContext) is { } consumed)
+            {
+                TryCaptureException(
+                    _postHog,
+                    consumed,
+                    GetExceptionStatusCode(httpContext),
+                    ConsumedRequestBoundary);
             }
         }
     }
@@ -83,21 +96,43 @@ internal sealed class PostHogRequestContextMiddleware(
         }
     }
 
-    static readonly ExceptionCaptureBoundary RequestBoundary = new(
+    // The failure escaped the request boundary: nothing downstream turned it into a response.
+    static readonly ExceptionCaptureBoundary EscapedRequestBoundary = new(
         mechanismType: "middleware",
         source: "aspnetcore.request_context_middleware",
         handled: false);
 
+    // A downstream framework handler consumed the failure and produced the response, so it counts as handled.
+    static readonly ExceptionCaptureBoundary ConsumedRequestBoundary = new(
+        mechanismType: "middleware",
+        source: "aspnetcore.request_context_middleware",
+        handled: true);
+
+    static Exception? GetConsumedException(HttpContext httpContext)
+    {
+        try
+        {
+            return httpContext.Features.Get<IExceptionHandlerFeature>()?.Error;
+        }
+#pragma warning disable CA1031 // Reading request features must not fail a request that already has a response.
+        catch
+#pragma warning restore CA1031
+        {
+            return null;
+        }
+    }
+
     static void TryCaptureException(
         IPostHogClient postHog,
         Exception exception,
-        int statusCode)
+        int statusCode,
+        ExceptionCaptureBoundary boundary)
     {
         try
         {
             // The boundary travels with the call rather than through the client type, so decorated or wrapped
             // IPostHogClient registrations still report the request failure as unhandled.
-            using (ExceptionCaptureBoundary.Enter(exception, RequestBoundary))
+            using (ExceptionCaptureBoundary.Enter(exception, boundary))
             {
                 postHog.CaptureException(exception, GetExceptionProperties(statusCode));
             }
@@ -106,7 +141,7 @@ internal sealed class PostHogRequestContextMiddleware(
         catch
 #pragma warning restore CA1031
         {
-            // Swallow SDK/client failures so the original downstream exception is preserved.
+            // Swallow SDK/client failures so the request outcome is never changed by exception capture.
         }
     }
 
