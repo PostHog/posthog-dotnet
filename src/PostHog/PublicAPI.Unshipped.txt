@@ -43,6 +43,14 @@ PostHog.Emails.EmailWarning.Message.init -> void
 PostHog.Emails.IPostHogEmails
 PostHog.Emails.IPostHogEmails.GetAsync(string! messageId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Emails.EmailStatus!>!
 PostHog.Emails.IPostHogEmails.SendAsync(PostHog.Emails.SendEmailOptions! email, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Emails.SendEmailResult!>!
+PostHog.Emails.EmailTracking
+PostHog.Emails.EmailTracking.Clicks.get -> bool?
+PostHog.Emails.EmailTracking.Clicks.init -> void
+PostHog.Emails.EmailTracking.EmailTracking() -> void
+PostHog.Emails.EmailTracking.Engagement.get -> bool?
+PostHog.Emails.EmailTracking.Engagement.init -> void
+PostHog.Emails.EmailTracking.Opens.get -> bool?
+PostHog.Emails.EmailTracking.Opens.init -> void
 PostHog.Emails.SendCodeEmailOptions
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.get -> bool
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.init -> void
@@ -53,12 +61,16 @@ PostHog.Emails.SendCodeEmailOptions.Html.init -> void
 PostHog.Emails.SendCodeEmailOptions.ReplyTo.get -> System.Collections.Generic.IReadOnlyList<string!>?
 PostHog.Emails.SendCodeEmailOptions.ReplyTo.init -> void
 PostHog.Emails.SendCodeEmailOptions.SendCodeEmailOptions() -> void
+PostHog.Emails.SendCodeEmailOptions.Sensitive.get -> bool?
+PostHog.Emails.SendCodeEmailOptions.Sensitive.init -> void
 PostHog.Emails.SendCodeEmailOptions.Subject.get -> string!
 PostHog.Emails.SendCodeEmailOptions.Subject.init -> void
 PostHog.Emails.SendCodeEmailOptions.TemplateKey.get -> string!
 PostHog.Emails.SendCodeEmailOptions.TemplateKey.init -> void
 PostHog.Emails.SendCodeEmailOptions.Text.get -> string?
 PostHog.Emails.SendCodeEmailOptions.Text.init -> void
+PostHog.Emails.SendCodeEmailOptions.Tracking.get -> PostHog.Emails.EmailTracking?
+PostHog.Emails.SendCodeEmailOptions.Tracking.init -> void
 PostHog.Emails.SendEmailOptions
 PostHog.Emails.SendEmailOptions.DistinctId.get -> string?
 PostHog.Emails.SendEmailOptions.DistinctId.init -> void
@@ -160,5 +172,9 @@ PostHog.Prompts.PromptSource.Cache = 1 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.CodeFallback = 3 -> PostHog.Prompts.PromptSource
 PostHog.Prompts.PromptSource.StaleCache = 2 -> PostHog.Prompts.PromptSource
 PostHog.PromptsExtensions
+static PostHog.Emails.EmailTracking.All.get -> PostHog.Emails.EmailTracking!
+static PostHog.Emails.EmailTracking.FromBoolean(bool all) -> PostHog.Emails.EmailTracking!
+static PostHog.Emails.EmailTracking.implicit operator PostHog.Emails.EmailTracking!(bool all) -> PostHog.Emails.EmailTracking!
+static PostHog.Emails.EmailTracking.None.get -> PostHog.Emails.EmailTracking!
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
 static PostHog.PromptsExtensions.ClearCache(this PostHog.Prompts.IPostHogPrompts! prompts, string? name = null, int? version = null) -> void

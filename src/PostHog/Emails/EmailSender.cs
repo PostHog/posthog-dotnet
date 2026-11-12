@@ -577,7 +577,21 @@ internal sealed class EmailSender : IPostHogEmails
             body["reply_to"] = email.ReplyTo;
         }
 
-        body["capture_engagement"] = email.CaptureEngagement;
+        if (email.CaptureEngagementIfSet is { } captureEngagement)
+        {
+            body["capture_engagement"] = captureEngagement;
+        }
+
+        if (email.Sensitive is { } sensitive)
+        {
+            body["sensitive"] = sensitive;
+        }
+
+        if (email.Tracking is not null)
+        {
+            body["tracking"] = email.Tracking;
+        }
+
         if (email.DistinctId is not null)
         {
             body["distinct_id"] = email.DistinctId;
