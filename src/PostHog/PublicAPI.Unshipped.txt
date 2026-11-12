@@ -102,6 +102,8 @@ PostHog.PostHogOptions.AppHost.get -> System.Uri?
 PostHog.PostHogOptions.AppHost.set -> void
 PostHog.PostHogOptions.BeforeSend.get -> System.Func<PostHog.Api.CapturedEvent!, PostHog.Api.CapturedEvent?>?
 PostHog.PostHogOptions.BeforeSend.set -> void
+PostHog.PostHogOptions.CaptureUnhandledExceptions.get -> bool
+PostHog.PostHogOptions.CaptureUnhandledExceptions.set -> void
 PostHog.PostHogOptions.EmailRequestMaxRetries.get -> int
 PostHog.PostHogOptions.EmailRequestMaxRetries.set -> void
 PostHog.PostHogOptions.EmailRequestTimeout.get -> System.TimeSpan
