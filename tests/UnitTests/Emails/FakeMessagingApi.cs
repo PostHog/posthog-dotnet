@@ -1,0 +1,165 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace EmailsTests;
+
+/// <summary>
+/// An in-memory stand-in for PostHog's code-send endpoint that keeps the project's message categories the way the
+/// send API does. It creates a category by key when it has none with that key and otherwise leaves it as it is,
+/// refuses a type change with <c>category_mismatch</c>, and refuses a marketing email
+/// without a link to <c>{{ unsubscribe_url }}</c>. It refuses category fields outside the API's schema, so a misspelled field
+/// fails here instead of being dropped. A send whose <c>template_key</c> names a template follows the template's
+/// category when it leaves <c>category</c> out, and is refused with <c>category_mismatch</c> when it names another,
+/// including <c>"transactional"</c> for a template in a category. A template in a marketing category is refused with
+/// <c>marketing_template</c>, since templates made in PostHog are transactional.
+/// </summary>
+sealed class FakeMessagingApi
+{
+    static readonly HashSet<string> CategoryFields = ["key", "type", "name", "description"];
+    static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
+    static readonly Regex UnsubscribeLink = new(@"<a\s[^>]*href\s*=\s*([""'])\s*\{\{\s*unsubscribe_url\s*\}\}\s*\1", RegexOptions.IgnoreCase);
+
+    readonly Dictionary<string, StoredCategory> _categories = new(StringComparer.Ordinal);
+    readonly Dictionary<string, string?> _templates = new(StringComparer.Ordinal);
+    readonly List<AcceptedSend> _sends = [];
+
+    public IReadOnlyDictionary<string, StoredCategory> Categories => _categories;
+
+    public IReadOnlyList<AcceptedSend> Sends => _sends;
+
+    public void Seed(StoredCategory category) => _categories[category.Key] = category;
+
+    public void SeedTemplate(string templateKey, string? categoryKey) => _templates[templateKey] = categoryKey;
+
+    public Task<HttpResponseMessage> Answer(RecordedRequest request)
+    {
+        if (request.Method != HttpMethod.Post || !request.Url.EndsWith("/messaging/send/email/", StringComparison.Ordinal))
+        {
+            return Respond(HttpStatusCode.NotFound, """{"type": "invalid_request", "code": "not_found", "detail": "Not found."}""");
+        }
+
+        using var body = JsonDocument.Parse(request.Body ?? "{}");
+        var email = body.RootElement;
+        if (Text(email, "template_key") is { } templateKey && _templates.TryGetValue(templateKey, out var templateCategory))
+        {
+            return SendForTemplate(email, templateCategory);
+        }
+
+        if (!email.TryGetProperty("category", out var category)
+            || category.ValueKind == JsonValueKind.Null
+            || category is { ValueKind: JsonValueKind.String } && category.GetString() == "transactional")
+        {
+            return Accept(categoryKey: null);
+        }
+
+        if (category.ValueKind != JsonValueKind.Object)
+        {
+            return Refuse("invalid_input", "Send `transactional`, or a category object with `key`, `type` and `name`.");
+        }
+
+        foreach (var field in category.EnumerateObject())
+        {
+            if (!CategoryFields.Contains(field.Name))
+            {
+                return Refuse("invalid_input", $"The category has no field `{field.Name}`.");
+            }
+        }
+
+        var key = Text(category, "key");
+        var name = Text(category, "name");
+        var type = Text(category, "type");
+        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(name) || type is not ("marketing" or "transactional"))
+        {
+            return Refuse("invalid_input", "The category needs a `key`, a `name` and a `type` of marketing or transactional.");
+        }
+
+        string? description = null;
+        if (category.TryGetProperty("description", out var given))
+        {
+            if (given.ValueKind != JsonValueKind.String)
+            {
+                return Refuse("invalid_input", "The category's `description` must be a string.");
+            }
+
+            description = given.GetString();
+        }
+
+        var stored = _categories.TryGetValue(key, out var existing) ? existing : null;
+        if (stored is not null && stored.Type != type)
+        {
+            return Refuse("category_mismatch", $"The category `{key}` is {stored.Type}.");
+        }
+
+        if (type == "marketing" && !HoldsUnsubscribeLink(email))
+        {
+            return Refuse("unsubscribe_link_required", "A marketing email needs `{{ unsubscribe_url }}`.", attr: null);
+        }
+
+        _categories.TryAdd(key, new StoredCategory(key, type, name, description ?? ""));
+        return Accept(key);
+    }
+
+    Task<HttpResponseMessage> SendForTemplate(JsonElement email, string? templateCategory)
+    {
+        if (templateCategory is not null && _categories[templateCategory].Type == "marketing")
+        {
+            return Refuse("marketing_template", "The template is in a marketing category.", attr: null);
+        }
+
+        var leftOut = !email.TryGetProperty("category", out var category) || category.ValueKind == JsonValueKind.Null;
+        var matches = leftOut || (templateCategory is null
+            ? category is { ValueKind: JsonValueKind.String } && category.GetString() == "transactional"
+            : category.ValueKind == JsonValueKind.Object
+              && Text(category, "key") == templateCategory
+              && Text(category, "type") == _categories[templateCategory].Type);
+        return matches
+            ? Accept(templateCategory)
+            : Refuse("category_mismatch", "The send names another category than its template's.");
+    }
+
+    static bool HoldsUnsubscribeLink(JsonElement email)
+    {
+        return Text(email, "html") is { } html
+            ? UnsubscribeLink.IsMatch(html)
+            : Text(email, "text") is { } text && UnsubscribePlaceholder.IsMatch(text);
+    }
+
+    static string? Text(JsonElement element, string field)
+        => element.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    Task<HttpResponseMessage> Accept(string? categoryKey)
+    {
+        _sends.Add(new AcceptedSend(categoryKey));
+        return Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "01a18356-c56c-0001-e494-7666bc91{{_sends.Count:D4}}"}""");
+    }
+
+    static Task<HttpResponseMessage> Refuse(string code, string detail, string? attr = "category")
+        => Respond(
+            HttpStatusCode.BadRequest,
+            JsonSerializer.Serialize(new Dictionary<string, string?>
+            {
+                ["type"] = "validation_error",
+                ["code"] = code,
+                ["detail"] = detail,
+                ["attr"] = attr,
+            }));
+
+    static Task<HttpResponseMessage> Respond(HttpStatusCode status, string json)
+        => Task.FromResult(new HttpResponseMessage(status)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        });
+}
+
+sealed record StoredCategory(string Key, string Type, string Name, string Description);
+
+/// <summary>
+/// A send the fake accepted, with the key of the category it went out in, or null for no category.
+/// </summary>
+sealed record AcceptedSend(string? CategoryKey);

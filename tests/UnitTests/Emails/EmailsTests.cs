@@ -232,6 +232,150 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Single(harness.Requests).Body);
     }
 
+    public static TheoryData<MessageCategory, string, string, string, string> NewCategories => new()
+    {
+        {
+            new MessageCategory
+            {
+                Key = "newsletter",
+                Type = MessageCategoryType.Marketing,
+                Name = "Newsletter",
+                Description = "Monthly product news",
+            },
+            "newsletter", "marketing", "Newsletter", "Monthly product news"
+        },
+        {
+            new MessageCategory { Key = "receipts", Type = MessageCategoryType.Transactional, Name = "Receipts" },
+            "receipts", "transactional", "Receipts", ""
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(NewCategories))]
+    public async Task CreatesTheCategoryItSendsIn(
+        MessageCategory category,
+        string key,
+        string type,
+        string name,
+        string description)
+    {
+        await using var harness = new EmailHarness();
+        var api = harness.ServeMessaging();
+
+        var result = await harness.Client.Emails.SendAsync(CodeSendIn(category));
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc910001", result.Id);
+        Assert.Equal(key, Assert.Single(api.Sends).CategoryKey);
+        Assert.Equal(new StoredCategory(key, type, name, description), Assert.Single(api.Categories).Value);
+    }
+
+    public static TheoryData<MessageCategory?> NoCategory => new() { MessageCategory.Transactional, null };
+
+    [Theory]
+    [MemberData(nameof(NoCategory))]
+    public async Task SendsTransactionalWithNoCategory(MessageCategory? category)
+    {
+        await using var harness = new EmailHarness();
+        var api = harness.ServeMessaging();
+
+        await harness.Client.Emails.SendAsync(CodeSendIn(category));
+
+        Assert.Null(Assert.Single(api.Sends).CategoryKey);
+        Assert.Empty(api.Categories);
+    }
+
+    [Fact]
+    public async Task LeavesTheCategoryAsTheFirstSendCreatedIt()
+    {
+        await using var harness = new EmailHarness();
+        var api = harness.ServeMessaging();
+        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        {
+            Key = "newsletter",
+            Type = MessageCategoryType.Marketing,
+            Name = "Newsletter",
+            Description = "Monthly product news",
+        }));
+
+        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        {
+            Key = "newsletter",
+            Type = MessageCategoryType.Marketing,
+            Name = "Weekly digest",
+            Description = "Weekly product news",
+        }));
+
+        Assert.Equal(["newsletter", "newsletter"], api.Sends.Select(send => send.CategoryKey));
+        Assert.Equal(
+            new StoredCategory("newsletter", "marketing", "Newsletter", "Monthly product news"),
+            Assert.Single(api.Categories).Value);
+    }
+
+    [Fact]
+    public async Task ReportsACategoryOfAnotherType()
+    {
+        await using var harness = new EmailHarness();
+        var api = harness.ServeMessaging();
+        var receipts = new StoredCategory("receipts", "transactional", "Receipts", "");
+        api.Seed(receipts);
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(CodeSendIn(
+            new MessageCategory { Key = "receipts", Type = MessageCategoryType.Marketing, Name = "Receipts" })));
+
+        Assert.Equal("category_mismatch", error.Code);
+        Assert.Equal("category", error.Field);
+        Assert.Empty(api.Sends);
+        Assert.Equal(receipts, api.Categories["receipts"]);
+    }
+
+    [Fact]
+    public async Task SendsInTheCategoryOfItsTemplateWhenLeftOut()
+    {
+        await using var harness = new EmailHarness();
+        var api = ServeAReceiptsTemplate(harness);
+
+        await harness.Client.Emails.SendAsync(CodeSendIn(category: null));
+
+        Assert.Equal("receipts", Assert.Single(api.Sends).CategoryKey);
+    }
+
+    [Fact]
+    public async Task ReportsTransactionalOnATemplateInACategory()
+    {
+        await using var harness = new EmailHarness();
+        var api = ServeAReceiptsTemplate(harness);
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(CodeSendIn(MessageCategory.Transactional)));
+
+        Assert.Equal("category_mismatch", error.Code);
+        Assert.Equal("category", error.Field);
+        Assert.Empty(api.Sends);
+    }
+
+    [Fact]
+    public async Task ReportsATemplateInAMarketingCategory()
+    {
+        await using var harness = new EmailHarness();
+        var api = harness.ServeMessaging();
+        api.Seed(new StoredCategory("newsletter", "marketing", "Newsletter", ""));
+        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "newsletter");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(CodeSendIn(category: null)));
+
+        Assert.Equal("marketing_template", error.Code);
+        Assert.Empty(api.Sends);
+    }
+
+    static FakeMessagingApi ServeAReceiptsTemplate(EmailHarness harness)
+    {
+        var api = harness.ServeMessaging();
+        api.Seed(new StoredCategory("receipts", "transactional", "Receipts", ""));
+        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "receipts");
+        return api;
+    }
+
     public static TheoryData<string, SendCodeEmailOptions> InvalidCodeSends => new()
     {
         { "TemplateKey", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "password reset", Subject = "s", Html = "h" } },
@@ -240,7 +384,14 @@ public class TheSendAsyncMethodWithCodeContent
         { "Subject", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = null!, Html = "h" } },
         { "Html, Text or both", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s" } },
         { "ReplyTo", new SendCodeEmailOptions { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "h", ReplyTo = [" "] } },
+        { "Category.Key", CodeSendIn(new MessageCategory { Key = " ", Type = MessageCategoryType.Marketing, Name = "News" }) },
+        { "Category.Key", CodeSendIn(new MessageCategory { Key = null!, Type = MessageCategoryType.Marketing, Name = "News" }) },
+        { "Category.Name", CodeSendIn(new MessageCategory { Key = "news", Type = MessageCategoryType.Marketing, Name = "" }) },
+        { "Category.Type", CodeSendIn(new MessageCategory { Key = "news", Type = (MessageCategoryType)7, Name = "News" }) },
     };
+
+    static SendCodeEmailOptions CodeSendIn(MessageCategory? category)
+        => new() { To = "a@example.com", TemplateKey = "k", Subject = "s", Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>", Category = category };
 
     [Theory]
     [MemberData(nameof(InvalidCodeSends))]
@@ -935,6 +1086,13 @@ sealed class EmailHarness : IAsyncDisposable
             return Task.FromResult(response);
         });
 
+    public FakeMessagingApi ServeMessaging()
+    {
+        var api = new FakeMessagingApi();
+        _handler.Serve(api.Answer);
+        return api;
+    }
+
     public void Fail(Exception exception) => _handler.Enqueue(_ => Task.FromException<HttpResponseMessage>(exception));
 
     public void Hang() => _handler.Enqueue(async cancellationToken =>
@@ -965,6 +1123,7 @@ sealed class RecordingHandler : HttpMessageHandler
 {
     readonly ConcurrentQueue<Func<CancellationToken, Task<HttpResponseMessage>>> _responses = new();
     readonly List<RecordedRequest> _requests = [];
+    Func<RecordedRequest, Task<HttpResponseMessage>>? _server;
 
     public IReadOnlyList<RecordedRequest> Requests
     {
@@ -978,6 +1137,8 @@ sealed class RecordingHandler : HttpMessageHandler
     }
 
     public void Enqueue(Func<CancellationToken, Task<HttpResponseMessage>> response) => _responses.Enqueue(response);
+
+    public void Serve(Func<RecordedRequest, Task<HttpResponseMessage>> server) => _server = server;
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -1004,9 +1165,15 @@ sealed class RecordingHandler : HttpMessageHandler
 #endif
         }
 
+        var recorded = new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body);
         lock (_requests)
         {
-            _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body));
+            _requests.Add(recorded);
+        }
+
+        if (_server is { } server)
+        {
+            return await server(recorded);
         }
 
         if (!_responses.TryDequeue(out var respond))
