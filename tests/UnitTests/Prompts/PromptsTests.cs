@@ -512,6 +512,18 @@ public class TheGetAsyncMethod
     }
 
     [Fact]
+    public async Task AcceptsATimeoutLongerThanTheCancellationLimit()
+    {
+        var container = CreateContainer(options => options.PromptRequestTimeout = TimeSpan.MaxValue);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.Prompts.GetAsync(PromptName);
+
+        Assert.Equal(PromptSource.Api, result.Source);
+    }
+
+    [Fact]
     public async Task WrapsANetworkFailure()
     {
         var container = CreateContainer();

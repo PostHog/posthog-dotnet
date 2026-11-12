@@ -239,9 +239,13 @@ internal sealed class PromptFetcher : IPostHogPrompts
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(key));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
 
-        // The timeout covers the whole request, including reading the body.
+        // The timeout covers the whole request, including reading the body. CancelAfter rejects a delay above
+        // int.MaxValue milliseconds (about 24 days), and such a value means no timeout anyway.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
+        if (RequestTimeout.TotalMilliseconds <= int.MaxValue)
+        {
+            timeout.CancelAfter(RequestTimeout);
+        }
         try
         {
             using var response = await _httpClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
