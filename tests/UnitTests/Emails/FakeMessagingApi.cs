@@ -7,8 +7,8 @@ namespace EmailsTests;
 
 /// <summary>
 /// An in-memory stand-in for PostHog's code-send endpoint that keeps the project's message categories the way the
-/// send API does. It upserts a category by key, refuses a type change with <c>category_mismatch</c>, keeps a
-/// category's description when the field is missing and clears it on <c>""</c>, and refuses a marketing email
+/// send API does. It creates a category by key when it has none with that key and otherwise leaves it as it is,
+/// refuses a type change with <c>category_mismatch</c>, and refuses a marketing email
 /// without <c>{{ unsubscribe_url }}</c>. It refuses category fields outside the API's schema, so a misspelled field
 /// fails here instead of being dropped. A send whose <c>template_key</c> names a template follows the template's
 /// category when it leaves <c>category</c> out, and is refused with <c>category_mismatch</c> when it names another,
@@ -95,9 +95,7 @@ sealed class FakeMessagingApi
             return Refuse("unsubscribe_link_required", "A marketing email needs `{{ unsubscribe_url }}`.", attr: null);
         }
 
-        _categories[key] = stored is null
-            ? new StoredCategory(key, type, name, description ?? "")
-            : stored with { Name = name, Description = description ?? stored.Description };
+        _categories.TryAdd(key, new StoredCategory(key, type, name, description ?? ""));
         return Accept(key);
     }
 

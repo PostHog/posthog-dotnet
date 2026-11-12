@@ -284,30 +284,31 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Empty(api.Categories);
     }
 
-    public static TheoryData<string?, string> DescriptionUpdates => new()
-    {
-        { null, "Monthly product news" },
-        { "", "" },
-        { "Weekly product news", "Weekly product news" },
-    };
-
-    [Theory]
-    [MemberData(nameof(DescriptionUpdates))]
-    public async Task UpdatesTheCategoryItSendsIn(string? description, string stored)
+    [Fact]
+    public async Task LeavesTheCategoryAsTheFirstSendCreatedIt()
     {
         await using var harness = new EmailHarness();
         var api = harness.ServeMessaging();
-        api.Seed(new StoredCategory("newsletter", "marketing", "News", "Monthly product news"));
-
         await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
         {
             Key = "newsletter",
             Type = MessageCategoryType.Marketing,
             Name = "Newsletter",
-            Description = description,
+            Description = "Monthly product news",
         }));
 
-        Assert.Equal(new StoredCategory("newsletter", "marketing", "Newsletter", stored), api.Categories["newsletter"]);
+        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        {
+            Key = "newsletter",
+            Type = MessageCategoryType.Marketing,
+            Name = "Weekly digest",
+            Description = "Weekly product news",
+        }));
+
+        Assert.Equal(["newsletter", "newsletter"], api.Sends.Select(send => send.CategoryKey));
+        Assert.Equal(
+            new StoredCategory("newsletter", "marketing", "Newsletter", "Monthly product news"),
+            Assert.Single(api.Categories).Value);
     }
 
     [Fact]

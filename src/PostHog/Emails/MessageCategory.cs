@@ -5,11 +5,12 @@ namespace PostHog.Emails;
 /// <see cref="Transactional"/>, or define a category of the project in code.
 /// </summary>
 /// <remarks>
-/// PostHog creates or updates the project's category by <see cref="Key"/> when it accepts the send: an unknown key
-/// creates it, and a changed <see cref="Name"/> or <see cref="Description"/> updates it. A key that exists keeps its
-/// type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>. A send whose
-/// <see cref="SendCodeEmailOptions.TemplateKey"/> names a template sends in the template's category instead, and
-/// creates or updates no category.
+/// PostHog creates the project's category by <see cref="Key"/> when it accepts a send with a key the project doesn't
+/// have, and restores a deleted one. <see cref="Name"/> and <see cref="Description"/> apply only when the send creates
+/// the category: a send never renames a category or changes its description, so change them later in PostHog. A key
+/// that exists keeps its type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>. A send
+/// whose <see cref="SendCodeEmailOptions.TemplateKey"/> names a template sends in the template's category instead, and
+/// creates no category.
 /// </remarks>
 public sealed class MessageCategory
 {
@@ -41,8 +42,8 @@ public sealed class MessageCategory
     public required string Name { get; init; }
 
     /// <summary>
-    /// What the category's emails are about, such as <c>Monthly product news</c>. Leave it null to keep the
-    /// category's description, or pass an empty string to clear it.
+    /// What the category's emails are about, such as <c>Monthly product news</c>. It applies only when the send
+    /// creates the category.
     /// </summary>
     public string? Description { get; init; }
 }
