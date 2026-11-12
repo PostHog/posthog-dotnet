@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.23.0
+
+### Minor Changes
+
+- 13a91f7: Add opt-in runtime exception capture with `PostHogOptions.CaptureUnhandledExceptions`. With `CaptureExceptions` enabled, the ASP.NET Core middleware now reports escaping request failures as unhandled and also captures exceptions consumed by a downstream error handler such as `UseExceptionHandler`. Nested entries in `$exception_list` now use mechanism type `chained` and omit `handled`.
+
 ## 2.22.0
 
 ### Minor Changes
