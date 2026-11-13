@@ -80,6 +80,12 @@ public class FakeHttpMessageHandler : HttpMessageHandler
     }
 
     public RequestHandler AddResponse(Uri url, HttpMethod httpMethod, Func<Task<HttpResponseMessage>> responseHandler)
+        => AddResponse(url, httpMethod, _ => responseHandler());
+
+    public RequestHandler AddResponse(
+        Uri url,
+        HttpMethod httpMethod,
+        Func<CancellationToken, Task<HttpResponseMessage>> responseHandler)
     {
         var handler = new RequestHandler(url, httpMethod, responseHandler);
         _handlers.Add(handler);
@@ -108,7 +114,7 @@ public class FakeHttpMessageHandler : HttpMessageHandler
             if (await handler.IsMatch(request))
             {
                 _handlers.Remove(handler); // Pop the handler so we can simulate multiple requests with different responses.
-                return await handler.Respond(request);
+                return await handler.Respond(request, cancellationToken);
             }
         }
 
@@ -124,7 +130,7 @@ public class FakeHttpMessageHandler : HttpMessageHandler
     /// </param>
     public class RequestHandler(
         Func<HttpRequestMessage, Task<bool>> requestPredicate,
-        Func<Task<HttpResponseMessage>> responseHandler)
+        Func<CancellationToken, Task<HttpResponseMessage>> responseHandler)
     {
         readonly List<HttpRequestMessage> _receivedRequests = new();
         readonly List<string> _receivedBodiesJson = new();
@@ -137,7 +143,7 @@ public class FakeHttpMessageHandler : HttpMessageHandler
         /// <param name="httpMethod">The HTTP Method.</param>
         /// <param name="exception">The exception to throw.</param>
         public RequestHandler(Uri uri, HttpMethod httpMethod, Exception exception)
-            : this(CreateRequestPredicate(uri, httpMethod), () => throw exception)
+            : this(CreateRequestPredicate(uri, httpMethod), _ => throw exception)
         {
         }
 
@@ -162,6 +168,21 @@ public class FakeHttpMessageHandler : HttpMessageHandler
         /// <param name="httpMethod">The HTTP method to request with.</param>
         /// <param name="responseHandler">A func that returns a <see cref="HttpResponseMessage"/>.</param>
         public RequestHandler(Uri uri, HttpMethod httpMethod, Func<Task<HttpResponseMessage>> responseHandler)
+            : this(CreateRequestPredicate(uri, httpMethod), _ => responseHandler())
+        {
+        }
+
+        /// <summary>
+        /// Creates a <see cref="RequestHandler"/> whose <paramref name="responseHandler"/> gets the request's
+        /// cancellation token, so a test can hold a response until the client gives up on it.
+        /// </summary>
+        /// <param name="uri">The URI to request.</param>
+        /// <param name="httpMethod">The HTTP method to request with.</param>
+        /// <param name="responseHandler">A func that returns a <see cref="HttpResponseMessage"/>.</param>
+        public RequestHandler(
+            Uri uri,
+            HttpMethod httpMethod,
+            Func<CancellationToken, Task<HttpResponseMessage>> responseHandler)
             : this(CreateRequestPredicate(uri, httpMethod), responseHandler)
         {
         }
@@ -175,7 +196,7 @@ public class FakeHttpMessageHandler : HttpMessageHandler
         public RequestHandler(
             Func<HttpRequestMessage, Task<bool>> requestPredicate,
             HttpResponseMessage responseMessage)
-            : this(requestPredicate, () => Task.FromResult(responseMessage))
+            : this(requestPredicate, _ => Task.FromResult(responseMessage))
         {
         }
 
@@ -221,17 +242,21 @@ public class FakeHttpMessageHandler : HttpMessageHandler
 
         public Task<bool> IsMatch(HttpRequestMessage requestMessage) => requestPredicate(requestMessage);
 
-        public async Task<HttpResponseMessage> Respond(HttpRequestMessage requestMessage)
+        public async Task<HttpResponseMessage> Respond(HttpRequestMessage requestMessage, CancellationToken cancellationToken)
         {
             Debug.Assert(requestMessage != null, nameof(requestMessage) + " != null");
             // Null-forgiving: Debug.Assert ensures non-null, but ns2.0 lacks [DoesNotReturnIf] annotation
             _receivedRequests.Add(requestMessage!);
             if (requestMessage!.Content is not null)
             {
+#if NET5_0_OR_GREATER
+                _receivedBodiesJson.Add(await requestMessage.Content.ReadAsStringAsync(cancellationToken));
+#else
                 _receivedBodiesJson.Add(await requestMessage.Content.ReadAsStringAsync());
+#endif
             }
 
-            return await responseHandler();
+            return await responseHandler(cancellationToken);
         }
 
         public IReadOnlyList<HttpRequestMessage> ReceivedRequests => _receivedRequests;

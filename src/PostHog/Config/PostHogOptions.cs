@@ -228,6 +228,15 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public TimeSpan PromptCacheTtl { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// The timeout for each <see cref="PostHogClient.Prompts"/> request. (Default: 10 seconds)
+    /// </summary>
+    /// <remarks>
+    /// A request that times out fails like a network error: the caller gets the cached version, the fallback, or a
+    /// <c>PromptFetchException</c> with the code <c>network_error</c>.
+    /// </remarks>
+    public TimeSpan PromptRequestTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
     /// The size limit of the $feature_flag_sent cache.
     /// </summary>
     /// <remarks>
