@@ -62,6 +62,12 @@ public sealed class SendTemplateEmailOptions : SendEmailOptions
 /// <remarks>
 /// Needs <see cref="Html"/>, <see cref="Text"/> or both. To send a React email, render it to HTML in your app first
 /// and pass it as <see cref="Html"/>.
+/// <para>
+/// A PostHog version that doesn't take <see cref="Cc"/> or <see cref="Bcc"/> yet refuses the send with a
+/// <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. A project that can't send files
+/// yet gets <c>field_not_accepted</c>. A PostHog version without file uploads, or a project that can't send email
+/// from code, answers <c>not_found</c> on <c>attachments</c> with PostHog's reason. None of them sends the email.
+/// </para>
 /// </remarks>
 public sealed class SendCodeEmailOptions : SendEmailOptions
 {
@@ -95,6 +101,29 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// The addresses replies go to.
     /// </summary>
     public IReadOnlyList<string>? ReplyTo { get; init; }
+
+    /// <summary>
+    /// Bare addresses, such as <c>finance@example.com</c>, that get a visible copy. At most 10.
+    /// </summary>
+    public IReadOnlyList<string>? Cc { get; init; }
+
+    /// <summary>
+    /// Bare addresses that get a copy the other recipients never see. At most 10.
+    /// </summary>
+    public IReadOnlyList<string>? Bcc { get; init; }
+
+    /// <summary>
+    /// Files sent with the email: at most 10, and at most 40 MB for the whole email after Base64 encoding, which
+    /// leaves about 29 MB for the files.
+    /// </summary>
+    /// <remarks>
+    /// The client checks both limits before any request. It then asks PostHog which files it lacks, uploads each of
+    /// those straight to PostHog's file storage, and sends the email only once every upload succeeded. A file this
+    /// project sent before is usually still stored and isn't uploaded again. Uploads go to the storage host PostHog
+    /// names, not to <see cref="PostHogOptions.AppHost"/>, never carry the secret key, and never follow a redirect:
+    /// a redirect fails the send with <c>attachment_upload_failed</c>.
+    /// </remarks>
+    public IReadOnlyList<EmailAttachment>? Attachments { get; init; }
 
     /// <summary>
     /// Whether the email is sensitive: set <c>true</c> when it carries login links, reset tokens or codes. A sensitive
@@ -141,4 +170,32 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     }
 
     internal bool? CaptureEngagementIfSet { get; private init; }
+}
+
+/// <summary>
+/// A file sent with a <see cref="SendCodeEmailOptions"/> email.
+/// </summary>
+public sealed class EmailAttachment
+{
+    /// <summary>
+    /// The file name the recipient sees, such as <c>invoice.pdf</c>. No path.
+    /// </summary>
+    public required string Filename { get; init; }
+
+    /// <summary>
+    /// The file's bytes. The client names the file by their SHA-256 and uploads them when PostHog doesn't have them
+    /// yet. PostHog can't fetch a file from a path or URL, so read the file first. An empty file throws
+    /// <see cref="ArgumentException"/> before any request.
+    /// </summary>
+    public required ReadOnlyMemory<byte> Content { get; init; }
+
+    /// <summary>
+    /// The MIME type, such as <c>application/pdf</c>. Without it, the type follows from <see cref="Filename"/>.
+    /// </summary>
+    public string? ContentType { get; init; }
+
+    /// <summary>
+    /// Shows the file inline: with <c>logo</c> here, reference it in the HTML as <c>&lt;img src="cid:logo"&gt;</c>.
+    /// </summary>
+    public string? ContentId { get; init; }
 }

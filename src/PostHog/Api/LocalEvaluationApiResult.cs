@@ -451,7 +451,7 @@ internal record PropertyFilter : Filter
                && Operator == other.Operator
                && GroupTypeIndex == other.GroupTypeIndex
                && Negation == other.Negation
-               && (DependencyChain?.SequenceEqual(other.DependencyChain ?? []) ?? other.DependencyChain?.Any() != true);
+               && (DependencyChain?.SequenceEqual(other.DependencyChain ?? []) ?? other.DependencyChain is not { Count: > 0 });
     }
 
     /// <summary>

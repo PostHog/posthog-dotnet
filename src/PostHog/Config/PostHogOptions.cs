@@ -171,8 +171,16 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public bool AllowInsecureAppHost { get; set; }
 
     /// <summary>
-    /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request. (Default: 15 seconds)
+    /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request to PostHog. (Default: 15 seconds)
     /// </summary>
+    /// <remarks>
+    /// An attachment's upload to PostHog's file storage can take longer for a large file, so it runs until the
+    /// <see cref="HttpClient"/>'s own timeout instead: 100 seconds unless your app changed it, so raise
+    /// <see cref="HttpClient.Timeout"/> when your app sends large files over a slow link. Uploads go through an
+    /// <see cref="HttpClient"/> the SDK makes for them, whatever <see cref="IHttpClientFactory"/> your app supplies:
+    /// it never follows a redirect and carries none of your app's handlers or default headers. It uses the system
+    /// proxy.
+    /// </remarks>
     public TimeSpan EmailRequestTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
