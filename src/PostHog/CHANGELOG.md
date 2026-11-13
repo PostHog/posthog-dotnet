@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.26.1
+
+### Patch Changes
+
+- b4c58a7: Return no result and report evaluation_failed for failed direct flag evaluations. Preserve successful local values and payloads when bulk remote fallback fails for those keys.
+
 ## 2.26.0
 
 ### Minor Changes
