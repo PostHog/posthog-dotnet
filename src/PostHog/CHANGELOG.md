@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.26.0
+
+### Minor Changes
+
+- 6fb4c90: Adds `PostHogOptions.PromptRequestTimeout` (default 10 seconds). A prompt fetch that takes longer fails like a network error, so the caller gets the cached version, the fallback, or a `PromptFetchException` with the code `network_error`, instead of waiting for the HTTP client's own timeout.
+
 ## 2.25.0
 
 ### Minor Changes
