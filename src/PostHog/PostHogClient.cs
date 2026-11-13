@@ -940,7 +940,9 @@ public sealed class PostHogClient : IPostHogClient
                 response = flagsResult.Flags.GetValueOrDefault(featureKey);
                 if (response is null)
                 {
-                    errors.Add(FeatureFlagError.FlagMissing);
+                    errors.Add(flagsResult.FailedKeys.Contains(featureKey)
+                        ? FeatureFlagError.EvaluationFailed
+                        : FeatureFlagError.FlagMissing);
                     response = new FeatureFlag
                     {
                         Key = featureKey,
@@ -999,7 +1001,7 @@ public sealed class PostHogClient : IPostHogClient
                 cancellationToken);
         }
 
-        return response;
+        return errors.Contains(FeatureFlagError.EvaluationFailed) ? null : response;
     }
 
     /// <inheritdoc/>
@@ -1361,8 +1363,8 @@ public sealed class PostHogClient : IPostHogClient
 
                     // Local-wins merge: keep the locally-evaluated record (which carries
                     // locally_evaluated=true and $feature_flag_definitions_loaded_at) and only fill
-                    // in keys the local pass couldn't resolve. Differs from GetAllFeatureFlagsAsync,
-                    // which discards local results entirely on remote fallback.
+                    // in keys the local pass couldn't resolve. GetAllFeatureFlagsAsync instead
+                    // gives successful remote records precedence.
                     if (!records.ContainsKey(key))
                     {
                         records[key] = ToRecord(
@@ -1433,6 +1435,7 @@ public sealed class PostHogClient : IPostHogClient
             return EmptyFeatureFlags;
         }
 
+        IReadOnlyDictionary<string, FeatureFlag>? localFlags = null;
         if (_options.Value.SecretKey is not null)
         {
             // Attempt to load local feature flags.
@@ -1452,6 +1455,7 @@ public sealed class PostHogClient : IPostHogClient
                     {
                         return localEvaluationResults;
                     }
+                    localFlags = localEvaluationResults;
                 }
             }
             catch (ApiException e) when (e.ErrorType is "quota_limited")
@@ -1472,7 +1476,20 @@ public sealed class PostHogClient : IPostHogClient
         try
         {
             var flagsResult = await FetchFlagsAsync(resolvedDistinctId, options, cancellationToken);
-            return flagsResult.Flags;
+            if (localFlags is null || flagsResult.FailedKeys.Count == 0)
+            {
+                return flagsResult.Flags;
+            }
+
+            var merged = flagsResult.Flags.ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (var key in flagsResult.FailedKeys)
+            {
+                if (localFlags.TryGetValue(key, out var localFlag))
+                {
+                    merged[key] = localFlag;
+                }
+            }
+            return merged;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
