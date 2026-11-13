@@ -231,7 +231,8 @@ internal sealed class PromptFetcher : IPostHogPrompts
             ?? throw Error(
                 key,
                 "missing_secret_key",
-                "Fetching prompts needs SecretKey set to a personal API key (phx_...) with the llm_prompt:read scope.");
+                "Fetching prompts needs SecretKey set to a personal API key (phx_...) or a project secret API key "
+                + "(phs_...) with the llm_prompt:read scope.");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(key));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
@@ -288,8 +289,8 @@ internal sealed class PromptFetcher : IPostHogPrompts
             HttpStatusCode.Unauthorized => Error(
                 key,
                 "unauthorized",
-                $"Authentication failed for {reference}. SecretKey must be a personal API key (phx_...); "
-                + "a project secret key (phs_...) is not accepted for prompts.",
+                $"Authentication failed for {reference}. Check that SecretKey is a valid personal API key "
+                + "(phx_...) or project secret API key (phs_...).",
                 response.StatusCode),
             HttpStatusCode.Forbidden => Error(
                 key,

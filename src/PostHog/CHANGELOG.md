@@ -1,5 +1,29 @@
 # PostHog
 
+## 2.24.0
+
+### Minor Changes
+
+- 8d90262: `SendCodeEmailOptions` takes `Sensitive` and `Tracking`. Set `Sensitive = true` when the email carries login links, reset tokens or codes: PostHog then keeps its links unchanged unless `Tracking` turns clicks on, leaves its subject off engagement events, and keeps its content out of logs. Left unset, the email takes the setting of the template made in PostHog whose key matches `TemplateKey`, and is sensitive when no template matches. `Tracking` chooses what PostHog tracks for the email. Left unset, PostHog counts opens and captures engagement events, and tracks clicks only when the email isn't sensitive. `EmailTracking.All` (or `true`) turns on opens, clicks and engagement events, and `EmailTracking.None` (or `false`) turns them all off. `new EmailTracking { Clicks = true }` sets `Opens`, `Clicks` and `Engagement` one by one. `CaptureEngagement` is now obsolete in favor of `Tracking` with `Engagement`; it still works, but a send can't set both. The client now sends it only when you set it; PostHog already reads a missing value as on. The new fields need PostHog's API support, which is rolling out.
+
+## 2.23.0
+
+### Minor Changes
+
+- 13a91f7: Add opt-in runtime exception capture with `PostHogOptions.CaptureUnhandledExceptions`. With `CaptureExceptions` enabled, the ASP.NET Core middleware now reports escaping request failures as unhandled and also captures exceptions consumed by a downstream error handler such as `UseExceptionHandler`. Nested entries in `$exception_list` now use mechanism type `chained` and omit `handled`.
+
+## 2.22.0
+
+### Minor Changes
+
+- 2fac43f: Adds `PromptResult.ToTraceProperties()`. It returns the `$ai_prompt_name` and `$ai_prompt_version` event properties for the prompt, so a captured `$ai_generation` event links to the prompt version that produced it. The dictionary is empty for a code fallback.
+
+## 2.21.2
+
+### Patch Changes
+
+- 49f7b47: Prompt error messages and docs now say that `SecretKey` can be a personal API key or a project secret API key with the `llm_prompt:read` scope. The messages said that only a personal API key works, which is no longer true.
+
 ## 2.21.1
 
 ### Patch Changes

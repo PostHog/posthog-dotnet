@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -63,6 +64,9 @@ public sealed class PostHogClient : IPostHogClient
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
     readonly bool _isDisabled;
+    // Tracks exception instances already reported as unhandled so the runtime hooks don't report them again.
+    readonly ConditionalWeakTable<Exception, UnhandledCaptureMarker> _capturedUnhandledExceptions = new();
+    volatile bool _runtimeExceptionHandlersRegistered;
     internal bool IsDisabled => _isDisabled;
     readonly IFeatureFlagEvaluationsHost _evaluationsHost;
     int _missingFeatureFlagDistinctIdWarningLogged;
@@ -157,6 +161,12 @@ public sealed class PostHogClient : IPostHogClient
         });
 
         _evaluationsHost = new EvaluationsHost(this);
+        if (!_isDisabled && options.Value.CaptureUnhandledExceptions)
+        {
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+            _runtimeExceptionHandlersRegistered = true;
+        }
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
     }
 
@@ -550,7 +560,8 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags,
         FeatureFlagEvaluations? flags,
-        DateTimeOffset? timestamp)
+        DateTimeOffset? timestamp,
+        ExceptionCaptureBoundary? boundary = null)
     {
         if (CheckDisabledAndLog(nameof(CaptureException)))
         {
@@ -575,9 +586,17 @@ public sealed class PostHogClient : IPostHogClient
             }
 
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{identity.DistinctId}";
-            properties = ExceptionPropertiesBuilder.Build(properties, exception);
+            // An SDK integration (e.g. the ASP.NET Core middleware) may have entered a boundary for this exception.
+            boundary ??= ExceptionCaptureBoundary.ForException(exception);
+            properties = ExceptionPropertiesBuilder.Build(properties, exception, boundary);
 
-            return CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
+            var captured = CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
+            if (captured && boundary is { Handled: false } && _runtimeExceptionHandlersRegistered)
+            {
+                MarkCapturedAsUnhandled(exception);
+            }
+
+            return captured;
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception e)
@@ -585,6 +604,122 @@ public sealed class PostHogClient : IPostHogClient
         {
             _logger.LogErrorCaptureExceptionFailed(e);
             return false;
+        }
+    }
+
+    static readonly ExceptionCaptureBoundary UnhandledExceptionBoundary = new(
+        mechanismType: "onuncaughtexception",
+        source: "dotnet.appdomain_unhandled_exception",
+        handled: false);
+
+    static readonly ExceptionCaptureBoundary TerminatingUnhandledExceptionBoundary = new(
+        mechanismType: "onuncaughtexception",
+        source: "dotnet.appdomain_unhandled_exception",
+        handled: false,
+        level: "fatal");
+
+    static readonly ExceptionCaptureBoundary UnobservedTaskExceptionBoundary = new(
+        mechanismType: "task",
+        source: "dotnet.task_scheduler_unobserved_task_exception",
+        handled: false);
+
+    // Kept short on purpose: this blocks a process that is already crashing, on the crashing thread.
+    static readonly TimeSpan TerminatingFlushTimeout = TimeSpan.FromSeconds(2);
+
+    sealed class UnhandledCaptureMarker
+    {
+        public int Captured;
+    }
+
+    /// <summary>
+    /// Atomically claims an exception instance for a runtime hook. Returns <c>false</c> when the instance was
+    /// already reported as unhandled, by this hook or by another boundary such as the request middleware.
+    /// </summary>
+    bool TryClaimUnhandledCapture(Exception exception)
+        => Interlocked.Exchange(ref _capturedUnhandledExceptions.GetOrCreateValue(exception).Captured, 1) == 0;
+
+    void MarkCapturedAsUnhandled(Exception exception)
+        => Interlocked.Exchange(ref _capturedUnhandledExceptions.GetOrCreateValue(exception).Captured, 1);
+
+    bool WasCapturedAsUnhandled(Exception exception)
+        => _capturedUnhandledExceptions.TryGetValue(exception, out var marker)
+           && Volatile.Read(ref marker.Captured) == 1;
+
+    void CaptureRuntimeException(Exception exception, ExceptionCaptureBoundary boundary)
+    {
+        // Only the runtime hooks deduplicate. Explicit and middleware captures always report, because an
+        // application can legitimately rethrow one cached exception instance for many separate failures.
+        if (!TryClaimUnhandledCapture(exception))
+        {
+            return;
+        }
+
+        CaptureExceptionCore(
+            exception, distinctId: null, properties: null, groups: null, sendFeatureFlags: false,
+            flags: null, timestamp: null, boundary: boundary);
+    }
+
+    internal void OnUnhandledException(object sender, UnhandledExceptionEventArgs args)
+    {
+        if (!_runtimeExceptionHandlersRegistered || args.ExceptionObject is not Exception exception)
+        {
+            return;
+        }
+
+        try
+        {
+            CaptureRuntimeException(
+                exception,
+                args.IsTerminating ? TerminatingUnhandledExceptionBoundary : UnhandledExceptionBoundary);
+            if (args.IsTerminating)
+            {
+                // The crashing thread may own a SynchronizationContext (e.g. a UI thread). Flush from the thread
+                // pool so the flush continuations never need the thread that is blocked here.
+                Task.Run(FlushAsync).Wait(TerminatingFlushTimeout);
+            }
+        }
+#pragma warning disable CA1031 // Reporting a crash must not replace the original failure.
+        catch
+#pragma warning restore CA1031
+        {
+        }
+    }
+
+    internal void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs args)
+    {
+        if (!_runtimeExceptionHandlersRegistered)
+        {
+            return;
+        }
+
+        try
+        {
+            // The runtime wraps the task's failure in a fresh AggregateException. Peel single-member wrappers
+            // one level at a time so the event is typed by what actually failed, and check every level on the
+            // way down: any of those instances may be the one another boundary already reported.
+            Exception failure = args.Exception;
+            while (failure is AggregateException { InnerExceptions.Count: 1 } wrapper)
+            {
+                if (WasCapturedAsUnhandled(wrapper))
+                {
+                    return;
+                }
+
+                failure = wrapper.InnerExceptions[0];
+            }
+
+            if (failure is AggregateException { InnerExceptions.Count: > 1 } failures
+                && failures.InnerExceptions.All(WasCapturedAsUnhandled))
+            {
+                return;
+            }
+
+            CaptureRuntimeException(failure, UnobservedTaskExceptionBoundary);
+        }
+#pragma warning disable CA1031 // Reporting a task failure must not change task exception handling.
+        catch
+#pragma warning restore CA1031
+        {
         }
     }
 
@@ -1515,6 +1650,12 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (_runtimeExceptionHandlersRegistered)
+        {
+            _runtimeExceptionHandlersRegistered = false;
+            AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
+            TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+        }
         // Stop background tasks first, while the API client is still alive.
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
         try

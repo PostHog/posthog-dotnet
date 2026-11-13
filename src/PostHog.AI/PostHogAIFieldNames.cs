@@ -113,6 +113,11 @@ public static class PostHogAIFieldNames
     public const string TotalTokens = "$ai_total_tokens";
 
     /// <summary>
+    /// Number of reasoning tokens used by the model (when available).
+    /// </summary>
+    public const string ReasoningTokens = "$ai_reasoning_tokens";
+
+    /// <summary>
     /// Number of tokens read from cache (when available).
     /// </summary>
     public const string CacheReadInputTokens = "$ai_cache_read_input_tokens";

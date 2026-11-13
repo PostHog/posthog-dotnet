@@ -25,7 +25,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
         "template_key", "to", "subject", "html", "text", "from", "reply_to", "capture_engagement", "distinct_id",
     ];
 
-    static readonly string[] SendFields = [.. OlderSendFields, "cc", "bcc", "attachments"];
+    static readonly string[] SendFields = [.. OlderSendFields, "sensitive", "tracking", "cc", "bcc", "attachments"];
     static readonly string[] AttachmentFields = ["sha256", "filename", "content_type", "content_id"];
 
     readonly ConcurrentDictionary<string, byte[]> _stored = new(StringComparer.Ordinal);

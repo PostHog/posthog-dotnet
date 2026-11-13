@@ -94,17 +94,17 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var trackingStream = new TrackingStream(
                 originalStream,
                 privacyMode,
-                (accumulatedResponse, usage) =>
+                (accumulatedResponse, usage, responseOutput) =>
                 {
                     stopwatch.Stop();
                     // Construct a pseudo-response JSON object from accumulated data
                     var responseNode = new JsonObject();
 
                     // Aggregate choices
-                    var choicesArray = new JsonArray();
+                    var choicesArray = responseOutput ?? new JsonArray();
                     responseNode["choices"] = choicesArray;
 
-                    if (!string.IsNullOrEmpty(accumulatedResponse))
+                    if (responseOutput == null && !string.IsNullOrEmpty(accumulatedResponse))
                     {
                         var choice = new JsonObject();
                         var message = new JsonObject();
@@ -396,6 +396,19 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         eventProperties[PostHogAIFieldNames.CacheReadInputTokens] = cachedInt;
                     }
 
+                    // Reasoning models report their hidden reasoning tokens under
+                    // *_tokens_details.reasoning_tokens (Chat Completions / Responses API).
+                    if (
+                        (
+                            (usage["completion_tokens_details"] as JsonObject)?["reasoning_tokens"]
+                            ?? (usage["output_tokens_details"] as JsonObject)?["reasoning_tokens"]
+                        ) is JsonValue reasoningTokens
+                        && reasoningTokens.TryGetValue<int>(out var reasoningInt)
+                    )
+                    {
+                        eventProperties[PostHogAIFieldNames.ReasoningTokens] = reasoningInt;
+                    }
+
                     if (usage["cache_creation_input_tokens"] is JsonValue cacheCreationTokens)
                     {
                         eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
@@ -591,15 +604,16 @@ public class PostHogOpenAIHandler : DelegatingHandler
     {
         private readonly Stream _innerStream;
         private readonly bool _privacyMode;
-        private readonly Action<string?, JsonNode?> _onComplete;
+        private readonly Action<string?, JsonNode?, JsonArray?> _onComplete;
         private readonly StringBuilder? _accumulatedContent;
         private readonly StringBuilder _lineBuffer = new(capacity: 512);
         // Stateful so a multibyte character split across two reads is decoded once complete.
         private readonly Decoder _decoder = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetDecoder();
         private JsonNode? _usage;
+        private JsonArray? _responseOutput;
         private bool _completed;
 
-        public TrackingStream(Stream innerStream, bool privacyMode, Action<string?, JsonNode?> onComplete)
+        public TrackingStream(Stream innerStream, bool privacyMode, Action<string?, JsonNode?, JsonArray?> onComplete)
         {
             _innerStream = innerStream;
             _privacyMode = privacyMode;
@@ -770,6 +784,33 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         _usage = JsonNode.Parse(usageElement.GetRawText());
                     }
 
+                    if (
+                        root.TryGetProperty("type", out var typeElement)
+                        && typeElement.ValueKind == JsonValueKind.String
+                        && typeElement.GetString() is "response.completed" or "response.incomplete" or "response.failed"
+                        && root.TryGetProperty("response", out var responseElement)
+                        && responseElement.ValueKind == JsonValueKind.Object
+                    )
+                    {
+                        if (
+                            _usage == null
+                            && responseElement.TryGetProperty("usage", out var responseUsage)
+                            && responseUsage.ValueKind == JsonValueKind.Object
+                        )
+                        {
+                            _usage = JsonNode.Parse(responseUsage.GetRawText());
+                        }
+
+                        if (
+                            !_privacyMode
+                            && responseElement.TryGetProperty("output", out var responseOutput)
+                            && responseOutput.ValueKind == JsonValueKind.Array
+                        )
+                        {
+                            _responseOutput = JsonNode.Parse(responseOutput.GetRawText()) as JsonArray;
+                        }
+                    }
+
                     // Check for delta content (skip in privacy mode)
                     if (
                         _accumulatedContent != null
@@ -805,7 +846,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
             if (disposing && !_completed)
             {
                 _completed = true;
-                _onComplete(_accumulatedContent?.ToString(), _usage);
+                _onComplete(_accumulatedContent?.ToString(), _usage, _responseOutput);
             }
 
             if (disposing)

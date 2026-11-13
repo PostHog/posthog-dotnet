@@ -460,7 +460,7 @@ public class TheGetAsyncMethod
 
     [Theory]
     [InlineData(HttpStatusCode.NotFound, "not_found", "was not found")]
-    [InlineData(HttpStatusCode.Unauthorized, "unauthorized", "personal API key (phx_...)")]
+    [InlineData(HttpStatusCode.Unauthorized, "unauthorized", "project secret API key (phs_...)")]
     [InlineData(HttpStatusCode.Forbidden, "forbidden", "llm_prompt:read")]
     [InlineData(HttpStatusCode.TooManyRequests, "rate_limited", "rate limited")]
     public async Task MapsHttpStatusesToCodes(HttpStatusCode statusCode, string expectedCode, string expectedMessagePart)
@@ -572,6 +572,7 @@ public class TheGetAsyncMethod
 
         Assert.Equal("missing_secret_key", exception.Code);
         Assert.Contains("phx_", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("phs_", exception.Message, StringComparison.Ordinal);
         Assert.Equal(PromptSource.CodeFallback, withFallback.Source);
     }
 
@@ -760,5 +761,31 @@ public class TheCompileMethod
         var compiled = prompt.Compile(variables);
 
         Assert.Equal(expected, compiled);
+    }
+}
+
+public class TheToTracePropertiesMethod
+{
+    [Theory]
+    [InlineData(PromptSource.Api)]
+    [InlineData(PromptSource.Cache)]
+    [InlineData(PromptSource.StaleCache)]
+    public void ReturnsTheNameAndVersionOfAFetchedPrompt(PromptSource source)
+    {
+        var prompt = new PromptResult { Source = source, Prompt = "Hello", Name = PromptName, Version = 3, Label = "production" };
+
+        var properties = prompt.ToTraceProperties();
+
+        Assert.Equal(
+            new Dictionary<string, object> { ["$ai_prompt_name"] = PromptName, ["$ai_prompt_version"] = 3 },
+            properties);
+    }
+
+    [Fact]
+    public void ReturnsNoPropertiesForACodeFallback()
+    {
+        var prompt = new PromptResult { Source = PromptSource.CodeFallback, Prompt = "Hello" };
+
+        Assert.Empty(prompt.ToTraceProperties());
     }
 }
