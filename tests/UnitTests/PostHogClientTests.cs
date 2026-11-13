@@ -2689,3 +2689,38 @@ public class TheLoadFeatureFlagsAsyncMethod
             log.Message?.Contains("Failed to load feature flags", StringComparison.Ordinal) == true);
     }
 }
+
+public class TheProcessExitHandler
+{
+    [Fact]
+    public async Task FlushesQueuedEventsWhenTheClientIsNeverDisposed()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        client.Capture("some-distinct-id", "some-event");
+
+        client.OnProcessExit(this, EventArgs.Empty);
+
+        // No explicit flush: the handler itself must have delivered the event before returning.
+        using var document = JsonDocument.Parse(requestHandler.GetReceivedRequestBody(indented: false));
+        var item = Assert.Single(document.RootElement.GetProperty("batch").EnumerateArray());
+        Assert.Equal("some-event", item.GetProperty("event").GetString());
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DoesNothingAfterTheClientIsDisposed()
+    {
+        var container = new TestContainer();
+        var requestHandler = container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        client.Capture("some-distinct-id", "some-event");
+        await client.DisposeAsync();
+        Assert.Single(requestHandler.ReceivedRequests);
+
+        client.OnProcessExit(this, EventArgs.Empty);
+
+        Assert.Single(requestHandler.ReceivedRequests);
+    }
+}
