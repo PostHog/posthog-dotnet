@@ -261,6 +261,53 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    [Theory]
+    [InlineData("{\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"boom\"},\"usage\":{\"input_tokens\":10,\"output_tokens\":0,\"total_tokens\":10}}}", "boom")]
+    [InlineData("{\"type\":\"error\",\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}", "slow down")]
+    public async Task SendAsyncMarksResponsesStreamEndingInFailureAsError(string terminalEvent, string expectedMessage)
+    {
+        var requestBody = new { model = "gpt-5", input = "hi", stream = true };
+        var sse = "data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\"}}\n\n"
+            + "data: " + terminalEvent + "\n\n";
+        var streamContent = new StreamContent(new MemoryStream(new UTF8Encoding(false).GetBytes(sse)));
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK) { Content = streamContent };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await _client.PostAsync(new Uri("/v1/responses", UriKind.Relative), requestContent);
+            var resultStream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(resultStream);
+            await reader.ReadToEndAsync();
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey(PostHogAIFieldNames.IsError)
+                    && (bool)props[PostHogAIFieldNames.IsError]
+                    && props[PostHogAIFieldNames.Error].ToString()!.Contains(expectedMessage, StringComparison.Ordinal)
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
     [Fact]
     public async Task SendAsyncDecodesMultibyteCharactersSplitAcrossStreamReads()
     {
