@@ -94,7 +94,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var trackingStream = new TrackingStream(
                 originalStream,
                 privacyMode,
-                (accumulatedResponse, usage, responseOutput) =>
+                (accumulatedResponse, usage, responseOutput, streamError) =>
                 {
                     stopwatch.Stop();
                     // Construct a pseudo-response JSON object from accumulated data
@@ -117,6 +117,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     if (usage != null)
                     {
                         responseNode["usage"] = usage;
+                    }
+
+                    if (streamError != null)
+                    {
+                        responseNode["error"] = streamError;
                     }
 
                     CaptureEvent(
@@ -437,7 +442,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
             }
 
             // Error handling
-            if (exception != null || (response != null && !response.IsSuccessStatusCode))
+            // A streamed Responses API call answers HTTP 200 even when it ends in
+            // `response.failed` or an `error` event; the stream tracker surfaces that as `error`.
+            var streamError = responseJson?["error"];
+            if (exception != null || streamError != null || (response != null && !response.IsSuccessStatusCode))
             {
                 eventProperties[PostHogAIFieldNames.IsError] = true;
                 if (exception != null)
@@ -604,16 +612,17 @@ public class PostHogOpenAIHandler : DelegatingHandler
     {
         private readonly Stream _innerStream;
         private readonly bool _privacyMode;
-        private readonly Action<string?, JsonNode?, JsonArray?> _onComplete;
+        private readonly Action<string?, JsonNode?, JsonArray?, JsonNode?> _onComplete;
         private readonly StringBuilder? _accumulatedContent;
         private readonly StringBuilder _lineBuffer = new(capacity: 512);
         // Stateful so a multibyte character split across two reads is decoded once complete.
         private readonly Decoder _decoder = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetDecoder();
         private JsonNode? _usage;
         private JsonArray? _responseOutput;
+        private JsonNode? _streamError;
         private bool _completed;
 
-        public TrackingStream(Stream innerStream, bool privacyMode, Action<string?, JsonNode?, JsonArray?> onComplete)
+        public TrackingStream(Stream innerStream, bool privacyMode, Action<string?, JsonNode?, JsonArray?, JsonNode?> onComplete)
         {
             _innerStream = innerStream;
             _privacyMode = privacyMode;
@@ -784,6 +793,31 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         _usage = JsonNode.Parse(usageElement.GetRawText());
                     }
 
+                    // Terminal failure of a streamed Responses API call (HTTP status is already 200)
+                    if (
+                        root.TryGetProperty("type", out var failTypeElement)
+                        && failTypeElement.ValueKind == JsonValueKind.String
+                    )
+                    {
+                        var failType = failTypeElement.GetString();
+                        if (
+                            failType == "response.failed"
+                            && root.TryGetProperty("response", out var failedResponse)
+                            && failedResponse.ValueKind == JsonValueKind.Object
+                        )
+                        {
+                            _streamError =
+                                failedResponse.TryGetProperty("error", out var failedError)
+                                && failedError.ValueKind == JsonValueKind.Object
+                                    ? JsonNode.Parse(failedError.GetRawText())
+                                    : JsonValue.Create("response.failed");
+                        }
+                        else if (failType == "error")
+                        {
+                            _streamError = JsonNode.Parse(root.GetRawText());
+                        }
+                    }
+
                     if (
                         root.TryGetProperty("type", out var typeElement)
                         && typeElement.ValueKind == JsonValueKind.String
@@ -846,7 +880,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
             if (disposing && !_completed)
             {
                 _completed = true;
-                _onComplete(_accumulatedContent?.ToString(), _usage, _responseOutput);
+                _onComplete(_accumulatedContent?.ToString(), _usage, _responseOutput, _streamError);
             }
 
             if (disposing)
