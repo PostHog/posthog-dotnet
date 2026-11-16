@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.11
+
+### Patch Changes
+
+- 1eb4955: OpenAI Responses streams that end in `response.failed` or an `error` event now set `$ai_is_error` and `$ai_error`.
+
 ## 0.1.10
 
 ### Patch Changes
