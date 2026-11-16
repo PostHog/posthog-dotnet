@@ -695,7 +695,9 @@ public sealed class PostHogClient : IPostHogClient
         }
     }
 
-    internal void OnProcessExit(object? sender, EventArgs args)
+    internal void OnProcessExit(object? sender, EventArgs args) => FlushOnProcessExit(ProcessExitFlushTimeout);
+
+    internal void FlushOnProcessExit(TimeSpan timeout)
     {
         if (!_processExitHandlerRegistered)
         {
@@ -705,7 +707,11 @@ public sealed class PostHogClient : IPostHogClient
         try
         {
             // Flush from the thread pool so the flush continuations never need the thread that is blocked here.
-            Task.Run(FlushAsync).Wait(ProcessExitFlushTimeout);
+            if (!Task.Run(FlushAsync).Wait(timeout))
+            {
+                // The process exits with the flush unfinished, so nothing else would report the lost events.
+                _logger.LogWarningProcessExitFlushTimedOut(timeout.TotalSeconds);
+            }
         }
 #pragma warning disable CA1031 // A failed final flush must not change how the process exits.
         catch
@@ -1886,4 +1892,10 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Error,
         Message = "Error in before send callback for event {EventName}; dropping event")]
     public static partial void LogErrorBeforeSendException(this ILogger<PostHogClient> logger, Exception exception, string eventName);
+
+    [LoggerMessage(
+        EventId = 27,
+        Level = LogLevel.Warning,
+        Message = "The final flush at process exit did not finish within {TimeoutSeconds} seconds; queued events may be lost.")]
+    public static partial void LogWarningProcessExitFlushTimedOut(this ILogger<PostHogClient> logger, double timeoutSeconds);
 }

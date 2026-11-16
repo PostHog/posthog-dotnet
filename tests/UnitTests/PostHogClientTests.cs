@@ -2710,6 +2710,48 @@ public class TheProcessExitHandler
     }
 
     [Fact]
+    public async Task LogsAWarningWhenTheFlushExceedsItsDeadline()
+    {
+        var container = new TestContainer();
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        container.FakeHttpMessageHandler.AddResponse(
+            new Uri("https://us.i.posthog.com/batch"),
+            HttpMethod.Post,
+            async () =>
+            {
+                await release.Task;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"status\":1}", Encoding.UTF8, "application/json")
+                };
+            });
+        var client = container.Activate<PostHogClient>();
+        client.Capture("some-distinct-id", "some-event");
+
+        client.FlushOnProcessExit(TimeSpan.FromMilliseconds(50));
+
+        var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
+        Assert.Single(warningLogs, log => log.EventId.Id == 27);
+        release.SetResult(true);
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FlushWithinTheDeadlineLogsNoWarning()
+    {
+        var container = new TestContainer();
+        container.FakeHttpMessageHandler.AddBatchResponse();
+        var client = container.Activate<PostHogClient>();
+        client.Capture("some-distinct-id", "some-event");
+
+        client.OnProcessExit(this, EventArgs.Empty);
+
+        var warningLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Warning);
+        Assert.DoesNotContain(warningLogs, log => log.EventId.Id == 27);
+        await client.DisposeAsync();
+    }
+
+    [Fact]
     public async Task DoesNothingAfterTheClientIsDisposed()
     {
         var container = new TestContainer();
