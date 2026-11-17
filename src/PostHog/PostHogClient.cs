@@ -67,6 +67,7 @@ public sealed class PostHogClient : IPostHogClient
     // Tracks exception instances already reported as unhandled so the runtime hooks don't report them again.
     readonly ConditionalWeakTable<Exception, UnhandledCaptureMarker> _capturedUnhandledExceptions = new();
     volatile bool _runtimeExceptionHandlersRegistered;
+    volatile bool _processExitHandlerRegistered;
     internal bool IsDisabled => _isDisabled;
     readonly IFeatureFlagEvaluationsHost _evaluationsHost;
     int _missingFeatureFlagDistinctIdWarningLogged;
@@ -161,6 +162,12 @@ public sealed class PostHogClient : IPostHogClient
         });
 
         _evaluationsHost = new EvaluationsHost(this);
+        if (!_isDisabled)
+        {
+            // A client that is never disposed would otherwise lose the events still queued when the process exits.
+            AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+            _processExitHandlerRegistered = true;
+        }
         if (!_isDisabled && options.Value.CaptureUnhandledExceptions)
         {
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -626,6 +633,9 @@ public sealed class PostHogClient : IPostHogClient
     // Kept short on purpose: this blocks a process that is already crashing, on the crashing thread.
     static readonly TimeSpan TerminatingFlushTimeout = TimeSpan.FromSeconds(2);
 
+    // Bounds how long an unreachable or retrying ingestion endpoint can hold up a normal process exit.
+    static readonly TimeSpan ProcessExitFlushTimeout = TimeSpan.FromSeconds(5);
+
     sealed class UnhandledCaptureMarker
     {
         public int Captured;
@@ -679,6 +689,31 @@ public sealed class PostHogClient : IPostHogClient
             }
         }
 #pragma warning disable CA1031 // Reporting a crash must not replace the original failure.
+        catch
+#pragma warning restore CA1031
+        {
+        }
+    }
+
+    internal void OnProcessExit(object? sender, EventArgs args) => FlushOnProcessExit(ProcessExitFlushTimeout);
+
+    internal void FlushOnProcessExit(TimeSpan timeout)
+    {
+        if (!_processExitHandlerRegistered)
+        {
+            return;
+        }
+
+        try
+        {
+            // Flush from the thread pool so the flush continuations never need the thread that is blocked here.
+            if (!Task.Run(FlushAsync).Wait(timeout))
+            {
+                // The process exits with the flush unfinished, so nothing else would report the lost events.
+                _logger.LogWarningProcessExitFlushTimedOut(timeout.TotalSeconds);
+            }
+        }
+#pragma warning disable CA1031 // A failed final flush must not change how the process exits.
         catch
 #pragma warning restore CA1031
         {
@@ -1667,6 +1702,11 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (_processExitHandlerRegistered)
+        {
+            _processExitHandlerRegistered = false;
+            AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
+        }
         if (_runtimeExceptionHandlersRegistered)
         {
             _runtimeExceptionHandlersRegistered = false;
@@ -1869,4 +1909,10 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Error,
         Message = "Error in before send callback for event {EventName}; dropping event")]
     public static partial void LogErrorBeforeSendException(this ILogger<PostHogClient> logger, Exception exception, string eventName);
+
+    [LoggerMessage(
+        EventId = 27,
+        Level = LogLevel.Warning,
+        Message = "The final flush at process exit did not finish within {TimeoutSeconds} seconds; queued events may be lost.")]
+    public static partial void LogWarningProcessExitFlushTimedOut(this ILogger<PostHogClient> logger, double timeoutSeconds);
 }
