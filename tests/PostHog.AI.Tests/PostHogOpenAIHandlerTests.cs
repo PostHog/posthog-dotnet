@@ -309,6 +309,56 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task SendAsyncMarksChatCompletionsStreamErrorChunkAsError()
+    {
+        var requestBody = new
+        {
+            model = "gpt-4",
+            messages = new[] { new { role = "user", content = "Say hi" } },
+            stream = true,
+        };
+        var sse = "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Hel\"}}]}\n\n"
+            + "data: {\"error\":{\"message\":\"The server had an error\",\"type\":\"server_error\",\"code\":null}}\n\n";
+        var streamContent = new StreamContent(new MemoryStream(new UTF8Encoding(false).GetBytes(sse)));
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK) { Content = streamContent };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await _client.PostAsync(new Uri("/v1/chat/completions", UriKind.Relative), requestContent);
+            var resultStream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(resultStream);
+            await reader.ReadToEndAsync();
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey(PostHogAIFieldNames.IsError)
+                    && (bool)props[PostHogAIFieldNames.IsError]
+                    && props[PostHogAIFieldNames.Error].ToString()!.Contains("The server had an error", StringComparison.Ordinal)
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    [Fact]
     public async Task SendAsyncDecodesMultibyteCharactersSplitAcrossStreamReads()
     {
         // Arrange
