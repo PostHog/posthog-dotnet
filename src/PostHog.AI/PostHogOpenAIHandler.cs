@@ -817,6 +817,15 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             _streamError = JsonNode.Parse(root.GetRawText());
                         }
                     }
+                    else if (
+                        root.TryGetProperty("error", out var chatError)
+                        && chatError.ValueKind == JsonValueKind.Object
+                    )
+                    {
+                        // Chat Completions streams signal a mid-stream failure as an untyped
+                        // `{"error": {...}}` chunk (HTTP status is already 200)
+                        _streamError = JsonNode.Parse(chatError.GetRawText());
+                    }
 
                     if (
                         root.TryGetProperty("type", out var typeElement)
