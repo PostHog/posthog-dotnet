@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.12
+
+### Patch Changes
+
+- ea7757c: OpenAI Chat Completions streams that end in an `{"error": ...}` chunk now set `$ai_is_error` and `$ai_error`.
+
 ## 0.1.11
 
 ### Patch Changes
