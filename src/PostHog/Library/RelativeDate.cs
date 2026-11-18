@@ -31,6 +31,12 @@ internal partial record RelativeDate
     public bool IsDateBefore(DateTime other, DateTimeOffset now) => other < _currentDateOffsetFunc?.Invoke(now);
 
     /// <summary>
+    /// Gets the date this relative date points to, or <c>null</c> if its unit is not supported.
+    /// </summary>
+    /// <param name="now">The current date.</param>
+    public DateTimeOffset? GetDate(DateTimeOffset now) => _currentDateOffsetFunc?.Invoke(now);
+
+    /// <summary>
     /// Tries to parse a string into a <see cref="RelativeDate"/>. If parsing fails, returns <c>null</c>.
     /// </summary>
     /// <param name="value">The relative or absolute date string.</param>
