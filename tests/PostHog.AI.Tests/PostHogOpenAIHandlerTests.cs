@@ -309,6 +309,68 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task SendAsyncCapturesToolCallsFromChatCompletionsStream()
+    {
+        var requestBody = new
+        {
+            model = "gpt-4",
+            messages = new[] { new { role = "user", content = "Weather in Paris?" } },
+            stream = true,
+        };
+        var sse = "data: {\"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"index\": 0, \"id\": \"call_1\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"\"}}]}}]}\n\n"
+            + "data: {\"choices\": [{\"index\": 0, \"delta\": {\"tool_calls\": [{\"index\": 0, \"function\": {\"arguments\": \"{\\\"city\\\":\"}}]}}]}\n\n"
+            + "data: {\"choices\": [{\"index\": 0, \"delta\": {\"tool_calls\": [{\"index\": 0, \"function\": {\"arguments\": \"\\\"Paris\\\"}\"}}]}}]}\n\n"
+            + "data: {\"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}]}\n\n"
+            + "data: [DONE]\n\n";
+        var streamContent = new StreamContent(new MemoryStream(new UTF8Encoding(false).GetBytes(sse)));
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK) { Content = streamContent };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await _client.PostAsync(new Uri("/v1/chat/completions", UriKind.Relative), requestContent);
+            var resultStream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(resultStream);
+            await reader.ReadToEndAsync();
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props => HasStreamedToolCall(props)),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    private static bool HasStreamedToolCall(Dictionary<string, object> props)
+    {
+        if (!props.TryGetValue(PostHogAIFieldNames.OutputChoices, out var output))
+        {
+            return false;
+        }
+
+        var json = JsonSerializer.Serialize(output);
+        return json.Contains("call_1", StringComparison.Ordinal)
+            && json.Contains("get_weather", StringComparison.Ordinal)
+            && json.Contains("Paris", StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SendAsyncMarksChatCompletionsStreamErrorChunkAsError()
     {
         var requestBody = new
