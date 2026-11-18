@@ -17,8 +17,8 @@ sealed class FakePostHogEmails : HttpMessageHandler
 {
     public const string SecretKey = "phs_secret";
     public const string MessageId = "01a18356-c56c-0001-e494-7666bc915188";
-    const string UploadsPath = "/api/projects/@current/messaging/attachments/uploads/";
-    const string SendPath = "/api/projects/@current/messaging/send/email/";
+    const string UploadsPath = "/api/messaging/attachments/uploads/";
+    const string SendPath = "/api/messaging/send/email/";
 
     static readonly string[] OlderSendFields =
     [
