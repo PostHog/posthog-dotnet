@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.13
+
+### Patch Changes
+
+- 802ad9e: OpenAI Chat Completions streams now capture `delta.tool_calls` in `$ai_output_choices`, so generations that only call tools are no longer recorded with empty output.
+
 ## 0.1.12
 
 ### Patch Changes
