@@ -17,9 +17,9 @@ namespace PostHog.Emails;
 /// </summary>
 internal sealed class EmailSender : IPostHogEmails
 {
-    const string SendPath = "/api/projects/@current/messaging/send/email/";
-    const string StatusPath = "/api/projects/@current/messaging/emails/";
-    const string UploadsPath = "/api/projects/@current/messaging/attachments/uploads/";
+    const string SendPath = "/api/messaging/send/email/";
+    const string StatusPath = "/api/messaging/emails/";
+    const string UploadsPath = "/api/messaging/attachments/uploads/";
     const int MaxTemplateKeyLength = 400;
     const int MaxIdempotencyKeyLength = 255;
     static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);

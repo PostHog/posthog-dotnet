@@ -33,7 +33,7 @@ public class TheSendAsyncMethodWithATemplate
         Assert.Empty(result.Warnings);
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal("https://us.posthog.com/api/projects/@current/messaging/send/email/", request.Url);
+        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
         Assert.Equal("Bearer phs_secret", request.Header("Authorization"));
         Assert.Equal("application/json", request.Header("Accept"));
         Assert.Equal("application/json", request.Header("Content-Type"));
@@ -204,7 +204,7 @@ public class TheSendAsyncMethodWithCodeContent
         });
 
         var request = Assert.Single(harness.Requests);
-        Assert.Equal("https://us.posthog.com/api/projects/@current/messaging/send/email/", request.Url);
+        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
         Assert.Equal(
             """{"template_key":"password-reset","to":"user@example.com","subject":"Reset your password","html":"\u003Cp\u003EHi\u003C/p\u003E","from":"Acme \u003Csecurity@example.com\u003E","reply_to":["support@example.com"],"distinct_id":"user_123"}""",
             request.Body);
@@ -1091,7 +1091,7 @@ public class TheSendAsyncMethodClientChecks
 
         await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
 
-        Assert.Equal(expected + "/api/projects/@current/messaging/send/email/", Assert.Single(harness.Requests).Url);
+        Assert.Equal(expected + "/api/messaging/send/email/", Assert.Single(harness.Requests).Url);
     }
 
     [Fact]
@@ -1159,7 +1159,7 @@ public class TheSendAsyncMethodClientChecks
         await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
 
         Assert.Equal(
-            "http://localhost:8010/api/projects/@current/messaging/send/email/",
+            "http://localhost:8010/api/messaging/send/email/",
             Assert.Single(harness.Requests).Url);
     }
 
@@ -1325,7 +1325,7 @@ public class TheGetAsyncMethod
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal(
-            "https://us.posthog.com/api/projects/@current/messaging/emails/01a18356-c56c-0001-e494-7666bc915188/",
+            "https://us.posthog.com/api/messaging/emails/01a18356-c56c-0001-e494-7666bc915188/",
             request.Url);
         Assert.Equal("Bearer phs_secret", request.Header("Authorization"));
         Assert.Equal("resend", request.Header("X-PostHog-Migrated-From"));
