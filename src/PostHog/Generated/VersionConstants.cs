@@ -13,5 +13,5 @@ public static class VersionConstants
     /// <summary>
     /// The version of the PostHog package.
     /// </summary>
-    public const string Version = "2.26.2";
+    public const string Version = "2.26.3";
 }
