@@ -891,6 +891,12 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("2024-01-08", ComparisonOperator.IsDateAfter, "-2w", true)]
     [InlineData("2023-12-22", ComparisonOperator.IsDateAfter, "-1m", true)]
     [InlineData("2023-01-22", ComparisonOperator.IsDateAfter, "-1y", true)]
+    [InlineData("2024-01-20", ComparisonOperator.IsDateBefore, "-30h", true)]
+    [InlineData("2024-01-20", ComparisonOperator.IsDateAfter, "-30h", false)]
+    [InlineData("2023-12-28", ComparisonOperator.IsDateBefore, "-24d", true)]
+    [InlineData("2023-12-28", ComparisonOperator.IsDateAfter, "-24d", false)]
+    [InlineData("2022-01-22", ComparisonOperator.IsDateBefore, "-1y", true)]
+    [InlineData("2022-01-22", ComparisonOperator.IsDateAfter, "-1y", false)]
     public void CanPerformDateComparisonsAgainstDateOnly(
         string joinDate,
         ComparisonOperator comparison,
@@ -926,6 +932,64 @@ public class TheEvaluateFeatureFlagMethod
         Assert.Equal(expected, result);
     }
 #endif
+
+    [Theory]
+    [InlineData("DateTime", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("DateTime", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("DateTime", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("DateTime", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateAfter, true)]
+    [InlineData("default(DateTime)", "0001-01-01T00:00:00Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("default(DateTime)", "0001-01-01T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("DateTimeOffset", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("DateTimeOffset", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("DateTimeOffset", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("DateTimeOffset", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateAfter, true)]
+#if !NETCOREAPP3_1
+    [InlineData("DateOnly", "2024-01-14T00:00:00Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("DateOnly", "2024-01-14T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("DateOnly", "2024-01-16T00:00:00Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("DateOnly", "2024-01-16T00:00:00Z", ComparisonOperator.IsDateAfter, true)]
+#endif
+    public void CanPerformDateComparisonsOfTypedPropertiesAgainstExactDate(
+        string type,
+        string joinDate,
+        ComparisonOperator comparison,
+        bool expected)
+    {
+        var date = DateTimeOffset.Parse(joinDate, CultureInfo.InvariantCulture);
+        // Cast each value, or the switch converts a DateTime to a DateTimeOffset where DateOnly is missing.
+        var propertyValue = type switch
+        {
+            "DateTime" => (object)date.UtcDateTime,
+            // Unspecified kind, so it is read at the local offset, which east of UTC is before DateTime.MinValue.
+            "default(DateTime)" => (object)default(DateTime),
+            "DateTimeOffset" => (object)date,
+#if !NETCOREAPP3_1
+            "DateOnly" => (object)DateOnly.FromDateTime(date.UtcDateTime),
+#endif
+            _ => throw new ArgumentOutOfRangeException(nameof(type))
+        };
+        var flags = CreateFlags(
+            key: "join_date",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue("2024-01-15T00:00:00Z"),
+                    Operator = comparison
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "join_date",
+            distinctId: "1234b",
+            personProperties: new Dictionary<string, object?> { ["join_date"] = propertyValue });
+
+        Assert.Equal(expected, result);
+    }
 
     [Theory]
     [InlineData("2024-01-21T16:15:49Z", ComparisonOperator.IsDateBefore, "-30h", true)]
@@ -1059,9 +1123,11 @@ public class TheEvaluateFeatureFlagMethod
     }
 
     [Theory]
-    [InlineData(ComparisonOperator.IsDateAfter)]
-    [InlineData(ComparisonOperator.IsDateBefore)]
-    public void ThrowsInconclusiveMatchExceptionWhenFilterValueNotDate(ComparisonOperator comparison)
+    [InlineData("some fine garbage", ComparisonOperator.IsDateAfter)]
+    [InlineData("some fine garbage", ComparisonOperator.IsDateBefore)]
+    [InlineData("-1D", ComparisonOperator.IsDateAfter)]
+    [InlineData("-1D", ComparisonOperator.IsDateBefore)]
+    public void ThrowsInconclusiveMatchExceptionWhenFilterValueNotDate(string filterValue, ComparisonOperator comparison)
     {
         var properties = new Dictionary<string, object?>
         {
@@ -1074,7 +1140,7 @@ public class TheEvaluateFeatureFlagMethod
                 {
                     Type = FilterType.Person,
                     Key = "join_date",
-                    Value = new PropertyFilterValue("some fine garbage"),
+                    Value = new PropertyFilterValue(filterValue),
                     Operator = comparison
                 }
             ]

@@ -918,18 +918,27 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if the filter value can't be parsed.</exception>
     public bool IsDateBefore(object? overrideValue, DateTimeOffset now)
     {
-        // Question: Should we support DateOnly and TimeOnly?
         // Parse the filter first, so a bad filter is reported even when the override value is bad too.
-        var comparand = ParseFilterDate();
-        var overrideDate = ParseDate(overrideValue, UnresolvedFlagReason.MissingContext);
-
-        return comparand switch
+        DateTimeOffset comparand = ParseFilterDate() switch
         {
-            RelativeDate relativeDate => overrideDate is DateTimeOffset overrideDateTimeOffset && relativeDate.IsDateBefore(overrideDateTimeOffset, now)
-                                         || (overrideDate is DateTime overrideDateTime && relativeDate.IsDateBefore(overrideDateTime, now)),
-            DateTimeOffset comparandDate => overrideDate is DateTimeOffset overrideDateTimeOffset && overrideDateTimeOffset < comparandDate,
-            DateTime comparandDate => overrideDate is DateTimeOffset overrideDateTimeOffset && overrideDateTimeOffset < comparandDate,
+            RelativeDate relativeDate => relativeDate.GetDate(now)
+                ?? throw new InconclusiveMatchException("The relative date unit is not supported", UnresolvedFlagReason.UnsupportedDefinition),
+            DateTimeOffset comparandDate => comparandDate,
+            // ToUniversalTime clamps a date near DateTime.MinValue or MaxValue; converting it to a
+            // DateTimeOffset at a local offset would throw instead.
+            DateTime comparandDate => new DateTimeOffset(comparandDate.ToUniversalTime()),
             _ => throw new InconclusiveMatchException("The date provided is not a valid format", UnresolvedFlagReason.UnsupportedDefinition)
+        };
+
+        return ParseDate(overrideValue, UnresolvedFlagReason.MissingContext) switch
+        {
+            DateTimeOffset overrideDate => overrideDate < comparand,
+            DateTime overrideDate => overrideDate.ToUniversalTime() < comparand.UtcDateTime,
+#if NET5_0_OR_GREATER
+            // A date has no time of day, so compare it with the day the filter date falls on.
+            DateOnly overrideDate => overrideDate < DateOnly.FromDateTime(comparand.DateTime),
+#endif
+            _ => throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", UnresolvedFlagReason.MissingContext)
         };
     }
 
@@ -956,7 +965,7 @@ public class PropertyFilterValue
                 : DateTime.TryParse(dateString, out var dt)
                     ? dt
                     : throw new InconclusiveMatchException("The date provided is not a valid format", reason)
-            : throw new InconclusiveMatchException("The date provided must be a string, DateTime, or DateTimeOffset, object", reason);
+            : throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", reason);
     }
 
     /// <summary>
