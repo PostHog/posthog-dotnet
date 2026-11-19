@@ -816,9 +816,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
             if (trimmed.IsEmpty)
                 return;
 
-            if (trimmed.StartsWith("data: ".AsSpan(), StringComparison.Ordinal))
+            if (trimmed.StartsWith("data:".AsSpan(), StringComparison.Ordinal))
             {
-                var dataSpan = trimmed.Slice(6).Trim();
+                var dataSpan = trimmed.Slice(5).Trim();
                 if (dataSpan.IsEmpty || dataSpan.SequenceEqual("[DONE]".AsSpan()))
                     return;
 
