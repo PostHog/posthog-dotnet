@@ -887,6 +887,14 @@ public class PropertyFilterValue
             double overrideDouble => doubleValue.CompareTo(overrideDouble),
             long overrideLong => doubleValue.CompareTo(overrideLong),
             int overrideInt => doubleValue.CompareTo(overrideInt),
+            float overrideFloat => doubleValue.CompareTo((double)overrideFloat),
+            decimal overrideDecimal => doubleValue.CompareTo((double)overrideDecimal),
+            short overrideShort => doubleValue.CompareTo(overrideShort),
+            ushort overrideUShort => doubleValue.CompareTo(overrideUShort),
+            uint overrideUInt => doubleValue.CompareTo(overrideUInt),
+            ulong overrideULong => doubleValue.CompareTo(overrideULong),
+            byte overrideByte => doubleValue.CompareTo(overrideByte),
+            sbyte overrideSByte => doubleValue.CompareTo(overrideSByte),
             string overrideString when double.TryParse(overrideString, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleOverrideValue)
                 => doubleValue.CompareTo(doubleOverrideValue),
             _ => null
