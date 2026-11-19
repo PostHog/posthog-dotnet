@@ -933,6 +933,8 @@ public class PropertyFilterValue
         return ParseDate(overrideValue, UnresolvedFlagReason.MissingContext) switch
         {
             DateTimeOffset overrideDate => overrideDate < comparand,
+            // A DateTime of unspecified kind has no offset either, so it is UTC too.
+            DateTime { Kind: DateTimeKind.Unspecified } overrideDate => overrideDate < comparand.UtcDateTime,
             DateTime overrideDate => overrideDate.ToUniversalTime() < comparand.UtcDateTime,
 #if NET5_0_OR_GREATER
             // A date has no time of day, so compare it with the day the filter date falls on.
@@ -959,13 +961,44 @@ public class PropertyFilterValue
             return value;
         }
 
-        return value is string dateString
-            ? DateTimeOffset.TryParse(dateString, out var dto)
-                ? dto
-                : DateTime.TryParse(dateString, out var dt)
-                    ? dt
-                    : throw new InconclusiveMatchException("The date provided is not a valid format", reason)
-            : throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", reason);
+        if (value is not string dateString)
+        {
+            throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", reason);
+        }
+
+        // A date without an offset is UTC, the spec's rule when the project's time zone isn't known. A
+        // yyyy-MM-dd date is read with the invariant culture first, or a culture such as th-TH reads the year
+        // in its own calendar. Other formats, and times the invariant culture can't read (fi-FI writes
+        // 22.30.45), keep the current culture, which is how DateTime.ToString() wrote them.
+        return (StartsWithIsoDate(dateString) ? TryParseDate(dateString, CultureInfo.InvariantCulture) : null)
+            ?? TryParseDate(dateString, CultureInfo.CurrentCulture)
+            ?? throw new InconclusiveMatchException("The date provided is not a valid format", reason);
+    }
+
+    static object? TryParseDate(string value, CultureInfo culture)
+        => DateTimeOffset.TryParse(value, culture, DateTimeStyles.AssumeUniversal, out var dto)
+            ? dto
+            : DateTime.TryParse(value, culture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dt)
+                ? dt
+                : null;
+
+    static bool StartsWithIsoDate(string value)
+    {
+        var date = value.TrimStart();
+        if (date.Length < 10 || date[4] != '-' || date[7] != '-')
+        {
+            return false;
+        }
+
+        for (var i = 0; i < 10; i++)
+        {
+            if (i is not (4 or 7) && date[i] is < '0' or > '9')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
