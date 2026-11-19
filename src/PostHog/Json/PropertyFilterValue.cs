@@ -918,7 +918,6 @@ public class PropertyFilterValue
     /// <exception cref="InconclusiveMatchException">Thrown if the filter value can't be parsed.</exception>
     public bool IsDateBefore(object? overrideValue, DateTimeOffset now)
     {
-        // Question: Should we support DateOnly and TimeOnly?
         // Parse the filter first, so a bad filter is reported even when the override value is bad too.
         DateTimeOffset comparand = ParseFilterDate() switch
         {
@@ -939,7 +938,7 @@ public class PropertyFilterValue
             // A date has no time of day, so compare it with the day the filter date falls on.
             DateOnly overrideDate => overrideDate < DateOnly.FromDateTime(comparand.DateTime),
 #endif
-            _ => throw new InconclusiveMatchException("The date provided must be a string, DateTime, or DateTimeOffset, object", UnresolvedFlagReason.MissingContext)
+            _ => throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", UnresolvedFlagReason.MissingContext)
         };
     }
 
@@ -966,7 +965,7 @@ public class PropertyFilterValue
                 : DateTime.TryParse(dateString, out var dt)
                     ? dt
                     : throw new InconclusiveMatchException("The date provided is not a valid format", reason)
-            : throw new InconclusiveMatchException("The date provided must be a string, DateTime, or DateTimeOffset, object", reason);
+            : throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", reason);
     }
 
     /// <summary>

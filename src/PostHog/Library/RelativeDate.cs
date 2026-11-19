@@ -17,20 +17,6 @@ internal partial record RelativeDate
     }
 
     /// <summary>
-    /// Determines whether the specified date is before the date represented by this instance.
-    /// </summary>
-    /// <param name="other">The date to compare to this instance.</param>
-    /// <param name="now">The current date.</param>
-    public bool IsDateBefore(DateTimeOffset other, DateTimeOffset now) => other < _currentDateOffsetFunc?.Invoke(now);
-
-    /// <summary>
-    /// Determines whether the specified date is before the date represented by this instance.
-    /// </summary>
-    /// <param name="other">The date to compare to this instance.</param>
-    /// <param name="now">The current date.</param>
-    public bool IsDateBefore(DateTime other, DateTimeOffset now) => other < _currentDateOffsetFunc?.Invoke(now);
-
-    /// <summary>
     /// Gets the date this relative date points to, or <c>null</c> if its unit is not supported.
     /// </summary>
     /// <param name="now">The current date.</param>
