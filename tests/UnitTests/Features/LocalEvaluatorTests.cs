@@ -844,6 +844,8 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("2023-12-22T22:15:51Z", ComparisonOperator.IsDateAfter, "-1m", true)]
     [InlineData("2023-01-22T22:15:49Z", ComparisonOperator.IsDateAfter, "-1y", false)]
     [InlineData("2023-01-22T22:15:51Z", ComparisonOperator.IsDateAfter, "-1y", true)]
+    [InlineData("2024-01-21T16:15:50Z", ComparisonOperator.IsDateBefore, "-30h", false)]
+    [InlineData("2024-01-21T16:15:50Z", ComparisonOperator.IsDateAfter, "-30h", false)]
     public void CanPerformDateComparisonsAgainstDateTimeOffset(
         string joinDate,
         ComparisonOperator comparison,
@@ -944,6 +946,10 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("DateTimeOffset", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateAfter, false)]
     [InlineData("DateTimeOffset", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateBefore, false)]
     [InlineData("DateTimeOffset", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateAfter, true)]
+    [InlineData("DateTime", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("DateTime", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("DateTimeOffset", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("DateTimeOffset", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
 #if !NETCOREAPP3_1
     [InlineData("DateOnly", "2024-01-14T00:00:00Z", ComparisonOperator.IsDateBefore, true)]
     [InlineData("DateOnly", "2024-01-14T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
@@ -998,6 +1004,8 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("2024-01-15", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateBefore, false)]
     [InlineData("2024-01-15", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateAfter, false)]
     [InlineData("2024-01-15", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateAfter, true)]
+    [InlineData("2024-01-15", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("2024-01-15T00:00:00Z", "2024-01-15 00:00:00", ComparisonOperator.IsDateAfter, false)]
     [InlineData("2024-01-15 10:00:00", "2024-01-15T09:59:59Z", ComparisonOperator.IsDateBefore, true)]
     [InlineData("2024-01-15 10:00:00", "2024-01-15T10:00:01Z", ComparisonOperator.IsDateBefore, false)]
     [InlineData("2024-01-15T00:00:00Z", "2024-01-14 23:59:59", ComparisonOperator.IsDateBefore, true)]

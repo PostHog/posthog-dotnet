@@ -916,7 +916,11 @@ public class PropertyFilterValue
     /// <param name="now">The current date.</param>
     /// <returns><c>true</c> if the override date value is before the date represented by the filter value.</returns>
     /// <exception cref="InconclusiveMatchException">Thrown if the filter value can't be parsed.</exception>
-    public bool IsDateBefore(object? overrideValue, DateTimeOffset now)
+    public bool IsDateBefore(object? overrideValue, DateTimeOffset now) => CompareDate(overrideValue, now) < 0;
+
+    // Compares the override date with the filter date: negative when it is before, zero at the same instant,
+    // positive when it is after. is_date_before and is_date_after are both strict for instants.
+    internal int CompareDate(object? overrideValue, DateTimeOffset now)
     {
         // Parse the filter first, so a bad filter is reported even when the override value is bad too.
         DateTimeOffset comparand = ParseFilterDate() switch
@@ -932,13 +936,14 @@ public class PropertyFilterValue
 
         return ParseDate(overrideValue, UnresolvedFlagReason.MissingContext) switch
         {
-            DateTimeOffset overrideDate => overrideDate < comparand,
+            DateTimeOffset overrideDate => overrideDate.CompareTo(comparand),
             // A DateTime of unspecified kind has no offset either, so it is UTC too.
-            DateTime { Kind: DateTimeKind.Unspecified } overrideDate => overrideDate < comparand.UtcDateTime,
-            DateTime overrideDate => overrideDate.ToUniversalTime() < comparand.UtcDateTime,
+            DateTime { Kind: DateTimeKind.Unspecified } overrideDate => overrideDate.CompareTo(comparand.UtcDateTime),
+            DateTime overrideDate => overrideDate.ToUniversalTime().CompareTo(comparand.UtcDateTime),
 #if NET5_0_OR_GREATER
-            // A date has no time of day, so compare it with the day the filter date falls on.
-            DateOnly overrideDate => overrideDate < DateOnly.FromDateTime(comparand.DateTime),
+            // A date has no time of day, so compare it with the day the filter date falls on. On that day it
+            // isn't before the filter date, so it counts as after.
+            DateOnly overrideDate => overrideDate < DateOnly.FromDateTime(comparand.DateTime) ? -1 : 1,
 #endif
             _ => throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", UnresolvedFlagReason.MissingContext)
         };
