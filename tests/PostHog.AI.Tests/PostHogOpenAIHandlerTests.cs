@@ -308,6 +308,53 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    [Theory]
+    [InlineData("data:")]
+    [InlineData("data: ")]
+    public async Task SendAsyncParsesSseDataLinesWithOrWithoutSpaceAfterColon(string prefix)
+    {
+        var requestBody = new { model = "gpt-4", messages = new[] { new { role = "user", content = "hi" } }, stream = true };
+        var sse = prefix + "{\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Hello\"}}]}\n\n"
+            + prefix + "{\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 5, \"total_tokens\": 15}}\n\n"
+            + prefix + "[DONE]\n\n";
+        var streamContent = new StreamContent(new MemoryStream(new UTF8Encoding(false).GetBytes(sse)));
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK) { Content = streamContent };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await _client.PostAsync(new Uri("/v1/chat/completions", UriKind.Relative), requestContent);
+            var resultStream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(resultStream);
+            await reader.ReadToEndAsync();
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey(PostHogAIFieldNames.OutputTokens)
+                    && Convert.ToInt32(props[PostHogAIFieldNames.OutputTokens], System.Globalization.CultureInfo.InvariantCulture) == 5
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
     [Fact]
     public async Task SendAsyncCapturesToolCallsFromChatCompletionsStream()
     {
