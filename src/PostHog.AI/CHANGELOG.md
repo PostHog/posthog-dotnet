@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.14
+
+### Patch Changes
+
+- 019944d: The OpenAI handler now recognises SSE `data:` lines that have no space after the colon, so streamed responses from such servers are tracked instead of being skipped.
+
 ## 0.1.13
 
 ### Patch Changes
