@@ -1,4 +1,4 @@
-"""Check health discovery and the test inventory of harness 1.0.0 reports."""
+"""Check health discovery and the test inventory of harness 1.34.0 reports."""
 
 import argparse
 from collections import Counter

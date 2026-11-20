@@ -1,6 +1,10 @@
 #nullable enable
 PostHog.AllFeatureFlagsOptions.DisableGeoIp.get -> bool
 PostHog.AllFeatureFlagsOptions.DisableGeoIp.init -> void
+PostHog.AllFeatureFlagsOptions.GroupPropertyKeysKnownAbsent.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Collections.Generic.IReadOnlyCollection<string!>!>?
+PostHog.AllFeatureFlagsOptions.GroupPropertyKeysKnownAbsent.init -> void
+PostHog.AllFeatureFlagsOptions.PersonPropertyKeysKnownAbsent.get -> System.Collections.Generic.IReadOnlyCollection<string!>?
+PostHog.AllFeatureFlagsOptions.PersonPropertyKeysKnownAbsent.init -> void
 PostHog.Api.ComparisonOperator.EndsWith = 27 -> PostHog.Api.ComparisonOperator
 PostHog.Api.ComparisonOperator.NotEndsWith = 28 -> PostHog.Api.ComparisonOperator
 PostHog.Api.ComparisonOperator.NotStartsWith = 26 -> PostHog.Api.ComparisonOperator
