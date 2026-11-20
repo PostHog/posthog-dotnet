@@ -844,6 +844,8 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("2023-12-22T22:15:51Z", ComparisonOperator.IsDateAfter, "-1m", true)]
     [InlineData("2023-01-22T22:15:49Z", ComparisonOperator.IsDateAfter, "-1y", false)]
     [InlineData("2023-01-22T22:15:51Z", ComparisonOperator.IsDateAfter, "-1y", true)]
+    [InlineData("2024-01-21T16:15:50Z", ComparisonOperator.IsDateBefore, "-30h", false)]
+    [InlineData("2024-01-21T16:15:50Z", ComparisonOperator.IsDateAfter, "-30h", false)]
     public void CanPerformDateComparisonsAgainstDateTimeOffset(
         string joinDate,
         ComparisonOperator comparison,
@@ -944,6 +946,10 @@ public class TheEvaluateFeatureFlagMethod
     [InlineData("DateTimeOffset", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateAfter, false)]
     [InlineData("DateTimeOffset", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateBefore, false)]
     [InlineData("DateTimeOffset", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateAfter, true)]
+    [InlineData("DateTime", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("DateTime", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("DateTimeOffset", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("DateTimeOffset", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
 #if !NETCOREAPP3_1
     [InlineData("DateOnly", "2024-01-14T00:00:00Z", ComparisonOperator.IsDateBefore, true)]
     [InlineData("DateOnly", "2024-01-14T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
@@ -961,7 +967,7 @@ public class TheEvaluateFeatureFlagMethod
         var propertyValue = type switch
         {
             "DateTime" => (object)date.UtcDateTime,
-            // Unspecified kind, so it is read at the local offset, which east of UTC is before DateTime.MinValue.
+            // Unspecified kind, read as UTC; read at a local offset east of UTC, it would be before DateTime.MinValue.
             "default(DateTime)" => (object)default(DateTime),
             "DateTimeOffset" => (object)date,
 #if !NETCOREAPP3_1
@@ -989,6 +995,133 @@ public class TheEvaluateFeatureFlagMethod
             personProperties: new Dictionary<string, object?> { ["join_date"] = propertyValue });
 
         Assert.Equal(expected, result);
+    }
+
+    // Each pair has one row that fails when a date without an offset is read west of UTC and one
+    // that fails east of it, so the test catches a local-time read whatever zone the machine is in.
+    [Theory]
+    [InlineData("2024-01-15", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("2024-01-15", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("2024-01-15", "2024-01-14T23:59:59Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("2024-01-15", "2024-01-15T00:00:01Z", ComparisonOperator.IsDateAfter, true)]
+    [InlineData("2024-01-15", "2024-01-15T00:00:00Z", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("2024-01-15T00:00:00Z", "2024-01-15 00:00:00", ComparisonOperator.IsDateAfter, false)]
+    [InlineData("2024-01-15 10:00:00", "2024-01-15T09:59:59Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("2024-01-15 10:00:00", "2024-01-15T10:00:01Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("2024-01-15T00:00:00Z", "2024-01-14 23:59:59", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("2024-01-15T00:00:00Z", "2024-01-15 00:00:01", ComparisonOperator.IsDateBefore, false)]
+    public void ReadsDatesWithoutAnOffsetAsUtc(
+        string filterDate,
+        string joinDate,
+        ComparisonOperator comparison,
+        bool expected)
+    {
+        var flags = CreateFlags(
+            key: "join_date",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(filterDate),
+                    Operator = comparison
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "join_date",
+            distinctId: "1234b",
+            personProperties: new Dictionary<string, object?> { ["join_date"] = joinDate });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("2024-01-14T23:59:59", true)]
+    [InlineData("2024-01-15T00:00:01", false)]
+    public void ReadsADateTimeOfUnspecifiedKindAsUtc(string joinDate, bool expected)
+    {
+        var propertyValue = DateTime.Parse(joinDate, CultureInfo.InvariantCulture);
+        Assert.Equal(DateTimeKind.Unspecified, propertyValue.Kind);
+        var flags = CreateFlags(
+            key: "join_date",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue("2024-01-15T00:00:00Z"),
+                    Operator = ComparisonOperator.IsDateBefore
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "join_date",
+            distinctId: "1234b",
+            personProperties: new Dictionary<string, object?> { ["join_date"] = propertyValue });
+
+        Assert.Equal(expected, result);
+    }
+
+    // th-TH uses the Thai Buddhist calendar, fa-IR the Persian one and ar-SA the Hijri one, so a
+    // parse under the current culture reads 2024-01-15 as a year centuries away, or not at all. Only
+    // one side of each row is in that form; a value with a T was read correctly, so the error shows.
+    [Theory]
+    [InlineData("th-TH", "2024-01-15", "2024-01-14T23:59:59Z", true)]
+    [InlineData("th-TH", "2024-01-15T00:00:00Z", "2024-01-15 00:00:01", false)]
+    [InlineData("fa-IR", "2024-01-15", "2024-01-15T00:00:01Z", false)]
+    [InlineData("fa-IR", "2024-01-15T00:00:00Z", "2024-01-14 23:59:59", true)]
+    [InlineData("ar-SA", "2024-01-15", "2024-01-14T23:59:59Z", true)]
+    [InlineData("ar-SA", "2024-01-15T00:00:00Z", "2024-01-15 00:00:01", false)]
+    public void ReadsDatesTheSameWayUnderANonGregorianCulture(
+        string cultureName,
+        string filterDate,
+        string joinDate,
+        bool expected)
+    {
+        using var _ = TestCulture.Use(cultureName);
+        Assert.Equal(expected, EvaluateIsDateBefore(filterDate, joinDate));
+    }
+
+    // A date in another format, such as what DateTime.ToString() writes, is still read with the
+    // current culture: day first under pt-BR and de-DE, month first under en-US, and a time the
+    // invariant culture can't read after a yyyy-MM-dd date, as fi-FI writes it.
+    [Theory]
+    [InlineData("pt-BR", "01/02/2024", false)]
+    [InlineData("pt-BR", "15/01/2024", true)]
+    [InlineData("de-DE", "01.02.2024", false)]
+    [InlineData("en-US", "01/02/2024", true)]
+    [InlineData("fi-FI", "2024-01-15 22.30.45", true)]
+    public void ReadsDatesInOtherFormatsWithTheCurrentCulture(string cultureName, string joinDate, bool expected)
+    {
+        using var _ = TestCulture.Use(cultureName);
+        Assert.Equal(expected, EvaluateIsDateBefore("2024-01-16", joinDate));
+    }
+
+    static StringOrValue<bool> EvaluateIsDateBefore(string filterDate, string joinDate)
+    {
+        var flags = CreateFlags(
+            key: "join_date",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(filterDate),
+                    Operator = ComparisonOperator.IsDateBefore
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags, TimeProvider.System, NullLogger<LocalEvaluator>.Instance);
+
+        return localEvaluator.EvaluateFeatureFlag(
+            key: "join_date",
+            distinctId: "1234b",
+            personProperties: new Dictionary<string, object?> { ["join_date"] = joinDate });
     }
 
     [Theory]
