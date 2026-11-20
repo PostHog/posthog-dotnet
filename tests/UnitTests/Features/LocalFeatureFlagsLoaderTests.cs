@@ -87,6 +87,51 @@ public class VersionedDefinitionSnapshots
         Assert.Empty(remote.ReceivedRequests);
     }
 
+    public static TheoryData<string, string, object, bool> NumericOverrideRows => new()
+    {
+        { "gt", "0.1", 0.1f, false },
+        { "lte", "0.1", 0.1f, true },
+        { "gte", "0.1", 0.1f, true },
+        { "lt", "0.1", 0.1f, false },
+        { "gt", "0.1", MathF.BitIncrement(0.1f), true }, // control: genuinely above the threshold
+        { "lt", "1.0000000000000004", 1.0000000000000003m, true },
+        { "gt", "1.0000000000000004", 1.0000000000000003m, false },
+        { "lt", "0", float.NaN, false },
+        { "lt", "-1", float.NegativeInfinity, false },
+        { "gt", "-1", float.PositiveInfinity, false },
+        { "lte", "-1", float.NegativeInfinity, false },
+        { "gte", "0", float.NaN, false },
+        { "lt", "0", double.NaN, false },
+        { "lt", "-1", double.NegativeInfinity, false },
+        { "gt", "-1", double.PositiveInfinity, false },
+        { "lt", "0", -1f, true }, // control: finite value still matches
+    };
+
+    [Theory]
+    [MemberData(nameof(NumericOverrideRows))]
+    public async Task NumericOverridesResolveLocallyWithoutRemoteRequests(string comparison, string filterJson, object overrideValue, bool expected)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        await using var client = container.Activate<PostHogClient>();
+        var remote = container.FakeHttpMessageHandler.AddFlagsResponse("""{"flags": {}}""");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(DefinitionsJson(filterJson, comparison, null), "\"numeric\"");
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+
+        var flags = await client.EvaluateFlagsAsync(
+            "person",
+            new FeatureFlagOptions
+            {
+                PersonProperties = new Dictionary<string, object?> { ["value"] = overrideValue },
+                OnlyEvaluateLocally = true
+            },
+            CancellationToken.None);
+
+        Assert.Contains("test", flags.Keys);
+        Assert.Equal(expected, flags.IsEnabled("test"));
+        Assert.Empty(flags.UnresolvedFlags);
+        Assert.Empty(remote.ReceivedRequests);
+    }
+
     static StringOrValue<bool> Evaluate(LocalEvaluator evaluator) => evaluator.EvaluateFeatureFlag(
         "test", "person", personProperties: new() { ["value"] = "banana" });
 }
