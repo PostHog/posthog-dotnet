@@ -3613,7 +3613,7 @@ public class TheUnresolvedFlagReasons
 
 public class TheNumericBoundaryOverrides
 {
-    static bool Evaluate(ComparisonOperator op, string filterValue, object overrideValue)
+    static StringOrValue<bool> Evaluate(ComparisonOperator op, string filterValue, object overrideValue)
     {
         var flags = new LocalEvaluationApiResult
         {
@@ -3648,7 +3648,7 @@ public class TheNumericBoundaryOverrides
             key: "numeric",
             distinctId: "distinct-id",
             personProperties: new Dictionary<string, object?> { ["score"] = overrideValue });
-        return result == true;
+        return result;
     }
 
     [Theory]
@@ -3664,7 +3664,7 @@ public class TheNumericBoundaryOverrides
     [Fact]
     public void StillSeesFloatsGenuinelyAboveTheThreshold()
     {
-        Assert.True(Evaluate(ComparisonOperator.GreaterThan, "0.1", MathF.BitIncrement(0.1f)));
+        Assert.Equal(true, Evaluate(ComparisonOperator.GreaterThan, "0.1", MathF.BitIncrement(0.1f)));
     }
 
     [Theory]
@@ -3686,12 +3686,12 @@ public class TheNumericBoundaryOverrides
     [InlineData(double.PositiveInfinity, ComparisonOperator.GreaterThan, "-1")]
     public void NonFiniteOverridesNeverSatisfyNumericRules(object overrideValue, ComparisonOperator op, string filterValue)
     {
-        Assert.False(Evaluate(op, filterValue, overrideValue));
+        Assert.Equal(false, Evaluate(op, filterValue, overrideValue));
     }
 
     [Fact]
     public void FiniteControlStillMatches()
     {
-        Assert.True(Evaluate(ComparisonOperator.LessThan, "0", -1f));
+        Assert.Equal(true, Evaluate(ComparisonOperator.LessThan, "0", -1f));
     }
 }
