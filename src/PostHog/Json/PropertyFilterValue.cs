@@ -887,8 +887,10 @@ public class PropertyFilterValue
             double overrideDouble => doubleValue.CompareTo(overrideDouble),
             long overrideLong => doubleValue.CompareTo(overrideLong),
             int overrideInt => doubleValue.CompareTo(overrideInt),
-            float overrideFloat => doubleValue.CompareTo((double)overrideFloat),
-            decimal overrideDecimal => doubleValue.CompareTo((double)overrideDecimal),
+            // Round-trip through the shortest string the JSON serializer emits, so the comparison sees the same
+            // binary64 value the flags API would parse, not the widened float (0.1f != 0.1d).
+            float overrideFloat => doubleValue.CompareTo(double.Parse(overrideFloat.ToString(CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture)),
+            decimal overrideDecimal => doubleValue.CompareTo(double.Parse(overrideDecimal.ToString(CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture)),
             short overrideShort => doubleValue.CompareTo(overrideShort),
             ushort overrideUShort => doubleValue.CompareTo(overrideUShort),
             uint overrideUInt => doubleValue.CompareTo(overrideUInt),

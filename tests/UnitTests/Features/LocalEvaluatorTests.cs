@@ -3610,3 +3610,88 @@ public class TheUnresolvedFlagReasons
         public override string ToString() => throw new InvalidOperationException("Cannot stringify");
     }
 }
+
+public class TheNumericBoundaryOverrides
+{
+    static bool Evaluate(ComparisonOperator op, string filterValue, object overrideValue)
+    {
+        var flags = new LocalEvaluationApiResult
+        {
+            Flags = [
+                new LocalFeatureFlag
+                {
+                    Id = 42,
+                    TeamId = 23,
+                    Name = "numeric-feature-flag",
+                    Key = "numeric",
+                    Filters = new FeatureFlagFilters {
+                        Groups = [
+                            new FeatureFlagGroup
+                            {
+                                Properties = [
+                                    new PropertyFilter
+                                    {
+                                        Type = FilterType.Person,
+                                        Key = "score",
+                                        Value = new PropertyFilterValue(filterValue),
+                                        Operator = op
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ],
+            GroupTypeMapping = new Dictionary<string, string>()
+        };
+        var result = new LocalEvaluator(flags).EvaluateFeatureFlag(
+            key: "numeric",
+            distinctId: "distinct-id",
+            personProperties: new Dictionary<string, object?> { ["score"] = overrideValue });
+        return result == true;
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.GreaterThan, "0.1", false)]
+    [InlineData(ComparisonOperator.LessThanOrEquals, "0.1", true)]
+    [InlineData(ComparisonOperator.GreaterThanOrEquals, "0.1", true)]
+    [InlineData(ComparisonOperator.LessThan, "0.1", false)]
+    public void ComparesFloatLikeItsJsonValue(ComparisonOperator op, string filterValue, bool expected)
+    {
+        Assert.Equal(expected, Evaluate(op, filterValue, 0.1f));
+    }
+
+    [Fact]
+    public void StillSeesFloatsGenuinelyAboveTheThreshold()
+    {
+        Assert.True(Evaluate(ComparisonOperator.GreaterThan, "0.1", MathF.BitIncrement(0.1f)));
+    }
+
+    [Theory]
+    [InlineData(ComparisonOperator.LessThan, "1.0000000000000004", true)]
+    [InlineData(ComparisonOperator.GreaterThan, "1.0000000000000004", false)]
+    public void ComparesDecimalLikeItsJsonValue(ComparisonOperator op, string filterValue, bool expected)
+    {
+        Assert.Equal(expected, Evaluate(op, filterValue, 1.0000000000000003m));
+    }
+
+    [Theory]
+    [InlineData(float.NaN, ComparisonOperator.LessThan, "0")]
+    [InlineData(float.NegativeInfinity, ComparisonOperator.LessThan, "-1")]
+    [InlineData(float.PositiveInfinity, ComparisonOperator.GreaterThan, "-1")]
+    [InlineData(float.NegativeInfinity, ComparisonOperator.LessThanOrEquals, "-1")]
+    [InlineData(float.NaN, ComparisonOperator.GreaterThanOrEquals, "0")]
+    [InlineData(double.NaN, ComparisonOperator.LessThan, "0")]
+    [InlineData(double.NegativeInfinity, ComparisonOperator.LessThan, "-1")]
+    [InlineData(double.PositiveInfinity, ComparisonOperator.GreaterThan, "-1")]
+    public void NonFiniteOverridesNeverSatisfyNumericRules(object overrideValue, ComparisonOperator op, string filterValue)
+    {
+        Assert.False(Evaluate(op, filterValue, overrideValue));
+    }
+
+    [Fact]
+    public void FiniteControlStillMatches()
+    {
+        Assert.True(Evaluate(ComparisonOperator.LessThan, "0", -1f));
+    }
+}
