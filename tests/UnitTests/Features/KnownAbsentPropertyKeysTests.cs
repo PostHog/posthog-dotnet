@@ -229,12 +229,12 @@ public class TheLocalEvaluator
             () => evaluator.EvaluateFeatureFlag("mixed-flag", "user", groups, knownAbsent: Person("tier")));
     }
 
-    static string CohortFlag(string operatorName, bool negation) => $$$"""
+    static string CohortFlag(string operatorName, bool negation, string valueJson = "\"pro\"") => $$$"""
         {"flags": [{"key": "cohort-flag", "active": true, "filters": {"groups": [{"properties": [
             {"key": "id", "type": "cohort", "value": 7}
         ], "rollout_percentage": 100}]}}],
          "cohorts": {"7": {"type": "AND", "values": [{"type": "AND", "values": [
-            {"key": "plan", "type": "person", "value": "pro", "operator": "{{{operatorName}}}", "negation": {{{(negation ? "true" : "false")}}}}
+            {"key": "plan", "type": "person", "value": {{{valueJson}}}, "operator": "{{{operatorName}}}", "negation": {{{(negation ? "true" : "false")}}}}
          ]}]} } }
         """;
 
@@ -256,6 +256,19 @@ public class TheLocalEvaluator
             knownAbsent: Person("plan"));
 
         Assert.Equal(expected, result.Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnsupportedCohortLeafOperatorOnAListedKeyStaysInconclusive(bool negation)
+    {
+        var evaluator = await CreateEvaluatorAsync(CohortFlag("not_between", negation, "[1, 2]"));
+
+        var exception = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("cohort-flag", "user", knownAbsent: Person("plan")));
+
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, exception.Reason);
     }
 
     [Fact]
