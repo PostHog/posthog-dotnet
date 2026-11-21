@@ -108,6 +108,78 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    private static bool HasResponsesInstructionsPayload(Dictionary<string, object> props)
+    {
+        if (props[PostHogAIFieldNames.Input] is not JsonArray input || input.Count != 2)
+        {
+            return false;
+        }
+
+        var hasInstructionsParam =
+            props.TryGetValue(PostHogAIFieldNames.ModelParameters, out var modelParams)
+            && modelParams is Dictionary<string, object> dict
+            && (dict.ContainsKey("instructions") || dict.ContainsKey("max_output_tokens"));
+
+        return input[0]!["role"]!.ToString() == "system"
+            && input[0]!["content"]!.ToString() == "You are a pirate."
+            && input[1]!["role"]!.ToString() == "user"
+            && input[1]!["content"]!.ToString() == "Hello"
+            && (int)props[PostHogAIFieldNames.MaxTokens] == 123
+            && !hasInstructionsParam;
+    }
+
+    [Fact]
+    public async Task SendAsyncCapturesResponsesApiInstructionsAndMaxOutputTokens()
+    {
+        var requestBody = new
+        {
+            model = "gpt-5",
+            instructions = "You are a pirate.",
+            input = "Hello",
+            max_output_tokens = 123,
+        };
+        var responseBody = new
+        {
+            id = "resp_123",
+            @object = "response",
+            model = "gpt-5",
+            output = Array.Empty<object>(),
+            usage = new { input_tokens = 9, output_tokens = 12, total_tokens = 21 },
+        };
+
+        using var responseContent = new StringContent(
+            JsonSerializer.Serialize(responseBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        using var response = await _client.PostAsync(
+            new Uri("/v1/responses", UriKind.Relative),
+            requestContent
+        );
+        Assert.True(response.IsSuccessStatusCode);
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props => HasResponsesInstructionsPayload(props)),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
     [Fact]
     public async Task SendAsyncCapturesEmbeddingEvent()
     {

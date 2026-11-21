@@ -283,7 +283,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             : temperature.ToString();
                 }
 
-                if (requestJson["max_tokens"] is JsonValue maxTokens)
+                // Chat Completions uses "max_tokens"; the Responses API uses "max_output_tokens".
+                if (
+                    (requestJson["max_tokens"] ?? requestJson["max_output_tokens"])
+                    is JsonValue maxTokens
+                )
                 {
                     eventProperties[PostHogAIFieldNames.MaxTokens] = maxTokens.TryGetValue<int>(
                         out var maxTokensInt
@@ -325,6 +329,8 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             && kvp.Key != "model"
                             && kvp.Key != "temperature"
                             && kvp.Key != "max_tokens"
+                            && kvp.Key != "max_output_tokens"
+                            && kvp.Key != "instructions"
                             && kvp.Key != "stream"
                             && kvp.Key != "tools"
                             && kvp.Key != "functions"
@@ -571,9 +577,37 @@ public class PostHogOpenAIHandler : DelegatingHandler
             return requestJson["prompt"]?.ToString() ?? "";
         }
 
-        if (requestJson["input"] != null) // For embeddings
+        if (requestJson["input"] != null) // For embeddings and the Responses API
         {
             var inputNode = requestJson["input"];
+
+            // The Responses API carries the system prompt in a top-level "instructions"
+            // field. Surface it as a leading system message so it is part of $ai_input.
+            if (requestJson["instructions"] is JsonValue instructionsNode
+                && instructionsNode.TryGetValue<string>(out var instructions)
+                && !string.IsNullOrEmpty(instructions))
+            {
+                var combined = new JsonArray
+                {
+                    new JsonObject { ["role"] = "system", ["content"] = instructions },
+                };
+                if (inputNode is JsonArray items)
+                {
+                    foreach (var item in items)
+                    {
+                        combined.Add(item?.DeepClone());
+                    }
+                }
+                else
+                {
+                    combined.Add(
+                        new JsonObject { ["role"] = "user", ["content"] = inputNode?.ToString() ?? "" }
+                    );
+                }
+
+                return combined;
+            }
+
             if (inputNode is JsonArray arr)
             {
                 return arr;
