@@ -926,7 +926,7 @@ public class PropertyFilterValue
         DateTimeOffset comparand = ParseFilterDate() switch
         {
             RelativeDate relativeDate => relativeDate.GetDate(now)
-                ?? throw new InconclusiveMatchException("The relative date unit is not supported", UnresolvedFlagReason.UnsupportedDefinition),
+                ?? throw new InconclusiveMatchException("The relative date unit is not supported, or the date falls before the year 1", UnresolvedFlagReason.UnsupportedDefinition),
             DateTimeOffset comparandDate => comparandDate,
             // ToUniversalTime clamps a date near DateTime.MinValue or MaxValue; converting it to a
             // DateTimeOffset at a local offset would throw instead.
