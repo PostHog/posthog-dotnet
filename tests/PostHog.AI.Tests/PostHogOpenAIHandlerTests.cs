@@ -467,6 +467,91 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SendAsyncMarksStreamTransportFailureAsErrorAndRethrows(bool useSyncRead)
+    {
+        var requestBody = new
+        {
+            model = "gpt-4",
+            messages = new[] { new { role = "user", content = "Say hi" } },
+            stream = true,
+        };
+        var sse = "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Hel\"}}]}\n\n";
+        var streamContent = new StreamContent(new FailingAfterBytesStream(new UTF8Encoding(false).GetBytes(sse)));
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK) { Content = streamContent };
+
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        HttpResponseMessage? response = null;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("/v1/chat/completions", UriKind.Relative))
+            {
+                Content = requestContent,
+            };
+            response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            var resultStream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(resultStream);
+            if (useSyncRead)
+            {
+                Assert.Throws<IOException>(() => reader.ReadToEnd());
+            }
+            else
+            {
+                await Assert.ThrowsAsync<IOException>(() => reader.ReadToEndAsync());
+            }
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    props.ContainsKey(PostHogAIFieldNames.IsError)
+                    && (bool)props[PostHogAIFieldNames.IsError]
+                    && props[PostHogAIFieldNames.Error].ToString()!.Contains("connection reset", StringComparison.Ordinal)
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    private sealed class FailingAfterBytesStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (Position >= Length)
+            {
+                throw new IOException("connection reset");
+            }
+
+            return base.Read(buffer, offset, count);
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (Position >= Length)
+            {
+                throw new IOException("connection reset");
+            }
+
+            return base.ReadAsync(buffer, cancellationToken);
+        }
+    }
+
     [Fact]
     public async Task SendAsyncDecodesMultibyteCharactersSplitAcrossStreamReads()
     {

@@ -689,7 +689,16 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         public override int Read(byte[] buffer, int offset, int count)
         {
-            var read = _innerStream.Read(buffer, offset, count);
+            int read;
+            try
+            {
+                read = _innerStream.Read(buffer, offset, count);
+            }
+            catch (Exception ex) when (RecordReadFailure(ex))
+            {
+                throw;
+            }
+
             if (read > 0)
             {
                 ProcessChunk(buffer, offset, read);
@@ -716,9 +725,18 @@ public class PostHogOpenAIHandler : DelegatingHandler
             CancellationToken cancellationToken = default
         )
         {
-            var read = await _innerStream
-                .ReadAsync(buffer, cancellationToken)
-                .ConfigureAwait(false);
+            int read;
+            try
+            {
+                read = await _innerStream
+                    .ReadAsync(buffer, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (RecordReadFailure(ex))
+            {
+                throw;
+            }
+
             if (read > 0)
             {
                 if (MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> segment))
@@ -734,6 +752,18 @@ public class PostHogOpenAIHandler : DelegatingHandler
             }
 
             return read;
+        }
+
+        // Exception filter: records a transport failure (the caller still sees the original exception).
+        // Cancellation is initiated by the caller, so it is not reported as a stream error.
+        private bool RecordReadFailure(Exception ex)
+        {
+            if (ex is not OperationCanceledException && _streamError == null)
+            {
+                _streamError = new JsonObject { ["message"] = ex.Message };
+            }
+
+            return false;
         }
 
         private void ProcessChunk(byte[] buffer, int offset, int count)
