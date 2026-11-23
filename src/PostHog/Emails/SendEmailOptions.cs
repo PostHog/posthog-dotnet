@@ -161,8 +161,10 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// </summary>
     /// <remarks>
     /// Requires a PostHog server with code-send category support (older servers refuse <c>category</c> with HTTP 400
-    /// naming the unknown field) and code-send categories enabled for the project (otherwise PostHog refuses an
-    /// explicit category object with <c>categories_not_enabled</c>).
+    /// naming the unknown field). On a compatible server, <see cref="MessageCategory.Transactional"/> works even when
+    /// code-send categories are disabled for the project; enabling code-send categories for the project gates named
+    /// <see cref="MessageCategory"/> objects (otherwise PostHog refuses them with <c>categories_not_enabled</c>) and
+    /// template-category inheritance when <see cref="Category"/> is omitted.
     /// An email in a marketing category honors the recipient's opt-outs. Its <see cref="Html"/> needs a clickable
     /// <c>&lt;a href="{{ unsubscribe_url }}"&gt;</c> link, and its <see cref="Text"/>, when it has no
     /// <see cref="Html"/>, needs the <c>{{ unsubscribe_url }}</c> placeholder. PostHog replaces it with the
@@ -176,7 +178,8 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// <c>too_many_categories</c> when it would create a new category or restore an archived category past the
     /// project's active-category limit; and, for an email in a marketing category whose <see cref="TemplateKey"/>
     /// names no template, <c>unsubscribe_link_required</c> without that link or placeholder, <c>copies_not_allowed</c>
-    /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> when it has
+    /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> on a verified sender (or
+    /// <c>sandbox_fields_unsupported</c> on <c>attachments</c> when using the PostHog test sender) when it has
     /// <see cref="Attachments"/> (marketing code sends cannot carry attachments because marketing sending limits can
     /// hold delivery; the client uploads attachments before PostHog refuses the send). It refuses the send with status
     /// 422 and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing.

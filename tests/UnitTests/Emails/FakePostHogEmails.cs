@@ -36,7 +36,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
     static readonly HashSet<string> CategoryFields = ["key", "type", "name", "description"];
     static readonly Regex HtmlComment = new(@"<!--.*?(-->|$)", RegexOptions.Singleline);
     static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
-    static readonly Regex UnsubscribeLink = new(@"<a\b[^>]*\shref\s*=\s*([""'])\s*\{\{\s*unsubscribe_url\s*\}\}(?:#[^""']*)?\s*\1", RegexOptions.IgnoreCase);
+    static readonly Regex UnsubscribeLink = new(@"(?i:<a(?=[\s>])[^>]*\shref\s*=\s*)([""'])\s*\{\{\s*unsubscribe_url\s*\}\}(?:[?#][^""']*)?\s*\1");
 
     readonly ConcurrentDictionary<string, byte[]> _stored = new(StringComparer.Ordinal);
     readonly ConcurrentDictionary<string, SignedUpload> _signed = new(StringComparer.Ordinal);
@@ -406,25 +406,33 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
             if (resolvedCategoryType == "marketing")
             {
+                if (!HoldsUnsubscribePlaceholder(html, text))
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "unsubscribe_link_required", null, "A marketing email needs `{{ unsubscribe_url }}`.");
+                }
+
                 if (cc.Count > 0 || bcc.Count > 0)
                 {
                     return Refusal(HttpStatusCode.BadRequest, "copies_not_allowed", null, "A marketing email cannot have cc or bcc recipients.");
-                }
-
-                if (files.Count > 0)
-                {
-                    return Refusal(HttpStatusCode.BadRequest, "workflow_can_wait", null, "A marketing email cannot carry attachments.");
-                }
-
-                if (!HoldsUnsubscribeLink(html, text))
-                {
-                    return Refusal(HttpStatusCode.BadRequest, "unsubscribe_link_required", null, "A marketing email needs `{{ unsubscribe_url }}`.");
                 }
             }
 
             if (!isTemplate && parsedCategory.Defined is { } created)
             {
                 _categories.TryAdd(created.Key, created);
+            }
+
+            if (resolvedCategoryType == "marketing")
+            {
+                if (!HoldsClickableUnsubscribeLink(html))
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "unsubscribe_link_required", null, "A marketing email needs a clickable `{{ unsubscribe_url }}` link.");
+                }
+
+                if (files.Count > 0)
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "workflow_can_wait", "attachments", "A marketing email cannot carry attachments.");
+                }
             }
 
             _delivered.Add(new DeliveredEmail(
@@ -502,10 +510,14 @@ sealed class FakePostHogEmails : HttpMessageHandler
         return true;
     }
 
-    static bool HoldsUnsubscribeLink(string? html, string? text)
-        => !string.IsNullOrEmpty(html)
-            ? UnsubscribeLink.IsMatch(HtmlComment.Replace(html, string.Empty))
-            : !string.IsNullOrEmpty(text) && UnsubscribePlaceholder.IsMatch(text);
+    static bool HoldsUnsubscribePlaceholder(string? html, string? text)
+    {
+        var content = !string.IsNullOrEmpty(html) ? html : text;
+        return !string.IsNullOrEmpty(content) && UnsubscribePlaceholder.IsMatch(content);
+    }
+
+    static bool HoldsClickableUnsubscribeLink(string? html)
+        => string.IsNullOrEmpty(html) || UnsubscribeLink.IsMatch(HtmlComment.Replace(html, string.Empty));
 
     static string? UnknownField(JsonElement element, string[] known)
         => element.ValueKind != JsonValueKind.Object
