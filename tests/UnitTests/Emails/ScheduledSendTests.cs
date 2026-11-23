@@ -72,10 +72,14 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.All(harness.Requests, request => Assert.Equal("2026-12-01T09:00:00.124Z", SentTime(request)));
     }
 
-    [Fact]
-    public async Task ReturnsAnEmailThatGoesOutNowWhenTheTimeHadPassed()
+    [Theory]
+    [InlineData(-60)]
+    [InlineData(0)]
+    [InlineData(59)]
+    public async Task ReturnsAnEmailThatGoesOutNowWhenTheTimeHadPassed(int secondsAhead)
     {
         await using var harness = new EmailHarness();
+        harness.Time.Now = DueTime.AddSeconds(-secondsAhead);
         harness.Respond(
             HttpStatusCode.Accepted,
             $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null}""");
@@ -112,6 +116,39 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal("scheduled_at", error.Field);
         Assert.Equal(MessageId, error.MessageId);
         Assert.Contains(MessageId, error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(61)]
+    [InlineData(6 * 24 * 60 * 60)]
+    public async Task FailsWhenPostHogSendsATimeThatHasNotComeNow(int secondsAhead)
+    {
+        await using var harness = new EmailHarness();
+        harness.Time.Now = DueTime.AddSeconds(-secondsAhead);
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Single(harness.Requests);
+        Assert.Equal("scheduling_unconfirmed", error.Code);
+        Assert.Equal(MessageId, error.MessageId);
+    }
+
+    [Fact]
+    public async Task LogsTheWarningsOfAnAcceptanceWithoutAConfirmedTime()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "warnings": [{"code": "no_distinct_id", "detail": "Pass distinct_id."}]}""");
+
+        await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        var logged = Assert.Single(harness.Logs.GetAllEvents(minimumLevel: Microsoft.Extensions.Logging.LogLevel.Warning));
+        Assert.Equal("PostHog email warning no_distinct_id: Pass distinct_id.", logged.Message);
     }
 
     [Fact]

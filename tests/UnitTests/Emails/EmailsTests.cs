@@ -1580,6 +1580,11 @@ sealed class RecordingTimeProvider : TimeProvider
     readonly TaskCompletionSource<bool> _firstHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool _holding;
 
+    /// <summary>The time the client reads as now; the system clock when unset.</summary>
+    public DateTimeOffset? Now { get; set; }
+
+    public override DateTimeOffset GetUtcNow() => Now ?? base.GetUtcNow();
+
     public IReadOnlyList<TimeSpan> Delays
     {
         get

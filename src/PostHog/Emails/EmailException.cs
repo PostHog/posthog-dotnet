@@ -3,7 +3,8 @@ using System.Net;
 namespace PostHog.Emails;
 
 /// <summary>
-/// PostHog did not queue the email or answer with its status, or the client can't tell whether it did.
+/// PostHog did not queue the email or answer with its status, the client can't tell whether it did, or PostHog
+/// accepted a scheduled email without confirming its time.
 /// </summary>
 /// <remarks>
 /// Branch on <see cref="Code"/>, PostHog's stable error code, or on <see cref="Name"/>, a coarse category of the

@@ -30,6 +30,7 @@ internal sealed class EmailSender : IPostHogEmails
 
     const string EuAppHost = "https://eu.posthog.com";
     const string ScheduledAtField = "scheduled_at";
+    static readonly TimeSpan MaxClockDrift = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// Makes the client that uploads files, whatever <see cref="IHttpClientFactory"/> the app supplied. Over the
@@ -109,11 +110,6 @@ internal sealed class EmailSender : IPostHogEmails
                     .ConfigureAwait(false),
                 prepared.ScheduledAt),
             cancellationToken).ConfigureAwait(false);
-        foreach (var warning in result.Warnings)
-        {
-            _logger.LogWarningEmailWarning(warning.Code, warning.Message);
-        }
-
         return result;
     }
 
@@ -677,7 +673,7 @@ internal sealed class EmailSender : IPostHogEmails
         }
     }
 
-    static SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt)
+    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt)
     {
         if (!IsSuccess(reply.Status))
         {
@@ -708,6 +704,11 @@ internal sealed class EmailSender : IPostHogEmails
             }
         }
 
+        foreach (var warning in warnings)
+        {
+            _logger.LogWarningEmailWarning(warning.Code, warning.Message);
+        }
+
         var replayed = reply.Fields is { } replyFields
                        && replyFields.TryGetProperty("replayed", out var replayedValue)
                        && replayedValue.ValueKind == JsonValueKind.True;
@@ -726,17 +727,19 @@ internal sealed class EmailSender : IPostHogEmails
 
     /// <summary>
     /// Checks that the 202 for a send with <c>scheduled_at</c> confirms the requested time, or says the time had
-    /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field,
-    /// throws <c>scheduling_unconfirmed</c> with the accepted email's message ID.
+    /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field or
+    /// sends a time that is still ahead at once, throws <c>scheduling_unconfirmed</c> with the accepted email's
+    /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's.
     /// </summary>
-    static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(Reply reply, string id, DateTimeOffset requested)
+    (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(Reply reply, string id, DateTimeOffset requested)
     {
         var fields = reply.Fields!.Value;
         if (fields.TryGetProperty(ScheduledAtField, out var answered))
         {
             switch (Text(fields, "status"))
             {
-                case "queued" when answered.ValueKind == JsonValueKind.Null:
+                case "queued" when answered.ValueKind == JsonValueKind.Null
+                                   && requested <= _timeProvider.GetUtcNow() + MaxClockDrift:
                     return ("queued", null);
                 case "scheduled" when AnsweredTime(answered) is { } confirmed && confirmed.UtcTicks == requested.UtcTicks:
                     return ("scheduled", requested);
