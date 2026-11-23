@@ -180,6 +180,100 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    private static bool HasInputMessages(Dictionary<string, object> props, string expected)
+    {
+        var expectedMessages = expected.Split('|');
+        if (
+            props[PostHogAIFieldNames.Input] is not JsonArray input
+            || input.Count != expectedMessages.Length
+        )
+        {
+            return false;
+        }
+
+        for (var i = 0; i < expectedMessages.Length; i++)
+        {
+            if ($"{input[i]!["role"]}={input[i]!["content"]}" != expectedMessages[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    [Theory]
+    [InlineData("{\"model\":\"gpt-5\",\"previous_response_id\":\"resp_0\",\"instructions\":\"Be concise.\",\"max_output_tokens\":200}")]
+    [InlineData("{\"model\":\"gpt-5\",\"previous_response_id\":\"resp_0\",\"instructions\":\"Be concise.\",\"input\":null,\"max_output_tokens\":200}")]
+    public async Task SendAsyncCapturesResponsesInstructionsWithoutInput(string requestJson)
+    {
+        using var responseContent = new StringContent(
+            "{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":3,\"total_tokens\":8}}",
+            Encoding.UTF8,
+            "application/json"
+        );
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+        using var requestContent = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+        using var response = await _client.PostAsync(
+            new Uri("/v1/responses", UriKind.Relative),
+            requestContent
+        );
+        Assert.True(response.IsSuccessStatusCode);
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    HasInputMessages(props, "system=Be concise.")
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    [Fact]
+    public async Task SendAsyncCapturesResponsesInstructionsWithStoredPromptAndArrayInput()
+    {
+        const string requestJson =
+            "{\"model\":\"gpt-5\",\"prompt\":{\"id\":\"pmpt_123\",\"version\":\"1\"},\"instructions\":\"You are a pirate.\",\"input\":[{\"role\":\"user\",\"content\":\"Hello\"}]}";
+        using var responseContent = new StringContent(
+            "{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":3,\"total_tokens\":8}}",
+            Encoding.UTF8,
+            "application/json"
+        );
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+        using var requestContent = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+        using var response = await _client.PostAsync(
+            new Uri("/v1/responses", UriKind.Relative),
+            requestContent
+        );
+        Assert.True(response.IsSuccessStatusCode);
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    HasInputMessages(props, "system=You are a pirate.|user=Hello")
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
     [Fact]
     public async Task SendAsyncCapturesEmbeddingEvent()
     {

@@ -572,6 +572,36 @@ public class PostHogOpenAIHandler : DelegatingHandler
             return messages;
         }
 
+        // The Responses API carries the system prompt in a top-level "instructions"
+        // field. Surface it as a leading system message so it is part of $ai_input,
+        // even when "input" is omitted/null (previous_response_id, conversation) or
+        // a stored "prompt" template is used. Legacy completions never send it.
+        if (requestJson["instructions"] is JsonValue instructionsNode
+            && instructionsNode.TryGetValue<string>(out var instructions)
+            && !string.IsNullOrEmpty(instructions))
+        {
+            var combined = new JsonArray
+            {
+                new JsonObject { ["role"] = "system", ["content"] = instructions },
+            };
+            var inputNode = requestJson["input"];
+            if (inputNode is JsonArray items)
+            {
+                foreach (var item in items)
+                {
+                    combined.Add(item?.DeepClone());
+                }
+            }
+            else if (inputNode != null)
+            {
+                combined.Add(
+                    new JsonObject { ["role"] = "user", ["content"] = inputNode.ToString() }
+                );
+            }
+
+            return combined;
+        }
+
         if (requestJson["prompt"] != null)
         {
             return requestJson["prompt"]?.ToString() ?? "";
@@ -579,41 +609,12 @@ public class PostHogOpenAIHandler : DelegatingHandler
 
         if (requestJson["input"] != null) // For embeddings and the Responses API
         {
-            var inputNode = requestJson["input"];
-
-            // The Responses API carries the system prompt in a top-level "instructions"
-            // field. Surface it as a leading system message so it is part of $ai_input.
-            if (requestJson["instructions"] is JsonValue instructionsNode
-                && instructionsNode.TryGetValue<string>(out var instructions)
-                && !string.IsNullOrEmpty(instructions))
-            {
-                var combined = new JsonArray
-                {
-                    new JsonObject { ["role"] = "system", ["content"] = instructions },
-                };
-                if (inputNode is JsonArray items)
-                {
-                    foreach (var item in items)
-                    {
-                        combined.Add(item?.DeepClone());
-                    }
-                }
-                else
-                {
-                    combined.Add(
-                        new JsonObject { ["role"] = "user", ["content"] = inputNode?.ToString() ?? "" }
-                    );
-                }
-
-                return combined;
-            }
-
-            if (inputNode is JsonArray arr)
+            if (requestJson["input"] is JsonArray arr)
             {
                 return arr;
             }
 
-            return inputNode?.ToString() ?? "";
+            return requestJson["input"]?.ToString() ?? "";
         }
 
         return null;
