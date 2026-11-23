@@ -12,7 +12,7 @@ public class TheParseMethod
     [InlineData("-2w", "2024-01-22T22:15:50Z", "2024-01-08T22:15:50Z")]
     [InlineData("-1m", "2024-01-22T22:15:50Z", "2023-12-22T22:15:50Z")]
     [InlineData("-1y", "2024-01-22T22:15:50Z", "2023-01-22T22:15:50Z")]
-    public void CanCompareSpecifiedDateWithRelativeDate(string relativeDateString, string nowDate, string expectedBoundary)
+    public void ResolvesRelativeDateFromNow(string relativeDateString, string nowDate, string expectedBoundary)
     {
         var now = DateTimeOffset.Parse(nowDate, CultureInfo.InvariantCulture);
         var boundary = DateTimeOffset.Parse(expectedBoundary, CultureInfo.InvariantCulture);
@@ -20,12 +20,7 @@ public class TheParseMethod
         var relativeDate = RelativeDate.Parse(relativeDateString);
 
         Assert.NotNull(relativeDate);
-        Assert.True(relativeDate.IsDateBefore(boundary.AddTicks(-1), now));
-        Assert.False(relativeDate.IsDateBefore(boundary, now));
-        Assert.False(relativeDate.IsDateBefore(boundary.AddTicks(1), now));
-        Assert.True(relativeDate.IsDateBefore(boundary.AddTicks(-1).UtcDateTime, now));
-        Assert.False(relativeDate.IsDateBefore(boundary.UtcDateTime, now));
-        Assert.False(relativeDate.IsDateBefore(boundary.AddTicks(1).UtcDateTime, now));
+        Assert.Equal(boundary, relativeDate.GetDate(now));
     }
 
     [Theory]

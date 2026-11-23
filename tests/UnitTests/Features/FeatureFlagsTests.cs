@@ -4585,10 +4585,10 @@ public class FeatureFlagErrorTracking
         var result = await client.GetFeatureFlagAsync("my-flag", "distinct-id");
 
         // Even though the flag has enabled=true, failed=true means it should be filtered out
-        Assert.False(result);
+        Assert.Null(result);
         await client.FlushAsync();
         var received = captureRequestHandler.GetReceivedRequestBody(indented: true);
-        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags,flag_missing\"", received, StringComparison.Ordinal);
+        Assert.Contains("\"$feature_flag_error\": \"errors_while_computing_flags,evaluation_failed\"", received, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -4642,7 +4642,7 @@ public class FeatureFlagErrorTracking
 
         var result = await client.GetFeatureFlagAsync("variant-flag", "distinct-id");
 
-        Assert.False(result);
+        Assert.Null(result);
     }
 
     [Fact]

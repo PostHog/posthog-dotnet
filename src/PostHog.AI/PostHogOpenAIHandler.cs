@@ -94,22 +94,27 @@ public class PostHogOpenAIHandler : DelegatingHandler
             var trackingStream = new TrackingStream(
                 originalStream,
                 privacyMode,
-                (accumulatedResponse, usage) =>
+                (accumulatedResponse, usage, responseOutput, streamError, toolCalls) =>
                 {
                     stopwatch.Stop();
                     // Construct a pseudo-response JSON object from accumulated data
                     var responseNode = new JsonObject();
 
                     // Aggregate choices
-                    var choicesArray = new JsonArray();
+                    var choicesArray = responseOutput ?? new JsonArray();
                     responseNode["choices"] = choicesArray;
 
-                    if (!string.IsNullOrEmpty(accumulatedResponse))
+                    var hasToolCalls = toolCalls is { Count: > 0 };
+                    if (responseOutput == null && (!string.IsNullOrEmpty(accumulatedResponse) || hasToolCalls))
                     {
                         var choice = new JsonObject();
                         var message = new JsonObject();
                         message["role"] = "assistant";
-                        message["content"] = accumulatedResponse;
+                        message["content"] = string.IsNullOrEmpty(accumulatedResponse) ? null : accumulatedResponse;
+                        if (hasToolCalls)
+                        {
+                            message["tool_calls"] = toolCalls;
+                        }
                         choice["message"] = message;
                         choicesArray.Add(choice);
                     }
@@ -117,6 +122,11 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     if (usage != null)
                     {
                         responseNode["usage"] = usage;
+                    }
+
+                    if (streamError != null)
+                    {
+                        responseNode["error"] = streamError;
                     }
 
                     CaptureEvent(
@@ -396,6 +406,19 @@ public class PostHogOpenAIHandler : DelegatingHandler
                         eventProperties[PostHogAIFieldNames.CacheReadInputTokens] = cachedInt;
                     }
 
+                    // Reasoning models report their hidden reasoning tokens under
+                    // *_tokens_details.reasoning_tokens (Chat Completions / Responses API).
+                    if (
+                        (
+                            (usage["completion_tokens_details"] as JsonObject)?["reasoning_tokens"]
+                            ?? (usage["output_tokens_details"] as JsonObject)?["reasoning_tokens"]
+                        ) is JsonValue reasoningTokens
+                        && reasoningTokens.TryGetValue<int>(out var reasoningInt)
+                    )
+                    {
+                        eventProperties[PostHogAIFieldNames.ReasoningTokens] = reasoningInt;
+                    }
+
                     if (usage["cache_creation_input_tokens"] is JsonValue cacheCreationTokens)
                     {
                         eventProperties[PostHogAIFieldNames.CacheCreationInputTokens] =
@@ -424,7 +447,10 @@ public class PostHogOpenAIHandler : DelegatingHandler
             }
 
             // Error handling
-            if (exception != null || (response != null && !response.IsSuccessStatusCode))
+            // A streamed Responses API call answers HTTP 200 even when it ends in
+            // `response.failed` or an `error` event; the stream tracker surfaces that as `error`.
+            var streamError = responseJson?["error"];
+            if (exception != null || streamError != null || (response != null && !response.IsSuccessStatusCode))
             {
                 eventProperties[PostHogAIFieldNames.IsError] = true;
                 if (exception != null)
@@ -591,15 +617,55 @@ public class PostHogOpenAIHandler : DelegatingHandler
     {
         private readonly Stream _innerStream;
         private readonly bool _privacyMode;
-        private readonly Action<string?, JsonNode?> _onComplete;
+        private readonly Action<string?, JsonNode?, JsonArray?, JsonNode?, JsonArray?> _onComplete;
         private readonly StringBuilder? _accumulatedContent;
         private readonly StringBuilder _lineBuffer = new(capacity: 512);
         // Stateful so a multibyte character split across two reads is decoded once complete.
         private readonly Decoder _decoder = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetDecoder();
         private JsonNode? _usage;
+        private JsonArray? _responseOutput;
+        private JsonNode? _streamError;
+        // Chat Completions streams tool calls as fragments keyed by `index`; rebuilt here into full calls.
+        private readonly SortedDictionary<int, StreamedToolCall> _toolCalls = new();
         private bool _completed;
 
-        public TrackingStream(Stream innerStream, bool privacyMode, Action<string?, JsonNode?> onComplete)
+        private sealed class StreamedToolCall
+        {
+            public string? Id { get; set; }
+            public string? Type { get; set; }
+            public string? Name { get; set; }
+            public StringBuilder Arguments { get; } = new();
+        }
+
+        private JsonArray? BuildToolCalls()
+        {
+            if (_toolCalls.Count == 0)
+            {
+                return null;
+            }
+
+            var result = new JsonArray();
+            foreach (var call in _toolCalls.Values)
+            {
+                var function = new JsonObject
+                {
+                    ["name"] = call.Name,
+                    ["arguments"] = call.Arguments.ToString(),
+                };
+                result.Add(
+                    new JsonObject
+                    {
+                        ["id"] = call.Id,
+                        ["type"] = call.Type ?? "function",
+                        ["function"] = function,
+                    }
+                );
+            }
+
+            return result;
+        }
+
+        public TrackingStream(Stream innerStream, bool privacyMode, Action<string?, JsonNode?, JsonArray?, JsonNode?, JsonArray?> onComplete)
         {
             _innerStream = innerStream;
             _privacyMode = privacyMode;
@@ -750,9 +816,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
             if (trimmed.IsEmpty)
                 return;
 
-            if (trimmed.StartsWith("data: ".AsSpan(), StringComparison.Ordinal))
+            if (trimmed.StartsWith("data:".AsSpan(), StringComparison.Ordinal))
             {
-                var dataSpan = trimmed.Slice(6).Trim();
+                var dataSpan = trimmed.Slice(5).Trim();
                 if (dataSpan.IsEmpty || dataSpan.SequenceEqual("[DONE]".AsSpan()))
                     return;
 
@@ -768,6 +834,67 @@ public class PostHogOpenAIHandler : DelegatingHandler
                     {
                         // Extract usage into a JsonNode by re-parsing the raw text
                         _usage = JsonNode.Parse(usageElement.GetRawText());
+                    }
+
+                    // Terminal failure of a streamed Responses API call (HTTP status is already 200)
+                    if (
+                        root.TryGetProperty("type", out var failTypeElement)
+                        && failTypeElement.ValueKind == JsonValueKind.String
+                    )
+                    {
+                        var failType = failTypeElement.GetString();
+                        if (
+                            failType == "response.failed"
+                            && root.TryGetProperty("response", out var failedResponse)
+                            && failedResponse.ValueKind == JsonValueKind.Object
+                        )
+                        {
+                            _streamError =
+                                failedResponse.TryGetProperty("error", out var failedError)
+                                && failedError.ValueKind == JsonValueKind.Object
+                                    ? JsonNode.Parse(failedError.GetRawText())
+                                    : JsonValue.Create("response.failed");
+                        }
+                        else if (failType == "error")
+                        {
+                            _streamError = JsonNode.Parse(root.GetRawText());
+                        }
+                    }
+                    else if (
+                        root.TryGetProperty("error", out var chatError)
+                        && chatError.ValueKind == JsonValueKind.Object
+                    )
+                    {
+                        // Chat Completions streams signal a mid-stream failure as an untyped
+                        // `{"error": {...}}` chunk (HTTP status is already 200)
+                        _streamError = JsonNode.Parse(chatError.GetRawText());
+                    }
+
+                    if (
+                        root.TryGetProperty("type", out var typeElement)
+                        && typeElement.ValueKind == JsonValueKind.String
+                        && typeElement.GetString() is "response.completed" or "response.incomplete" or "response.failed"
+                        && root.TryGetProperty("response", out var responseElement)
+                        && responseElement.ValueKind == JsonValueKind.Object
+                    )
+                    {
+                        if (
+                            _usage == null
+                            && responseElement.TryGetProperty("usage", out var responseUsage)
+                            && responseUsage.ValueKind == JsonValueKind.Object
+                        )
+                        {
+                            _usage = JsonNode.Parse(responseUsage.GetRawText());
+                        }
+
+                        if (
+                            !_privacyMode
+                            && responseElement.TryGetProperty("output", out var responseOutput)
+                            && responseOutput.ValueKind == JsonValueKind.Array
+                        )
+                        {
+                            _responseOutput = JsonNode.Parse(responseOutput.GetRawText()) as JsonArray;
+                        }
                     }
 
                     // Check for delta content (skip in privacy mode)
@@ -791,6 +918,16 @@ public class PostHogOpenAIHandler : DelegatingHandler
                                 _accumulatedContent.Append(content);
                             }
                         }
+
+                        if (
+                            firstChoice.TryGetProperty("delta", out var toolDelta)
+                            && toolDelta.ValueKind == JsonValueKind.Object
+                            && toolDelta.TryGetProperty("tool_calls", out var toolCallsElement)
+                            && toolCallsElement.ValueKind == JsonValueKind.Array
+                        )
+                        {
+                            AccumulateToolCalls(toolCallsElement);
+                        }
                     }
                 }
                 catch (JsonException)
@@ -800,12 +937,66 @@ public class PostHogOpenAIHandler : DelegatingHandler
             }
         }
 
+        private void AccumulateToolCalls(JsonElement toolCallDeltas)
+        {
+            var position = 0;
+            foreach (var delta in toolCallDeltas.EnumerateArray())
+            {
+                if (delta.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var index = delta.TryGetProperty("index", out var indexElement)
+                    && indexElement.ValueKind == JsonValueKind.Number
+                    && indexElement.TryGetInt32(out var parsedIndex)
+                        ? parsedIndex
+                        : position;
+                position++;
+
+                if (!_toolCalls.TryGetValue(index, out var call))
+                {
+                    call = new StreamedToolCall();
+                    _toolCalls[index] = call;
+                }
+
+                if (delta.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String)
+                {
+                    call.Id = idElement.GetString();
+                }
+
+                if (delta.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
+                {
+                    call.Type = typeElement.GetString();
+                }
+
+                if (
+                    delta.TryGetProperty("function", out var function)
+                    && function.ValueKind == JsonValueKind.Object
+                )
+                {
+                    if (function.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
+                    {
+                        call.Name = nameElement.GetString();
+                    }
+
+                    if (
+                        function.TryGetProperty("arguments", out var argsElement)
+                        && argsElement.ValueKind == JsonValueKind.String
+                    )
+                    {
+                        call.Arguments.Append(argsElement.GetString());
+                    }
+                }
+            }
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing && !_completed)
             {
                 _completed = true;
-                _onComplete(_accumulatedContent?.ToString(), _usage);
+                _onComplete(_accumulatedContent?.ToString(), _usage, _responseOutput, _streamError, BuildToolCalls());
             }
 
             if (disposing)

@@ -1,5 +1,71 @@
 # PostHog
 
+## 2.26.5
+
+### Patch Changes
+
+- 7c7a926: Local evaluation of `is_date_before` and `is_date_after` now reads a date without an offset, such as `2024-01-15` or `2024-01-15 10:00:00`, and a `DateTime` of unspecified kind, as UTC instead of in the machine's time zone. A date that starts with `yyyy-MM-dd` is read with the invariant culture first, so a Thai, Persian or Hijri current culture no longer reads `2024-01-15` as a year centuries away or fails to parse it. Other formats are still read with the current culture. `is_date_after` is now strict like `is_date_before`: a value at exactly the filter date matches neither. A `DateOnly` on the filter's day still matches `is_date_after`.
+
+## 2.26.4
+
+### Patch Changes
+
+- 17b0d4c: Local evaluation of `is_date_before` and `is_date_after` now compares `DateTime` and `DateOnly` property values. A `DateTime` against an absolute date, and a `DateOnly` against any date, used to match `is_date_after` and miss `is_date_before` whatever the value. A `DateTime` near `DateTime.MinValue` no longer throws `ArgumentOutOfRangeException` east of UTC, and an unsupported relative date unit such as `-1D` is now inconclusive.
+
+## 2.26.3
+
+### Patch Changes
+
+- e45ad79: Send transactional emails, attachment uploads, and email status reads through the key-scoped `/api/messaging/` routes instead of `/api/projects/@current/messaging/`. Needs PostHog Cloud, or a self-hosted PostHog from 2026-11-18 or later. Older self-hosted versions answer these calls with a 404.
+
+## 2.26.2
+
+### Patch Changes
+
+- ca5a8d1: Flush queued events when the process exits. A `PostHogClient` that is never disposed no longer loses the events still in its queue at a normal exit. The final flush waits at most 5 seconds. Disposing the client removes the handler, as before.
+
+## 2.26.1
+
+### Patch Changes
+
+- b4c58a7: Return no result and report evaluation_failed for failed direct flag evaluations. Preserve successful local values and payloads when bulk remote fallback fails for those keys.
+
+## 2.26.0
+
+### Minor Changes
+
+- 6fb4c90: Adds `PostHogOptions.PromptRequestTimeout` (default 10 seconds). A prompt fetch that takes longer fails like a network error, so the caller gets the cached version, the fallback, or a `PromptFetchException` with the code `network_error`, instead of waiting for the HTTP client's own timeout.
+
+## 2.25.0
+
+### Minor Changes
+
+- 43c0c1f: `SendCodeEmailOptions` takes `Cc`, `Bcc` and `Attachments`. An `EmailAttachment` is a `Filename` and its `Content` as bytes, with an optional `ContentType` and `ContentId` for inline images. An email carries at most 10 files and at most 40 MB after Base64 encoding, about 29 MB of files; the client checks both before any request and throws `too_many_attachments` or `message_too_large`. It names each file by its SHA-256, uploads the files PostHog doesn't have yet straight to PostHog's file storage without the secret key, through an `HttpClient` the SDK makes for them, whatever `IHttpClientFactory` the app supplies, that never follows a redirect, and sends the email only after every upload succeeded. A refused upload throws `attachment_upload_failed` with the storage's answer in `Why`. Empty lists are left out of the request.
+
+## 2.24.0
+
+### Minor Changes
+
+- 8d90262: `SendCodeEmailOptions` takes `Sensitive` and `Tracking`. Set `Sensitive = true` when the email carries login links, reset tokens or codes: PostHog then keeps its links unchanged unless `Tracking` turns clicks on, leaves its subject off engagement events, and keeps its content out of logs. Left unset, the email takes the setting of the template made in PostHog whose key matches `TemplateKey`, and is sensitive when no template matches. `Tracking` chooses what PostHog tracks for the email. Left unset, PostHog counts opens and captures engagement events, and tracks clicks only when the email isn't sensitive. `EmailTracking.All` (or `true`) turns on opens, clicks and engagement events, and `EmailTracking.None` (or `false`) turns them all off. `new EmailTracking { Clicks = true }` sets `Opens`, `Clicks` and `Engagement` one by one. `CaptureEngagement` is now obsolete in favor of `Tracking` with `Engagement`; it still works, but a send can't set both. The client now sends it only when you set it; PostHog already reads a missing value as on. The new fields need PostHog's API support, which is rolling out.
+
+## 2.23.0
+
+### Minor Changes
+
+- 13a91f7: Add opt-in runtime exception capture with `PostHogOptions.CaptureUnhandledExceptions`. With `CaptureExceptions` enabled, the ASP.NET Core middleware now reports escaping request failures as unhandled and also captures exceptions consumed by a downstream error handler such as `UseExceptionHandler`. Nested entries in `$exception_list` now use mechanism type `chained` and omit `handled`.
+
+## 2.22.0
+
+### Minor Changes
+
+- 2fac43f: Adds `PromptResult.ToTraceProperties()`. It returns the `$ai_prompt_name` and `$ai_prompt_version` event properties for the prompt, so a captured `$ai_generation` event links to the prompt version that produced it. The dictionary is empty for a code fallback.
+
+## 2.21.2
+
+### Patch Changes
+
+- 49f7b47: Prompt error messages and docs now say that `SecretKey` can be a personal API key or a project secret API key with the `llm_prompt:read` scope. The messages said that only a personal API key works, which is no longer true.
+
 ## 2.21.1
 
 ### Patch Changes

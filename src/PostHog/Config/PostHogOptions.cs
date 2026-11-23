@@ -135,6 +135,15 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public bool Disabled { get; set; }
 
     /// <summary>
+    /// Captures unhandled runtime exceptions and unobserved task exceptions. Defaults to <c>false</c>.
+    /// An unhandled runtime exception triggers a best-effort flush before process termination.
+    /// </summary>
+    /// <remarks>
+    /// Read once during <see cref="PostHogClient"/> construction. Dispose the client to remove the runtime handlers.
+    /// </remarks>
+    public bool CaptureUnhandledExceptions { get; set; }
+
+    /// <summary>
     /// PostHog API host, usually 'https://us.i.posthog.com' (default) or 'https://eu.i.posthog.com'
     /// </summary>
     public Uri HostUrl { get; set; } = new("https://us.i.posthog.com");
@@ -162,8 +171,16 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     public bool AllowInsecureAppHost { get; set; }
 
     /// <summary>
-    /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request. (Default: 15 seconds)
+    /// The timeout for each attempt of an <see cref="PostHogClient.Emails"/> request to PostHog. (Default: 15 seconds)
     /// </summary>
+    /// <remarks>
+    /// An attachment's upload to PostHog's file storage can take longer for a large file, so it runs until the
+    /// <see cref="HttpClient"/>'s own timeout instead: 100 seconds unless your app changed it, so raise
+    /// <see cref="HttpClient.Timeout"/> when your app sends large files over a slow link. Uploads go through an
+    /// <see cref="HttpClient"/> the SDK makes for them, whatever <see cref="IHttpClientFactory"/> your app supplies:
+    /// it never follows a redirect and carries none of your app's handlers or default headers. It uses the system
+    /// proxy.
+    /// </remarks>
     public TimeSpan EmailRequestTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
@@ -209,6 +226,15 @@ public sealed class PostHogOptions : IOptions<PostHogOptions>
     /// are rate limited per key, so a short TTL on a busy service can hit that limit.
     /// </remarks>
     public TimeSpan PromptCacheTtl { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// The timeout for each <see cref="PostHogClient.Prompts"/> request. (Default: 10 seconds)
+    /// </summary>
+    /// <remarks>
+    /// A request that times out fails like a network error: the caller gets the cached version, the fallback, or a
+    /// <c>PromptFetchException</c> with the code <c>network_error</c>.
+    /// </remarks>
+    public TimeSpan PromptRequestTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// The size limit of the $feature_flag_sent cache.

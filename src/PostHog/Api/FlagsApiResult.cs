@@ -61,6 +61,8 @@ internal record FlagsApiResult
 /// </remarks>
 public record FlagsResult
 {
+    internal IReadOnlyCollection<string> FailedKeys { get; init; } = [];
+
     /// <summary>
     /// A dictionary of feature flags returned by the API.
     /// </summary>
@@ -139,6 +141,7 @@ internal static class FlagsApiResultExtensions
                         kvp => kvp.Key,
                         kvp => FeatureFlag.CreateFromFlagsApi(kvp.Key, kvp.Value, normalized, logger))
                 : new Dictionary<string, FeatureFlag>(),
+            FailedKeys = failedKeys,
             ErrorsWhileComputingFlags = results.ErrorsWhileComputingFlags,
             RequestId = results.RequestId,
             EvaluatedAt = results.EvaluatedAt,

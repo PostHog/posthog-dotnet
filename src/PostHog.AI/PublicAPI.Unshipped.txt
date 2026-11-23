@@ -1,2 +1,3 @@
 #nullable enable
 const PostHog.AI.PostHogAIFieldNames.LibVersion = "$ai_lib_version" -> string!
+const PostHog.AI.PostHogAIFieldNames.ReasoningTokens = "$ai_reasoning_tokens" -> string!

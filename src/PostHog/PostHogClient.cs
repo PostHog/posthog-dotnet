@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public sealed class PostHogClient : IPostHogClient
     readonly AsyncBatchHandler<CapturedEvent, CapturedEventBatchContext> _asyncBatchHandler;
     readonly PostHogApiClient _apiClient;
     readonly EmailSender _emails;
+    readonly HttpClient _uploadClient;
     readonly PromptFetcher _prompts;
     readonly LocalFeatureFlagsLoader _featureFlagsLoader;
     readonly IFeatureFlagCache _featureFlagsCache;
@@ -62,6 +64,10 @@ public sealed class PostHogClient : IPostHogClient
     readonly ITaskScheduler _taskScheduler;
     readonly ILogger<PostHogClient> _logger;
     readonly bool _isDisabled;
+    // Tracks exception instances already reported as unhandled so the runtime hooks don't report them again.
+    readonly ConditionalWeakTable<Exception, UnhandledCaptureMarker> _capturedUnhandledExceptions = new();
+    volatile bool _runtimeExceptionHandlersRegistered;
+    volatile bool _processExitHandlerRegistered;
     internal bool IsDisabled => _isDisabled;
     readonly IFeatureFlagEvaluationsHost _evaluationsHost;
     int _missingFeatureFlagDistinctIdWarningLogged;
@@ -82,6 +88,22 @@ public sealed class PostHogClient : IPostHogClient
         ITaskScheduler? taskScheduler = null,
         TimeProvider? timeProvider = null,
         ILoggerFactory? loggerFactory = null)
+        : this(NotNull(options), featureFlagsCache, httpClientFactory, taskScheduler, timeProvider, loggerFactory, uploadTransport: null)
+    {
+    }
+
+    /// <summary>
+    /// Constructs a <see cref="PostHogClient"/> whose attachment uploads go through <paramref name="uploadTransport"/>,
+    /// so tests can stand in for the file storage. A null transport gives the SDK's own, which never follows a redirect.
+    /// </summary>
+    internal PostHogClient(
+        IOptions<PostHogOptions> options,
+        IFeatureFlagCache? featureFlagsCache,
+        IHttpClientFactory? httpClientFactory,
+        ITaskScheduler? taskScheduler,
+        TimeProvider? timeProvider,
+        ILoggerFactory? loggerFactory,
+        HttpMessageHandler? uploadTransport)
     {
         _options = NotNull(options);
         _featureFlagsCache = featureFlagsCache ?? NullFeatureFlagCache.Instance;
@@ -103,6 +125,7 @@ public sealed class PostHogClient : IPostHogClient
         );
         _emails = new EmailSender(
             httpClient,
+            _uploadClient = EmailSender.CreateUploadClient(uploadTransport),
             _options.Value,
             _isDisabled,
             _timeProvider,
@@ -139,6 +162,18 @@ public sealed class PostHogClient : IPostHogClient
         });
 
         _evaluationsHost = new EvaluationsHost(this);
+        if (!_isDisabled)
+        {
+            // A client that is never disposed would otherwise lose the events still queued when the process exits.
+            AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+            _processExitHandlerRegistered = true;
+        }
+        if (!_isDisabled && options.Value.CaptureUnhandledExceptions)
+        {
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+            _runtimeExceptionHandlersRegistered = true;
+        }
         _logger.LogInfoClientCreated(options.Value.MaxBatchSize, options.Value.FlushInterval, options.Value.FlushAt);
     }
 
@@ -532,7 +567,8 @@ public sealed class PostHogClient : IPostHogClient
         GroupCollection? groups,
         bool sendFeatureFlags,
         FeatureFlagEvaluations? flags,
-        DateTimeOffset? timestamp)
+        DateTimeOffset? timestamp,
+        ExceptionCaptureBoundary? boundary = null)
     {
         if (CheckDisabledAndLog(nameof(CaptureException)))
         {
@@ -557,9 +593,17 @@ public sealed class PostHogClient : IPostHogClient
             }
 
             properties["$exception_personURL"] = $"{host}/project/{_options.Value.ProjectToken}/person/{identity.DistinctId}";
-            properties = ExceptionPropertiesBuilder.Build(properties, exception);
+            // An SDK integration (e.g. the ASP.NET Core middleware) may have entered a boundary for this exception.
+            boundary ??= ExceptionCaptureBoundary.ForException(exception);
+            properties = ExceptionPropertiesBuilder.Build(properties, exception, boundary);
 
-            return CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
+            var captured = CaptureCore(identity.DistinctId, "$exception", properties, groups, sendFeatureFlags, flags, timestamp);
+            if (captured && boundary is { Handled: false } && _runtimeExceptionHandlersRegistered)
+            {
+                MarkCapturedAsUnhandled(exception);
+            }
+
+            return captured;
         }
 #pragma warning disable CA1031 // Do not catch general exception types
         catch (Exception e)
@@ -567,6 +611,150 @@ public sealed class PostHogClient : IPostHogClient
         {
             _logger.LogErrorCaptureExceptionFailed(e);
             return false;
+        }
+    }
+
+    static readonly ExceptionCaptureBoundary UnhandledExceptionBoundary = new(
+        mechanismType: "onuncaughtexception",
+        source: "dotnet.appdomain_unhandled_exception",
+        handled: false);
+
+    static readonly ExceptionCaptureBoundary TerminatingUnhandledExceptionBoundary = new(
+        mechanismType: "onuncaughtexception",
+        source: "dotnet.appdomain_unhandled_exception",
+        handled: false,
+        level: "fatal");
+
+    static readonly ExceptionCaptureBoundary UnobservedTaskExceptionBoundary = new(
+        mechanismType: "task",
+        source: "dotnet.task_scheduler_unobserved_task_exception",
+        handled: false);
+
+    // Kept short on purpose: this blocks a process that is already crashing, on the crashing thread.
+    static readonly TimeSpan TerminatingFlushTimeout = TimeSpan.FromSeconds(2);
+
+    // Bounds how long an unreachable or retrying ingestion endpoint can hold up a normal process exit.
+    static readonly TimeSpan ProcessExitFlushTimeout = TimeSpan.FromSeconds(5);
+
+    sealed class UnhandledCaptureMarker
+    {
+        public int Captured;
+    }
+
+    /// <summary>
+    /// Atomically claims an exception instance for a runtime hook. Returns <c>false</c> when the instance was
+    /// already reported as unhandled, by this hook or by another boundary such as the request middleware.
+    /// </summary>
+    bool TryClaimUnhandledCapture(Exception exception)
+        => Interlocked.Exchange(ref _capturedUnhandledExceptions.GetOrCreateValue(exception).Captured, 1) == 0;
+
+    void MarkCapturedAsUnhandled(Exception exception)
+        => Interlocked.Exchange(ref _capturedUnhandledExceptions.GetOrCreateValue(exception).Captured, 1);
+
+    bool WasCapturedAsUnhandled(Exception exception)
+        => _capturedUnhandledExceptions.TryGetValue(exception, out var marker)
+           && Volatile.Read(ref marker.Captured) == 1;
+
+    void CaptureRuntimeException(Exception exception, ExceptionCaptureBoundary boundary)
+    {
+        // Only the runtime hooks deduplicate. Explicit and middleware captures always report, because an
+        // application can legitimately rethrow one cached exception instance for many separate failures.
+        if (!TryClaimUnhandledCapture(exception))
+        {
+            return;
+        }
+
+        CaptureExceptionCore(
+            exception, distinctId: null, properties: null, groups: null, sendFeatureFlags: false,
+            flags: null, timestamp: null, boundary: boundary);
+    }
+
+    internal void OnUnhandledException(object sender, UnhandledExceptionEventArgs args)
+    {
+        if (!_runtimeExceptionHandlersRegistered || args.ExceptionObject is not Exception exception)
+        {
+            return;
+        }
+
+        try
+        {
+            CaptureRuntimeException(
+                exception,
+                args.IsTerminating ? TerminatingUnhandledExceptionBoundary : UnhandledExceptionBoundary);
+            if (args.IsTerminating)
+            {
+                // The crashing thread may own a SynchronizationContext (e.g. a UI thread). Flush from the thread
+                // pool so the flush continuations never need the thread that is blocked here.
+                Task.Run(FlushAsync).Wait(TerminatingFlushTimeout);
+            }
+        }
+#pragma warning disable CA1031 // Reporting a crash must not replace the original failure.
+        catch
+#pragma warning restore CA1031
+        {
+        }
+    }
+
+    internal void OnProcessExit(object? sender, EventArgs args) => FlushOnProcessExit(ProcessExitFlushTimeout);
+
+    internal void FlushOnProcessExit(TimeSpan timeout)
+    {
+        if (!_processExitHandlerRegistered)
+        {
+            return;
+        }
+
+        try
+        {
+            // Flush from the thread pool so the flush continuations never need the thread that is blocked here.
+            if (!Task.Run(FlushAsync).Wait(timeout))
+            {
+                // The process exits with the flush unfinished, so nothing else would report the lost events.
+                _logger.LogWarningProcessExitFlushTimedOut(timeout.TotalSeconds);
+            }
+        }
+#pragma warning disable CA1031 // A failed final flush must not change how the process exits.
+        catch
+#pragma warning restore CA1031
+        {
+        }
+    }
+
+    internal void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs args)
+    {
+        if (!_runtimeExceptionHandlersRegistered)
+        {
+            return;
+        }
+
+        try
+        {
+            // The runtime wraps the task's failure in a fresh AggregateException. Peel single-member wrappers
+            // one level at a time so the event is typed by what actually failed, and check every level on the
+            // way down: any of those instances may be the one another boundary already reported.
+            Exception failure = args.Exception;
+            while (failure is AggregateException { InnerExceptions.Count: 1 } wrapper)
+            {
+                if (WasCapturedAsUnhandled(wrapper))
+                {
+                    return;
+                }
+
+                failure = wrapper.InnerExceptions[0];
+            }
+
+            if (failure is AggregateException { InnerExceptions.Count: > 1 } failures
+                && failures.InnerExceptions.All(WasCapturedAsUnhandled))
+            {
+                return;
+            }
+
+            CaptureRuntimeException(failure, UnobservedTaskExceptionBoundary);
+        }
+#pragma warning disable CA1031 // Reporting a task failure must not change task exception handling.
+        catch
+#pragma warning restore CA1031
+        {
         }
     }
 
@@ -787,7 +975,9 @@ public sealed class PostHogClient : IPostHogClient
                 response = flagsResult.Flags.GetValueOrDefault(featureKey);
                 if (response is null)
                 {
-                    errors.Add(FeatureFlagError.FlagMissing);
+                    errors.Add(flagsResult.FailedKeys.Contains(featureKey)
+                        ? FeatureFlagError.EvaluationFailed
+                        : FeatureFlagError.FlagMissing);
                     response = new FeatureFlag
                     {
                         Key = featureKey,
@@ -846,7 +1036,7 @@ public sealed class PostHogClient : IPostHogClient
                 cancellationToken);
         }
 
-        return response;
+        return errors.Contains(FeatureFlagError.EvaluationFailed) ? null : response;
     }
 
     /// <inheritdoc/>
@@ -1208,8 +1398,8 @@ public sealed class PostHogClient : IPostHogClient
 
                     // Local-wins merge: keep the locally-evaluated record (which carries
                     // locally_evaluated=true and $feature_flag_definitions_loaded_at) and only fill
-                    // in keys the local pass couldn't resolve. Differs from GetAllFeatureFlagsAsync,
-                    // which discards local results entirely on remote fallback.
+                    // in keys the local pass couldn't resolve. GetAllFeatureFlagsAsync instead
+                    // gives successful remote records precedence.
                     if (!records.ContainsKey(key))
                     {
                         records[key] = ToRecord(
@@ -1280,6 +1470,7 @@ public sealed class PostHogClient : IPostHogClient
             return EmptyFeatureFlags;
         }
 
+        IReadOnlyDictionary<string, FeatureFlag>? localFlags = null;
         if (_options.Value.SecretKey is not null)
         {
             // Attempt to load local feature flags.
@@ -1299,6 +1490,7 @@ public sealed class PostHogClient : IPostHogClient
                     {
                         return localEvaluationResults;
                     }
+                    localFlags = localEvaluationResults;
                 }
             }
             catch (ApiException e) when (e.ErrorType is "quota_limited")
@@ -1319,7 +1511,20 @@ public sealed class PostHogClient : IPostHogClient
         try
         {
             var flagsResult = await FetchFlagsAsync(resolvedDistinctId, options, cancellationToken);
-            return flagsResult.Flags;
+            if (localFlags is null || flagsResult.FailedKeys.Count == 0)
+            {
+                return flagsResult.Flags;
+            }
+
+            var merged = flagsResult.Flags.ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (var key in flagsResult.FailedKeys)
+            {
+                if (localFlags.TryGetValue(key, out var localFlag))
+                {
+                    merged[key] = localFlag;
+                }
+            }
+            return merged;
         }
         catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
         {
@@ -1497,6 +1702,17 @@ public sealed class PostHogClient : IPostHogClient
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (_processExitHandlerRegistered)
+        {
+            _processExitHandlerRegistered = false;
+            AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
+        }
+        if (_runtimeExceptionHandlersRegistered)
+        {
+            _runtimeExceptionHandlersRegistered = false;
+            AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
+            TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+        }
         // Stop background tasks first, while the API client is still alive.
         // The polling task in _featureFlagsLoader may call the API client during shutdown.
         try
@@ -1507,6 +1723,7 @@ public sealed class PostHogClient : IPostHogClient
         finally
         {
             _apiClient.Dispose();
+            _uploadClient.Dispose();
             _featureFlagCalledEventCache.Dispose();
         }
     }
@@ -1692,4 +1909,10 @@ internal static partial class PostHogClientLoggerExtensions
         Level = LogLevel.Error,
         Message = "Error in before send callback for event {EventName}; dropping event")]
     public static partial void LogErrorBeforeSendException(this ILogger<PostHogClient> logger, Exception exception, string eventName);
+
+    [LoggerMessage(
+        EventId = 27,
+        Level = LogLevel.Warning,
+        Message = "The final flush at process exit did not finish within {TimeoutSeconds} seconds; queued events may be lost.")]
+    public static partial void LogWarningProcessExitFlushTimedOut(this ILogger<PostHogClient> logger, double timeoutSeconds);
 }

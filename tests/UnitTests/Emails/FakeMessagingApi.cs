@@ -35,7 +35,7 @@ sealed class FakeMessagingApi
 
     public Task<HttpResponseMessage> Answer(RecordedRequest request)
     {
-        if (request.Method != HttpMethod.Post || !request.Url.EndsWith("/messaging/send/email/", StringComparison.Ordinal))
+        if (request.Method != HttpMethod.Post || !request.Url.EndsWith("/api/messaging/send/email/", StringComparison.Ordinal))
         {
             return Respond(HttpStatusCode.NotFound, """{"type": "invalid_request", "code": "not_found", "detail": "Not found."}""");
         }

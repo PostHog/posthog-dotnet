@@ -54,4 +54,27 @@ public sealed class PromptResult
     /// </remarks>
     public string Compile(IReadOnlyDictionary<string, object> variables)
         => PromptTemplate.Compile(Prompt, NotNull(variables));
+
+    /// <summary>
+    /// Returns the event properties that link an LLM event to this prompt: <c>$ai_prompt_name</c> and
+    /// <c>$ai_prompt_version</c>. Add them to the <c>$ai_generation</c> event you capture for the LLM call, and
+    /// PostHog shows which prompt and version produced the output.
+    /// </summary>
+    /// <returns>
+    /// A new dictionary with the two properties. You can add your other event properties to it. It is empty when
+    /// <see cref="Source"/> is <see cref="PromptSource.CodeFallback"/>, because no PostHog prompt was used.
+    /// </returns>
+    public Dictionary<string, object> ToTraceProperties()
+    {
+        var properties = new Dictionary<string, object>();
+        if (Name is not null)
+        {
+            properties["$ai_prompt_name"] = Name;
+        }
+        if (Version is not null)
+        {
+            properties["$ai_prompt_version"] = Version.Value;
+        }
+        return properties;
+    }
 }

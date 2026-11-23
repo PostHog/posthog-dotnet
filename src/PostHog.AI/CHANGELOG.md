@@ -1,5 +1,36 @@
 # PostHog.AI
 
+## 0.1.14
+
+### Patch Changes
+
+- 019944d: The OpenAI handler now recognises SSE `data:` lines that have no space after the colon, so streamed responses from such servers are tracked instead of being skipped.
+
+## 0.1.13
+
+### Patch Changes
+
+- 802ad9e: OpenAI Chat Completions streams now capture `delta.tool_calls` in `$ai_output_choices`, so generations that only call tools are no longer recorded with empty output.
+
+## 0.1.12
+
+### Patch Changes
+
+- ea7757c: OpenAI Chat Completions streams that end in an `{"error": ...}` chunk now set `$ai_is_error` and `$ai_error`.
+
+## 0.1.11
+
+### Patch Changes
+
+- 1eb4955: OpenAI Responses streams that end in `response.failed` or an `error` event now set `$ai_is_error` and `$ai_error`.
+
+## 0.1.10
+
+### Patch Changes
+
+- 34fe399: Capture OpenAI reasoning token usage as `$ai_reasoning_tokens` for Chat Completions and Responses API calls.
+- f7ce850: Capture token usage and structured output from terminal OpenAI Responses API streaming events in `$ai_generation` events, including incomplete and failed responses.
+
 ## 0.1.9
 
 ### Patch Changes

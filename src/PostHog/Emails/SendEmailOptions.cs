@@ -62,6 +62,12 @@ public sealed class SendTemplateEmailOptions : SendEmailOptions
 /// <remarks>
 /// Needs <see cref="Html"/>, <see cref="Text"/> or both. To send a React email, render it to HTML in your app first
 /// and pass it as <see cref="Html"/>.
+/// <para>
+/// A PostHog version that doesn't take <see cref="Cc"/> or <see cref="Bcc"/> yet refuses the send with a
+/// <c>validation_error</c> whose <see cref="EmailException.Field"/> names the field. A project that can't send files
+/// yet gets <c>field_not_accepted</c>. A PostHog version without file uploads, or a project that can't send email
+/// from code, answers <c>not_found</c> on <c>attachments</c> with PostHog's reason. None of them sends the email.
+/// </para>
 /// </remarks>
 public sealed class SendCodeEmailOptions : SendEmailOptions
 {
@@ -97,6 +103,57 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public IReadOnlyList<string>? ReplyTo { get; init; }
 
     /// <summary>
+    /// Bare addresses, such as <c>finance@example.com</c>, that get a visible copy. At most 10.
+    /// </summary>
+    public IReadOnlyList<string>? Cc { get; init; }
+
+    /// <summary>
+    /// Bare addresses that get a copy the other recipients never see. At most 10.
+    /// </summary>
+    public IReadOnlyList<string>? Bcc { get; init; }
+
+    /// <summary>
+    /// Files sent with the email: at most 10, and at most 40 MB for the whole email after Base64 encoding, which
+    /// leaves about 29 MB for the files.
+    /// </summary>
+    /// <remarks>
+    /// The client checks both limits before any request. It then asks PostHog which files it lacks, uploads each of
+    /// those straight to PostHog's file storage, and sends the email only once every upload succeeded. A file this
+    /// project sent before is usually still stored and isn't uploaded again. Uploads go to the storage host PostHog
+    /// names, not to <see cref="PostHogOptions.AppHost"/>, never carry the secret key, and never follow a redirect:
+    /// a redirect fails the send with <c>attachment_upload_failed</c>.
+    /// </remarks>
+    public IReadOnlyList<EmailAttachment>? Attachments { get; init; }
+
+    /// <summary>
+    /// Whether the email is sensitive: set <c>true</c> when it carries login links, reset tokens or codes. A sensitive
+    /// email keeps its links unchanged unless <see cref="Tracking"/> turns clicks on, leaves its subject off
+    /// engagement events, and keeps its content out of logs.
+    /// </summary>
+    /// <remarks>
+    /// Left unset, the email takes the setting of the template made in PostHog whose key matches
+    /// <see cref="TemplateKey"/>, and is sensitive when no template matches. The send includes it only when you set it.
+    /// Needs PostHog's API support for <c>sensitive</c>, which is rolling out; until then PostHog refuses a send that
+    /// sets it. A template made in PostHog carries its own setting, so <see cref="SendTemplateEmailOptions"/> doesn't
+    /// take it.
+    /// </remarks>
+    public bool? Sensitive { get; init; }
+
+    /// <summary>
+    /// What PostHog tracks for the email: opens, clicks and engagement events. Left unset, PostHog counts opens and
+    /// captures engagement events, and tracks clicks only when the email isn't <see cref="Sensitive"/>.
+    /// </summary>
+    /// <remarks>
+    /// Set <see cref="EmailTracking.All"/> (or <c>true</c>) to turn on every kind, <see cref="EmailTracking.None"/>
+    /// (or <c>false</c>) to turn them all off, or an <see cref="EmailTracking"/> with <see cref="EmailTracking.Opens"/>,
+    /// <see cref="EmailTracking.Clicks"/> or <see cref="EmailTracking.Engagement"/> to set one kind. Left unset, the
+    /// send doesn't include it. Needs PostHog's API support for <c>tracking</c>, which is rolling out; until then
+    /// PostHog refuses a send that sets it. A template made in PostHog carries its own tracking setting, so
+    /// <see cref="SendTemplateEmailOptions"/> doesn't take it.
+    /// </remarks>
+    public EmailTracking? Tracking { get; init; }
+
+    /// <summary>
     /// The message category to send the email in. Without it, PostHog sends the email in the transactional category
     /// of the template that <see cref="TemplateKey"/> names, or as transactional with no category when no template has
     /// that key. <see cref="MessageCategory.Transactional"/> sends it as transactional with no category.
@@ -112,8 +169,9 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// <c>marketing_template</c> when <see cref="TemplateKey"/> names a template in a marketing category;
     /// <c>too_many_categories</c> when it would create a category past the project's limit; and, for an email in a
     /// marketing category whose <see cref="TemplateKey"/> names no template, <c>unsubscribe_link_required</c> without
-    /// that link or placeholder, or <c>copies_not_allowed</c> when it has copies. It refuses it with status 422 and
-    /// <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing.
+    /// that link or placeholder, or <c>copies_not_allowed</c> when it has <see cref="Cc"/> or <see cref="Bcc"/>. It
+    /// refuses it with status 422 and <c>recipient_opted_out</c> when the recipient opted out of the category or of all
+    /// marketing.
     /// </remarks>
     public MessageCategory? Category { get; init; }
 
@@ -122,8 +180,44 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// of the recipient. (Default: <c>true</c>)
     /// </summary>
     /// <remarks>
-    /// A project whose admin turned engagement capture off captures nothing, whatever the send asks. A template made
-    /// in PostHog follows the project's setting, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
+    /// Deprecated: set <see cref="EmailTracking.Engagement"/> on <see cref="Tracking"/> instead. It still works, but a
+    /// send can't set both. The send includes it only when you set it. A
+    /// project whose admin turned engagement capture off captures nothing, whatever the send asks.
     /// </remarks>
-    public bool CaptureEngagement { get; init; } = true;
+    [Obsolete("Use Tracking = new EmailTracking { Engagement = false } instead. A send can't set both.")]
+    public bool CaptureEngagement
+    {
+        get => CaptureEngagementIfSet ?? true;
+        init => CaptureEngagementIfSet = value;
+    }
+
+    internal bool? CaptureEngagementIfSet { get; private init; }
+}
+
+/// <summary>
+/// A file sent with a <see cref="SendCodeEmailOptions"/> email.
+/// </summary>
+public sealed class EmailAttachment
+{
+    /// <summary>
+    /// The file name the recipient sees, such as <c>invoice.pdf</c>. No path.
+    /// </summary>
+    public required string Filename { get; init; }
+
+    /// <summary>
+    /// The file's bytes. The client names the file by their SHA-256 and uploads them when PostHog doesn't have them
+    /// yet. PostHog can't fetch a file from a path or URL, so read the file first. An empty file throws
+    /// <see cref="ArgumentException"/> before any request.
+    /// </summary>
+    public required ReadOnlyMemory<byte> Content { get; init; }
+
+    /// <summary>
+    /// The MIME type, such as <c>application/pdf</c>. Without it, the type follows from <see cref="Filename"/>.
+    /// </summary>
+    public string? ContentType { get; init; }
+
+    /// <summary>
+    /// Shows the file inline: with <c>logo</c> here, reference it in the HTML as <c>&lt;img src="cid:logo"&gt;</c>.
+    /// </summary>
+    public string? ContentId { get; init; }
 }

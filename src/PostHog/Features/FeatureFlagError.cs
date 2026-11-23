@@ -18,6 +18,8 @@ internal static class FeatureFlagError
     /// </summary>
     public const string FlagMissing = "flag_missing";
 
+    public const string EvaluationFailed = "evaluation_failed";
+
     /// <summary>
     /// Flag has a loaded local definition but local evaluation could not resolve it
     /// </summary>

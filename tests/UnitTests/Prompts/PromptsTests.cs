@@ -460,7 +460,7 @@ public class TheGetAsyncMethod
 
     [Theory]
     [InlineData(HttpStatusCode.NotFound, "not_found", "was not found")]
-    [InlineData(HttpStatusCode.Unauthorized, "unauthorized", "personal API key (phx_...)")]
+    [InlineData(HttpStatusCode.Unauthorized, "unauthorized", "project secret API key (phs_...)")]
     [InlineData(HttpStatusCode.Forbidden, "forbidden", "llm_prompt:read")]
     [InlineData(HttpStatusCode.TooManyRequests, "rate_limited", "rate limited")]
     public async Task MapsHttpStatusesToCodes(HttpStatusCode statusCode, string expectedCode, string expectedMessagePart)
@@ -491,6 +491,36 @@ public class TheGetAsyncMethod
 
         Assert.Equal("rate_limited", exception.Code);
         Assert.Equal(TimeSpan.FromSeconds(30), exception.RetryAfter);
+    }
+
+    [Fact]
+    public async Task TreatsATimedOutRequestAsANetworkError()
+    {
+        var container = CreateContainer(options => options.PromptRequestTimeout = TimeSpan.FromMilliseconds(50));
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, async cancellationToken =>
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
+        });
+        var client = container.Activate<PostHogClient>();
+
+        var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAsync(PromptName));
+
+        Assert.Equal("network_error", exception.Code);
+        Assert.Contains("timed out after 0.05s", exception.Message, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<OperationCanceledException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task AcceptsATimeoutLongerThanTheCancellationLimit()
+    {
+        var container = CreateContainer(options => options.PromptRequestTimeout = TimeSpan.MaxValue);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl(), HttpMethod.Get, LatestPromptJson);
+        var client = container.Activate<PostHogClient>();
+
+        var result = await client.Prompts.GetAsync(PromptName);
+
+        Assert.Equal(PromptSource.Api, result.Source);
     }
 
     [Fact]
@@ -572,6 +602,7 @@ public class TheGetAsyncMethod
 
         Assert.Equal("missing_secret_key", exception.Code);
         Assert.Contains("phx_", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("phs_", exception.Message, StringComparison.Ordinal);
         Assert.Equal(PromptSource.CodeFallback, withFallback.Source);
     }
 
@@ -760,5 +791,31 @@ public class TheCompileMethod
         var compiled = prompt.Compile(variables);
 
         Assert.Equal(expected, compiled);
+    }
+}
+
+public class TheToTracePropertiesMethod
+{
+    [Theory]
+    [InlineData(PromptSource.Api)]
+    [InlineData(PromptSource.Cache)]
+    [InlineData(PromptSource.StaleCache)]
+    public void ReturnsTheNameAndVersionOfAFetchedPrompt(PromptSource source)
+    {
+        var prompt = new PromptResult { Source = source, Prompt = "Hello", Name = PromptName, Version = 3, Label = "production" };
+
+        var properties = prompt.ToTraceProperties();
+
+        Assert.Equal(
+            new Dictionary<string, object> { ["$ai_prompt_name"] = PromptName, ["$ai_prompt_version"] = 3 },
+            properties);
+    }
+
+    [Fact]
+    public void ReturnsNoPropertiesForACodeFallback()
+    {
+        var prompt = new PromptResult { Source = PromptSource.CodeFallback, Prompt = "Hello" };
+
+        Assert.Empty(prompt.ToTraceProperties());
     }
 }
