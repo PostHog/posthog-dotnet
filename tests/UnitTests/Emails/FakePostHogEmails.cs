@@ -34,7 +34,6 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
     static readonly string[] AttachmentFields = ["sha256", "filename", "content_type", "content_id"];
     static readonly HashSet<string> CategoryFields = ["key", "type", "name", "description"];
-    static readonly Regex HtmlComment = new(@"<!--.*?(-->|$)", RegexOptions.Singleline);
     static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
     static readonly Regex UnsubscribeHref = new(@"^\s*\{\{\s*unsubscribe_url\s*\}\}(?:[?#].*)?\s*$");
 
@@ -336,7 +335,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
         var cc = Texts(root, "cc");
         var bcc = Texts(root, "bcc");
 
-        var files = new List<DeliveredFile>();
+        var parsedAttachments = new List<(string Sha256, string Filename, string? ContentType, string? ContentId)>();
         if (root.TryGetProperty("attachments", out var references))
         {
             if (references.ValueKind != JsonValueKind.Array || references.GetArrayLength() is < 1 or > 10)
@@ -354,12 +353,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
                     return Refusal(HttpStatusCode.BadRequest, "invalid_request", $"attachments__{index}", "An attachment takes sha256, filename, content_type and content_id.");
                 }
 
-                if (!_stored.TryGetValue(sha256, out var content))
-                {
-                    return Refusal(HttpStatusCode.BadRequest, "attachment_not_uploaded", $"attachments__{index}__sha256", "A file this email names isn't uploaded, so PostHog didn't send the email.");
-                }
-
-                files.Add(new DeliveredFile(filename, Text(reference, "content_type"), Text(reference, "content_id"), content));
+                parsedAttachments.Add((sha256, filename, Text(reference, "content_type"), Text(reference, "content_id")));
             }
         }
 
@@ -420,7 +414,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
             if (resolvedCategoryType == "marketing")
             {
-                if (files.Count > 0)
+                if (parsedAttachments.Count > 0)
                 {
                     return Refusal(HttpStatusCode.BadRequest, "workflow_can_wait", "attachments", "A marketing email cannot carry attachments.");
                 }
@@ -429,6 +423,18 @@ sealed class FakePostHogEmails : HttpMessageHandler
                 {
                     return Refusal(HttpStatusCode.BadRequest, "unsubscribe_link_required", null, "A marketing email needs a clickable `{{ unsubscribe_url }}` link.");
                 }
+            }
+
+            var files = new List<DeliveredFile>(parsedAttachments.Count);
+            for (var index = 0; index < parsedAttachments.Count; index++)
+            {
+                var attachment = parsedAttachments[index];
+                if (!_stored.TryGetValue(attachment.Sha256, out var content))
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "attachment_not_uploaded", $"attachments__{index}__sha256", "A file this email names isn't uploaded, so PostHog didn't send the email.");
+                }
+
+                files.Add(new DeliveredFile(attachment.Filename, attachment.ContentType, attachment.ContentId, content));
             }
 
             _delivered.Add(new DeliveredEmail(
@@ -519,20 +525,31 @@ sealed class FakePostHogEmails : HttpMessageHandler
             return true;
         }
 
-        var visible = HtmlComment.Replace(html, string.Empty);
         var pos = 0;
-        while (pos < visible.Length)
+        while (pos < html.Length)
         {
-            var open = visible.IndexOf('<', pos);
-            if (open < 0 || open + 1 >= visible.Length)
+            var open = html.IndexOf('<', pos);
+            if (open < 0 || open + 1 >= html.Length)
             {
                 return false;
             }
 
             pos = open + 1;
-            if (visible[pos] is '/' or '!' or '?')
+            if (pos + 2 < html.Length && html[pos] == '!' && html[pos + 1] == '-' && html[pos + 2] == '-')
             {
-                var close = visible.IndexOf('>', pos);
+                var endComment = html.IndexOf("-->", pos + 3, StringComparison.Ordinal);
+                if (endComment < 0)
+                {
+                    return false;
+                }
+
+                pos = endComment + 3;
+                continue;
+            }
+
+            if (html[pos] is '/' or '!' or '?')
+            {
+                var close = html.IndexOf('>', pos);
                 if (close < 0)
                 {
                     return false;
@@ -542,69 +559,70 @@ sealed class FakePostHogEmails : HttpMessageHandler
                 continue;
             }
 
-            if (visible[pos] is not ((>= 'a' and <= 'z') or (>= 'A' and <= 'Z')))
+            if (html[pos] is not ((>= 'a' and <= 'z') or (>= 'A' and <= 'Z')))
             {
                 continue;
             }
 
             var tagStart = pos;
-            while (pos < visible.Length && !char.IsWhiteSpace(visible[pos]) && visible[pos] is not ('>' or '/'))
+            while (pos < html.Length && !char.IsWhiteSpace(html[pos]) && html[pos] is not ('>' or '/'))
             {
                 pos++;
             }
 
-            var isAnchor = string.Equals(visible.Substring(tagStart, pos - tagStart), "a", StringComparison.OrdinalIgnoreCase);
+            var isAnchor = string.Equals(html.Substring(tagStart, pos - tagStart), "a", StringComparison.OrdinalIgnoreCase);
+            var sawHref = false;
             var hasUnsubscribeHref = false;
-            while (pos < visible.Length && visible[pos] != '>')
+            while (pos < html.Length && html[pos] != '>')
             {
-                while (pos < visible.Length && char.IsWhiteSpace(visible[pos]))
+                while (pos < html.Length && char.IsWhiteSpace(html[pos]))
                 {
                     pos++;
                 }
 
-                if (pos >= visible.Length || visible[pos] == '>')
+                if (pos >= html.Length || html[pos] == '>')
                 {
                     break;
                 }
 
-                if (visible[pos] == '/')
+                if (html[pos] == '/')
                 {
                     pos++;
                     continue;
                 }
 
                 var nameStart = pos;
-                while (pos < visible.Length && !char.IsWhiteSpace(visible[pos]) && visible[pos] is not ('=' or '>' or '/'))
+                while (pos < html.Length && !char.IsWhiteSpace(html[pos]) && html[pos] is not ('=' or '>' or '/'))
                 {
                     pos++;
                 }
 
-                var name = visible.Substring(nameStart, pos - nameStart);
-                while (pos < visible.Length && char.IsWhiteSpace(visible[pos]))
+                var name = html.Substring(nameStart, pos - nameStart);
+                while (pos < html.Length && char.IsWhiteSpace(html[pos]))
                 {
                     pos++;
                 }
 
-                if (pos < visible.Length && visible[pos] == '=')
+                if (pos < html.Length && html[pos] == '=')
                 {
                     pos++;
-                    while (pos < visible.Length && char.IsWhiteSpace(visible[pos]))
+                    while (pos < html.Length && char.IsWhiteSpace(html[pos]))
                     {
                         pos++;
                     }
 
                     string value;
-                    if (pos < visible.Length && visible[pos] is '"' or '\'')
+                    if (pos < html.Length && html[pos] is '"' or '\'')
                     {
-                        var quote = visible[pos++];
+                        var quote = html[pos++];
                         var valueStart = pos;
-                        while (pos < visible.Length && visible[pos] != quote)
+                        while (pos < html.Length && html[pos] != quote)
                         {
                             pos++;
                         }
 
-                        value = visible.Substring(valueStart, pos - valueStart);
-                        if (pos < visible.Length)
+                        value = html.Substring(valueStart, pos - valueStart);
+                        if (pos < html.Length)
                         {
                             pos++;
                         }
@@ -612,28 +630,35 @@ sealed class FakePostHogEmails : HttpMessageHandler
                     else
                     {
                         var valueStart = pos;
-                        while (pos < visible.Length && !char.IsWhiteSpace(visible[pos]) && visible[pos] != '>')
+                        while (pos < html.Length && !char.IsWhiteSpace(html[pos]) && html[pos] != '>')
                         {
                             pos++;
                         }
 
-                        value = visible.Substring(valueStart, pos - valueStart);
+                        value = html.Substring(valueStart, pos - valueStart);
                     }
 
-                    if (isAnchor
-                        && string.Equals(name, "href", StringComparison.OrdinalIgnoreCase)
-                        && UnsubscribeHref.IsMatch(value))
+                    if (isAnchor && !sawHref && string.Equals(name, "href", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasUnsubscribeHref = true;
+                        sawHref = true;
+                        hasUnsubscribeHref = UnsubscribeHref.IsMatch(value);
                     }
                 }
-                else if (name.Length == 0)
+                else
                 {
-                    pos++;
+                    if (isAnchor && !sawHref && string.Equals(name, "href", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sawHref = true;
+                    }
+
+                    if (name.Length == 0)
+                    {
+                        pos++;
+                    }
                 }
             }
 
-            if (pos >= visible.Length)
+            if (pos >= html.Length)
             {
                 return false;
             }

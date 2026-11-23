@@ -269,6 +269,48 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(FakePostHogEmails.MessageId, result.Id);
         Assert.Equal(key, Assert.Single(posthog.Delivered).CategoryKey);
         Assert.Equal(new StoredCategory(key, type, name, description), Assert.Single(posthog.Categories).Value);
+        using var body = JsonDocument.Parse(Assert.Single(posthog.SendBodies));
+        var sentCategory = body.RootElement.GetProperty("category");
+        if (category.Description is null)
+        {
+            Assert.False(sentCategory.TryGetProperty("description", out _));
+        }
+        else
+        {
+            Assert.True(sentCategory.TryGetProperty("description", out var sentDescription));
+            Assert.Equal(category.Description, sentDescription.GetString());
+        }
+    }
+
+    [Fact]
+    public async Task KeepsAnEmptyCategoryDescriptionOnTheWireAndOmitsANullOne()
+    {
+        var posthog = new FakePostHogEmails();
+        await using var harness = new EmailHarness(posthog: posthog);
+
+        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        {
+            Key = "newsletter",
+            Type = MessageCategoryType.Marketing,
+            Name = "Newsletter",
+            Description = "",
+        }));
+        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        {
+            Key = "receipts",
+            Type = MessageCategoryType.Transactional,
+            Name = "Receipts",
+            Description = null,
+        }));
+
+        Assert.Equal(2, posthog.SendBodies.Count);
+        using var emptyBody = JsonDocument.Parse(posthog.SendBodies[0]);
+        var emptyCategory = emptyBody.RootElement.GetProperty("category");
+        Assert.True(emptyCategory.TryGetProperty("description", out var emptyDescription));
+        Assert.Equal("", emptyDescription.GetString());
+
+        using var nullBody = JsonDocument.Parse(posthog.SendBodies[1]);
+        Assert.False(nullBody.RootElement.GetProperty("category").TryGetProperty("description", out _));
     }
 
     public static TheoryData<MessageCategory?> NoCategory => new() { MessageCategory.Transactional, null };
