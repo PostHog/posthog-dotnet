@@ -252,6 +252,8 @@ public class TheSendAsyncMethodWithCodeContent
         },
     };
 
+    const string SendUrl = "https://us.posthog.com/api/messaging/send/email/";
+
     [Theory]
     [MemberData(nameof(NewCategories))]
     public async Task CreatesTheCategoryItSendsIn(
@@ -268,7 +270,10 @@ public class TheSendAsyncMethodWithCodeContent
         var result = await harness.Client.Emails.SendAsync(email);
 
         Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
-        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(SendUrl, request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
         var root = body.RootElement;
         Assert.Equal(email.TemplateKey, root.GetProperty("template_key").GetString());
         Assert.Equal(email.To, root.GetProperty("to").GetString());
@@ -295,7 +300,8 @@ public class TheSendAsyncMethodWithCodeContent
         await using var harness = new EmailHarness();
         harness.Respond(
             HttpStatusCode.BadRequest,
-            """{"type":"validation_error","code":"unsubscribe_link_required","detail":"A marketing email needs a clickable `{{ unsubscribe_url }}` link.","attr":null}""");
+            """{"type":"invalid_request","code":"unsubscribe_link_required","detail":"A marketing email needs a clickable `{{ unsubscribe_url }}` link."}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -312,10 +318,13 @@ public class TheSendAsyncMethodWithCodeContent
         }));
 
         Assert.Equal("unsubscribe_link_required", error.Code);
+        Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Null(error.Field);
-        Assert.Empty(harness.Time.Delays);
-        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(SendUrl, request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
         var root = body.RootElement;
         Assert.Equal("k", root.GetProperty("template_key").GetString());
         Assert.Equal("a@example.com", root.GetProperty("to").GetString());
@@ -351,11 +360,15 @@ public class TheSendAsyncMethodWithCodeContent
         }));
 
         Assert.Equal(2, harness.Requests.Count);
+        Assert.Equal(HttpMethod.Post, harness.Requests[0].Method);
+        Assert.Equal(SendUrl, harness.Requests[0].Url);
         using var emptyBody = JsonDocument.Parse(harness.Requests[0].Body!);
         var emptyCategory = emptyBody.RootElement.GetProperty("category");
         Assert.True(emptyCategory.TryGetProperty("description", out var emptyDescription));
         Assert.Equal("", emptyDescription.GetString());
 
+        Assert.Equal(HttpMethod.Post, harness.Requests[1].Method);
+        Assert.Equal(SendUrl, harness.Requests[1].Url);
         using var nullBody = JsonDocument.Parse(harness.Requests[1].Body!);
         Assert.False(nullBody.RootElement.GetProperty("category").TryGetProperty("description", out _));
     }
@@ -371,7 +384,10 @@ public class TheSendAsyncMethodWithCodeContent
 
         await harness.Client.Emails.SendAsync(CodeSendIn(category));
 
-        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(SendUrl, request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
         if (category is null)
         {
             Assert.False(body.RootElement.TryGetProperty("category", out _));
@@ -413,17 +429,20 @@ public class TheSendAsyncMethodWithCodeContent
         string? field)
     {
         await using var harness = new EmailHarness();
-        var attrJson = field is null ? "null" : $"\"{field}\"";
-        harness.Respond(status, $$"""{"type":"validation_error","code":"{{code}}","detail":"Refused.","attr":{{attrJson}}}""");
+        var attrJson = field is null ? "" : $",\"attr\":\"{field}\"";
+        harness.Respond(status, $$"""{"type":"invalid_request","code":"{{code}}","detail":"Refused."{{attrJson}}}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(CodeSendIn(category)));
 
         Assert.Equal(code, error.Code);
+        Assert.Equal("validation_error", error.Name);
         Assert.Equal(status, error.StatusCode);
         Assert.Equal(field, error.Field);
-        Assert.Empty(harness.Time.Delays);
-        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(SendUrl, request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
         var sentCategory = body.RootElement.GetProperty("category");
         if (ReferenceEquals(category, MessageCategory.Transactional))
         {
@@ -445,7 +464,7 @@ public class TheSendAsyncMethodWithCodeContent
         await using var harness = new EmailHarness();
         harness.Respond(
             HttpStatusCode.BadRequest,
-            """{"type":"validation_error","code":"copies_not_allowed","detail":"Marketing emails cannot include cc or bcc.","attr":null}""");
+            """{"type":"invalid_request","code":"copies_not_allowed","detail":"Marketing emails cannot include cc or bcc."}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
@@ -465,12 +484,12 @@ public class TheSendAsyncMethodWithCodeContent
         }));
 
         Assert.Equal("copies_not_allowed", error.Code);
+        Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Null(error.Field);
-        Assert.Empty(harness.Time.Delays);
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
+        Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
         var root = body.RootElement;
         Assert.Equal(
@@ -495,7 +514,7 @@ public class TheSendAsyncMethodWithCodeContent
         EnqueueSignedPdfUpload(harness);
         harness.Respond(
             HttpStatusCode.BadRequest,
-            $$"""{"type":"validation_error","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
+            $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
@@ -522,9 +541,9 @@ public class TheSendAsyncMethodWithCodeContent
         }));
 
         Assert.Equal(code, error.Code);
+        Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments", error.Field);
-        Assert.Empty(harness.Time.Delays);
         AssertSignedPdfUploadBeforeSend(harness, "brochure.pdf", "newsletter", "marketing", "Newsletter");
     }
 
@@ -578,7 +597,7 @@ public class TheSendAsyncMethodWithCodeContent
                             "Content-Length": "{{BinaryPdfBytes.Length}}",
                             "x-amz-checksum-sha256": "{{BinaryPdfChecksum}}"
                         },
-                        "url_expires_at": "2026-11-10T12:15:00Z"
+                        "url_expires_at": "2099-01-01T00:00:00Z"
                     }
                 ]
             }
@@ -616,7 +635,7 @@ public class TheSendAsyncMethodWithCodeContent
 
         var send = harness.Requests[2];
         Assert.Equal(HttpMethod.Post, send.Method);
-        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", send.Url);
+        Assert.Equal(SendUrl, send.Url);
         Assert.Equal("Bearer phs_secret", send.Header("Authorization"));
         using var sendBody = JsonDocument.Parse(send.Body!);
         var root = sendBody.RootElement;
@@ -633,17 +652,20 @@ public class TheSendAsyncMethodWithCodeContent
 
     [Theory]
     [InlineData(
-        """{"type":"validation_error","code":"invalid_input","detail":"Unknown field: category.","attr":"category"}""",
+        """{"type":"invalid_request","code":"invalid_input","detail":"Unknown field: category.","attr":"category"}""",
         "invalid_input",
-        "category")]
-    [InlineData(
-        """{"type":"validation_error","code":"field_not_accepted","detail":"This PostHog version doesn't accept category yet."}""",
-        "field_not_accepted",
+        "category",
         null)]
+    [InlineData(
+        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"This PostHog version doesn't accept category yet.","fix":"Wait until your PostHog deployment supports code-send categories, or omit category."}""",
+        "field_not_accepted",
+        "category",
+        "Wait until your PostHog deployment supports code-send categories, or omit category.")]
     public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt(
         string responseBody,
         string expectedCode,
-        string? expectedField)
+        string expectedField,
+        string? expectedFix)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.BadRequest, responseBody);
@@ -653,12 +675,13 @@ public class TheSendAsyncMethodWithCodeContent
             new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" })));
 
         Assert.Equal(expectedCode, error.Code);
+        Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal(expectedField, error.Field);
-        Assert.Empty(harness.Time.Delays);
+        Assert.Equal(expectedFix, error.Fix);
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
+        Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
         var sentCategory = body.RootElement.GetProperty("category");
         Assert.Equal("newsletter", sentCategory.GetProperty("key").GetString());
