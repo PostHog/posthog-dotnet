@@ -184,9 +184,9 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// <c>sandbox_fields_unsupported</c> on <c>attachments</c> when using the PostHog test sender) when it has
     /// <see cref="Attachments"/> (marketing code sends cannot carry attachments because marketing sending limits can
     /// hold delivery; the client first asks PostHog which attachments it lacks, uploads only those, and fails with any
-    /// upload or storage error before submitting the send for PostHog to refuse). When the recipient opted out of the
-    /// category or of all marketing, PostHog refuses the send with status 422 and <c>recipient_opted_out</c>, or, if
-    /// the opt-out lookup exceeds the admission budget, accepts the send and skips delivery in the worker.
+    /// upload or storage error before submitting the send for PostHog to refuse). It refuses the send with status 422
+    /// and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing (or if the
+    /// async opt-out lookup exceeds the admission budget, defers the preference check to the delivery worker).
     /// </remarks>
     public MessageCategory? Category { get; init; }
 

@@ -512,14 +512,13 @@ public class TheSendAsyncMethodWithCodeContent
     {
         using var posthog = new FakePostHogEmails();
         using var peer = new CategorizedSendPeer(posthog);
-        peer.HoldUpload();
         peer.RespondToSend(
             HttpStatusCode.BadRequest,
             $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
         peer.RespondToSend(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: peer);
 
-        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -540,27 +539,14 @@ public class TheSendAsyncMethodWithCodeContent
                     ContentType = "application/pdf",
                 },
             ],
-        });
-
-        try
-        {
-            await WaitForAsync(peer.UploadStarted, "Upload PUT did not start in time.");
-            Assert.False(sendTask.IsCompleted);
-            Assert.Equal(2, peer.Requests.Count);
-            Assert.DoesNotContain(peer.Requests, request => request.Url == SendUrl);
-        }
-        finally
-        {
-            peer.ReleaseUpload();
-        }
-
-        var error = await Assert.ThrowsAsync<EmailException>(() => sendTask);
+        }));
 
         Assert.Equal(code, error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments", error.Field);
         Assert.Equal(1, posthog.StorageWrites);
+        Assert.True(peer.UploadCompletedBeforeSend);
         AssertSignedPdfUploadBeforeSend(
             peer.Requests,
             "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
@@ -575,11 +561,10 @@ public class TheSendAsyncMethodWithCodeContent
     {
         using var posthog = new FakePostHogEmails();
         using var peer = new CategorizedSendPeer(posthog);
-        peer.HoldUpload();
         peer.RespondToSend(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: peer);
 
-        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var result = await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -602,22 +587,9 @@ public class TheSendAsyncMethodWithCodeContent
             ],
         });
 
-        try
-        {
-            await WaitForAsync(peer.UploadStarted, "Upload PUT did not start in time.");
-            Assert.False(sendTask.IsCompleted);
-            Assert.Equal(2, peer.Requests.Count);
-            Assert.DoesNotContain(peer.Requests, request => request.Url == SendUrl);
-        }
-        finally
-        {
-            peer.ReleaseUpload();
-        }
-
-        var result = await sendTask;
-
         Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.Equal(1, posthog.StorageWrites);
+        Assert.True(peer.UploadCompletedBeforeSend);
         AssertSignedPdfUploadBeforeSend(
             peer.Requests,
             "<p>Receipt</p>",
@@ -625,16 +597,6 @@ public class TheSendAsyncMethodWithCodeContent
             "receipts",
             "transactional",
             "Receipts");
-    }
-
-    static async Task WaitForAsync(Task task, string message)
-    {
-        if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(5))) != task)
-        {
-            throw new TimeoutException(message);
-        }
-
-        await task;
     }
 
     static void AssertSignedPdfUploadBeforeSend(
@@ -695,8 +657,8 @@ public class TheSendAsyncMethodWithCodeContent
         readonly HttpMessageInvoker _invoker = new(fake, disposeHandler: false);
         readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
         readonly List<RecordedRequest> _requests = [];
-        readonly TaskCompletionSource<bool> _uploadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        TaskCompletionSource<bool>? _uploadGate;
+        readonly HashSet<string> _completedUploads = new(StringComparer.Ordinal);
+        bool _uploadCompletedBeforeSend;
 
         public List<RecordedRequest> Requests
         {
@@ -709,11 +671,16 @@ public class TheSendAsyncMethodWithCodeContent
             }
         }
 
-        public Task UploadStarted => _uploadStarted.Task;
-
-        public void HoldUpload() => _uploadGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public void ReleaseUpload() => _uploadGate?.TrySetResult(true);
+        public bool UploadCompletedBeforeSend
+        {
+            get
+            {
+                lock (_completedUploads)
+                {
+                    return _uploadCompletedBeforeSend;
+                }
+            }
+        }
 
         public void RespondToSend(HttpStatusCode status, string body)
             => _sendResponses.Enqueue(() => new HttpResponseMessage(status)
@@ -755,21 +722,68 @@ public class TheSendAsyncMethodWithCodeContent
 
             if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/")
             {
+                var referenced = ReferencedAttachmentSha256s(body!);
+                bool allUploaded;
+                lock (_completedUploads)
+                {
+                    allUploaded = _completedUploads.IsSupersetOf(referenced);
+                    _uploadCompletedBeforeSend = _completedUploads.SetEquals(referenced);
+                }
+
                 if (!_sendResponses.TryDequeue(out var scripted))
                 {
                     throw new InvalidOperationException($"No response queued for {request.Method} {request.RequestUri}.");
                 }
 
-                return scripted();
+                var response = scripted();
+                if ((int)response.StatusCode is >= 200 and < 300 && !allUploaded)
+                {
+                    response.Dispose();
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                    {
+                        Content = new StringContent(
+                            """{"type":"invalid_request","code":"attachment_not_uploaded","attr":"attachments__0__sha256","detail":"A file this email names isn't uploaded, so PostHog didn't send the email."}""",
+                            Encoding.UTF8,
+                            "application/json"),
+                    };
+                }
+
+                return response;
             }
 
-            if (request.Method == HttpMethod.Put && _uploadGate is { } gate)
+            var fakeResponse = await _invoker.SendAsync(request, cancellationToken);
+            if (request.Method == HttpMethod.Put && fakeResponse.IsSuccessStatusCode)
             {
-                _uploadStarted.TrySetResult(true);
-                await gate.Task;
+                var path = request.RequestUri!.AbsolutePath;
+                var sha256 = path.Substring(path.LastIndexOf('/') + 1);
+                lock (_completedUploads)
+                {
+                    _completedUploads.Add(sha256);
+                }
             }
 
-            return await _invoker.SendAsync(request, cancellationToken);
+            return fakeResponse;
+        }
+
+        static List<string> ReferencedAttachmentSha256s(string json)
+        {
+            var hashes = new List<string>();
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.TryGetProperty("attachments", out var attachments)
+                && attachments.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var attachment in attachments.EnumerateArray())
+                {
+                    if (attachment.TryGetProperty("sha256", out var sha256)
+                        && sha256.ValueKind == JsonValueKind.String
+                        && sha256.GetString() is { } value)
+                    {
+                        hashes.Add(value);
+                    }
+                }
+            }
+
+            return hashes;
         }
 
         protected override void Dispose(bool disposing)
@@ -788,16 +802,19 @@ public class TheSendAsyncMethodWithCodeContent
         """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"Unknown field: category."}""",
         "invalid_input",
         "category",
+        null,
         null)]
     [InlineData(
-        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"This PostHog version doesn't accept category yet.","fix":"Wait until PostHog accepts category, then retry."}""",
+        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Wait until PostHog accepts `category`, then send the email again."}""",
         "field_not_accepted",
         "category",
-        "Wait until PostHog accepts category, then retry.")]
+        "This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.",
+        "Wait until PostHog accepts `category`, then send the email again.")]
     public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt(
         string responseBody,
         string expectedCode,
         string expectedField,
+        string? expectedWhy,
         string? expectedFix)
     {
         await using var harness = new EmailHarness();
@@ -811,6 +828,7 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal(expectedField, error.Field);
+        Assert.Equal(expectedWhy, error.Why);
         Assert.Equal(expectedFix, error.Fix);
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
