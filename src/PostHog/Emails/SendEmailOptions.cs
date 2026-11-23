@@ -59,8 +59,8 @@ public abstract class SendEmailOptions
     /// <see cref="IdempotencyKey"/>: another time fails with <c>idempotency_key_reused</c>. A
     /// <see cref="DateTime"/> converts as .NET converts it to a <see cref="DateTimeOffset"/>, so one whose
     /// <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Unspecified"/> reads as this machine's local time.
-    /// PostHog holds a scheduled code send's rendered content until the email goes out. To stop scheduled emails,
-    /// disable their workflow in PostHog until they reach a final status; that refuses every new send of it
+    /// PostHog queues a scheduled code send with its rendered content until the email goes out. To stop scheduled
+    /// emails, disable their workflow in PostHog until they reach a final status; that refuses every new send of it
     /// meanwhile.
     /// </para>
     /// </remarks>
@@ -85,8 +85,7 @@ public sealed class SendTemplateEmailOptions : SendEmailOptions
 }
 
 /// <summary>
-/// A send of email content your code rendered, named by a key. PostHog sends it as is, and holds it only until the
-/// email goes out.
+/// A send of email content your code rendered, named by a key. PostHog sends it as is.
 /// </summary>
 /// <remarks>
 /// Needs <see cref="Html"/>, <see cref="Text"/> or both. To send a React email, render it to HTML in your app first

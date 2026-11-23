@@ -109,6 +109,7 @@ public class TheSendAsyncMethodWithScheduledAt
     [InlineData("2026-12-01Z")]
     [InlineData("2026-12-01T00:00Z")]
     [InlineData("2026-12-01 00:00:00Z")]
+    [InlineData("2026-12-01T00:00:00.Z")]
     public async Task FailsWithTheMessageIdWhenPostHogConfirmsAnIncompleteTime(string answered)
         => await FailsWithTheMessageId(
             new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero),
@@ -163,6 +164,33 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Single(harness.Requests);
         Assert.Equal("scheduling_unconfirmed", error.Code);
         Assert.Equal(MessageId, error.MessageId);
+    }
+
+    [Fact]
+    public async Task ReturnsAnEmailThatGoesOutNowWithAClockAtTheEndOfTime()
+    {
+        await using var harness = new EmailHarness();
+        harness.Time.Now = DateTimeOffset.MaxValue.AddSeconds(-30);
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null}""");
+
+        var result = await harness.Client.Emails.SendAsync(TemplateSend(DateTimeOffset.MaxValue.AddSeconds(-60)));
+
+        Assert.Equal(("queued", null), (result.Status, result.ScheduledAt));
+    }
+
+    [Fact]
+    public async Task KeepsTheConfirmedScheduleWhenAWarningIsUnreadable()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "scheduled", "scheduled_at": "{{Due}}", "warnings": [{"code": "no_distinct_id", "detail": "\ud800"}]}""");
+
+        var result = await harness.Client.Emails.SendAsync(TemplateSend(DueTime));
+
+        Assert.Equal((MessageId, "scheduled", DueTime), (result.Id, result.Status, result.ScheduledAt));
     }
 
     [Fact]
