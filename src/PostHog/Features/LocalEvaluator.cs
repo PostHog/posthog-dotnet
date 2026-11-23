@@ -998,8 +998,8 @@ internal sealed class LocalEvaluator
 
     static bool IsFinite(object value) => value switch
     {
-        float f => float.IsFinite(f),
-        double d => double.IsFinite(d),
+        float f => !float.IsNaN(f) && !float.IsInfinity(f),
+        double d => !double.IsNaN(d) && !double.IsInfinity(d),
         _ => true
     };
 

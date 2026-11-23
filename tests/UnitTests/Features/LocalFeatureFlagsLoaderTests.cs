@@ -94,6 +94,8 @@ public class VersionedDefinitionSnapshots
         { "gte", "0.1", 0.1f, true },
         { "lt", "0.1", 0.1f, false },
         { "gt", "0.1", MathF.BitIncrement(0.1f), true }, // control: genuinely above the threshold
+        { "gt", "10000000", 10000001f, true }, // 8-digit float: "G7" would round to 1E+07
+        { "gt", "12345679", 12345678f, false },
         { "lt", "1.0000000000000004", 1.0000000000000003m, true },
         { "gt", "1.0000000000000004", 1.0000000000000003m, false },
         { "lt", "0", float.NaN, false },
