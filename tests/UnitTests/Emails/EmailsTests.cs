@@ -510,12 +510,13 @@ public class TheSendAsyncMethodWithCodeContent
     [InlineData("sandbox_fields_unsupported")]
     public async Task UploadsAttachmentsBeforeMarketingRefusal(string code)
     {
-        await using var harness = new EmailHarness();
-        EnqueueSignedPdfUpload(harness);
-        harness.Respond(
+        using var posthog = new FakePostHogEmails();
+        using var peer = new CategorizedSendPeer(posthog);
+        peer.RespondToSend(
             HttpStatusCode.BadRequest,
             $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        peer.RespondToSend(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        await using var harness = new EmailHarness(posthog: peer);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -544,15 +545,17 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments", error.Field);
-        AssertSignedPdfUploadBeforeSend(harness, "brochure.pdf", "newsletter", "marketing", "Newsletter");
+        Assert.Equal(1, posthog.StorageWrites);
+        Assert.Empty(posthog.Delivered);
+        AssertSignedPdfUploadBeforeSend(peer.Requests, "brochure.pdf", "newsletter", "marketing", "Newsletter");
     }
 
     [Fact]
     public async Task UploadsAttachmentsAndSendsTransactionalCategoryOnTheWire()
     {
-        await using var harness = new EmailHarness();
-        EnqueueSignedPdfUpload(harness);
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        using var posthog = new FakePostHogEmails();
+        using var peer = new CategorizedSendPeer(posthog);
+        await using var harness = new EmailHarness(posthog: peer);
 
         var result = await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -577,44 +580,26 @@ public class TheSendAsyncMethodWithCodeContent
             ],
         });
 
-        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
-        AssertSignedPdfUploadBeforeSend(harness, "invoice.pdf", "receipts", "transactional", "Receipts");
-    }
-
-    static void EnqueueSignedPdfUpload(EmailHarness harness)
-    {
-        harness.Respond(
-            HttpStatusCode.OK,
-            $$"""
-            {
-                "files": [
-                    {
-                        "sha256": "{{BinaryPdfSha256}}",
-                        "status": "upload",
-                        "url": "{{SignedPdfUploadUrl}}",
-                        "method": "PUT",
-                        "headers": {
-                            "Content-Length": "{{BinaryPdfBytes.Length}}",
-                            "x-amz-checksum-sha256": "{{BinaryPdfChecksum}}"
-                        },
-                        "url_expires_at": "2099-01-01T00:00:00Z"
-                    }
-                ]
-            }
-            """);
-        harness.Respond(HttpStatusCode.OK, string.Empty, "application/xml");
+        Assert.Equal(FakePostHogEmails.MessageId, result.Id);
+        Assert.Equal(1, posthog.StorageWrites);
+        var delivered = Assert.Single(posthog.Delivered);
+        var deliveredFile = Assert.Single(delivered.Attachments);
+        Assert.Equal("invoice.pdf", deliveredFile.Filename);
+        Assert.Equal("application/pdf", deliveredFile.ContentType);
+        Assert.Equal(BinaryPdfBytes, deliveredFile.Content);
+        AssertSignedPdfUploadBeforeSend(peer.Requests, "invoice.pdf", "receipts", "transactional", "Receipts");
     }
 
     static void AssertSignedPdfUploadBeforeSend(
-        EmailHarness harness,
+        IReadOnlyList<RecordedRequest> requests,
         string filename,
         string categoryKey,
         string categoryType,
         string categoryName)
     {
-        Assert.Equal(3, harness.Requests.Count);
+        Assert.Equal(3, requests.Count);
 
-        var prepare = harness.Requests[0];
+        var prepare = requests[0];
         Assert.Equal(HttpMethod.Post, prepare.Method);
         Assert.Equal("https://us.posthog.com/api/messaging/attachments/uploads/", prepare.Url);
         Assert.Equal("Bearer phs_secret", prepare.Header("Authorization"));
@@ -626,14 +611,17 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Equal(BinaryPdfBytes.Length, file.GetProperty("size").GetInt32());
         }
 
-        var upload = harness.Requests[1];
+        var upload = requests[1];
         Assert.Equal(HttpMethod.Put, upload.Method);
         Assert.Equal(SignedPdfUploadUrl, upload.Url);
         Assert.Null(upload.Header("Authorization"));
+        Assert.Equal(
+            BinaryPdfBytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            upload.Header("Content-Length"));
         Assert.Equal(BinaryPdfChecksum, upload.Header("x-amz-checksum-sha256"));
         Assert.Equal(BinaryPdfBytes, upload.BodyBytes);
 
-        var send = harness.Requests[2];
+        var send = requests[2];
         Assert.Equal(HttpMethod.Post, send.Method);
         Assert.Equal(SendUrl, send.Url);
         Assert.Equal("Bearer phs_secret", send.Header("Authorization"));
@@ -650,17 +638,126 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.False(sentCategory.TryGetProperty("description", out _));
     }
 
+    sealed class CategorizedSendPeer(FakePostHogEmails fake) : HttpMessageHandler
+    {
+        readonly HttpMessageInvoker _invoker = new(fake, disposeHandler: false);
+        readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
+        readonly List<RecordedRequest> _requests = [];
+
+        public IReadOnlyList<RecordedRequest> Requests
+        {
+            get
+            {
+                lock (_requests)
+                {
+                    return _requests.ToList();
+                }
+            }
+        }
+
+        public void RespondToSend(HttpStatusCode status, string body)
+            => _sendResponses.Enqueue(() => new HttpResponseMessage(status)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var header in request.Headers)
+            {
+                headers[header.Key] = string.Join(", ", header.Value);
+            }
+
+            string? body = null;
+            byte[]? bodyBytes = null;
+            if (request.Content is not null)
+            {
+                foreach (var header in request.Content.Headers)
+                {
+                    headers[header.Key] = string.Join(", ", header.Value);
+                }
+
+#if NET5_0_OR_GREATER
+                bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+#else
+                bodyBytes = await request.Content.ReadAsByteArrayAsync();
+#endif
+                body = Encoding.UTF8.GetString(bodyBytes);
+            }
+
+            lock (_requests)
+            {
+                _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body, bodyBytes));
+            }
+
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/")
+            {
+                if (_sendResponses.TryDequeue(out var scripted))
+                {
+                    return scripted();
+                }
+
+                using var forwarded = new HttpRequestMessage(request.Method, request.RequestUri)
+                {
+                    Content = new StringContent(StripCategory(body!), Encoding.UTF8, "application/json"),
+                };
+                foreach (var header in request.Headers)
+                {
+                    forwarded.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+
+                return await _invoker.SendAsync(forwarded, cancellationToken);
+            }
+
+            return await _invoker.SendAsync(request, cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _invoker.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        static string StripCategory(string json)
+        {
+            using var document = JsonDocument.Parse(json);
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (property.Name != "category")
+                    {
+                        property.WriteTo(writer);
+                    }
+                }
+
+                writer.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
+    }
+
     [Theory]
     [InlineData(
-        """{"type":"invalid_request","code":"invalid_input","detail":"Unknown field: category.","attr":"category"}""",
+        """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"Unknown field: category."}""",
         "invalid_input",
         "category",
         null)]
     [InlineData(
-        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"This PostHog version doesn't accept category yet.","fix":"Wait until your PostHog deployment supports code-send categories, or omit category."}""",
+        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"This PostHog version doesn't accept category yet.","fix":"Wait until PostHog accepts category, then retry."}""",
         "field_not_accepted",
         "category",
-        "Wait until your PostHog deployment supports code-send categories, or omit category.")]
+        "Wait until PostHog accepts category, then retry.")]
     public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt(
         string responseBody,
         string expectedCode,
