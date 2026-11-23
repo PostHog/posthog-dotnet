@@ -164,9 +164,7 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// naming the unknown field). On a compatible server, <see cref="MessageCategory.Transactional"/> works even when
     /// code-send categories are disabled for the project; enabling code-send categories for the project gates named
     /// <see cref="MessageCategory"/> objects (otherwise PostHog refuses them with <c>categories_not_enabled</c>) and
-    /// template-category inheritance when <see cref="Category"/> is omitted. Passing a named
-    /// <see cref="MessageCategory"/> also requires permission to create workflows in the project (a caller who can
-    /// only edit an existing workflow receives HTTP 403 even with the project flag enabled).
+    /// template-category inheritance when <see cref="Category"/> is omitted.
     /// An email in a marketing category honors the recipient's opt-outs. Its <see cref="Html"/> needs a clickable
     /// <c>&lt;a href="{{ unsubscribe_url }}"&gt;</c> link, and its <see cref="Text"/>, when it has no
     /// <see cref="Html"/>, needs the <c>{{ unsubscribe_url }}</c> placeholder. PostHog replaces it with the
