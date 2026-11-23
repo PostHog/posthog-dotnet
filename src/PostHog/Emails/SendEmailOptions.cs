@@ -169,10 +169,10 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// <c>&lt;a href="{{ unsubscribe_url }}"&gt;</c> link, and its <see cref="Text"/>, when it has no
     /// <see cref="Html"/>, needs the <c>{{ unsubscribe_url }}</c> placeholder. PostHog replaces it with the
     /// recipient's preferences link.
-    /// With code-send categories disabled for the project, a named <see cref="MessageCategory"/> fails with
-    /// <c>categories_not_enabled</c> before PostHog checks any saved template. Otherwise, when <see cref="TemplateKey"/>
-    /// resolves to a saved template, PostHog checks whether it is enabled for transactional sends
-    /// (<c>template_not_transactional</c> otherwise) before checking whether it is in a marketing category
+    /// Among template sendability and category checks, a named <see cref="MessageCategory"/> fails with
+    /// <c>categories_not_enabled</c> first when code-send categories are disabled for the project. Otherwise, when
+    /// <see cref="TemplateKey"/> resolves to a saved template, PostHog checks whether it is enabled for transactional
+    /// sends (<c>template_not_transactional</c> otherwise) before checking whether it is in a marketing category
     /// (<c>marketing_template</c>) or comparing categories.
     /// PostHog refuses the send with status 400 and an <see cref="EmailException.Code"/> of <c>category_mismatch</c>
     /// when the key names a category of the other type, or when <see cref="TemplateKey"/> names a template in another

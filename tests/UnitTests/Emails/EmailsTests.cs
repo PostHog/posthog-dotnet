@@ -253,10 +253,57 @@ public class TheSendAsyncMethodWithCodeContent
     };
 
     const string SendUrl = "https://us.posthog.com/api/messaging/send/email/";
+    static readonly string[] CodeSendKeys = ["html", "subject", "template_key", "to"];
+    static readonly string[] CategorizedCodeSendKeys = ["category", "html", "subject", "template_key", "to"];
+    static readonly string[] CategorizedCopiesCodeSendKeys = ["bcc", "category", "cc", "html", "subject", "template_key", "to"];
+    static readonly string[] CategorizedAttachmentCodeSendKeys = ["attachments", "category", "html", "subject", "template_key", "to"];
+    static readonly string[] CategoryKeys = ["key", "name", "type"];
+    static readonly string[] CategoryWithDescriptionKeys = ["description", "key", "name", "type"];
+    static readonly string[] UploadRequestKeys = ["files"];
+    static readonly string[] UploadFileKeys = ["sha256", "size"];
+    static readonly string[] AttachmentRefKeys = ["content_type", "filename", "sha256"];
+
+    static void AssertObjectKeys(JsonElement element, string[] expectedKeys)
+    {
+        Assert.Equal(JsonValueKind.Object, element.ValueKind);
+        Assert.Equal(
+            expectedKeys,
+            element.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
+    }
+
+    static void AssertCodeSendFields(JsonElement root, SendCodeEmailOptions email)
+    {
+        Assert.Equal(email.TemplateKey, root.GetProperty("template_key").GetString());
+        Assert.Equal(email.To, root.GetProperty("to").GetString());
+        Assert.Equal(email.Subject, root.GetProperty("subject").GetString());
+        Assert.Equal(email.Html, root.GetProperty("html").GetString());
+    }
+
+    static void AssertCategoryObject(
+        JsonElement element,
+        string key,
+        string type,
+        string name,
+        string? description = null)
+    {
+        if (description is null)
+        {
+            AssertObjectKeys(element, CategoryKeys);
+        }
+        else
+        {
+            AssertObjectKeys(element, CategoryWithDescriptionKeys);
+            Assert.Equal(description, element.GetProperty("description").GetString());
+        }
+
+        Assert.Equal(key, element.GetProperty("key").GetString());
+        Assert.Equal(type, element.GetProperty("type").GetString());
+        Assert.Equal(name, element.GetProperty("name").GetString());
+    }
 
     [Theory]
     [MemberData(nameof(NewCategories))]
-    public async Task CreatesTheCategoryItSendsIn(
+    public async Task SendsCategoryObjectWithOptionalDescriptionOnTheWire(
         MessageCategory category,
         string key,
         string type,
@@ -275,23 +322,9 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
         var root = body.RootElement;
-        Assert.Equal(email.TemplateKey, root.GetProperty("template_key").GetString());
-        Assert.Equal(email.To, root.GetProperty("to").GetString());
-        Assert.Equal(email.Subject, root.GetProperty("subject").GetString());
-        Assert.Equal(email.Html, root.GetProperty("html").GetString());
-        var sentCategory = root.GetProperty("category");
-        Assert.Equal(key, sentCategory.GetProperty("key").GetString());
-        Assert.Equal(type, sentCategory.GetProperty("type").GetString());
-        Assert.Equal(name, sentCategory.GetProperty("name").GetString());
-        if (description is null)
-        {
-            Assert.False(sentCategory.TryGetProperty("description", out _));
-        }
-        else
-        {
-            Assert.True(sentCategory.TryGetProperty("description", out var sentDescription));
-            Assert.Equal(description, sentDescription.GetString());
-        }
+        AssertObjectKeys(root, CategorizedCodeSendKeys);
+        AssertCodeSendFields(root, email);
+        AssertCategoryObject(root.GetProperty("category"), key, type, name, description);
     }
 
     [Fact]
@@ -302,8 +335,7 @@ public class TheSendAsyncMethodWithCodeContent
             HttpStatusCode.BadRequest,
             """{"type":"invalid_request","code":"unsubscribe_link_required","detail":"A marketing email needs a clickable `{{ unsubscribe_url }}` link."}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
-
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var email = new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -315,7 +347,9 @@ public class TheSendAsyncMethodWithCodeContent
                 Type = MessageCategoryType.Marketing,
                 Name = "Newsletter",
             },
-        }));
+        };
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(email));
 
         Assert.Equal("unsubscribe_link_required", error.Code);
         Assert.Equal("validation_error", error.Name);
@@ -326,15 +360,9 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
         var root = body.RootElement;
-        Assert.Equal("k", root.GetProperty("template_key").GetString());
-        Assert.Equal("a@example.com", root.GetProperty("to").GetString());
-        Assert.Equal("s", root.GetProperty("subject").GetString());
-        Assert.Equal("<p>News</p>", root.GetProperty("html").GetString());
-        var sentCategory = root.GetProperty("category");
-        Assert.Equal("newsletter", sentCategory.GetProperty("key").GetString());
-        Assert.Equal("marketing", sentCategory.GetProperty("type").GetString());
-        Assert.Equal("Newsletter", sentCategory.GetProperty("name").GetString());
-        Assert.False(sentCategory.TryGetProperty("description", out _));
+        AssertObjectKeys(root, CategorizedCodeSendKeys);
+        AssertCodeSendFields(root, email);
+        AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
     }
 
     [Fact]
@@ -343,34 +371,38 @@ public class TheSendAsyncMethodWithCodeContent
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915189"}""");
-
-        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        var emptyEmail = CodeSendIn(new MessageCategory
         {
             Key = "newsletter",
             Type = MessageCategoryType.Marketing,
             Name = "Newsletter",
             Description = "",
-        }));
-        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        });
+        var nullEmail = CodeSendIn(new MessageCategory
         {
             Key = "receipts",
             Type = MessageCategoryType.Transactional,
             Name = "Receipts",
             Description = null,
-        }));
+        });
+
+        await harness.Client.Emails.SendAsync(emptyEmail);
+        await harness.Client.Emails.SendAsync(nullEmail);
 
         Assert.Equal(2, harness.Requests.Count);
         Assert.Equal(HttpMethod.Post, harness.Requests[0].Method);
         Assert.Equal(SendUrl, harness.Requests[0].Url);
         using var emptyBody = JsonDocument.Parse(harness.Requests[0].Body!);
-        var emptyCategory = emptyBody.RootElement.GetProperty("category");
-        Assert.True(emptyCategory.TryGetProperty("description", out var emptyDescription));
-        Assert.Equal("", emptyDescription.GetString());
+        AssertObjectKeys(emptyBody.RootElement, CategorizedCodeSendKeys);
+        AssertCodeSendFields(emptyBody.RootElement, emptyEmail);
+        AssertCategoryObject(emptyBody.RootElement.GetProperty("category"), "newsletter", "marketing", "Newsletter", "");
 
         Assert.Equal(HttpMethod.Post, harness.Requests[1].Method);
         Assert.Equal(SendUrl, harness.Requests[1].Url);
         using var nullBody = JsonDocument.Parse(harness.Requests[1].Body!);
-        Assert.False(nullBody.RootElement.GetProperty("category").TryGetProperty("description", out _));
+        AssertObjectKeys(nullBody.RootElement, CategorizedCodeSendKeys);
+        AssertCodeSendFields(nullBody.RootElement, nullEmail);
+        AssertCategoryObject(nullBody.RootElement.GetProperty("category"), "receipts", "transactional", "Receipts");
     }
 
     public static TheoryData<MessageCategory?> NoCategory => new() { MessageCategory.Transactional, null };
@@ -381,21 +413,26 @@ public class TheSendAsyncMethodWithCodeContent
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        var email = CodeSendIn(category);
 
-        await harness.Client.Emails.SendAsync(CodeSendIn(category));
+        await harness.Client.Emails.SendAsync(email);
 
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
+        var root = body.RootElement;
         if (category is null)
         {
-            Assert.False(body.RootElement.TryGetProperty("category", out _));
+            AssertObjectKeys(root, CodeSendKeys);
         }
         else
         {
-            Assert.Equal("transactional", body.RootElement.GetProperty("category").GetString());
+            AssertObjectKeys(root, CategorizedCodeSendKeys);
+            Assert.Equal("transactional", root.GetProperty("category").GetString());
         }
+
+        AssertCodeSendFields(root, email);
     }
 
     [Fact]
@@ -403,26 +440,23 @@ public class TheSendAsyncMethodWithCodeContent
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
-
-        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        var email = CodeSendIn(new MessageCategory
         {
             Key = "transactional",
             Type = MessageCategoryType.Marketing,
             Name = "Transactional Updates",
-        }));
+        });
+
+        await harness.Client.Emails.SendAsync(email);
 
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
-        var sentCategory = body.RootElement.GetProperty("category");
-        Assert.Equal(JsonValueKind.Object, sentCategory.ValueKind);
-        Assert.Equal(
-            ["key", "name", "type"],
-            sentCategory.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
-        Assert.Equal("transactional", sentCategory.GetProperty("key").GetString());
-        Assert.Equal("marketing", sentCategory.GetProperty("type").GetString());
-        Assert.Equal("Transactional Updates", sentCategory.GetProperty("name").GetString());
+        var root = body.RootElement;
+        AssertObjectKeys(root, CategorizedCodeSendKeys);
+        AssertCodeSendFields(root, email);
+        AssertCategoryObject(root.GetProperty("category"), "transactional", "marketing", "Transactional Updates");
     }
 
     static readonly byte[] BinaryPdfBytes = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34, 0x0A, 0xFF, 0x00, 0xFE];
@@ -460,7 +494,9 @@ public class TheSendAsyncMethodWithCodeContent
         harness.Respond(status, $$"""{"type":"invalid_request","code":"{{code}}","detail":"Refused."{{attrJson}}}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(CodeSendIn(category)));
+        var email = CodeSendIn(category);
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(email));
 
         Assert.Equal(code, error.Code);
         Assert.Equal("validation_error", error.Name);
@@ -470,18 +506,22 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
-        var sentCategory = body.RootElement.GetProperty("category");
+        var root = body.RootElement;
+        AssertObjectKeys(root, CategorizedCodeSendKeys);
+        AssertCodeSendFields(root, email);
+        var sentCategory = root.GetProperty("category");
         if (ReferenceEquals(category, MessageCategory.Transactional))
         {
             Assert.Equal("transactional", sentCategory.GetString());
         }
         else
         {
-            Assert.Equal(category.Key, sentCategory.GetProperty("key").GetString());
-            Assert.Equal(
+            AssertCategoryObject(
+                sentCategory,
+                category.Key,
                 category.Type == MessageCategoryType.Marketing ? "marketing" : "transactional",
-                sentCategory.GetProperty("type").GetString());
-            Assert.Equal(category.Name, sentCategory.GetProperty("name").GetString());
+                category.Name,
+                category.Description);
         }
     }
 
@@ -493,8 +533,7 @@ public class TheSendAsyncMethodWithCodeContent
             HttpStatusCode.BadRequest,
             """{"type":"invalid_request","code":"copies_not_allowed","detail":"Marketing emails cannot include cc or bcc."}""");
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
-
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var email = new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -508,7 +547,9 @@ public class TheSendAsyncMethodWithCodeContent
                 Type = MessageCategoryType.Marketing,
                 Name = "Newsletter",
             },
-        }));
+        };
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(email));
 
         Assert.Equal("copies_not_allowed", error.Code);
         Assert.Equal("validation_error", error.Name);
@@ -519,17 +560,15 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
         var root = body.RootElement;
+        AssertObjectKeys(root, CategorizedCopiesCodeSendKeys);
+        AssertCodeSendFields(root, email);
         Assert.Equal(
             ["copy@example.com"],
             root.GetProperty("cc").EnumerateArray().Select(item => item.GetString()!).ToList());
         Assert.Equal(
             ["blind@example.com"],
             root.GetProperty("bcc").EnumerateArray().Select(item => item.GetString()!).ToList());
-        var sentCategory = root.GetProperty("category");
-        Assert.Equal("newsletter", sentCategory.GetProperty("key").GetString());
-        Assert.Equal("marketing", sentCategory.GetProperty("type").GetString());
-        Assert.Equal("Newsletter", sentCategory.GetProperty("name").GetString());
-        Assert.False(sentCategory.TryGetProperty("description", out _));
+        AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
     }
 
     [Theory]
@@ -570,7 +609,8 @@ public class TheSendAsyncMethodWithCodeContent
 
         try
         {
-            await peer.UploadStarted;
+            var started = await Task.WhenAny(peer.UploadStarted, sendTask);
+            Assert.Same(peer.UploadStarted, started);
             Assert.False(sendTask.IsCompleted);
             Assert.Equal(0, peer.SendCount);
             Assert.Equal(0, posthog.StorageWrites);
@@ -631,7 +671,8 @@ public class TheSendAsyncMethodWithCodeContent
 
         try
         {
-            await peer.UploadStarted;
+            var started = await Task.WhenAny(peer.UploadStarted, sendTask);
+            Assert.Same(peer.UploadStarted, started);
             Assert.False(sendTask.IsCompleted);
             Assert.Equal(0, peer.SendCount);
             Assert.Equal(0, posthog.StorageWrites);
@@ -672,8 +713,9 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("Bearer phs_secret", prepare.Header("Authorization"));
         using (var prepareBody = JsonDocument.Parse(prepare.Body!))
         {
+            AssertObjectKeys(prepareBody.RootElement, UploadRequestKeys);
             var file = Assert.Single(prepareBody.RootElement.GetProperty("files").EnumerateArray());
-            Assert.Equal(["sha256", "size"], file.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
+            AssertObjectKeys(file, UploadFileKeys);
             Assert.Equal(BinaryPdfSha256, file.GetProperty("sha256").GetString());
             Assert.Equal(BinaryPdfBytes.Length, file.GetProperty("size").GetInt32());
         }
@@ -694,24 +736,17 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("Bearer phs_secret", send.Header("Authorization"));
         using var sendBody = JsonDocument.Parse(send.Body!);
         var root = sendBody.RootElement;
+        AssertObjectKeys(root, CategorizedAttachmentCodeSendKeys);
         Assert.Equal("a@example.com", root.GetProperty("to").GetString());
         Assert.Equal("k", root.GetProperty("template_key").GetString());
         Assert.Equal("s", root.GetProperty("subject").GetString());
         Assert.Equal(expectedHtml, root.GetProperty("html").GetString());
         var attachment = Assert.Single(root.GetProperty("attachments").EnumerateArray());
-        Assert.Equal(
-            ["content_type", "filename", "sha256"],
-            attachment.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
+        AssertObjectKeys(attachment, AttachmentRefKeys);
         Assert.Equal(BinaryPdfSha256, attachment.GetProperty("sha256").GetString());
         Assert.Equal(filename, attachment.GetProperty("filename").GetString());
         Assert.Equal("application/pdf", attachment.GetProperty("content_type").GetString());
-        var sentCategory = root.GetProperty("category");
-        Assert.Equal(
-            ["key", "name", "type"],
-            sentCategory.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
-        Assert.Equal(categoryKey, sentCategory.GetProperty("key").GetString());
-        Assert.Equal(categoryType, sentCategory.GetProperty("type").GetString());
-        Assert.Equal(categoryName, sentCategory.GetProperty("name").GetString());
+        AssertCategoryObject(root.GetProperty("category"), categoryKey, categoryType, categoryName);
     }
 
     sealed class CategorizedSendPeer(FakePostHogEmails fake, bool holdUpload = false) : HttpMessageHandler
@@ -953,8 +988,10 @@ public class TheSendAsyncMethodWithCodeContent
         harness.Respond(HttpStatusCode.BadRequest, responseBody);
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(CodeSendIn(
-            new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" })));
+        var email = CodeSendIn(
+            new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" });
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(email));
 
         Assert.Equal(expectedCode, error.Code);
         Assert.Equal("validation_error", error.Name);
@@ -966,11 +1003,10 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal(SendUrl, request.Url);
         using var body = JsonDocument.Parse(request.Body!);
-        var sentCategory = body.RootElement.GetProperty("category");
-        Assert.Equal("newsletter", sentCategory.GetProperty("key").GetString());
-        Assert.Equal("marketing", sentCategory.GetProperty("type").GetString());
-        Assert.Equal("Newsletter", sentCategory.GetProperty("name").GetString());
-        Assert.False(sentCategory.TryGetProperty("description", out _));
+        var root = body.RootElement;
+        AssertObjectKeys(root, CategorizedCodeSendKeys);
+        AssertCodeSendFields(root, email);
+        AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
     }
 
     [Fact]
