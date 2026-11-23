@@ -398,6 +398,33 @@ public class TheSendAsyncMethodWithCodeContent
         }
     }
 
+    [Fact]
+    public async Task SendsASeparatelyConstructedCategoryKeyedTransactionalAsAnObject()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
+        {
+            Key = "transactional",
+            Type = MessageCategoryType.Marketing,
+            Name = "Transactional Updates",
+        }));
+
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(SendUrl, request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
+        var sentCategory = body.RootElement.GetProperty("category");
+        Assert.Equal(JsonValueKind.Object, sentCategory.ValueKind);
+        Assert.Equal(
+            ["key", "name", "type"],
+            sentCategory.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
+        Assert.Equal("transactional", sentCategory.GetProperty("key").GetString());
+        Assert.Equal("marketing", sentCategory.GetProperty("type").GetString());
+        Assert.Equal("Transactional Updates", sentCategory.GetProperty("name").GetString());
+    }
+
     static readonly byte[] BinaryPdfBytes = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34, 0x0A, 0xFF, 0x00, 0xFE];
     const string BinaryPdfSha256 = "073f87b9f33968773e842aa48a6afbcb4e79ae661452c94e2313d1dc7563072f";
     const string BinaryPdfChecksum = "Bz+HufM5aHc+hCqkimr7y055rmYUUslOIxPR3HVjBy8=";
@@ -511,14 +538,14 @@ public class TheSendAsyncMethodWithCodeContent
     public async Task UploadsAttachmentsBeforeMarketingRefusal(string code)
     {
         using var posthog = new FakePostHogEmails();
-        using var peer = new CategorizedSendPeer(posthog);
+        using var peer = new CategorizedSendPeer(posthog, holdUpload: true);
         peer.RespondToSend(
             HttpStatusCode.BadRequest,
             $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
         peer.RespondToSend(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: peer);
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -539,13 +566,28 @@ public class TheSendAsyncMethodWithCodeContent
                     ContentType = "application/pdf",
                 },
             ],
-        }));
+        });
+
+        try
+        {
+            await peer.UploadStarted;
+            Assert.False(sendTask.IsCompleted);
+            Assert.Equal(0, peer.SendCount);
+            Assert.Equal(0, posthog.StorageWrites);
+        }
+        finally
+        {
+            peer.ReleaseUpload();
+        }
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => sendTask);
 
         Assert.Equal(code, error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments", error.Field);
         Assert.Equal(1, posthog.StorageWrites);
+        Assert.Equal(1, peer.SendCount);
         Assert.True(peer.UploadCompletedBeforeSend);
         AssertSignedPdfUploadBeforeSend(
             peer.Requests,
@@ -560,11 +602,11 @@ public class TheSendAsyncMethodWithCodeContent
     public async Task UploadsAttachmentsAndSendsTransactionalCategoryOnTheWire()
     {
         using var posthog = new FakePostHogEmails();
-        using var peer = new CategorizedSendPeer(posthog);
+        using var peer = new CategorizedSendPeer(posthog, holdUpload: true);
         peer.RespondToSend(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: peer);
 
-        var result = await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -587,8 +629,23 @@ public class TheSendAsyncMethodWithCodeContent
             ],
         });
 
+        try
+        {
+            await peer.UploadStarted;
+            Assert.False(sendTask.IsCompleted);
+            Assert.Equal(0, peer.SendCount);
+            Assert.Equal(0, posthog.StorageWrites);
+        }
+        finally
+        {
+            peer.ReleaseUpload();
+        }
+
+        var result = await sendTask;
+
         Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.Equal(1, posthog.StorageWrites);
+        Assert.Equal(1, peer.SendCount);
         Assert.True(peer.UploadCompletedBeforeSend);
         AssertSignedPdfUploadBeforeSend(
             peer.Requests,
@@ -642,23 +699,34 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("s", root.GetProperty("subject").GetString());
         Assert.Equal(expectedHtml, root.GetProperty("html").GetString());
         var attachment = Assert.Single(root.GetProperty("attachments").EnumerateArray());
+        Assert.Equal(
+            ["content_type", "filename", "sha256"],
+            attachment.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
         Assert.Equal(BinaryPdfSha256, attachment.GetProperty("sha256").GetString());
         Assert.Equal(filename, attachment.GetProperty("filename").GetString());
         Assert.Equal("application/pdf", attachment.GetProperty("content_type").GetString());
         var sentCategory = root.GetProperty("category");
+        Assert.Equal(
+            ["key", "name", "type"],
+            sentCategory.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
         Assert.Equal(categoryKey, sentCategory.GetProperty("key").GetString());
         Assert.Equal(categoryType, sentCategory.GetProperty("type").GetString());
         Assert.Equal(categoryName, sentCategory.GetProperty("name").GetString());
-        Assert.False(sentCategory.TryGetProperty("description", out _));
     }
 
-    sealed class CategorizedSendPeer(FakePostHogEmails fake) : HttpMessageHandler
+    sealed class CategorizedSendPeer(FakePostHogEmails fake, bool holdUpload = false) : HttpMessageHandler
     {
+        static readonly string[] AllowedAttachmentFields = ["sha256", "filename", "content_type", "content_id"];
+
         readonly HttpMessageInvoker _invoker = new(fake, disposeHandler: false);
         readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
         readonly List<RecordedRequest> _requests = [];
         readonly HashSet<string> _completedUploads = new(StringComparer.Ordinal);
+        readonly TaskCompletionSource<bool> _uploadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource<bool>? _uploadGate =
+            holdUpload ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
         bool _uploadCompletedBeforeSend;
+        int _sendCount;
 
         public List<RecordedRequest> Requests
         {
@@ -670,6 +738,12 @@ public class TheSendAsyncMethodWithCodeContent
                 }
             }
         }
+
+        public Task UploadStarted => _uploadStarted.Task;
+
+        public int SendCount => Volatile.Read(ref _sendCount);
+
+        public void ReleaseUpload() => _uploadGate?.TrySetResult(true);
 
         public bool UploadCompletedBeforeSend
         {
@@ -722,7 +796,18 @@ public class TheSendAsyncMethodWithCodeContent
 
             if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/")
             {
-                var referenced = ReferencedAttachmentSha256s(body!);
+                Interlocked.Increment(ref _sendCount);
+                if (!TryValidateAttachmentReferences(body!, out var referenced))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                    {
+                        Content = new StringContent(
+                            """{"type":"invalid_request","code":"invalid_input","attr":"attachments","detail":"An attachment reference takes only sha256, filename, content_type and content_id."}""",
+                            Encoding.UTF8,
+                            "application/json"),
+                    };
+                }
+
                 bool allUploaded;
                 lock (_completedUploads)
                 {
@@ -751,6 +836,12 @@ public class TheSendAsyncMethodWithCodeContent
                 return response;
             }
 
+            if (request.Method == HttpMethod.Put && _uploadGate is { } gate)
+            {
+                _uploadStarted.TrySetResult(true);
+                await gate.Task;
+            }
+
             var fakeResponse = await _invoker.SendAsync(request, cancellationToken);
             if (request.Method == HttpMethod.Put && fakeResponse.IsSuccessStatusCode)
             {
@@ -765,25 +856,66 @@ public class TheSendAsyncMethodWithCodeContent
             return fakeResponse;
         }
 
-        static List<string> ReferencedAttachmentSha256s(string json)
+        static bool TryValidateAttachmentReferences(string json, out List<string> hashes)
         {
-            var hashes = new List<string>();
+            hashes = [];
             using var document = JsonDocument.Parse(json);
-            if (document.RootElement.TryGetProperty("attachments", out var attachments)
-                && attachments.ValueKind == JsonValueKind.Array)
+            if (!document.RootElement.TryGetProperty("attachments", out var attachments))
             {
-                foreach (var attachment in attachments.EnumerateArray())
-                {
-                    if (attachment.TryGetProperty("sha256", out var sha256)
-                        && sha256.ValueKind == JsonValueKind.String
-                        && sha256.GetString() is { } value)
-                    {
-                        hashes.Add(value);
-                    }
-                }
+                return true;
             }
 
-            return hashes;
+            if (attachments.ValueKind != JsonValueKind.Array || attachments.GetArrayLength() is < 1 or > 10)
+            {
+                return false;
+            }
+
+            foreach (var attachment in attachments.EnumerateArray())
+            {
+                if (attachment.ValueKind != JsonValueKind.Object)
+                {
+                    return false;
+                }
+
+                foreach (var property in attachment.EnumerateObject())
+                {
+                    if (!AllowedAttachmentFields.Contains(property.Name))
+                    {
+                        return false;
+                    }
+                }
+
+                if (!attachment.TryGetProperty("sha256", out var sha256)
+                    || sha256.ValueKind != JsonValueKind.String
+                    || sha256.GetString() is not { Length: 64 } shaValue
+                    || !shaValue.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'))
+                {
+                    return false;
+                }
+
+                if (!attachment.TryGetProperty("filename", out var filename)
+                    || filename.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(filename.GetString()))
+                {
+                    return false;
+                }
+
+                if (attachment.TryGetProperty("content_type", out var contentType)
+                    && contentType.ValueKind != JsonValueKind.String)
+                {
+                    return false;
+                }
+
+                if (attachment.TryGetProperty("content_id", out var contentId)
+                    && contentId.ValueKind != JsonValueKind.String)
+                {
+                    return false;
+                }
+
+                hashes.Add(shaValue);
+            }
+
+            return true;
         }
 
         protected override void Dispose(bool disposing)
