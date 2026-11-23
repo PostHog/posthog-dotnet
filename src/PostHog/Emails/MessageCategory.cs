@@ -5,19 +5,20 @@ namespace PostHog.Emails;
 /// <see cref="Transactional"/>, or define a category of the project in code.
 /// </summary>
 /// <remarks>
-/// PostHog creates the project's category by <see cref="Key"/> during send validation (before delivery or opt-out
-/// refusal) when the project has none with that key, or restores an archived one, so even a send refused with
-/// <c>recipient_opted_out</c> can establish the initial <see cref="Name"/> and <see cref="Description"/>. Both
-/// creating a new category and restoring an archived one count against the project's active-category limit
-/// (<c>too_many_categories</c>). <see cref="Name"/> and <see cref="Description"/> apply only when the send creates
-/// the category: a send never renames a category or changes its description, so change them later in PostHog. A key
-/// that exists keeps its type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>. When
-/// <see cref="SendCodeEmailOptions.TemplateKey"/> names a template and <see cref="SendCodeEmailOptions.Category"/> is
-/// omitted, the send follows the template's transactional category (when code-send categories are enabled for the
-/// project) and creates no category; passing an explicit <see cref="SendCodeEmailOptions.Category"/> must match that
-/// template's category or PostHog refuses the send with <c>category_mismatch</c>. PostHog checks whether the template
-/// is enabled for transactional sends first (<c>template_not_transactional</c> otherwise), and refuses an otherwise
-/// sendable template in a marketing category with <c>marketing_template</c>.
+/// When <see cref="SendCodeEmailOptions.TemplateKey"/> resolves to no saved template, PostHog creates the project's
+/// category by <see cref="Key"/> during send validation (before delivery or opt-out refusal) when the project has none
+/// with that key, or restores an archived one, so even a send refused with <c>recipient_opted_out</c> can establish
+/// the initial <see cref="Name"/> and <see cref="Description"/>. Both creating a new category and restoring an
+/// archived one count against the project's active-category limit (<c>too_many_categories</c>). <see cref="Name"/>
+/// and <see cref="Description"/> apply only when the send creates the category: a send never renames a category or
+/// changes its description, so change them later in PostHog. A key that exists keeps its type, so a send with another
+/// <see cref="Type"/> fails with <c>category_mismatch</c>. When <see cref="SendCodeEmailOptions.TemplateKey"/> names
+/// a saved template, the send uses that template's transactional category without creating a category or restoring an
+/// archived one: omitting <see cref="SendCodeEmailOptions.Category"/> follows it when code-send categories are enabled
+/// for the project, and passing an explicit <see cref="SendCodeEmailOptions.Category"/> must match it or PostHog
+/// refuses the send with <c>category_mismatch</c>. With code-send categories enabled, PostHog checks whether the
+/// template is enabled for transactional sends (<c>template_not_transactional</c> otherwise) before refusing an
+/// otherwise sendable template in a marketing category with <c>marketing_template</c> or comparing categories.
 /// </remarks>
 public sealed class MessageCategory
 {

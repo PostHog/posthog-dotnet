@@ -185,9 +185,9 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// <see cref="Attachments"/> (marketing code sends cannot carry attachments because marketing sending limits can
     /// hold delivery; the client first asks PostHog which attachments it lacks, uploads only those, and fails with any
     /// upload or storage error before submitting the send for PostHog to refuse). It refuses the send with status 422
-    /// and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing (if async
-    /// admission checks exceed the admission budget or cannot read preferences, PostHog may still accept the send and
-    /// defer the preference check to the delivery worker).
+    /// and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing (if preference
+    /// lookups fail, in either synchronous or async admission mode, or if async admission checks exceed the admission
+    /// budget, PostHog may still accept the send and defer the preference check to the delivery worker).
     /// </remarks>
     public MessageCategory? Category { get; init; }
 
