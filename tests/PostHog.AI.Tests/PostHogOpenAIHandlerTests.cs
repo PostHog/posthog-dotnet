@@ -274,6 +274,49 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             );
     }
 
+    private static bool SerializedContains(Dictionary<string, object> props, string text) =>
+        JsonSerializer.Serialize(props).Contains(text, StringComparison.Ordinal);
+
+    [Fact]
+    public async Task SendAsyncOmitsResponsesInstructionsWhenPrivacyModeIsTrue()
+    {
+        const string requestJson =
+            "{\"model\":\"gpt-5\",\"instructions\":\"Secret system prompt.\",\"input\":\"Hello\",\"max_output_tokens\":200}";
+        using var responseContent = new StringContent(
+            "{\"id\":\"resp_1\",\"object\":\"response\",\"model\":\"gpt-5\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":3,\"total_tokens\":8}}",
+            Encoding.UTF8,
+            "application/json"
+        );
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+        using var requestContent = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+        using (PostHogAIContext.BeginScope(privacyMode: true))
+        {
+            using var response = await _client.PostAsync(
+                new Uri("/v1/responses", UriKind.Relative),
+                requestContent
+            );
+            Assert.True(response.IsSuccessStatusCode);
+        }
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props =>
+                    !props.ContainsKey(PostHogAIFieldNames.Input)
+                    && !SerializedContains(props, "Secret system prompt.")
+                ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
     [Fact]
     public async Task SendAsyncCapturesEmbeddingEvent()
     {
