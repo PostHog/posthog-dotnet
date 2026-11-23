@@ -31,6 +31,7 @@ internal sealed class EmailSender : IPostHogEmails
     const string EuAppHost = "https://eu.posthog.com";
     const string ScheduledAtField = "scheduled_at";
     static readonly TimeSpan MaxClockDrift = TimeSpan.FromMinutes(1);
+    static readonly string[] AnsweredTimeFormats = ["yyyy-MM-dd'T'HH:mm:ssK", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK"];
 
     /// <summary>
     /// Makes the client that uploads files, whatever <see cref="IHttpClientFactory"/> the app supplied. Over the
@@ -737,7 +738,7 @@ internal sealed class EmailSender : IPostHogEmails
         var fields = reply.Fields!.Value;
         if (fields.TryGetProperty(ScheduledAtField, out var answered))
         {
-            switch (Text(fields, "status"))
+            switch (fields.TryGetProperty("status", out var status) ? ScheduleText(status) : null)
             {
                 case "queued" when answered.ValueKind == JsonValueKind.Null
                                    && requested <= _timeProvider.GetUtcNow() + MaxClockDrift:
@@ -758,16 +759,38 @@ internal sealed class EmailSender : IPostHogEmails
     }
 
     static DateTimeOffset? AnsweredTime(JsonElement answered)
-        => answered.ValueKind == JsonValueKind.String
-           && answered.GetString() is { Length: > 0 } text
+        => ScheduleText(answered) is { Length: > 0 } text
            && HasOffset(text)
-           && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var time)
+           && DateTimeOffset.TryParseExact(
+               text,
+               AnsweredTimeFormats,
+               CultureInfo.InvariantCulture,
+               DateTimeStyles.AssumeUniversal,
+               out var time)
             ? time
             : null;
 
     static bool HasOffset(string time)
-        => time[time.Length - 1] is 'Z' or 'z'
+        => time[time.Length - 1] == 'Z'
            || (time.Length > 6 && time[time.Length - 6] is '+' or '-' && time[time.Length - 3] == ':');
+
+    // GetString throws on an unpaired surrogate escape, which would lose the accepted email's message ID.
+    static string? ScheduleText(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        try
+        {
+            return value.GetString();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
 
     static EmailStatus ParseStatusReply(Reply reply)
     {

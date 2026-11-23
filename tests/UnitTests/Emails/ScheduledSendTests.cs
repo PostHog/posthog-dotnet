@@ -100,14 +100,42 @@ public class TheSendAsyncMethodWithScheduledAt
     [InlineData($$"""{"message_id": "{{MessageId}}", "status": "scheduled", "scheduled_at": null}""")]
     [InlineData($$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": "{{Due}}"}""")]
     [InlineData($$"""{"message_id": "{{MessageId}}", "scheduled_at": "{{Due}}"}""")]
+    [InlineData($$"""{"message_id": "{{MessageId}}", "status": "scheduled", "scheduled_at": "\ud800"}""")]
+    [InlineData($$"""{"message_id": "{{MessageId}}", "status": "\ud800", "scheduled_at": "{{Due}}"}""")]
     public async Task FailsWithTheMessageIdWhenPostHogAcceptsWithoutConfirmingTheTime(string body)
+        => await FailsWithTheMessageId(DueTime, body);
+
+    [Theory]
+    [InlineData("2026-12-01Z")]
+    [InlineData("2026-12-01T00:00Z")]
+    [InlineData("2026-12-01 00:00:00Z")]
+    public async Task FailsWithTheMessageIdWhenPostHogConfirmsAnIncompleteTime(string answered)
+        => await FailsWithTheMessageId(
+            new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero),
+            $$"""{"message_id": "{{MessageId}}", "status": "scheduled", "scheduled_at": "{{answered}}"}""");
+
+    [Theory]
+    [InlineData("2026-12-01T09:00:00Z")]
+    [InlineData("2026-12-01T09:00:00.000000+00:00")]
+    [InlineData("2026-12-01T10:00:00.000+01:00")]
+    public async Task AcceptsTheConfirmedTimeInAnyOffset(string answered)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, Scheduled(answered));
+
+        var result = await harness.Client.Emails.SendAsync(TemplateSend(DueTime));
+
+        Assert.Equal(("scheduled", DueTime), (result.Status, result.ScheduledAt));
+    }
+
+    static async Task FailsWithTheMessageId(DateTimeOffset scheduledAt, string body)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, body);
         harness.Respond(HttpStatusCode.Accepted, Scheduled(Due));
 
         var error = await Assert.ThrowsAsync<EmailException>(
-            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+            () => harness.Client.Emails.SendAsync(TemplateSend(scheduledAt)));
 
         Assert.Single(harness.Requests);
         Assert.Equal("scheduling_unconfirmed", error.Code);
