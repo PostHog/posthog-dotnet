@@ -177,9 +177,9 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// project's active-category limit; and, for an email in a marketing category whose <see cref="TemplateKey"/>
     /// names no template, <c>unsubscribe_link_required</c> without that link or placeholder, <c>copies_not_allowed</c>
     /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> when it has
-    /// <see cref="Attachments"/> on a workflow that can defer delivery (the client uploads attachments before PostHog
-    /// refuses the send). It refuses the send with status 422 and <c>recipient_opted_out</c> when the recipient opted
-    /// out of the category or of all marketing.
+    /// <see cref="Attachments"/> (marketing code sends cannot carry attachments because marketing sending limits can
+    /// hold delivery; the client uploads attachments before PostHog refuses the send). It refuses the send with status
+    /// 422 and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing.
     /// </remarks>
     public MessageCategory? Category { get; init; }
 

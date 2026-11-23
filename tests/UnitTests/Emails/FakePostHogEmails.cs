@@ -36,7 +36,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
     static readonly HashSet<string> CategoryFields = ["key", "type", "name", "description"];
     static readonly Regex HtmlComment = new(@"<!--.*?(-->|$)", RegexOptions.Singleline);
     static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
-    static readonly Regex UnsubscribeLink = new(@"<a\b[^>]*\shref\s*=\s*([""'])\s*\{\{\s*unsubscribe_url\s*\}\}\s*\1", RegexOptions.IgnoreCase);
+    static readonly Regex UnsubscribeLink = new(@"<a\b[^>]*\shref\s*=\s*([""'])\s*\{\{\s*unsubscribe_url\s*\}\}(?:#[^""']*)?\s*\1", RegexOptions.IgnoreCase);
 
     readonly ConcurrentDictionary<string, byte[]> _stored = new(StringComparer.Ordinal);
     readonly ConcurrentDictionary<string, SignedUpload> _signed = new(StringComparer.Ordinal);
@@ -47,6 +47,7 @@ sealed class FakePostHogEmails : HttpMessageHandler
     readonly Dictionary<string, StoredCategory> _categories = new(StringComparer.Ordinal);
     readonly Dictionary<string, string?> _templates = new(StringComparer.Ordinal);
     readonly List<DeliveredEmail> _delivered = [];
+    readonly List<string> _sendBodies = [];
     bool _olderVersion;
     int _storageWrites;
 
@@ -77,6 +78,17 @@ sealed class FakePostHogEmails : HttpMessageHandler
             lock (_delivered)
             {
                 return _delivered.ToList();
+            }
+        }
+    }
+
+    public IReadOnlyList<string> SendBodies
+    {
+        get
+        {
+            lock (_delivered)
+            {
+                return _sendBodies.ToList();
             }
         }
     }
@@ -278,6 +290,12 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
     HttpResponseMessage Send(byte[] body)
     {
+        var rawBody = Encoding.UTF8.GetString(body);
+        lock (_delivered)
+        {
+            _sendBodies.Add(rawBody);
+        }
+
         using var json = JsonDocument.Parse(body);
         var root = json.RootElement;
         if (UnknownField(root, _olderVersion ? OlderSendFields : SendFields) is { } unknown)
@@ -427,15 +445,9 @@ sealed class FakePostHogEmails : HttpMessageHandler
     {
         parsed = ParsedCategory.Omitted;
         error = null;
-        if (!root.TryGetProperty("category", out var category))
+        if (!root.TryGetProperty("category", out var category) || category.ValueKind == JsonValueKind.Null)
         {
             return true;
-        }
-
-        if (category.ValueKind == JsonValueKind.Null)
-        {
-            error = Refusal(HttpStatusCode.BadRequest, "invalid_input", "category", "Omit category instead of sending null.");
-            return false;
         }
 
         if (category.ValueKind == JsonValueKind.String)

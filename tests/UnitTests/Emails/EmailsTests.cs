@@ -284,6 +284,15 @@ public class TheSendAsyncMethodWithCodeContent
 
         Assert.Null(Assert.Single(posthog.Delivered).CategoryKey);
         Assert.Empty(posthog.Categories);
+        using var body = JsonDocument.Parse(Assert.Single(posthog.SendBodies));
+        if (category is null)
+        {
+            Assert.False(body.RootElement.TryGetProperty("category", out _));
+        }
+        else
+        {
+            Assert.Equal("transactional", body.RootElement.GetProperty("category").GetString());
+        }
     }
 
     [Fact]
@@ -312,6 +321,8 @@ public class TheSendAsyncMethodWithCodeContent
         await harness.Client.Emails.SendAsync(CodeSendIn(category: null));
 
         Assert.Equal("receipts", Assert.Single(posthog.Delivered).CategoryKey);
+        using var body = JsonDocument.Parse(Assert.Single(posthog.SendBodies));
+        Assert.False(body.RootElement.TryGetProperty("category", out _));
     }
 
     [Fact]
