@@ -4,14 +4,16 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace EmailsTests;
 
 /// <summary>
 /// PostHog's upload and send routes and its file storage, as one HTTP peer that keeps state. The upload route
 /// answers <c>present</c> for a stored file and presigns an upload for any other. The storage takes a PUT only as
-/// its URL was signed, with no other credential, and stores the bytes. The send route delivers an email only when
-/// PostHog stores every file it names. Every route refuses a request outside the real server's schema.
+/// its URL was signed, with no other credential, and stores the bytes. The send route enforces the real server's
+/// schema, category and template rules, marketing unsubscribe/copy rules, and delivers an email only when PostHog
+/// stores every file it names.
 /// </summary>
 sealed class FakePostHogEmails : HttpMessageHandler
 {
@@ -25,8 +27,16 @@ sealed class FakePostHogEmails : HttpMessageHandler
         "template_key", "to", "subject", "html", "text", "from", "reply_to", "capture_engagement", "distinct_id",
     ];
 
-    static readonly string[] SendFields = [.. OlderSendFields, "sensitive", "tracking", "cc", "bcc", "attachments"];
+    static readonly string[] SendFields =
+    [
+        .. OlderSendFields, "sensitive", "tracking", "cc", "bcc", "attachments", "category",
+    ];
+
     static readonly string[] AttachmentFields = ["sha256", "filename", "content_type", "content_id"];
+    static readonly HashSet<string> CategoryFields = ["key", "type", "name", "description"];
+    static readonly Regex HtmlComment = new(@"<!--.*?(-->|$)", RegexOptions.Singleline);
+    static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
+    static readonly Regex UnsubscribeLink = new(@"<a\b[^>]*\shref\s*=\s*([""'])\s*\{\{\s*unsubscribe_url\s*\}\}\s*\1", RegexOptions.IgnoreCase);
 
     readonly ConcurrentDictionary<string, byte[]> _stored = new(StringComparer.Ordinal);
     readonly ConcurrentDictionary<string, SignedUpload> _signed = new(StringComparer.Ordinal);
@@ -34,6 +44,8 @@ sealed class FakePostHogEmails : HttpMessageHandler
     readonly ConcurrentQueue<Func<HttpResponseMessage>> _storageFaults = new();
     readonly ConcurrentQueue<TimeSpan> _storageDelays = new();
     readonly TaskCompletionSource<bool> _storageHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    readonly Dictionary<string, StoredCategory> _categories = new(StringComparer.Ordinal);
+    readonly Dictionary<string, string?> _templates = new(StringComparer.Ordinal);
     readonly List<DeliveredEmail> _delivered = [];
     bool _olderVersion;
     int _storageWrites;
@@ -46,6 +58,17 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
     /// <summary>The scheme, host and port of the file storage that PostHog's upload URLs point to.</summary>
     public string StorageOrigin { get; set; } = "https://files.example.com";
+
+    public IReadOnlyDictionary<string, StoredCategory> Categories
+    {
+        get
+        {
+            lock (_delivered)
+            {
+                return new Dictionary<string, StoredCategory>(_categories, StringComparer.Ordinal);
+            }
+        }
+    }
 
     public IReadOnlyList<DeliveredEmail> Delivered
     {
@@ -63,6 +86,24 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
     /// <summary>Stores a file, as an earlier send would have uploaded it.</summary>
     public void Store(byte[] content) => _stored[Sha256Hex(content)] = content;
+
+    /// <summary>Seeds a project message category, as if created before this send.</summary>
+    public void Seed(StoredCategory category)
+    {
+        lock (_delivered)
+        {
+            _categories[category.Key] = category;
+        }
+    }
+
+    /// <summary>Seeds a template made in PostHog for <paramref name="templateKey"/> and its optional category key.</summary>
+    public void SeedTemplate(string templateKey, string? categoryKey)
+    {
+        lock (_delivered)
+        {
+            _templates[templateKey] = categoryKey;
+        }
+    }
 
     /// <summary>Plays a PostHog version from before copies and files: no upload route, no <c>cc</c>, <c>bcc</c> or
     /// <c>attachments</c> on sends.</summary>
@@ -244,6 +285,39 @@ sealed class FakePostHogEmails : HttpMessageHandler
             return Refusal(HttpStatusCode.BadRequest, "invalid_request", unknown, "PostHog doesn't take this field, so it doesn't send the email without it.");
         }
 
+        var templateKey = Text(root, "template_key");
+        var to = Text(root, "to");
+        var subject = Text(root, "subject");
+        var html = Text(root, "html");
+        var text = Text(root, "text");
+        if (string.IsNullOrWhiteSpace(templateKey))
+        {
+            return Refusal(HttpStatusCode.BadRequest, "invalid_input", "template_key", "A code send needs template_key.");
+        }
+
+        if (string.IsNullOrWhiteSpace(to))
+        {
+            return Refusal(HttpStatusCode.BadRequest, "invalid_input", "to", "A send needs a recipient.");
+        }
+
+        if (subject is null)
+        {
+            return Refusal(HttpStatusCode.BadRequest, "invalid_input", "subject", "A code send needs a subject.");
+        }
+
+        if (html is null && text is null)
+        {
+            return Refusal(HttpStatusCode.BadRequest, "invalid_input", "html", "A code send needs html, text or both.");
+        }
+
+        if (!TryParseCategory(root, out var parsedCategory, out var categoryError))
+        {
+            return categoryError!;
+        }
+
+        var cc = Texts(root, "cc");
+        var bcc = Texts(root, "bcc");
+
         var files = new List<DeliveredFile>();
         if (root.TryGetProperty("attachments", out var references))
         {
@@ -273,18 +347,153 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
         lock (_delivered)
         {
+            string? resolvedCategoryKey;
+            string resolvedCategoryType;
+            var isTemplate = _templates.TryGetValue(templateKey, out var templateCategory);
+            if (isTemplate)
+            {
+                if (templateCategory is not null && _categories[templateCategory].Type == "marketing")
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "marketing_template", null, "The template is in a marketing category.");
+                }
+
+                var matches = parsedCategory.IsOmitted || (templateCategory is null
+                    ? parsedCategory.IsBuiltInTransactional
+                    : parsedCategory.Defined is { } defined
+                      && defined.Key == templateCategory
+                      && defined.Type == _categories[templateCategory].Type);
+                if (!matches)
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "category_mismatch", "category", "The send names another category than its template's.");
+                }
+
+                resolvedCategoryKey = templateCategory;
+                resolvedCategoryType = templateCategory is null ? "transactional" : _categories[templateCategory].Type;
+            }
+            else if (parsedCategory.Defined is { } defined)
+            {
+                if (_categories.TryGetValue(defined.Key, out var existing) && existing.Type != defined.Type)
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "category_mismatch", "category", $"The category `{defined.Key}` is {existing.Type}.");
+                }
+
+                resolvedCategoryKey = defined.Key;
+                resolvedCategoryType = defined.Type;
+            }
+            else
+            {
+                resolvedCategoryKey = null;
+                resolvedCategoryType = "transactional";
+            }
+
+            if (resolvedCategoryType == "marketing")
+            {
+                if (cc.Count > 0 || bcc.Count > 0)
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "copies_not_allowed", null, "A marketing email cannot have cc or bcc recipients.");
+                }
+
+                if (files.Count > 0)
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "workflow_can_wait", null, "A marketing email cannot carry attachments.");
+                }
+
+                if (!HoldsUnsubscribeLink(html, text))
+                {
+                    return Refusal(HttpStatusCode.BadRequest, "unsubscribe_link_required", null, "A marketing email needs `{{ unsubscribe_url }}`.");
+                }
+            }
+
+            if (!isTemplate && parsedCategory.Defined is { } created)
+            {
+                _categories.TryAdd(created.Key, created);
+            }
+
             _delivered.Add(new DeliveredEmail(
-                Text(root, "to")!,
-                Texts(root, "cc"),
-                Texts(root, "bcc"),
-                Text(root, "subject"),
-                Text(root, "html"),
-                Text(root, "text"),
-                files));
+                to,
+                cc,
+                bcc,
+                subject,
+                html,
+                text,
+                files,
+                resolvedCategoryKey));
         }
 
         return Json(HttpStatusCode.Accepted, new Dictionary<string, object> { ["message_id"] = MessageId });
     }
+
+    static bool TryParseCategory(JsonElement root, out ParsedCategory parsed, out HttpResponseMessage? error)
+    {
+        parsed = ParsedCategory.Omitted;
+        error = null;
+        if (!root.TryGetProperty("category", out var category))
+        {
+            return true;
+        }
+
+        if (category.ValueKind == JsonValueKind.Null)
+        {
+            error = Refusal(HttpStatusCode.BadRequest, "invalid_input", "category", "Omit category instead of sending null.");
+            return false;
+        }
+
+        if (category.ValueKind == JsonValueKind.String)
+        {
+            if (category.GetString() == "transactional")
+            {
+                parsed = ParsedCategory.BuiltInTransactional;
+                return true;
+            }
+
+            error = Refusal(HttpStatusCode.BadRequest, "invalid_input", "category", "Send `transactional`, or a category object with `key`, `type` and `name`.");
+            return false;
+        }
+
+        if (category.ValueKind != JsonValueKind.Object)
+        {
+            error = Refusal(HttpStatusCode.BadRequest, "invalid_input", "category", "Send `transactional`, or a category object with `key`, `type` and `name`.");
+            return false;
+        }
+
+        foreach (var field in category.EnumerateObject())
+        {
+            if (!CategoryFields.Contains(field.Name))
+            {
+                error = Refusal(HttpStatusCode.BadRequest, "invalid_input", "category", $"The category has no field `{field.Name}`.");
+                return false;
+            }
+        }
+
+        var key = Text(category, "key");
+        var name = Text(category, "name");
+        var type = Text(category, "type");
+        if (string.IsNullOrWhiteSpace(key) || key == "$all" || string.IsNullOrWhiteSpace(name) || type is not ("marketing" or "transactional"))
+        {
+            error = Refusal(HttpStatusCode.BadRequest, "invalid_input", "category", "The category needs a `key`, a `name` and a `type` of marketing or transactional.");
+            return false;
+        }
+
+        string? description = null;
+        if (category.TryGetProperty("description", out var given))
+        {
+            if (given.ValueKind != JsonValueKind.String)
+            {
+                error = Refusal(HttpStatusCode.BadRequest, "invalid_input", "category", "The category's `description` must be a string.");
+                return false;
+            }
+
+            description = given.GetString();
+        }
+
+        parsed = ParsedCategory.From(new StoredCategory(key, type, name, description ?? ""));
+        return true;
+    }
+
+    static bool HoldsUnsubscribeLink(string? html, string? text)
+        => !string.IsNullOrEmpty(html)
+            ? UnsubscribeLink.IsMatch(HtmlComment.Replace(html, string.Empty))
+            : !string.IsNullOrEmpty(text) && UnsubscribePlaceholder.IsMatch(text);
 
     static string? UnknownField(JsonElement element, string[] known)
         => element.ValueKind != JsonValueKind.Object
@@ -353,9 +562,20 @@ sealed class FakePostHogEmails : HttpMessageHandler
         => new(status) { Content = new StringContent(body, Encoding.UTF8, contentType) };
 
     sealed record SignedUpload(long Size, string Checksum);
+
+    readonly record struct ParsedCategory(bool IsOmitted, bool IsBuiltInTransactional, StoredCategory? Defined)
+    {
+        public static ParsedCategory Omitted => new(true, false, null);
+
+        public static ParsedCategory BuiltInTransactional => new(false, true, null);
+
+        public static ParsedCategory From(StoredCategory category) => new(false, false, category);
+    }
 }
 
-/// <summary>An email PostHog accepted, with the files it attached.</summary>
+sealed record StoredCategory(string Key, string Type, string Name, string Description);
+
+/// <summary>An email PostHog accepted, with the files it attached and its resolved category key.</summary>
 sealed record DeliveredEmail(
     string To,
     IReadOnlyList<string> Cc,
@@ -363,7 +583,8 @@ sealed record DeliveredEmail(
     string? Subject,
     string? Html,
     string? Text,
-    IReadOnlyList<DeliveredFile> Attachments);
+    IReadOnlyList<DeliveredFile> Attachments,
+    string? CategoryKey = null);
 
 /// <summary>A file attached to a delivered email, with the bytes PostHog stored for it.</summary>
 sealed record DeliveredFile(string Filename, string? ContentType, string? ContentId, byte[] Content);

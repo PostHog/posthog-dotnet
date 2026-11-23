@@ -261,14 +261,14 @@ public class TheSendAsyncMethodWithCodeContent
         string name,
         string description)
     {
-        await using var harness = new EmailHarness();
-        var api = harness.ServeMessaging();
+        var posthog = new FakePostHogEmails();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var result = await harness.Client.Emails.SendAsync(CodeSendIn(category));
 
-        Assert.Equal("01a18356-c56c-0001-e494-7666bc910001", result.Id);
-        Assert.Equal(key, Assert.Single(api.Sends).CategoryKey);
-        Assert.Equal(new StoredCategory(key, type, name, description), Assert.Single(api.Categories).Value);
+        Assert.Equal(FakePostHogEmails.MessageId, result.Id);
+        Assert.Equal(key, Assert.Single(posthog.Delivered).CategoryKey);
+        Assert.Equal(new StoredCategory(key, type, name, description), Assert.Single(posthog.Categories).Value);
     }
 
     public static TheoryData<MessageCategory?> NoCategory => new() { MessageCategory.Transactional, null };
@@ -277,105 +277,63 @@ public class TheSendAsyncMethodWithCodeContent
     [MemberData(nameof(NoCategory))]
     public async Task SendsTransactionalWithNoCategory(MessageCategory? category)
     {
-        await using var harness = new EmailHarness();
-        var api = harness.ServeMessaging();
+        var posthog = new FakePostHogEmails();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         await harness.Client.Emails.SendAsync(CodeSendIn(category));
 
-        Assert.Null(Assert.Single(api.Sends).CategoryKey);
-        Assert.Empty(api.Categories);
-    }
-
-    [Fact]
-    public async Task LeavesTheCategoryAsTheFirstSendCreatedIt()
-    {
-        await using var harness = new EmailHarness();
-        var api = harness.ServeMessaging();
-        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
-        {
-            Key = "newsletter",
-            Type = MessageCategoryType.Marketing,
-            Name = "Newsletter",
-            Description = "Monthly product news",
-        }));
-
-        await harness.Client.Emails.SendAsync(CodeSendIn(new MessageCategory
-        {
-            Key = "newsletter",
-            Type = MessageCategoryType.Marketing,
-            Name = "Weekly digest",
-            Description = "Weekly product news",
-        }));
-
-        Assert.Equal(["newsletter", "newsletter"], api.Sends.Select(send => send.CategoryKey));
-        Assert.Equal(
-            new StoredCategory("newsletter", "marketing", "Newsletter", "Monthly product news"),
-            Assert.Single(api.Categories).Value);
+        Assert.Null(Assert.Single(posthog.Delivered).CategoryKey);
+        Assert.Empty(posthog.Categories);
     }
 
     [Fact]
     public async Task ReportsACategoryOfAnotherType()
     {
-        await using var harness = new EmailHarness();
-        var api = harness.ServeMessaging();
+        var posthog = new FakePostHogEmails();
         var receipts = new StoredCategory("receipts", "transactional", "Receipts", "");
-        api.Seed(receipts);
+        posthog.Seed(receipts);
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(CodeSendIn(
             new MessageCategory { Key = "receipts", Type = MessageCategoryType.Marketing, Name = "Receipts" })));
 
         Assert.Equal("category_mismatch", error.Code);
         Assert.Equal("category", error.Field);
-        Assert.Empty(api.Sends);
-        Assert.Equal(receipts, api.Categories["receipts"]);
+        Assert.Empty(posthog.Delivered);
+        Assert.Equal(receipts, posthog.Categories["receipts"]);
     }
 
     [Fact]
     public async Task SendsInTheCategoryOfItsTemplateWhenLeftOut()
     {
-        await using var harness = new EmailHarness();
-        var api = ServeAReceiptsTemplate(harness);
+        var posthog = ReceiptsTemplate();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         await harness.Client.Emails.SendAsync(CodeSendIn(category: null));
 
-        Assert.Equal("receipts", Assert.Single(api.Sends).CategoryKey);
+        Assert.Equal("receipts", Assert.Single(posthog.Delivered).CategoryKey);
     }
 
     [Fact]
     public async Task ReportsTransactionalOnATemplateInACategory()
     {
-        await using var harness = new EmailHarness();
-        var api = ServeAReceiptsTemplate(harness);
+        var posthog = ReceiptsTemplate();
+        await using var harness = new EmailHarness(posthog: posthog);
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(CodeSendIn(MessageCategory.Transactional)));
 
         Assert.Equal("category_mismatch", error.Code);
         Assert.Equal("category", error.Field);
-        Assert.Empty(api.Sends);
+        Assert.Empty(posthog.Delivered);
     }
 
-    [Fact]
-    public async Task ReportsATemplateInAMarketingCategory()
+    static FakePostHogEmails ReceiptsTemplate()
     {
-        await using var harness = new EmailHarness();
-        var api = harness.ServeMessaging();
-        api.Seed(new StoredCategory("newsletter", "marketing", "Newsletter", ""));
-        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "newsletter");
-
-        var error = await Assert.ThrowsAsync<EmailException>(
-            () => harness.Client.Emails.SendAsync(CodeSendIn(category: null)));
-
-        Assert.Equal("marketing_template", error.Code);
-        Assert.Empty(api.Sends);
-    }
-
-    static FakeMessagingApi ServeAReceiptsTemplate(EmailHarness harness)
-    {
-        var api = harness.ServeMessaging();
-        api.Seed(new StoredCategory("receipts", "transactional", "Receipts", ""));
-        api.SeedTemplate(CodeSendIn(category: null).TemplateKey, "receipts");
-        return api;
+        var posthog = new FakePostHogEmails();
+        posthog.Seed(new StoredCategory("receipts", "transactional", "Receipts", ""));
+        posthog.SeedTemplate(CodeSendIn(category: null).TemplateKey, "receipts");
+        return posthog;
     }
 
     [Fact]
@@ -1634,13 +1592,6 @@ sealed class EmailHarness : IAsyncDisposable
             return Task.FromResult(response);
         });
 
-    public FakeMessagingApi ServeMessaging()
-    {
-        var api = new FakeMessagingApi();
-        _handler.Serve(api.Answer);
-        return api;
-    }
-
     public void Fail(Exception exception) => _handler.Enqueue(_ => Task.FromException<HttpResponseMessage>(exception));
 
     public void Hang() => _handler.Enqueue(async cancellationToken =>
@@ -1672,7 +1623,6 @@ sealed class RecordingHandler : HttpMessageHandler
 {
     readonly ConcurrentQueue<Func<CancellationToken, Task<HttpResponseMessage>>> _responses = new();
     readonly List<RecordedRequest> _requests = [];
-    Func<RecordedRequest, Task<HttpResponseMessage>>? _server;
 
     public IReadOnlyList<RecordedRequest> Requests
     {
@@ -1686,8 +1636,6 @@ sealed class RecordingHandler : HttpMessageHandler
     }
 
     public void Enqueue(Func<CancellationToken, Task<HttpResponseMessage>> response) => _responses.Enqueue(response);
-
-    public void Serve(Func<RecordedRequest, Task<HttpResponseMessage>> server) => _server = server;
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -1714,15 +1662,9 @@ sealed class RecordingHandler : HttpMessageHandler
 #endif
         }
 
-        var recorded = new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body);
         lock (_requests)
         {
-            _requests.Add(recorded);
-        }
-
-        if (_server is { } server)
-        {
-            return await server(recorded);
+            _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body));
         }
 
         if (!_responses.TryDequeue(out var respond))

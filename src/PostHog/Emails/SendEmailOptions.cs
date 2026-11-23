@@ -155,23 +155,31 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
 
     /// <summary>
     /// The message category to send the email in. Without it, PostHog sends the email in the transactional category
-    /// of the template that <see cref="TemplateKey"/> names, or as transactional with no category when no template has
-    /// that key. <see cref="MessageCategory.Transactional"/> sends it as transactional with no category.
+    /// of the template that <see cref="TemplateKey"/> names (when code-send categories are enabled for the project),
+    /// or as transactional with no category when no template has that key. <see cref="MessageCategory.Transactional"/>
+    /// sends it as transactional with no category.
     /// </summary>
     /// <remarks>
-    /// An email in a marketing category honors the recipient's opt-outs. Its <see cref="Html"/> needs a link whose
-    /// <c>href</c> is <c>{{ unsubscribe_url }}</c>, and its <see cref="Text"/>, when it has no <see cref="Html"/>, needs
-    /// the <c>{{ unsubscribe_url }}</c> placeholder. PostHog replaces it with the recipient's preferences link.
-    /// Templates made in PostHog are transactional.
+    /// Requires a PostHog server with code-send category support (older servers refuse <c>category</c> with HTTP 400
+    /// naming the unknown field) and code-send categories enabled for the project (otherwise PostHog refuses an
+    /// explicit category object with <c>categories_not_enabled</c>).
+    /// An email in a marketing category honors the recipient's opt-outs. Its <see cref="Html"/> needs a clickable
+    /// <c>&lt;a href="{{ unsubscribe_url }}"&gt;</c> link, and its <see cref="Text"/>, when it has no
+    /// <see cref="Html"/>, needs the <c>{{ unsubscribe_url }}</c> placeholder. PostHog replaces it with the
+    /// recipient's preferences link.
+    /// PostHog checks whether a template named by <see cref="TemplateKey"/> is enabled for transactional sends first
+    /// (<c>template_not_transactional</c> otherwise), and refuses an otherwise sendable template in a marketing
+    /// category with <c>marketing_template</c>.
     /// PostHog refuses the send with status 400 and an <see cref="EmailException.Code"/> of <c>category_mismatch</c>
     /// when the key names a category of the other type, or when <see cref="TemplateKey"/> names a template in another
     /// category, including <see cref="MessageCategory.Transactional"/> for a template in a category;
-    /// <c>marketing_template</c> when <see cref="TemplateKey"/> names a template in a marketing category;
-    /// <c>too_many_categories</c> when it would create a category past the project's limit; and, for an email in a
-    /// marketing category whose <see cref="TemplateKey"/> names no template, <c>unsubscribe_link_required</c> without
-    /// that link or placeholder, or <c>copies_not_allowed</c> when it has <see cref="Cc"/> or <see cref="Bcc"/>. It
-    /// refuses it with status 422 and <c>recipient_opted_out</c> when the recipient opted out of the category or of all
-    /// marketing.
+    /// <c>too_many_categories</c> when it would create a new category or restore an archived category past the
+    /// project's active-category limit; and, for an email in a marketing category whose <see cref="TemplateKey"/>
+    /// names no template, <c>unsubscribe_link_required</c> without that link or placeholder, <c>copies_not_allowed</c>
+    /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> when it has
+    /// <see cref="Attachments"/> on a workflow that can defer delivery (the client uploads attachments before PostHog
+    /// refuses the send). It refuses the send with status 422 and <c>recipient_opted_out</c> when the recipient opted
+    /// out of the category or of all marketing.
     /// </remarks>
     public MessageCategory? Category { get; init; }
 

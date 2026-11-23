@@ -5,13 +5,19 @@ namespace PostHog.Emails;
 /// <see cref="Transactional"/>, or define a category of the project in code.
 /// </summary>
 /// <remarks>
-/// PostHog creates the project's category by <see cref="Key"/> when it accepts a send with a key the project doesn't
-/// have, and restores a deleted one. <see cref="Name"/> and <see cref="Description"/> apply only when the send creates
+/// PostHog creates the project's category by <see cref="Key"/> during send validation (before delivery or opt-out
+/// refusal) when the project has none with that key, or restores an archived one, so even a send refused with
+/// <c>recipient_opted_out</c> can establish the initial <see cref="Name"/> and <see cref="Description"/>. Both
+/// creating a new category and restoring an archived one count against the project's active-category limit
+/// (<c>too_many_categories</c>). <see cref="Name"/> and <see cref="Description"/> apply only when the send creates
 /// the category: a send never renames a category or changes its description, so change them later in PostHog. A key
-/// that exists keeps its type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>. A send
-/// whose <see cref="SendCodeEmailOptions.TemplateKey"/> names a template sends in the template's category instead, and
-/// creates no category. Templates made in PostHog are transactional: PostHog refuses a send under a template in a
-/// marketing category with <c>marketing_template</c>.
+/// that exists keeps its type, so a send with another <see cref="Type"/> fails with <c>category_mismatch</c>. When
+/// <see cref="SendCodeEmailOptions.TemplateKey"/> names a template and <see cref="SendCodeEmailOptions.Category"/> is
+/// omitted, the send follows the template's transactional category (when code-send categories are enabled for the
+/// project) and creates no category; passing an explicit <see cref="SendCodeEmailOptions.Category"/> must match that
+/// template's category or PostHog refuses the send with <c>category_mismatch</c>. PostHog checks whether the template
+/// is enabled for transactional sends first (<c>template_not_transactional</c> otherwise), and refuses an otherwise
+/// sendable template in a marketing category with <c>marketing_template</c>.
 /// </remarks>
 public sealed class MessageCategory
 {
@@ -20,6 +26,11 @@ public sealed class MessageCategory
     /// out, it doesn't follow the category of the template that <see cref="SendCodeEmailOptions.TemplateKey"/> names:
     /// PostHog refuses it with <c>category_mismatch</c> for a template in a category.
     /// </summary>
+    /// <remarks>
+    /// Pass <see cref="Transactional"/> directly rather than constructing
+    /// <c>new MessageCategory { Key = "transactional", ... }</c>, which sends a named category object instead of the
+    /// built-in <c>"transactional"</c> value.
+    /// </remarks>
     public static MessageCategory Transactional { get; } = new()
     {
         Key = "transactional",
