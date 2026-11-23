@@ -4,7 +4,6 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace EmailsTests;
 
@@ -12,7 +11,7 @@ namespace EmailsTests;
 /// PostHog's upload and send routes and its file storage, as one HTTP peer that keeps state. The upload route
 /// answers <c>present</c> for a stored file and presigns an upload for any other. The storage takes a PUT only as
 /// its URL was signed, with no other credential, and stores the bytes. The send route enforces the real server's
-/// schema, category and template rules, marketing unsubscribe/copy rules, and delivers an email only when PostHog
+/// schema, category and template rules, marketing copy/attachment rules, and delivers an email only when PostHog
 /// stores every file it names.
 /// </summary>
 sealed class FakePostHogEmails : HttpMessageHandler
@@ -34,8 +33,6 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
     static readonly string[] AttachmentFields = ["sha256", "filename", "content_type", "content_id"];
     static readonly HashSet<string> CategoryFields = ["key", "type", "name", "description"];
-    static readonly Regex UnsubscribePlaceholder = new(@"\{\{\s*unsubscribe_url\s*\}\}");
-    static readonly Regex UnsubscribeHref = new(@"^\s*\{\{\s*unsubscribe_url\s*\}\}(?:[?#].*)?\s*$");
 
     readonly ConcurrentDictionary<string, byte[]> _stored = new(StringComparer.Ordinal);
     readonly ConcurrentDictionary<string, SignedUpload> _signed = new(StringComparer.Ordinal);
@@ -384,17 +381,9 @@ sealed class FakePostHogEmails : HttpMessageHandler
             }
             else if (parsedCategory.Defined is { } defined)
             {
-                if (defined.Type == "marketing")
+                if (defined.Type == "marketing" && (cc.Count > 0 || bcc.Count > 0))
                 {
-                    if (!HoldsUnsubscribePlaceholder(html, text))
-                    {
-                        return Refusal(HttpStatusCode.BadRequest, "unsubscribe_link_required", null, "A marketing email needs `{{ unsubscribe_url }}`.");
-                    }
-
-                    if (cc.Count > 0 || bcc.Count > 0)
-                    {
-                        return Refusal(HttpStatusCode.BadRequest, "copies_not_allowed", null, "A marketing email cannot have cc or bcc recipients.");
-                    }
+                    return Refusal(HttpStatusCode.BadRequest, "copies_not_allowed", null, "A marketing email cannot have cc or bcc recipients.");
                 }
 
                 if (_categories.TryGetValue(defined.Key, out var existing) && existing.Type != defined.Type)
@@ -412,17 +401,9 @@ sealed class FakePostHogEmails : HttpMessageHandler
                 resolvedCategoryType = "transactional";
             }
 
-            if (resolvedCategoryType == "marketing")
+            if (resolvedCategoryType == "marketing" && parsedAttachments.Count > 0)
             {
-                if (parsedAttachments.Count > 0)
-                {
-                    return Refusal(HttpStatusCode.BadRequest, "workflow_can_wait", "attachments", "A marketing email cannot carry attachments.");
-                }
-
-                if (!HoldsClickableUnsubscribeLink(html))
-                {
-                    return Refusal(HttpStatusCode.BadRequest, "unsubscribe_link_required", null, "A marketing email needs a clickable `{{ unsubscribe_url }}` link.");
-                }
+                return Refusal(HttpStatusCode.BadRequest, "workflow_can_wait", "attachments", "A marketing email cannot carry attachments.");
             }
 
             var files = new List<DeliveredFile>(parsedAttachments.Count);
@@ -510,168 +491,6 @@ sealed class FakePostHogEmails : HttpMessageHandler
 
         parsed = ParsedCategory.From(new StoredCategory(key, type, name, description ?? ""));
         return true;
-    }
-
-    static bool HoldsUnsubscribePlaceholder(string? html, string? text)
-    {
-        var content = !string.IsNullOrEmpty(html) ? html : text;
-        return !string.IsNullOrEmpty(content) && UnsubscribePlaceholder.IsMatch(content);
-    }
-
-    static bool HoldsClickableUnsubscribeLink(string? html)
-    {
-        if (string.IsNullOrEmpty(html))
-        {
-            return true;
-        }
-
-        var pos = 0;
-        while (pos < html.Length)
-        {
-            var open = html.IndexOf('<', pos);
-            if (open < 0 || open + 1 >= html.Length)
-            {
-                return false;
-            }
-
-            pos = open + 1;
-            if (pos + 2 < html.Length && html[pos] == '!' && html[pos + 1] == '-' && html[pos + 2] == '-')
-            {
-                var endComment = html.IndexOf("-->", pos + 3, StringComparison.Ordinal);
-                if (endComment < 0)
-                {
-                    return false;
-                }
-
-                pos = endComment + 3;
-                continue;
-            }
-
-            if (html[pos] is '/' or '!' or '?')
-            {
-                var close = html.IndexOf('>', pos);
-                if (close < 0)
-                {
-                    return false;
-                }
-
-                pos = close + 1;
-                continue;
-            }
-
-            if (html[pos] is not ((>= 'a' and <= 'z') or (>= 'A' and <= 'Z')))
-            {
-                continue;
-            }
-
-            var tagStart = pos;
-            while (pos < html.Length && !char.IsWhiteSpace(html[pos]) && html[pos] is not ('>' or '/'))
-            {
-                pos++;
-            }
-
-            var isAnchor = string.Equals(html.Substring(tagStart, pos - tagStart), "a", StringComparison.OrdinalIgnoreCase);
-            var sawHref = false;
-            var hasUnsubscribeHref = false;
-            while (pos < html.Length && html[pos] != '>')
-            {
-                while (pos < html.Length && char.IsWhiteSpace(html[pos]))
-                {
-                    pos++;
-                }
-
-                if (pos >= html.Length || html[pos] == '>')
-                {
-                    break;
-                }
-
-                if (html[pos] == '/')
-                {
-                    pos++;
-                    continue;
-                }
-
-                var nameStart = pos;
-                while (pos < html.Length && !char.IsWhiteSpace(html[pos]) && html[pos] is not ('=' or '>' or '/'))
-                {
-                    pos++;
-                }
-
-                var name = html.Substring(nameStart, pos - nameStart);
-                while (pos < html.Length && char.IsWhiteSpace(html[pos]))
-                {
-                    pos++;
-                }
-
-                if (pos < html.Length && html[pos] == '=')
-                {
-                    pos++;
-                    while (pos < html.Length && char.IsWhiteSpace(html[pos]))
-                    {
-                        pos++;
-                    }
-
-                    string value;
-                    if (pos < html.Length && html[pos] is '"' or '\'')
-                    {
-                        var quote = html[pos++];
-                        var valueStart = pos;
-                        while (pos < html.Length && html[pos] != quote)
-                        {
-                            pos++;
-                        }
-
-                        value = html.Substring(valueStart, pos - valueStart);
-                        if (pos < html.Length)
-                        {
-                            pos++;
-                        }
-                    }
-                    else
-                    {
-                        var valueStart = pos;
-                        while (pos < html.Length && !char.IsWhiteSpace(html[pos]) && html[pos] != '>')
-                        {
-                            pos++;
-                        }
-
-                        value = html.Substring(valueStart, pos - valueStart);
-                    }
-
-                    if (isAnchor && !sawHref && string.Equals(name, "href", StringComparison.OrdinalIgnoreCase))
-                    {
-                        sawHref = true;
-                        hasUnsubscribeHref = UnsubscribeHref.IsMatch(value);
-                    }
-                }
-                else
-                {
-                    if (isAnchor && !sawHref && string.Equals(name, "href", StringComparison.OrdinalIgnoreCase))
-                    {
-                        sawHref = true;
-                    }
-
-                    if (name.Length == 0)
-                    {
-                        pos++;
-                    }
-                }
-            }
-
-            if (pos >= html.Length)
-            {
-                return false;
-            }
-
-            if (hasUnsubscribeHref)
-            {
-                return true;
-            }
-
-            pos++;
-        }
-
-        return false;
     }
 
     static string? UnknownField(JsonElement element, string[] known)

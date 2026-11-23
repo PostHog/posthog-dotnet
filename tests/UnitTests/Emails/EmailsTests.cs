@@ -264,12 +264,15 @@ public class TheSendAsyncMethodWithCodeContent
         var posthog = new FakePostHogEmails();
         await using var harness = new EmailHarness(posthog: posthog);
 
-        var result = await harness.Client.Emails.SendAsync(CodeSendIn(category));
+        var email = CodeSendIn(category);
+
+        var result = await harness.Client.Emails.SendAsync(email);
 
         Assert.Equal(FakePostHogEmails.MessageId, result.Id);
         Assert.Equal(key, Assert.Single(posthog.Delivered).CategoryKey);
         Assert.Equal(new StoredCategory(key, type, name, description), Assert.Single(posthog.Categories).Value);
         using var body = JsonDocument.Parse(Assert.Single(posthog.SendBodies));
+        Assert.Equal(email.Html, body.RootElement.GetProperty("html").GetString());
         var sentCategory = body.RootElement.GetProperty("category");
         if (category.Description is null)
         {
@@ -280,6 +283,37 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.True(sentCategory.TryGetProperty("description", out var sentDescription));
             Assert.Equal(category.Description, sentDescription.GetString());
         }
+    }
+
+    [Fact]
+    public async Task SurfacesUnsubscribeLinkRequiredRefusalWithoutRetrying()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.BadRequest,
+            """{"type":"validation_error","code":"unsubscribe_link_required","detail":"A marketing email needs a clickable `{{ unsubscribe_url }}` link.","attr":null}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "a@example.com",
+            TemplateKey = "k",
+            Subject = "s",
+            Html = "<p>News</p>",
+            Category = new MessageCategory
+            {
+                Key = "newsletter",
+                Type = MessageCategoryType.Marketing,
+                Name = "Newsletter",
+            },
+        }));
+
+        Assert.Equal("unsubscribe_link_required", error.Code);
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Null(error.Field);
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(
+            """{"template_key":"k","to":"a@example.com","subject":"s","html":"\u003Cp\u003ENews\u003C/p\u003E","category":{"key":"newsletter","type":"marketing","name":"Newsletter"}}""",
+            request.Body);
     }
 
     [Fact]
