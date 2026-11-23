@@ -49,17 +49,19 @@ public abstract class SendEmailOptions
     /// <see cref="IPostHogEmails.GetAsync"/> reads <c>scheduled</c> until the email goes out.
     /// <para>
     /// A client whose app host isn't PostHog Cloud US or EU, such as a self-hosted PostHog, a reverse proxy or a
-    /// custom domain, fails with <c>scheduling_unsupported</c> before any request. When PostHog accepts the email
-    /// without confirming the time, the send fails with <c>scheduling_unconfirmed</c> and
-    /// <see cref="EmailException.MessageId"/> names the email, which may go out at another time.
+    /// custom domain, fails with <c>scheduling_unsupported</c> before any request, once the client's other app host
+    /// checks pass. When PostHog accepts the email without confirming the time, the send fails with
+    /// <c>scheduling_unconfirmed</c> and <see cref="EmailException.MessageId"/> names the email, which may go out at
+    /// another time.
     /// </para>
     /// <para>
     /// Work out a relative time once, and pass the same time when you send again with the same
     /// <see cref="IdempotencyKey"/>: another time fails with <c>idempotency_key_reused</c>. A
     /// <see cref="DateTime"/> converts as .NET converts it to a <see cref="DateTimeOffset"/>, so one whose
     /// <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Unspecified"/> reads as this machine's local time.
-    /// To stop scheduled emails, disable their workflow in PostHog until they reach a final status; that refuses
-    /// every new send of it meanwhile.
+    /// PostHog holds a scheduled code send's rendered content until the email goes out. To stop scheduled emails,
+    /// disable their workflow in PostHog until they reach a final status; that refuses every new send of it
+    /// meanwhile.
     /// </para>
     /// </remarks>
     public DateTimeOffset? ScheduledAt { get; init; }
@@ -83,7 +85,8 @@ public sealed class SendTemplateEmailOptions : SendEmailOptions
 }
 
 /// <summary>
-/// A send of email content your code rendered, named by a key. PostHog sends it as is and never stores it.
+/// A send of email content your code rendered, named by a key. PostHog sends it as is, and holds it only until the
+/// email goes out.
 /// </summary>
 /// <remarks>
 /// Needs <see cref="Html"/>, <see cref="Text"/> or both. To send a React email, render it to HTML in your app first

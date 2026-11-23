@@ -477,7 +477,8 @@ internal sealed class EmailSender : IPostHogEmails
 
         throw new EmailException(
             "scheduling_unsupported",
-            $"Only PostHog Cloud ({UsAppHost} or {EuAppHost}) schedules emails, and this client sends to {appHost}, "
+            $"Only PostHog Cloud ({UsAppHost} or {EuAppHost}) schedules emails, and this client sends to "
+            + $"{new Uri(appHost).GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped)}, "
             + "so no email was sent.",
             why: "A PostHog that doesn't schedule emails, such as a self-hosted one, or a proxy in front of PostHog "
                  + "Cloud, could send the email at once instead of at ScheduledAt.",

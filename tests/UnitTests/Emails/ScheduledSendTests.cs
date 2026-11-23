@@ -157,14 +157,14 @@ public class TheSendAsyncMethodWithScheduledAt
         await using var harness = new EmailHarness();
         harness.Respond(
             HttpStatusCode.BadRequest,
-            """{"type": "validation_error", "code": "invalid_input", "detail": "scheduled_at must be at most 7 days ahead.", "attr": "scheduled_at"}""");
+            """{"type": "validation_error", "code": "scheduled_too_far", "detail": "`scheduled_at` is more than 7 days away, so PostHog didn't send the email.", "attr": "scheduled_at"}""");
         harness.Respond(HttpStatusCode.Accepted, $$"""{"message_id": "{{MessageId}}"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
 
         Assert.Equal("2026-12-01T09:00:00.000Z", SentTime(Assert.Single(harness.Requests)));
-        Assert.Equal("invalid_input", error.Code);
+        Assert.Equal("scheduled_too_far", error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal("scheduled_at", error.Field);
         Assert.Null(error.MessageId);
@@ -217,6 +217,22 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal("validation_error", error.Name);
         Assert.Equal("scheduled_at", error.Field);
         Assert.Contains(appHost, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NamesTheRefusedHostWithoutItsCredentials()
+    {
+        await using var harness = new EmailHarness(options =>
+            options.AppHost = new Uri("https://proxy-user:proxy-pass@proxy.example.com/posthog/"));
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Equal("scheduling_unsupported", error.Code);
+        Assert.Contains("https://proxy.example.com", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("proxy-pass", error.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("proxy-user", error.ToString(), StringComparison.Ordinal);
+        Assert.Empty(harness.Requests);
     }
 
     [Fact]
