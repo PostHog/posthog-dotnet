@@ -512,13 +512,14 @@ public class TheSendAsyncMethodWithCodeContent
     {
         using var posthog = new FakePostHogEmails();
         using var peer = new CategorizedSendPeer(posthog);
+        peer.HoldUpload();
         peer.RespondToSend(
             HttpStatusCode.BadRequest,
             $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
         peer.RespondToSend(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: peer);
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -539,15 +540,34 @@ public class TheSendAsyncMethodWithCodeContent
                     ContentType = "application/pdf",
                 },
             ],
-        }));
+        });
+
+        try
+        {
+            await WaitForAsync(peer.UploadStarted, "Upload PUT did not start in time.");
+            Assert.False(sendTask.IsCompleted);
+            Assert.Equal(2, peer.Requests.Count);
+            Assert.DoesNotContain(peer.Requests, request => request.Url == SendUrl);
+        }
+        finally
+        {
+            peer.ReleaseUpload();
+        }
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => sendTask);
 
         Assert.Equal(code, error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments", error.Field);
         Assert.Equal(1, posthog.StorageWrites);
-        Assert.Empty(posthog.Delivered);
-        AssertSignedPdfUploadBeforeSend(peer.Requests, "brochure.pdf", "newsletter", "marketing", "Newsletter");
+        AssertSignedPdfUploadBeforeSend(
+            peer.Requests,
+            "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
+            "brochure.pdf",
+            "newsletter",
+            "marketing",
+            "Newsletter");
     }
 
     [Fact]
@@ -555,9 +575,11 @@ public class TheSendAsyncMethodWithCodeContent
     {
         using var posthog = new FakePostHogEmails();
         using var peer = new CategorizedSendPeer(posthog);
+        peer.HoldUpload();
+        peer.RespondToSend(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: peer);
 
-        var result = await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
             To = "a@example.com",
             TemplateKey = "k",
@@ -580,18 +602,44 @@ public class TheSendAsyncMethodWithCodeContent
             ],
         });
 
-        Assert.Equal(FakePostHogEmails.MessageId, result.Id);
+        try
+        {
+            await WaitForAsync(peer.UploadStarted, "Upload PUT did not start in time.");
+            Assert.False(sendTask.IsCompleted);
+            Assert.Equal(2, peer.Requests.Count);
+            Assert.DoesNotContain(peer.Requests, request => request.Url == SendUrl);
+        }
+        finally
+        {
+            peer.ReleaseUpload();
+        }
+
+        var result = await sendTask;
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.Equal(1, posthog.StorageWrites);
-        var delivered = Assert.Single(posthog.Delivered);
-        var deliveredFile = Assert.Single(delivered.Attachments);
-        Assert.Equal("invoice.pdf", deliveredFile.Filename);
-        Assert.Equal("application/pdf", deliveredFile.ContentType);
-        Assert.Equal(BinaryPdfBytes, deliveredFile.Content);
-        AssertSignedPdfUploadBeforeSend(peer.Requests, "invoice.pdf", "receipts", "transactional", "Receipts");
+        AssertSignedPdfUploadBeforeSend(
+            peer.Requests,
+            "<p>Receipt</p>",
+            "invoice.pdf",
+            "receipts",
+            "transactional",
+            "Receipts");
+    }
+
+    static async Task WaitForAsync(Task task, string message)
+    {
+        if (await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(5))) != task)
+        {
+            throw new TimeoutException(message);
+        }
+
+        await task;
     }
 
     static void AssertSignedPdfUploadBeforeSend(
-        IReadOnlyList<RecordedRequest> requests,
+        List<RecordedRequest> requests,
+        string expectedHtml,
         string filename,
         string categoryKey,
         string categoryType,
@@ -627,6 +675,10 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("Bearer phs_secret", send.Header("Authorization"));
         using var sendBody = JsonDocument.Parse(send.Body!);
         var root = sendBody.RootElement;
+        Assert.Equal("a@example.com", root.GetProperty("to").GetString());
+        Assert.Equal("k", root.GetProperty("template_key").GetString());
+        Assert.Equal("s", root.GetProperty("subject").GetString());
+        Assert.Equal(expectedHtml, root.GetProperty("html").GetString());
         var attachment = Assert.Single(root.GetProperty("attachments").EnumerateArray());
         Assert.Equal(BinaryPdfSha256, attachment.GetProperty("sha256").GetString());
         Assert.Equal(filename, attachment.GetProperty("filename").GetString());
@@ -643,8 +695,10 @@ public class TheSendAsyncMethodWithCodeContent
         readonly HttpMessageInvoker _invoker = new(fake, disposeHandler: false);
         readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
         readonly List<RecordedRequest> _requests = [];
+        readonly TaskCompletionSource<bool> _uploadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<bool>? _uploadGate;
 
-        public IReadOnlyList<RecordedRequest> Requests
+        public List<RecordedRequest> Requests
         {
             get
             {
@@ -654,6 +708,12 @@ public class TheSendAsyncMethodWithCodeContent
                 }
             }
         }
+
+        public Task UploadStarted => _uploadStarted.Task;
+
+        public void HoldUpload() => _uploadGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void ReleaseUpload() => _uploadGate?.TrySetResult(true);
 
         public void RespondToSend(HttpStatusCode status, string body)
             => _sendResponses.Enqueue(() => new HttpResponseMessage(status)
@@ -695,21 +755,18 @@ public class TheSendAsyncMethodWithCodeContent
 
             if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/")
             {
-                if (_sendResponses.TryDequeue(out var scripted))
+                if (!_sendResponses.TryDequeue(out var scripted))
                 {
-                    return scripted();
+                    throw new InvalidOperationException($"No response queued for {request.Method} {request.RequestUri}.");
                 }
 
-                using var forwarded = new HttpRequestMessage(request.Method, request.RequestUri)
-                {
-                    Content = new StringContent(StripCategory(body!), Encoding.UTF8, "application/json"),
-                };
-                foreach (var header in request.Headers)
-                {
-                    forwarded.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
+                return scripted();
+            }
 
-                return await _invoker.SendAsync(forwarded, cancellationToken);
+            if (request.Method == HttpMethod.Put && _uploadGate is { } gate)
+            {
+                _uploadStarted.TrySetResult(true);
+                await gate.Task;
             }
 
             return await _invoker.SendAsync(request, cancellationToken);
@@ -723,27 +780,6 @@ public class TheSendAsyncMethodWithCodeContent
             }
 
             base.Dispose(disposing);
-        }
-
-        static string StripCategory(string json)
-        {
-            using var document = JsonDocument.Parse(json);
-            using var buffer = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(buffer))
-            {
-                writer.WriteStartObject();
-                foreach (var property in document.RootElement.EnumerateObject())
-                {
-                    if (property.Name != "category")
-                    {
-                        property.WriteTo(writer);
-                    }
-                }
-
-                writer.WriteEndObject();
-            }
-
-            return Encoding.UTF8.GetString(buffer.ToArray());
         }
     }
 
