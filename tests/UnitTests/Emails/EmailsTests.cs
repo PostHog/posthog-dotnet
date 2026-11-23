@@ -382,6 +382,12 @@ public class TheSendAsyncMethodWithCodeContent
         }
     }
 
+    static readonly byte[] BinaryPdfBytes = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34, 0x0A, 0xFF, 0x00, 0xFE];
+    const string BinaryPdfSha256 = "073f87b9f33968773e842aa48a6afbcb4e79ae661452c94e2313d1dc7563072f";
+    const string BinaryPdfChecksum = "Bz+HufM5aHc+hCqkimr7y055rmYUUslOIxPR3HVjBy8=";
+    const string SignedPdfUploadUrl =
+        "https://files.example.com/team/1/" + BinaryPdfSha256 + "?X-Amz-Expires=900&X-Amz-Signature=signed";
+
     public static TheoryData<MessageCategory, HttpStatusCode, string, string?> CategoryRefusals => new()
     {
         {
@@ -391,14 +397,6 @@ public class TheSendAsyncMethodWithCodeContent
         {
             MessageCategory.Transactional,
             HttpStatusCode.BadRequest, "category_mismatch", "category"
-        },
-        {
-            new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" },
-            HttpStatusCode.BadRequest, "copies_not_allowed", null
-        },
-        {
-            new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" },
-            HttpStatusCode.BadRequest, "workflow_can_wait", "attachments"
         },
         {
             new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" },
@@ -417,6 +415,7 @@ public class TheSendAsyncMethodWithCodeContent
         await using var harness = new EmailHarness();
         var attrJson = field is null ? "null" : $"\"{field}\"";
         harness.Respond(status, $$"""{"type":"validation_error","code":"{{code}}","detail":"Refused.","attr":{{attrJson}}}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(CodeSendIn(category)));
 
@@ -441,20 +440,231 @@ public class TheSendAsyncMethodWithCodeContent
     }
 
     [Fact]
-    public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt()
+    public async Task SurfacesCopiesNotAllowedRefusalWithoutRetrying()
     {
-        var posthog = new FakePostHogEmails();
-        posthog.RunAnOlderVersion();
-        await using var harness = new EmailHarness(posthog: posthog);
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.BadRequest,
+            """{"type":"validation_error","code":"copies_not_allowed","detail":"Marketing emails cannot include cc or bcc.","attr":null}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "a@example.com",
+            TemplateKey = "k",
+            Subject = "s",
+            Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
+            Cc = ["copy@example.com"],
+            Bcc = ["blind@example.com"],
+            Category = new MessageCategory
+            {
+                Key = "newsletter",
+                Type = MessageCategoryType.Marketing,
+                Name = "Newsletter",
+            },
+        }));
+
+        Assert.Equal("copies_not_allowed", error.Code);
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Null(error.Field);
+        Assert.Empty(harness.Time.Delays);
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
+        var root = body.RootElement;
+        Assert.Equal(
+            ["copy@example.com"],
+            root.GetProperty("cc").EnumerateArray().Select(item => item.GetString()!).ToList());
+        Assert.Equal(
+            ["blind@example.com"],
+            root.GetProperty("bcc").EnumerateArray().Select(item => item.GetString()!).ToList());
+        var sentCategory = root.GetProperty("category");
+        Assert.Equal("newsletter", sentCategory.GetProperty("key").GetString());
+        Assert.Equal("marketing", sentCategory.GetProperty("type").GetString());
+        Assert.Equal("Newsletter", sentCategory.GetProperty("name").GetString());
+        Assert.False(sentCategory.TryGetProperty("description", out _));
+    }
+
+    [Theory]
+    [InlineData("workflow_can_wait")]
+    [InlineData("sandbox_fields_unsupported")]
+    public async Task UploadsAttachmentsBeforeMarketingRefusal(string code)
+    {
+        await using var harness = new EmailHarness();
+        EnqueueSignedPdfUpload(harness);
+        harness.Respond(
+            HttpStatusCode.BadRequest,
+            $$"""{"type":"validation_error","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "a@example.com",
+            TemplateKey = "k",
+            Subject = "s",
+            Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
+            Category = new MessageCategory
+            {
+                Key = "newsletter",
+                Type = MessageCategoryType.Marketing,
+                Name = "Newsletter",
+            },
+            Attachments =
+            [
+                new EmailAttachment
+                {
+                    Filename = "brochure.pdf",
+                    Content = BinaryPdfBytes,
+                    ContentType = "application/pdf",
+                },
+            ],
+        }));
+
+        Assert.Equal(code, error.Code);
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal("attachments", error.Field);
+        Assert.Empty(harness.Time.Delays);
+        AssertSignedPdfUploadBeforeSend(harness, "brochure.pdf", "newsletter", "marketing", "Newsletter");
+    }
+
+    [Fact]
+    public async Task UploadsAttachmentsAndSendsTransactionalCategoryOnTheWire()
+    {
+        await using var harness = new EmailHarness();
+        EnqueueSignedPdfUpload(harness);
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        var result = await harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        {
+            To = "a@example.com",
+            TemplateKey = "k",
+            Subject = "s",
+            Html = "<p>Receipt</p>",
+            Category = new MessageCategory
+            {
+                Key = "receipts",
+                Type = MessageCategoryType.Transactional,
+                Name = "Receipts",
+            },
+            Attachments =
+            [
+                new EmailAttachment
+                {
+                    Filename = "invoice.pdf",
+                    Content = BinaryPdfBytes,
+                    ContentType = "application/pdf",
+                },
+            ],
+        });
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        AssertSignedPdfUploadBeforeSend(harness, "invoice.pdf", "receipts", "transactional", "Receipts");
+    }
+
+    static void EnqueueSignedPdfUpload(EmailHarness harness)
+    {
+        harness.Respond(
+            HttpStatusCode.OK,
+            $$"""
+            {
+                "files": [
+                    {
+                        "sha256": "{{BinaryPdfSha256}}",
+                        "status": "upload",
+                        "url": "{{SignedPdfUploadUrl}}",
+                        "method": "PUT",
+                        "headers": {
+                            "Content-Length": "{{BinaryPdfBytes.Length}}",
+                            "x-amz-checksum-sha256": "{{BinaryPdfChecksum}}"
+                        },
+                        "url_expires_at": "2026-11-10T12:15:00Z"
+                    }
+                ]
+            }
+            """);
+        harness.Respond(HttpStatusCode.OK, string.Empty, "application/xml");
+    }
+
+    static void AssertSignedPdfUploadBeforeSend(
+        EmailHarness harness,
+        string filename,
+        string categoryKey,
+        string categoryType,
+        string categoryName)
+    {
+        Assert.Equal(3, harness.Requests.Count);
+
+        var prepare = harness.Requests[0];
+        Assert.Equal(HttpMethod.Post, prepare.Method);
+        Assert.Equal("https://us.posthog.com/api/messaging/attachments/uploads/", prepare.Url);
+        Assert.Equal("Bearer phs_secret", prepare.Header("Authorization"));
+        using (var prepareBody = JsonDocument.Parse(prepare.Body!))
+        {
+            var file = Assert.Single(prepareBody.RootElement.GetProperty("files").EnumerateArray());
+            Assert.Equal(["sha256", "size"], file.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToList());
+            Assert.Equal(BinaryPdfSha256, file.GetProperty("sha256").GetString());
+            Assert.Equal(BinaryPdfBytes.Length, file.GetProperty("size").GetInt32());
+        }
+
+        var upload = harness.Requests[1];
+        Assert.Equal(HttpMethod.Put, upload.Method);
+        Assert.Equal(SignedPdfUploadUrl, upload.Url);
+        Assert.Null(upload.Header("Authorization"));
+        Assert.Equal(BinaryPdfChecksum, upload.Header("x-amz-checksum-sha256"));
+        Assert.Equal(BinaryPdfBytes, upload.BodyBytes);
+
+        var send = harness.Requests[2];
+        Assert.Equal(HttpMethod.Post, send.Method);
+        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", send.Url);
+        Assert.Equal("Bearer phs_secret", send.Header("Authorization"));
+        using var sendBody = JsonDocument.Parse(send.Body!);
+        var root = sendBody.RootElement;
+        var attachment = Assert.Single(root.GetProperty("attachments").EnumerateArray());
+        Assert.Equal(BinaryPdfSha256, attachment.GetProperty("sha256").GetString());
+        Assert.Equal(filename, attachment.GetProperty("filename").GetString());
+        Assert.Equal("application/pdf", attachment.GetProperty("content_type").GetString());
+        var sentCategory = root.GetProperty("category");
+        Assert.Equal(categoryKey, sentCategory.GetProperty("key").GetString());
+        Assert.Equal(categoryType, sentCategory.GetProperty("type").GetString());
+        Assert.Equal(categoryName, sentCategory.GetProperty("name").GetString());
+        Assert.False(sentCategory.TryGetProperty("description", out _));
+    }
+
+    [Theory]
+    [InlineData(
+        """{"type":"validation_error","code":"invalid_input","detail":"Unknown field: category.","attr":"category"}""",
+        "invalid_input",
+        "category")]
+    [InlineData(
+        """{"type":"validation_error","code":"field_not_accepted","detail":"This PostHog version doesn't accept category yet."}""",
+        "field_not_accepted",
+        null)]
+    public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt(
+        string responseBody,
+        string expectedCode,
+        string? expectedField)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.BadRequest, responseBody);
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
 
         var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(CodeSendIn(
             new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" })));
 
-        Assert.Equal("invalid_request", error.Code);
+        Assert.Equal(expectedCode, error.Code);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
-        Assert.Equal("category", error.Field);
-        Assert.Empty(posthog.Delivered);
+        Assert.Equal(expectedField, error.Field);
         Assert.Empty(harness.Time.Delays);
+        var request = Assert.Single(harness.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
+        var sentCategory = body.RootElement.GetProperty("category");
+        Assert.Equal("newsletter", sentCategory.GetProperty("key").GetString());
+        Assert.Equal("marketing", sentCategory.GetProperty("type").GetString());
+        Assert.Equal("Newsletter", sentCategory.GetProperty("name").GetString());
+        Assert.False(sentCategory.TryGetProperty("description", out _));
     }
 
     [Fact]
@@ -1735,7 +1945,12 @@ sealed class EmailHarness : IAsyncDisposable
     }
 }
 
-sealed record RecordedRequest(HttpMethod Method, string Url, IReadOnlyDictionary<string, string> Headers, string? Body)
+sealed record RecordedRequest(
+    HttpMethod Method,
+    string Url,
+    IReadOnlyDictionary<string, string> Headers,
+    string? Body,
+    byte[]? BodyBytes = null)
 {
     public string? Header(string name) => Headers.TryGetValue(name, out var value) ? value : null;
 }
@@ -1769,6 +1984,7 @@ sealed class RecordingHandler : HttpMessageHandler
         }
 
         string? body = null;
+        byte[]? bodyBytes = null;
         if (request.Content is not null)
         {
             foreach (var header in request.Content.Headers)
@@ -1777,15 +1993,16 @@ sealed class RecordingHandler : HttpMessageHandler
             }
 
 #if NET5_0_OR_GREATER
-            body = await request.Content.ReadAsStringAsync(cancellationToken);
+            bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
 #else
-            body = await request.Content.ReadAsStringAsync();
+            bodyBytes = await request.Content.ReadAsByteArrayAsync();
 #endif
+            body = Encoding.UTF8.GetString(bodyBytes);
         }
 
         lock (_requests)
         {
-            _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body));
+            _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body, bodyBytes));
         }
 
         if (!_responses.TryDequeue(out var respond))

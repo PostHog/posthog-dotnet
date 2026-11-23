@@ -181,8 +181,9 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> on a verified sender (or
     /// <c>sandbox_fields_unsupported</c> on <c>attachments</c> when using the PostHog test sender) when it has
     /// <see cref="Attachments"/> (marketing code sends cannot carry attachments because marketing sending limits can
-    /// hold delivery; the client uploads attachments before PostHog refuses the send). It refuses the send with status
-    /// 422 and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing.
+    /// hold delivery; the client first asks PostHog which attachments it lacks, uploads only those, and fails with any
+    /// upload or storage error before submitting the send for PostHog to refuse). It refuses the send with status 422
+    /// and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing.
     /// </remarks>
     public MessageCategory? Category { get; init; }
 
