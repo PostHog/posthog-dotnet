@@ -37,6 +37,32 @@ public abstract class SendEmailOptions
     /// Overrides <see cref="PostHogOptions.EmailRequestMaxRetries"/> for this send. <c>0</c> turns retries off.
     /// </summary>
     public int? MaxRetries { get; init; }
+
+    /// <summary>
+    /// When to send the email, at most 7 days ahead, such as <c>DateTimeOffset.UtcNow.AddHours(1)</c>. A time that
+    /// has passed sends the email now. Only PostHog Cloud schedules emails.
+    /// </summary>
+    /// <remarks>
+    /// PostHog keeps the time to the millisecond, so the client rounds a finer time up to the next millisecond and
+    /// sends that time on every retry. The result's <see cref="SendEmailResult.Status"/> is <c>scheduled</c> with the
+    /// confirmed <see cref="SendEmailResult.ScheduledAt"/>, or <c>queued</c> when the time had passed.
+    /// <see cref="IPostHogEmails.GetAsync"/> reads <c>scheduled</c> until the email goes out.
+    /// <para>
+    /// A client whose app host isn't PostHog Cloud US or EU, such as a self-hosted PostHog, a reverse proxy or a
+    /// custom domain, fails with <c>scheduling_unsupported</c> before any request. When PostHog accepts the email
+    /// without confirming the time, the send fails with <c>scheduling_unconfirmed</c> and
+    /// <see cref="EmailException.MessageId"/> names the email, which may go out at another time.
+    /// </para>
+    /// <para>
+    /// Work out a relative time once, and pass the same time when you send again with the same
+    /// <see cref="IdempotencyKey"/>: another time fails with <c>idempotency_key_reused</c>. A
+    /// <see cref="DateTime"/> converts as .NET converts it to a <see cref="DateTimeOffset"/>, so one whose
+    /// <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Unspecified"/> reads as this machine's local time.
+    /// To stop scheduled emails, disable their workflow in PostHog until they reach a final status; that refuses
+    /// every new send of it meanwhile.
+    /// </para>
+    /// </remarks>
+    public DateTimeOffset? ScheduledAt { get; init; }
 }
 
 /// <summary>

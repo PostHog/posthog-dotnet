@@ -196,3 +196,10 @@ static PostHog.Emails.EmailTracking.implicit operator PostHog.Emails.EmailTracki
 static PostHog.Emails.EmailTracking.None.get -> PostHog.Emails.EmailTracking!
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
 static PostHog.PromptsExtensions.ClearCache(this PostHog.Prompts.IPostHogPrompts! prompts, string? name = null, int? version = null) -> void
+PostHog.Emails.EmailException.MessageId.get -> string?
+PostHog.Emails.SendEmailOptions.ScheduledAt.get -> System.DateTimeOffset?
+PostHog.Emails.SendEmailOptions.ScheduledAt.init -> void
+PostHog.Emails.SendEmailResult.ScheduledAt.get -> System.DateTimeOffset?
+PostHog.Emails.SendEmailResult.ScheduledAt.init -> void
+PostHog.Emails.SendEmailResult.Status.get -> string!
+PostHog.Emails.SendEmailResult.Status.init -> void

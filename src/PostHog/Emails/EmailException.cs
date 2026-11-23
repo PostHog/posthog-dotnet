@@ -49,7 +49,8 @@ public sealed class EmailException : Exception
         Uri? docsUrl = null,
         string? field = null,
         TimeSpan? retryAfter = null,
-        Exception? innerException = null)
+        Exception? innerException = null,
+        string? messageId = null)
         : base(message, innerException)
     {
         Code = code;
@@ -60,13 +61,16 @@ public sealed class EmailException : Exception
         DocsUrl = docsUrl;
         Field = field;
         RetryAfter = retryAfter;
+        MessageId = messageId;
     }
 
     /// <summary>
     /// PostHog's error code, such as <c>recipient_suppressed</c> or <c>quota_limited</c>, or a client code:
     /// <c>missing_secret_key</c>, <c>missing_app_host</c>, <c>insecure_app_host</c>, <c>client_disabled</c>, <c>client_closed</c>,
     /// <c>network_error</c>, <c>api_error</c> (an answer without a code), <c>attachment_upload_failed</c> (the file
-    /// storage refused or redirected an upload) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
+    /// storage refused or redirected an upload), <c>scheduling_unsupported</c> (a scheduled send to an app host that
+    /// isn't PostHog Cloud), <c>scheduling_unconfirmed</c> (PostHog accepted a scheduled send without confirming its
+    /// time) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
     /// <c>message_too_large</c> itself before any request, as PostHog would.
     /// </summary>
     public string Code { get; }
@@ -109,6 +113,14 @@ public sealed class EmailException : Exception
     /// </summary>
     public TimeSpan? RetryAfter { get; }
 
+    /// <summary>
+    /// The message ID of an email PostHog accepted although the send failed, such as one whose
+    /// <see cref="SendEmailOptions.ScheduledAt"/> PostHog didn't confirm. Read its status with
+    /// <see cref="IPostHogEmails.GetAsync"/> before you send it again: a send with another idempotency key makes a
+    /// second email.
+    /// </summary>
+    public string? MessageId { get; }
+
     static string NameOf(HttpStatusCode? statusCode, string code)
     {
         if (code == "attachment_upload_failed")
@@ -128,7 +140,7 @@ public sealed class EmailException : Exception
                 return "service_unavailable";
             }
 
-            return code.StartsWith("invalid_", StringComparison.Ordinal) || code is "too_many_attachments" or "message_too_large"
+            return code.StartsWith("invalid_", StringComparison.Ordinal) || code is "too_many_attachments" or "message_too_large" or "scheduling_unsupported"
                 ? "validation_error"
                 : "application_error";
         }

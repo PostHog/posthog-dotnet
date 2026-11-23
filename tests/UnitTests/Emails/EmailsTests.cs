@@ -31,6 +31,8 @@ public class TheSendAsyncMethodWithATemplate
         Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.False(result.Replayed);
         Assert.Empty(result.Warnings);
+        Assert.Equal("queued", result.Status);
+        Assert.Null(result.ScheduledAt);
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
