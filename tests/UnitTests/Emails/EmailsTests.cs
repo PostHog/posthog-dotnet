@@ -571,37 +571,22 @@ public class TheSendAsyncMethodWithCodeContent
         AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
     }
 
-    static readonly string SignedPdfUploadGrantJson = $$"""
-        {
-            "files": [
-                {
-                    "sha256": "{{BinaryPdfSha256}}",
-                    "status": "upload",
-                    "url": "{{SignedPdfUploadUrl}}",
-                    "method": "PUT",
-                    "headers": {
-                        "Content-Length": "{{BinaryPdfBytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)}}",
-                        "x-amz-checksum-sha256": "{{BinaryPdfChecksum}}"
-                    },
-                    "url_expires_at": "2026-11-10T12:15:00Z"
-                }
-            ]
-        }
-        """;
-
     [Theory]
     [InlineData("workflow_can_wait")]
     [InlineData("sandbox_fields_unsupported")]
     public async Task UploadsAttachmentsBeforeMarketingRefusal(string code)
     {
-        await using var harness = new EmailHarness();
-        var releaseUpload = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        harness.Respond(HttpStatusCode.OK, SignedPdfUploadGrantJson);
-        var uploadStarted = harness.RespondWhenReleased(releaseUpload.Task, HttpStatusCode.OK, string.Empty);
-        harness.Respond(
-            HttpStatusCode.BadRequest,
-            $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        using var posthog = new FakePostHogEmails();
+        using var transport = new CategorizedAttachmentTransport(
+            posthog,
+            () => new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            });
+        await using var harness = new EmailHarness(posthog: transport);
 
         var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -628,15 +613,16 @@ public class TheSendAsyncMethodWithCodeContent
 
         try
         {
-            var started = await Task.WhenAny(uploadStarted, sendTask);
-            Assert.Same(uploadStarted, started);
+            var started = await Task.WhenAny(transport.UploadStarted, sendTask);
+            Assert.Same(transport.UploadStarted, started);
             Assert.False(sendTask.IsCompleted);
-            Assert.Equal(2, harness.Requests.Count);
-            Assert.Equal(HttpMethod.Put, harness.Requests[1].Method);
+            Assert.Equal(2, transport.Requests.Count);
+            Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
+            Assert.Equal(0, posthog.StorageWrites);
         }
         finally
         {
-            releaseUpload.TrySetResult(true);
+            transport.ReleaseUpload();
         }
 
         var error = await Assert.ThrowsAsync<EmailException>(() => sendTask);
@@ -645,8 +631,10 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments", error.Field);
+        Assert.Equal(1, posthog.StorageWrites);
+        Assert.Empty(posthog.Delivered);
         AssertSignedPdfUploadBeforeSend(
-            harness.Requests,
+            transport.Requests,
             "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
             "brochure.pdf",
             "newsletter",
@@ -657,11 +645,9 @@ public class TheSendAsyncMethodWithCodeContent
     [Fact]
     public async Task UploadsAttachmentsAndSendsTransactionalCategoryOnTheWire()
     {
-        await using var harness = new EmailHarness();
-        var releaseUpload = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        harness.Respond(HttpStatusCode.OK, SignedPdfUploadGrantJson);
-        var uploadStarted = harness.RespondWhenReleased(releaseUpload.Task, HttpStatusCode.OK, string.Empty);
-        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        using var posthog = new FakePostHogEmails();
+        using var transport = new CategorizedAttachmentTransport(posthog);
+        await using var harness = new EmailHarness(posthog: transport);
 
         var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
         {
@@ -688,22 +674,29 @@ public class TheSendAsyncMethodWithCodeContent
 
         try
         {
-            var started = await Task.WhenAny(uploadStarted, sendTask);
-            Assert.Same(uploadStarted, started);
+            var started = await Task.WhenAny(transport.UploadStarted, sendTask);
+            Assert.Same(transport.UploadStarted, started);
             Assert.False(sendTask.IsCompleted);
-            Assert.Equal(2, harness.Requests.Count);
-            Assert.Equal(HttpMethod.Put, harness.Requests[1].Method);
+            Assert.Equal(2, transport.Requests.Count);
+            Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
+            Assert.Equal(0, posthog.StorageWrites);
         }
         finally
         {
-            releaseUpload.TrySetResult(true);
+            transport.ReleaseUpload();
         }
 
         var result = await sendTask;
 
-        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        Assert.Equal(FakePostHogEmails.MessageId, result.Id);
+        Assert.Equal(1, posthog.StorageWrites);
+        var delivered = Assert.Single(posthog.Delivered);
+        var deliveredAttachment = Assert.Single(delivered.Attachments);
+        Assert.Equal("invoice.pdf", deliveredAttachment.Filename);
+        Assert.Equal("application/pdf", deliveredAttachment.ContentType);
+        Assert.Equal(BinaryPdfBytes, deliveredAttachment.Content);
         AssertSignedPdfUploadBeforeSend(
-            harness.Requests,
+            transport.Requests,
             "<p>Receipt</p>",
             "invoice.pdf",
             "receipts",
@@ -712,7 +705,7 @@ public class TheSendAsyncMethodWithCodeContent
     }
 
     static void AssertSignedPdfUploadBeforeSend(
-        IReadOnlyList<RecordedRequest> requests,
+        List<RecordedRequest> requests,
         string expectedHtml,
         string filename,
         string categoryKey,
@@ -761,6 +754,191 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(filename, attachment.GetProperty("filename").GetString());
         Assert.Equal("application/pdf", attachment.GetProperty("content_type").GetString());
         AssertCategoryObject(root.GetProperty("category"), categoryKey, categoryType, categoryName);
+    }
+
+    sealed class CategorizedAttachmentTransport(
+        FakePostHogEmails fake,
+        Func<HttpResponseMessage>? sendRefusal = null) : HttpMessageHandler
+    {
+        readonly HttpMessageInvoker _invoker = new(fake, disposeHandler: false);
+        readonly List<RecordedRequest> _requests = [];
+        readonly TaskCompletionSource<bool> _uploadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource<bool> _releaseUpload = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Func<HttpResponseMessage>? _sendRefusal = sendRefusal;
+
+        public List<RecordedRequest> Requests
+        {
+            get
+            {
+                lock (_requests)
+                {
+                    return _requests.ToList();
+                }
+            }
+        }
+
+        public Task UploadStarted => _uploadStarted.Task;
+
+        public void ReleaseUpload() => _releaseUpload.TrySetResult(true);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var header in request.Headers)
+            {
+                headers[header.Key] = string.Join(", ", header.Value);
+            }
+
+            string? body = null;
+            byte[]? bodyBytes = null;
+            if (request.Content is not null)
+            {
+                foreach (var header in request.Content.Headers)
+                {
+                    headers[header.Key] = string.Join(", ", header.Value);
+                }
+
+#if NET5_0_OR_GREATER
+                bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+#else
+                bodyBytes = await request.Content.ReadAsByteArrayAsync();
+#endif
+                body = Encoding.UTF8.GetString(bodyBytes);
+            }
+
+            lock (_requests)
+            {
+                _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body, bodyBytes));
+            }
+
+            if (request.Method == HttpMethod.Put)
+            {
+                _uploadStarted.TrySetResult(true);
+                await _releaseUpload.Task;
+                return await _invoker.SendAsync(request, cancellationToken);
+            }
+
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/")
+            {
+                var refusal = Interlocked.Exchange(ref _sendRefusal, null);
+                if (refusal is not null)
+                {
+                    if (!await AreAllAttachmentsStoredAsync(bodyBytes!, cancellationToken))
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                        {
+                            Content = new StringContent(
+                                """{"type":"validation_error","code":"attachment_not_uploaded","attr":"attachments__0__sha256","detail":"A file this email names isn't uploaded, so PostHog didn't send the email."}""",
+                                Encoding.UTF8,
+                                "application/json"),
+                        };
+                    }
+
+                    return refusal();
+                }
+
+                using var forwarded = new HttpRequestMessage(request.Method, request.RequestUri)
+                {
+                    Content = new ByteArrayContent(StripCategory(bodyBytes!)),
+                };
+                forwarded.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                foreach (var header in request.Headers)
+                {
+                    forwarded.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+
+                return await _invoker.SendAsync(forwarded, cancellationToken);
+            }
+
+            return await _invoker.SendAsync(request, cancellationToken);
+        }
+
+        async Task<bool> AreAllAttachmentsStoredAsync(byte[] bodyBytes, CancellationToken cancellationToken)
+        {
+            using var document = JsonDocument.Parse(bodyBytes);
+            if (!document.RootElement.TryGetProperty("attachments", out var attachments)
+                || attachments.ValueKind != JsonValueKind.Array
+                || attachments.GetArrayLength() == 0)
+            {
+                return false;
+            }
+
+            var probeFiles = new List<Dictionary<string, object>>();
+            foreach (var attachment in attachments.EnumerateArray())
+            {
+                if (!attachment.TryGetProperty("sha256", out var sha256)
+                    || sha256.ValueKind != JsonValueKind.String
+                    || sha256.GetString() is not { } hash)
+                {
+                    return false;
+                }
+
+                probeFiles.Add(new Dictionary<string, object> { ["sha256"] = hash, ["size"] = 1 });
+            }
+
+            using var probe = new HttpRequestMessage(HttpMethod.Post, "https://us.posthog.com/api/messaging/attachments/uploads/")
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new Dictionary<string, object> { ["files"] = probeFiles }),
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+            probe.Headers.Authorization = new AuthenticationHeaderValue("Bearer", FakePostHogEmails.SecretKey);
+            using var probeResponse = await _invoker.SendAsync(probe, cancellationToken);
+            if (!probeResponse.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+#if NET5_0_OR_GREATER
+            var probeBody = await probeResponse.Content.ReadAsByteArrayAsync(cancellationToken);
+#else
+            var probeBody = await probeResponse.Content.ReadAsByteArrayAsync();
+#endif
+            using var probeDocument = JsonDocument.Parse(probeBody);
+            foreach (var file in probeDocument.RootElement.GetProperty("files").EnumerateArray())
+            {
+                if (!string.Equals(file.GetProperty("status").GetString(), "present", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        static byte[] StripCategory(byte[] bodyBytes)
+        {
+            using var document = JsonDocument.Parse(bodyBytes);
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (!string.Equals(property.Name, "category", StringComparison.Ordinal))
+                    {
+                        property.WriteTo(writer);
+                    }
+                }
+
+                writer.WriteEndObject();
+            }
+
+            return buffer.ToArray();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _invoker.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 
     [Theory]
@@ -2063,25 +2241,6 @@ sealed class EmailHarness : IAsyncDisposable
 
             return Task.FromResult(response);
         });
-
-    public Task RespondWhenReleased(
-        Task release,
-        HttpStatusCode status,
-        string body,
-        string contentType = "application/xml")
-    {
-        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _handler.Enqueue(async _ =>
-        {
-            started.TrySetResult(true);
-            await release;
-            return new HttpResponseMessage(status)
-            {
-                Content = new StringContent(body, Encoding.UTF8, contentType),
-            };
-        });
-        return started.Task;
-    }
 
     public void Fail(Exception exception) => _handler.Enqueue(_ => Task.FromException<HttpResponseMessage>(exception));
 
