@@ -7,5 +7,5 @@ namespace PostHog.AspNetCore.Versioning;
 
 internal static class VersionConstants
 {
-    public const string Version = "2.10.0";
+    public const string Version = "2.10.1";
 }
