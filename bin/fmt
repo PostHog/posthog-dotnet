@@ -40,6 +40,10 @@ if type dotnet >/dev/null 2>&1; then
     fi
     echo "Running .NET Formatters..."
 
+    # Without reference assemblies, the formatter's workspace can't match the netcoreapp3.1 test
+    # project's references to the netstandard2.1 builds and warns while loading the solution.
+    export ProduceReferenceAssembly=true
+
     # Run just 'whitespace' and 'style' formatters, not 'analyzer' formatters!
     if ! dotnet format whitespace "$SOLUTION_FILE" "${dotnet_args[@]}"; then
         success=false

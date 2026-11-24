@@ -2647,7 +2647,7 @@ public class TheLoadFeatureFlagsAsyncMethod
         Assert.Contains(debugLogs, log => log.Message?.Contains("Feature flags loaded successfully", StringComparison.Ordinal) == true);
     }
 
-    [Fact(Skip = "Cancellation token handling needs integration test")]
+    [Fact]
     public async Task RespectsCancellationToken()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
@@ -2662,11 +2662,11 @@ public class TheLoadFeatureFlagsAsyncMethod
 #pragma warning restore CA1849
 
         // Should throw OperationCanceledException
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             client.LoadFeatureFlagsAsync(cts.Token));
     }
 
-    [Fact(Skip = "Cancellation token handling needs integration test")]
+    [Fact]
     public async Task DoesNotLogErrorForCancellation()
     {
         var container = new TestContainer(personalApiKey: "fake-personal-api-key");
@@ -2680,7 +2680,7 @@ public class TheLoadFeatureFlagsAsyncMethod
         cts.Cancel();
 #pragma warning restore CA1849
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             client.LoadFeatureFlagsAsync(cts.Token));
 
         // Verify no error was logged for cancellation
