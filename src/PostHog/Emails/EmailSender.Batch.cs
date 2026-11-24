@@ -25,9 +25,6 @@ internal sealed partial class EmailSender
     static readonly HashSet<string> UnconfirmedSlotCodes =
         new(UnconfirmedRequestCodes, StringComparer.Ordinal) { "api_error" };
 
-    static readonly HashSet<string> StatusesOfAnAcceptedEmail =
-        new(StringComparer.Ordinal) { "queued", "sent", "delivered", "bounced", "complained" };
-
     public async Task<SendBatchResult> BatchAsync(SendBatchOptions batch, CancellationToken cancellationToken = default)
     {
         var run = PrepareBatch(batch, MaxRetriesOption);
@@ -90,6 +87,7 @@ internal sealed partial class EmailSender
             }
         }
 
+        await ReadUnconfirmedAsync(run, appHost, secretKey, cancellationToken).ConfigureAwait(false);
         LogWarnings(run.Warnings);
         return new SendBatchResult { Results = run.Outcome(), Warnings = run.Warnings.ToList() };
     }
@@ -143,9 +141,9 @@ internal sealed partial class EmailSender
                     "api_error",
                     "PostHog answered this email's status without a readable message ID, so it may still go out."));
             }
-            else if (StatusesOfAnAcceptedEmail.Contains(status.Status))
+            else
             {
-                row.Set("queued", status.Id);
+                row.Identify(status.Id);
             }
         }
     }
@@ -291,6 +289,8 @@ internal sealed partial class EmailSender
         {
             (Status, MessageId, Replayed, Error, LaterError) = (status, messageId, replayed, error, laterError);
         }
+
+        public void Identify(string messageId) => MessageId = messageId;
 
         public void AddLaterError(EmailException later) => Set("unconfirmed", MessageId, error: Error, laterError: later);
 
