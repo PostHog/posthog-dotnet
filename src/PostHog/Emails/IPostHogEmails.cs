@@ -48,7 +48,7 @@ public interface IPostHogEmails
     /// <see cref="BatchRecipient.IdempotencyKey"/> values queues no second email for a recipient PostHog already
     /// accepted. Keys the client makes cover the retries of one call only. Network errors, rate limits, a key still in
     /// flight and an unavailable service are retried. An <c>unconfirmed</c> email may still go out:
-    /// send it again with the same key within 24 hours, so it goes out once.
+    /// send it again with the same key within 24 hours of the key's first use, so it goes out once.
     /// </para>
     /// </remarks>
     /// <param name="batch">
@@ -58,7 +58,7 @@ public interface IPostHogEmails
     /// <returns>
     /// A result per recipient, in the order of <see cref="SendBatchOptions.Recipients"/>. Check each
     /// <see cref="BatchEmailResult.Status"/>: <c>queued</c>, <c>failed</c> or <c>unconfirmed</c>. Send an
-    /// <c>unconfirmed</c> email again with the same key within 24 hours, so it goes out once.
+    /// <c>unconfirmed</c> email again with the same key within 24 hours of the key's first use, so it goes out once.
     /// </returns>
     /// <exception cref="ArgumentException">
     /// An option is invalid, such as more than 100 recipients or two recipients with the same idempotency key. No

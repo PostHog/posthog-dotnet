@@ -13,7 +13,7 @@ public class TheBatchAsyncMethod
 {
     const string TemplateIdText = "0190f6d2-7c1e-7b3a-9f5e-1c2d3e4f5a6b";
     const string BatchUrl = "https://us.posthog.com/api/messaging/send/email_batch/";
-    const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours, so it goes out once.";
+    const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
     const int FourMiB = 4 * 1024 * 1024;
     const string SendSinglyFix =
         "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
@@ -178,6 +178,25 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
+    public async Task SendsTheRecipientsItCountedWhenTemplateDataAddsOne()
+    {
+        await using var harness = new EmailHarness();
+        AllQueued(harness);
+        var recipients = Recipients(100).ToList();
+        var batch = new SendTemplateBatchOptions
+        {
+            TemplateId = TemplateId,
+            Recipients = recipients,
+            TemplateData = new AddsARecipientWhenRead(recipients),
+        };
+
+        var result = await harness.Client.Emails.BatchAsync(batch);
+
+        Assert.Equal(100, Keys(Assert.Single(harness.Requests)).Length);
+        Assert.Equal(100, result.Results.Count);
+    }
+
+    [Fact]
     public async Task SendsUpTo100RecipientsInOneRequestWhateverItsSize()
     {
         await using var harness = new EmailHarness();
@@ -273,7 +292,7 @@ public class TheBatchAsyncMethod
         var (first, second) = (result.Results[0], result.Results[1]);
         Assert.Equal(("queued", M0, true), (first.Status, first.MessageId, first.Replayed));
         Assert.Equal(
-            ("unconfirmed", M1, "recipient_suppressed", "Send it again with the same IdempotencyKey within 24 hours, so it goes out once."),
+            ("unconfirmed", M1, "recipient_suppressed", "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once."),
             (second.Status, second.MessageId, second.Error!.Code, second.Error.Fix));
         Assert.Equal(Keys(harness.Requests[1])[1], second.IdempotencyKey);
     }
@@ -731,6 +750,31 @@ public class TheBatchAsyncMethod
 
     static string OkWithWarnings(string? warnings, params string[] slots)
         => "{\"results\":[" + string.Join(",", slots) + "]" + (warnings is null ? "" : ",\"warnings\":[" + warnings + "]") + "}";
+
+    sealed class AddsARecipientWhenRead(List<BatchRecipient> recipients) : IReadOnlyDictionary<string, object>
+    {
+        readonly Dictionary<string, object> _data = new() { ["a"] = 1 };
+
+        public object this[string key] => _data[key];
+
+        public IEnumerable<string> Keys => _data.Keys;
+
+        public IEnumerable<object> Values => _data.Values;
+
+        public int Count => _data.Count;
+
+        public bool ContainsKey(string key) => _data.ContainsKey(key);
+
+        public bool TryGetValue(string key, out object value) => _data.TryGetValue(key, out value!);
+
+        public IEnumerator<KeyValuePair<string, object>> GetEnumerator()
+        {
+            recipients.Add(new BatchRecipient { To = "late@example.com" });
+            return _data.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 
     static Dictionary<string, object> Cyclic()
     {

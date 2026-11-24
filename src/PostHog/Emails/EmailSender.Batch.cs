@@ -10,7 +10,7 @@ internal sealed partial class EmailSender
 {
     const string BatchPath = "/api/messaging/send/email_batch/";
     const int BatchMaxRecipients = 100;
-    const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours, so it goes out once.";
+    const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
     const string SplitTheBatch = "Split the recipients into smaller batches and send each with BatchAsync.";
 
@@ -108,7 +108,8 @@ internal sealed partial class EmailSender
             throw new ArgumentException("MaxRetries must not be negative.", nameof(batch));
         }
 
-        CheckRecipientCount(batch.Recipients, nameof(batch));
+        var recipients = batch.Recipients?.ToList();
+        CheckRecipientCount(recipients, nameof(batch));
 
         Dictionary<string, object?> shared;
         switch (batch)
@@ -140,7 +141,7 @@ internal sealed partial class EmailSender
                 throw new ArgumentException("Send a SendTemplateBatchOptions or a SendCodeBatchOptions.", nameof(batch));
         }
 
-        var rows = BatchRows(batch.Recipients!, batch is SendTemplateBatchOptions, nameof(batch));
+        var rows = BatchRows(recipients!, batch is SendTemplateBatchOptions, nameof(batch));
         shared["recipients"] = rows.Select(row => row.Wire).ToList();
         return new BatchRun(
             JsonSerializer.Serialize(shared, JsonSerializerHelper.Options),
@@ -148,7 +149,7 @@ internal sealed partial class EmailSender
             batch.MaxRetries ?? defaultMaxRetries);
     }
 
-    static void CheckRecipientCount(IReadOnlyList<BatchRecipient>? recipients, string paramName)
+    static void CheckRecipientCount(List<BatchRecipient>? recipients, string paramName)
     {
         if (recipients is not { Count: > 0 })
         {
@@ -164,7 +165,7 @@ internal sealed partial class EmailSender
         }
     }
 
-    static List<BatchRow> BatchRows(IReadOnlyList<BatchRecipient> recipients, bool isTemplate, string paramName)
+    static List<BatchRow> BatchRows(List<BatchRecipient> recipients, bool isTemplate, string paramName)
     {
         var firstWithKey = new Dictionary<string, int>(StringComparer.Ordinal);
         var rows = new List<BatchRow>(recipients.Count);

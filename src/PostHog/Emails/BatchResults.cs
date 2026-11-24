@@ -46,8 +46,8 @@ public sealed class BatchEmailResult
     /// <item><c>failed</c>: PostHog didn't queue the email, and <see cref="Error"/> says why, such as a suppressed
     /// address.</item>
     /// <item><c>unconfirmed</c>: the client can't tell whether PostHog queued the email, such as after a lost answer,
-    /// or a refusal of the retry that followed one. It may still go out. Send it again with the same <see cref="IdempotencyKey"/> within 24 hours, so it goes out
-    /// once.</item>
+    /// or a refusal of the retry that followed one. It may still go out. Send it again with the same
+    /// <see cref="IdempotencyKey"/> within 24 hours of the key's first use, so it goes out once.</item>
     /// </list>
     /// </remarks>
     public required string Status { get; init; }
