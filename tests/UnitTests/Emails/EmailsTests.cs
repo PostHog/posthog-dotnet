@@ -1568,6 +1568,8 @@ sealed class HeldAnswer
 
     public void Release() => _released.TrySetResult(true);
 
+    public bool Abandoned => _released.Task.IsCanceled;
+
     public async Task WaitAsync(CancellationToken cancellationToken)
     {
         using (cancellationToken.Register(() => _released.TrySetCanceled(cancellationToken)))
@@ -1757,7 +1759,7 @@ sealed class RecordingTimeProvider : TimeProvider
                 _liveDeadlineTimers++;
                 if (_controllingDeadlines)
                 {
-                    var held = new DeadlineTimer(this, null, _advanced + dueTime, Fire);
+                    var held = new DeadlineTimer(this, null, _advanced + dueTime, () => callback(state));
                     _deadlines.Add(held);
                     return held;
                 }
