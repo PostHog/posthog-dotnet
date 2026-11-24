@@ -115,7 +115,7 @@ jobs:
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           # The netcoreapp3.1 tests roll forward to the oldest newer runtime installed. Install .NET 8
-          # so they don't depend on the runner image. They fail on a .NET 9 runtime.
+          # so they don't depend on the runner image. See TheSendAsyncMethodOverTheNetwork for why .NET 9 fails.
           dotnet-version: |
             8.0.x
             ${{ env.DOTNET_VERSION }}
