@@ -37,19 +37,19 @@ public interface IPostHogEmails
     /// The client sends the recipients in requests of at most 100 recipients and 4 MiB of JSON, one after another. It
     /// also keeps each request under the 16 MiB that PostHog's email pipeline copies at once: the shared
     /// <see cref="SendTemplateBatchOptions.TemplateData"/> or content once per recipient, plus each recipient's own
-    /// <see cref="BatchRecipient.TemplateData"/>. The client waits up to 45 seconds for each answer, or <see cref="PostHogOptions.EmailRequestTimeout"/> when that is
-    /// longer. The <see cref="HttpClient.Timeout"/> of the <see cref="HttpClient"/> the client sends through still
-    /// ends an attempt when it is shorter, so give that <see cref="HttpClient"/> a timeout of at least 45 seconds. A
-    /// recipient too large for any request alone is <c>failed</c> with <c>content_too_large</c>, and the rest still go
-    /// out.
+    /// <see cref="BatchRecipient.TemplateData"/>. The client waits up to 45 seconds for each answer, or
+    /// <see cref="PostHogOptions.EmailRequestTimeout"/> when that is longer. The <see cref="HttpClient.Timeout"/> of
+    /// the <see cref="HttpClient"/> the client sends through still ends an attempt when it is shorter, so give that
+    /// <see cref="HttpClient"/> a timeout of at least 45 seconds. A recipient too large for any request alone is
+    /// <c>failed</c> with <c>content_too_large</c>, and the rest still go out.
     /// <para>
     /// Each recipient has an idempotency key, its <see cref="BatchRecipient.IdempotencyKey"/> or one the client makes,
     /// that every retry reuses, so a retry never queues an email twice. PostHog replays a key for 24 hours after the
     /// first request that used it: a batch sent again within that window that passes the same
     /// <see cref="BatchRecipient.IdempotencyKey"/> values queues no second email for a recipient PostHog already
-    /// accepted. Keys the client makes cover the retries of one call only. Network errors, rate limits, a key still in flight and an unavailable
-    /// service are retried for each request. At the end of every batch, also one that throws, the client reads each
-    /// <c>unconfirmed</c> email without a message ID by its key and fills in its
+    /// accepted. Keys the client makes cover the retries of one call only. Network errors, rate limits, a key still in
+    /// flight and an unavailable service are retried for each request. At the end of every batch, also one that throws,
+    /// the client reads each <c>unconfirmed</c> email without a message ID by its key and fills in its
     /// <see cref="BatchEmailResult.MessageId"/>. A read never changes the status: the email stays <c>unconfirmed</c>.
     /// </para>
     /// </remarks>
