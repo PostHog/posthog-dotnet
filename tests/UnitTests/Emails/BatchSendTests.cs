@@ -279,6 +279,19 @@ public class TheBatchAsyncMethod
 
         Assert.Equal(2, harness.Requests.Count);
         Assert.Equal(100, harness.Requests.Sum(r => Keys(r).Length));
+        Assert.All(harness.Requests, r => Assert.InRange(JavaScriptCopiedBytes(r), 1, 16 * 1024 * 1024));
+    }
+
+    static long JavaScriptCopiedBytes(RecordedRequest request)
+    {
+        var spelledOut = request.Body!.Replace("1E+20", "100000000000000000000", StringComparison.Ordinal);
+        Assert.NotEqual(request.Body, spelledOut);
+        using var body = JsonDocument.Parse(spelledOut);
+        var shared = Encoding.UTF8.GetByteCount(body.RootElement.GetProperty("message_data").GetRawText());
+        return body.RootElement.GetProperty("recipients").EnumerateArray()
+            .Sum(recipient => shared + (recipient.TryGetProperty("message_data", out var own)
+                ? Encoding.UTF8.GetByteCount(own.GetRawText())
+                : 2L));
     }
 
     [Fact]
