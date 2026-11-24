@@ -1,5 +1,11 @@
 # PostHog
 
+## 2.26.7
+
+### Patch Changes
+
+- 9a59aec: Local evaluation of `gt`, `gte`, `lt` and `lte` now compares property values of type `float`, `decimal`, `short`, `ushort`, `uint`, `ulong`, `byte` and `sbyte` as numbers. They used to be compared as strings, so `10` was less than `7`.
+
 ## 2.26.6
 
 ### Patch Changes
