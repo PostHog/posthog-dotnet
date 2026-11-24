@@ -35,9 +35,11 @@ public interface IPostHogEmails
     /// </summary>
     /// <remarks>
     /// The client sends the recipients in requests of at most 100 recipients and 4 MiB of JSON, one after another. It
-    /// also keeps each request under the 16 MiB that PostHog's email pipeline copies at once: the shared
+    /// also splits them by its estimate of the 16 MiB that PostHog's email pipeline copies at once: the shared
     /// <see cref="SendTemplateBatchOptions.TemplateData"/> or content once per recipient, plus each recipient's own
-    /// <see cref="BatchRecipient.TemplateData"/>. The client waits up to 45 seconds for each answer, or
+    /// <see cref="BatchRecipient.TemplateData"/>. For content your code rendered, the estimate leaves out the sender
+    /// and tracking data PostHog adds, so a request close to that limit can still be refused whole with
+    /// <c>content_too_large</c>. The client waits up to 45 seconds for each answer, or
     /// <see cref="PostHogOptions.EmailRequestTimeout"/> when that is longer. The <see cref="HttpClient.Timeout"/> of
     /// the <see cref="HttpClient"/> the client sends through still ends an attempt when it is shorter, so give that
     /// <see cref="HttpClient"/> a timeout of at least 45 seconds. A recipient too large for any request alone is
