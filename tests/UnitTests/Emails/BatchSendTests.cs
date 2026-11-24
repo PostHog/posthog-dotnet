@@ -550,6 +550,28 @@ public class TheBatchAsyncMethod
             (unconfirmed.Error!.Code, unconfirmed.LaterError!.Code));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("<html>Conflict</html>")]
+    [InlineData("""{"detail":"Conflict."}""")]
+    public async Task ReadsBackEachEmailOfARequestRefusedWithA409ItCantRead(string body)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Conflict, body);
+        harness.Respond(HttpStatusCode.OK, StatusFound(M0));
+        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+
+        Assert.Equal(
+            [BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"],
+            harness.Requests.Select(r => r.Url));
+        Assert.Equal(
+            [("unconfirmed", M0, "api_error"), ("unconfirmed", null, "api_error")],
+            error.Results.Select(r => (r.Status, r.MessageId, r.Error!.Code)));
+    }
+
     [Fact]
     public async Task KeepsARequestPostHogHeldInFlightUnconfirmedAfterALaterRefusal()
     {

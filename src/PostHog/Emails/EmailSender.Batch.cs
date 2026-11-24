@@ -427,7 +427,8 @@ internal sealed partial class EmailSender
                 {
                     chunk.Lost();
                 }
-                else if (UnconfirmedRequestCodes.Contains(error.Code))
+                else if (UnconfirmedRequestCodes.Contains(error.Code)
+                         || (reply.Status == HttpStatusCode.Conflict && Text(reply.Fields, "code") is null))
                 {
                     chunk.UnconfirmWith(error);
                 }
