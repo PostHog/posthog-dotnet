@@ -171,6 +171,19 @@ public class TheSendAsyncMethodWithATemplate
     }
 
     [Fact]
+    public async Task ReturnsAReplayWhenAnotherFieldNameIsUnreadable()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188", "replayed": true, "replay\ud800ed": false}""");
+
+        var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal(("01a18356-c56c-0001-e494-7666bc915188", true), (result.Id, result.Replayed));
+    }
+
+    [Fact]
     public async Task SendsTheMigratedFromHeader()
     {
         await using var harness = new EmailHarness(options => options.MigratedFrom = "resend");

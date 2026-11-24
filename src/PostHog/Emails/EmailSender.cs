@@ -811,20 +811,39 @@ internal sealed class EmailSender : IPostHogEmails
 
     // GetString throws on an unpaired surrogate escape, which would hide an accepted email and its message ID.
     /// <summary>
-    /// Looks up a field of a reply. <c>false</c> when the reply has no such field, and also when the lookup throws on
-    /// an unpaired surrogate escape in another field's name, which would hide an accepted email and its message ID.
+    /// Looks up a field of a reply, as the last field with that name. A field whose name has an unpaired surrogate
+    /// escape can't be read, so it is skipped rather than allowed to throw and hide an accepted email, its message ID,
+    /// or a readable field next to it.
     /// </summary>
     static bool TryField(JsonElement element, string name, out JsonElement value)
     {
-        try
+        value = default;
+        if (element.ValueKind != JsonValueKind.Object)
         {
-            return element.TryGetProperty(name, out value);
-        }
-        catch (InvalidOperationException)
-        {
-            value = default;
             return false;
         }
+
+        var found = false;
+        foreach (var field in element.EnumerateObject())
+        {
+            bool matches;
+            try
+            {
+                matches = field.NameEquals(name);
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            if (matches)
+            {
+                value = field.Value;
+                found = true;
+            }
+        }
+
+        return found;
     }
 
     static string? StringValue(JsonElement value)
