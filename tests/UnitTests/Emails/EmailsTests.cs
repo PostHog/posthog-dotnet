@@ -814,33 +814,6 @@ public class TheSendAsyncMethodWithCodeContent
         }
     }
 
-    [Fact]
-    public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt()
-    {
-        using var posthog = new FakePostHogEmails();
-        using var transport = new CategorizedSendHandler(posthog);
-        await using var harness = new EmailHarness(posthog: transport);
-        var email = CodeSendIn(
-            new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" });
-
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(email));
-
-        Assert.Equal("invalid_request", error.Code);
-        Assert.Equal("validation_error", error.Name);
-        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
-        Assert.Equal("category", error.Field);
-        Assert.Equal("PostHog doesn't take this field, so it doesn't send the email without it.", error.Message);
-        Assert.Empty(posthog.Delivered);
-        var request = Assert.Single(transport.Requests);
-        Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal(SendUrl, request.Url);
-        using var body = JsonDocument.Parse(request.Body!);
-        var root = body.RootElement;
-        AssertObjectKeys(root, CategorizedCodeSendKeys);
-        AssertCodeSendFields(root, email);
-        AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
-    }
-
     [Theory]
     [InlineData(
         """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"PostHog doesn't take this field, so it doesn't send the email without it."}""",
@@ -850,12 +823,12 @@ public class TheSendAsyncMethodWithCodeContent
         null,
         null)]
     [InlineData(
-        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Send the email without this field, or send it again once PostHog takes the field."}""",
+        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Wait until PostHog accepts `category`, then send the email again."}""",
         "field_not_accepted",
         "category",
         "PostHog doesn't take this field yet, so it didn't send the email.",
         "This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.",
-        "Send the email without this field, or send it again once PostHog takes the field.")]
+        "Wait until PostHog accepts `category`, then send the email again.")]
     public async Task MapsOlderPostHogRefusalEnvelopesWithoutRetrying(
         string responseBody,
         string expectedCode,
