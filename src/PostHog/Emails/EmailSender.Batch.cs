@@ -188,7 +188,7 @@ internal sealed partial class EmailSender
                 AddSensitiveAndTracking(shared, code.Sensitive, code.Tracking);
                 copiedPerRecipient = EmptyObjectBytes
                                      + Utf8Bytes(shared)
-                                     + (code.Text is null && code.Html is not null ? Utf8Bytes(code.Html) : 0);
+                                     + (string.IsNullOrEmpty(code.Text) && code.Html is not null ? Utf8Bytes(code.Html) : 0);
                 break;
             default:
                 throw new ArgumentException("Send a SendTemplateBatchOptions or a SendCodeBatchOptions.", nameof(batch));

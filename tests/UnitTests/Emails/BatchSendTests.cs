@@ -215,6 +215,32 @@ public class TheBatchAsyncMethod
         Assert.Equal(perRequest, harness.Requests.Select(r => Keys(r).Length));
     }
 
+    [Fact]
+    public async Task CountsThePlainTextPostHogDerivesFromHtmlWhenTextIsEmpty()
+    {
+        var html = "<p>" + new string('x', 100_000) + "</p>";
+
+        async Task<int[]> RecipientsPerRequest(string? text)
+        {
+            await using var harness = new EmailHarness();
+            AllQueued(harness, times: 2);
+            await harness.Client.Emails.BatchAsync(new SendCodeBatchOptions
+            {
+                TemplateKey = "welcome",
+                Subject = "Welcome",
+                Html = html,
+                Text = text,
+                Recipients = Recipients(100),
+            });
+            return harness.Requests.Select(r => Keys(r).Length).ToArray();
+        }
+
+        var withoutText = await RecipientsPerRequest(null);
+
+        Assert.Equal(2, withoutText.Length);
+        Assert.Equal(withoutText, await RecipientsPerRequest(""));
+    }
+
     [Theory]
     [InlineData(44, "queued")]
     [InlineData(45, "The request to PostHog timed out after 45s.")]
