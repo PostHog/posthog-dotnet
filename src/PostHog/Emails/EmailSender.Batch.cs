@@ -15,11 +15,13 @@ internal sealed partial class EmailSender
     const int BatchMaxBodyBytes = 4 * 1024 * 1024;
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
 
-    // PostHog's email pipeline takes up to 30 seconds to confirm a batch, so a shorter wait would lose its answer.
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
 
+    static readonly HashSet<string> UnconfirmedRequestCodes =
+        new(StringComparer.Ordinal) { "idempotency_key_in_flight", "delivery_unavailable" };
+
     static readonly HashSet<string> UnconfirmedSlotCodes =
-        new(StringComparer.Ordinal) { "idempotency_key_in_flight", "delivery_unavailable", "api_error" };
+        new(UnconfirmedRequestCodes, StringComparer.Ordinal) { "api_error" };
 
     public async Task<SendBatchResult> BatchAsync(SendBatchOptions batch, CancellationToken cancellationToken = default)
     {
@@ -36,6 +38,7 @@ internal sealed partial class EmailSender
             }
 
             var chunk = run.Chunks[position];
+            var body = run.Body(chunk);
             var attempts = 0;
             try
             {
@@ -57,7 +60,7 @@ internal sealed partial class EmailSender
                                     HttpMethod.Post,
                                     url,
                                     secretKey,
-                                    chunk.Body,
+                                    body,
                                     idempotencyKey: null,
                                     cancellationToken,
                                     attemptTimeout)
@@ -65,7 +68,7 @@ internal sealed partial class EmailSender
                         }
                         catch (EmailException e) when (e.Code == "network_error")
                         {
-                            run.Lost(chunk);
+                            chunk.Lost();
                             throw;
                         }
 
@@ -77,7 +80,7 @@ internal sealed partial class EmailSender
             catch (EmailException error)
             {
                 run.Stop(position, error);
-                await ReadLostAsync(run, appHost, secretKey, cancellationToken).ConfigureAwait(false);
+                await ReadUnconfirmedAsync(run, appHost, secretKey, cancellationToken).ConfigureAwait(false);
                 throw Failure(run, error);
             }
         }
@@ -103,13 +106,9 @@ internal sealed partial class EmailSender
         return new EmailBatchException(error, run.Outcome(), run.Warnings.ToList());
     }
 
-    /// <summary>
-    /// Reads, by its idempotency key, each email that a lost answer left without a message ID, so an email PostHog
-    /// queued reads as <c>queued</c>. Stops at the first answer other than "not found", or when the client shuts down.
-    /// </summary>
-    async Task ReadLostAsync(BatchRun run, string appHost, string secretKey, CancellationToken cancellationToken)
+    async Task ReadUnconfirmedAsync(BatchRun run, string appHost, string secretKey, CancellationToken cancellationToken)
     {
-        foreach (var (index, key) in run.LostKeys())
+        foreach (var row in run.UnconfirmedWithoutMessageId())
         {
             if (IsClosed)
             {
@@ -119,7 +118,7 @@ internal sealed partial class EmailSender
             EmailStatus status;
             try
             {
-                var url = new Uri(appHost + StatusByKeyPath + Uri.EscapeDataString(key));
+                var url = new Uri(appHost + StatusByKeyPath + Uri.EscapeDataString(row.IdempotencyKey));
                 status = ParseStatusReply(
                     await RequestAsync(HttpMethod.Get, url, secretKey, body: null, idempotencyKey: null, cancellationToken)
                         .ConfigureAwait(false));
@@ -133,7 +132,7 @@ internal sealed partial class EmailSender
                 return;
             }
 
-            run.Accepted(index, status);
+            row.Set("queued", status.Id);
         }
     }
 
@@ -157,7 +156,7 @@ internal sealed partial class EmailSender
                 };
                 break;
             case SendCodeBatchOptions code:
-                shared = CodeContent(
+                shared = CheckedCodeContent(
                     code.TemplateKey,
                     to: null,
                     code.Subject,
@@ -173,15 +172,13 @@ internal sealed partial class EmailSender
                 throw new ArgumentException("Send a SendTemplateBatchOptions or a SendCodeBatchOptions.", nameof(batch));
         }
 
-        var members = BatchMembers(batch.Recipients, batch is SendTemplateBatchOptions, nameof(batch));
+        var rows = BatchRows(batch.Recipients, batch is SendTemplateBatchOptions, nameof(batch));
         shared["recipients"] = Array.Empty<object>();
-        return new BatchRun(
-            JsonSerializer.Serialize(shared, JsonSerializerHelper.Options),
-            members,
-            batch.MaxRetries ?? defaultMaxRetries);
+        var empty = JsonSerializer.Serialize(shared, JsonSerializerHelper.Options);
+        return new BatchRun(empty.Substring(0, empty.Length - "]}".Length), rows, batch.MaxRetries ?? defaultMaxRetries);
     }
 
-    static List<BatchMember> BatchMembers(IReadOnlyList<BatchRecipient>? recipients, bool isTemplate, string paramName)
+    static List<BatchRow> BatchRows(IReadOnlyList<BatchRecipient>? recipients, bool isTemplate, string paramName)
     {
         if (recipients is not { Count: > 0 })
         {
@@ -189,29 +186,18 @@ internal sealed partial class EmailSender
         }
 
         var firstWithKey = new Dictionary<string, int>(StringComparer.Ordinal);
-        var members = new List<BatchMember>(recipients.Count);
+        var rows = new List<BatchRow>(recipients.Count);
         for (var index = 0; index < recipients.Count; index++)
         {
             var where = $"Recipients[{index}]";
             var recipient = recipients[index] ?? throw new ArgumentException($"{where} must not be null.", paramName);
-            var key = RecipientKey(recipient.To, recipient.DistinctId, recipient.IdempotencyKey, where + ": ", paramName);
-            var wire = new Dictionary<string, object?> { ["to"] = recipient.To, ["idempotency_key"] = key };
-            if (recipient.DistinctId is not null)
+            var key = CheckedRecipientKey(recipient.To, recipient.DistinctId, recipient.IdempotencyKey, where + ": ", paramName);
+            if (recipient.TemplateData is not null && !isTemplate)
             {
-                wire["distinct_id"] = recipient.DistinctId;
-            }
-
-            if (recipient.TemplateData is not null)
-            {
-                if (!isTemplate)
-                {
-                    throw new ArgumentException(
-                        $"{where} has TemplateData, but a batch with TemplateKey sends the same content to every "
-                        + "recipient. Send personalized content with a SendTemplateBatchOptions batch or with SendAsync.",
-                        paramName);
-                }
-
-                wire["message_data"] = recipient.TemplateData;
+                throw new ArgumentException(
+                    $"{where} has TemplateData, but a batch with TemplateKey sends the same content to every "
+                    + "recipient. Send personalized content with a SendTemplateBatchOptions batch or with SendAsync.",
+                    paramName);
             }
 
             if (firstWithKey.TryGetValue(key, out var first))
@@ -222,33 +208,113 @@ internal sealed partial class EmailSender
             }
 
             firstWithKey[key] = index;
-            var json = JsonSerializer.Serialize(wire, JsonSerializerHelper.Options);
-            members.Add(new BatchMember(index, recipient.To, key, json, Encoding.UTF8.GetByteCount(json)));
+            rows.Add(new BatchRow(index, recipient, key));
         }
 
-        return members;
+        return rows;
     }
 
-    readonly record struct BatchMember(int Index, string To, string IdempotencyKey, string Json, int Bytes);
+    sealed class BatchRow(int index, BatchRecipient recipient, string idempotencyKey)
+    {
+        public int Index { get; } = index;
 
-    sealed record BatchChunk(string Body, IReadOnlyList<int> Indices);
+        public string IdempotencyKey { get; } = idempotencyKey;
 
-    /// <summary>
-    /// The recipients of one batch call, split into requests, and what PostHog answered for each recipient.
-    /// </summary>
+        public int Bytes { get; } =
+            JsonSerializer.SerializeToUtf8Bytes(WireOf(recipient, idempotencyKey), JsonSerializerHelper.Options).Length;
+
+        public string? Status { get; private set; }
+
+        public string? MessageId { get; private set; }
+
+        public EmailException? Error { get; private set; }
+
+        public bool IsUnconfirmed => Status == "unconfirmed";
+
+        bool Replayed { get; set; }
+
+        EmailException? LaterError { get; set; }
+
+        public string Json() => JsonSerializer.Serialize(WireOf(recipient, IdempotencyKey), JsonSerializerHelper.Options);
+
+        static Dictionary<string, object?> WireOf(BatchRecipient recipient, string idempotencyKey)
+        {
+            var wire = new Dictionary<string, object?> { ["to"] = recipient.To, ["idempotency_key"] = idempotencyKey };
+            if (recipient.DistinctId is not null)
+            {
+                wire["distinct_id"] = recipient.DistinctId;
+            }
+
+            if (recipient.TemplateData is not null)
+            {
+                wire["message_data"] = recipient.TemplateData;
+            }
+
+            return wire;
+        }
+
+        public void Set(
+            string status,
+            string? messageId = null,
+            bool replayed = false,
+            EmailException? error = null,
+            EmailException? laterError = null)
+        {
+            (Status, MessageId, Replayed, Error, LaterError) = (status, messageId, replayed, error, laterError);
+        }
+
+        public void AddLaterError(EmailException later) => Set("unconfirmed", MessageId, error: Error, laterError: later);
+
+        public BatchEmailResult Result() => new()
+        {
+            Index = Index,
+            To = recipient.To,
+            IdempotencyKey = IdempotencyKey,
+            Status = Status ?? throw new InvalidOperationException($"Recipient {Index} has no result yet."),
+            MessageId = MessageId,
+            Replayed = Replayed,
+            Error = Error,
+            LaterError = LaterError,
+        };
+    }
+
+    sealed record BatchChunk(IReadOnlyList<BatchRow> Rows)
+    {
+        public void Lost()
+        {
+            foreach (var row in Rows.Where(row => !row.IsUnconfirmed))
+            {
+                row.Set("unconfirmed", row.MessageId, error: Unconfirmed(row.MessageId));
+            }
+        }
+
+        public void UnconfirmWith(EmailException error)
+        {
+            foreach (var row in Rows.Where(row => !row.IsUnconfirmed))
+            {
+                row.Set("unconfirmed", row.MessageId, error: error);
+            }
+        }
+
+        static EmailException Unconfirmed(string? messageId) => new(
+            "delivery_unavailable",
+            "PostHog didn't confirm this email, so it may still go out. Send it again with the same IdempotencyKey "
+            + "within 24 hours, so it goes out once.",
+            messageId: messageId);
+    }
+
     sealed class BatchRun
     {
-        readonly List<BatchMember> _members;
-        readonly BatchEmailResult?[] _results;
-        readonly HashSet<int> _maybeQueued = [];
+        readonly string _bodyBeforeRecipients;
+        readonly List<BatchRow> _rows;
         readonly List<EmailWarning> _warnings = [];
 
-        public BatchRun(string empty, List<BatchMember> members, int maxRetries)
+        public BatchRun(string bodyBeforeRecipients, List<BatchRow> rows, int maxRetries)
         {
-            _members = members;
-            _results = new BatchEmailResult?[members.Count];
+            _bodyBeforeRecipients = bodyBeforeRecipients;
+            _rows = rows;
             MaxRetries = maxRetries;
-            Chunks = Split(empty);
+            Chunks = Split();
         }
 
         public int MaxRetries { get; }
@@ -257,88 +323,80 @@ internal sealed partial class EmailSender
 
         public IReadOnlyList<EmailWarning> Warnings => _warnings;
 
-        List<BatchChunk> Split(string empty)
+        List<BatchChunk> Split()
         {
-            var emptyBytes = Encoding.UTF8.GetByteCount(empty);
+            var emptyBytes = Encoding.UTF8.GetByteCount(_bodyBeforeRecipients) + "]}".Length;
             var chunks = new List<BatchChunk>();
-            var current = new List<BatchMember>();
+            var current = new List<BatchRow>();
             var size = emptyBytes;
-            foreach (var member in _members)
+            foreach (var row in _rows)
             {
-                if (emptyBytes + member.Bytes > BatchMaxBodyBytes)
+                if (emptyBytes + row.Bytes > BatchMaxBodyBytes)
                 {
-                    Set(member.Index, "failed", error: RecipientTooLarge());
+                    row.Set("failed", error: RecipientTooLarge());
                     continue;
                 }
 
-                var added = member.Bytes + (current.Count > 0 ? 1 : 0);
+                var added = row.Bytes + (current.Count > 0 ? 1 : 0);
                 if (current.Count > 0 && (current.Count == BatchMaxRecipients || size + added > BatchMaxBodyBytes))
                 {
-                    chunks.Add(Chunk(empty, current));
+                    chunks.Add(new BatchChunk(current));
                     current = [];
                     size = emptyBytes;
-                    added = member.Bytes;
+                    added = row.Bytes;
                 }
 
-                current.Add(member);
+                current.Add(row);
                 size += added;
             }
 
             if (current.Count > 0)
             {
-                chunks.Add(Chunk(empty, current));
+                chunks.Add(new BatchChunk(current));
             }
 
             return chunks;
         }
 
-        static BatchChunk Chunk(string empty, List<BatchMember> members)
-        {
-            var withoutClosingBrackets = empty.Substring(0, empty.Length - "]}".Length);
-            return new BatchChunk(
-                withoutClosingBrackets + string.Join(",", members.Select(member => member.Json)) + "]}",
-                members.Select(member => member.Index).ToList());
-        }
-
-        /// <summary>An attempt that may have queued some of the chunk got no usable answer.</summary>
-        public void Lost(BatchChunk chunk)
-        {
-            foreach (var index in chunk.Indices)
-            {
-                _maybeQueued.Add(index);
-                var messageId = _results[index]?.MessageId;
-                Set(index, "unconfirmed", messageId, error: Unconfirmed(messageId));
-            }
-        }
+        public string Body(BatchChunk chunk)
+            => _bodyBeforeRecipients
+               + string.Join(",", chunk.Rows.Select(row => row.Json()))
+               + "]}";
 
         public void Answer(BatchChunk chunk, Reply reply)
         {
             if (!IsSuccess(reply.Status))
             {
+                var error = BatchReplyError(reply, chunk.Rows);
                 if ((int)reply.Status >= 500)
                 {
-                    Lost(chunk);
+                    chunk.Lost();
+                }
+                else if (UnconfirmedRequestCodes.Contains(error.Code))
+                {
+                    chunk.UnconfirmWith(error);
                 }
 
-                throw BatchReplyError(reply, chunk.Indices);
+                throw error;
             }
 
             if (reply.Fields is not { } fields
                 || !fields.TryGetProperty("results", out var slots)
                 || slots.ValueKind != JsonValueKind.Array
-                || slots.GetArrayLength() != chunk.Indices.Count)
+                || slots.GetArrayLength() != chunk.Rows.Count)
             {
-                Lost(chunk);
-                throw new EmailException(
+                var error = new EmailException(
                     "api_error",
                     "PostHog answered the batch without a result for each recipient.",
                     reply.Status);
+                chunk.UnconfirmWith(error);
+                throw error;
             }
 
             var position = 0;
             foreach (var slot in slots.EnumerateArray())
             {
-                Settle(chunk.Indices[position++], slot);
+                Settle(chunk.Rows[position++], slot);
             }
 
             foreach (var warning in ReadWarnings(fields))
@@ -350,7 +408,7 @@ internal sealed partial class EmailSender
             }
         }
 
-        void Settle(int index, JsonElement slot)
+        static void Settle(BatchRow row, JsonElement slot)
         {
             var messageId = Text(slot, "message_id");
             JsonElement? error = slot.ValueKind == JsonValueKind.Object
@@ -360,43 +418,38 @@ internal sealed partial class EmailSender
                 : null;
             if (error is null && Text(slot, "status") == "queued" && messageId is not null)
             {
-                _maybeQueued.Remove(index);
                 var replayed = slot.TryGetProperty("replayed", out var flag) && flag.ValueKind == JsonValueKind.True;
-                Set(index, "queued", messageId, replayed);
+                row.Set("queued", messageId, replayed);
                 return;
             }
 
             var answer = SlotError(error, messageId);
-            if (_maybeQueued.Contains(index))
+            if (row.IsUnconfirmed)
             {
-                var earlier = Current(index);
-                Set(index, "unconfirmed", messageId ?? earlier.MessageId, error: earlier.Error, laterError: answer);
+                row.Set("unconfirmed", messageId ?? row.MessageId, error: row.Error, laterError: answer);
             }
             else if (UnconfirmedSlotCodes.Contains(answer.Code))
             {
-                _maybeQueued.Add(index);
-                Set(index, "unconfirmed", messageId, error: answer);
+                row.Set("unconfirmed", messageId, error: answer);
             }
             else
             {
-                Set(index, "failed", messageId, error: answer);
+                row.Set("failed", messageId, error: answer);
             }
         }
 
-        /// <summary>The request of chunk <paramref name="position"/> failed as a whole, so the batch stops there.</summary>
         public void Stop(int position, EmailException error)
         {
-            var later = error.StatusCode is { } status && (int)status < 500 ? error : null;
-            foreach (var index in Chunks[position].Indices)
+            var answeredByALaterAttempt = error.StatusCode is { } status && (int)status < 500;
+            foreach (var row in Chunks[position].Rows)
             {
-                if (!_maybeQueued.Contains(index))
+                if (!row.IsUnconfirmed)
                 {
-                    Set(index, "failed", error: error);
+                    row.Set("failed", error: error);
                 }
-                else if (later is not null)
+                else if (answeredByALaterAttempt && !ReferenceEquals(row.Error, error))
                 {
-                    var earlier = Current(index);
-                    Set(index, "unconfirmed", earlier.MessageId, error: earlier.Error, laterError: later);
+                    row.AddLaterError(error);
                 }
             }
 
@@ -407,7 +460,6 @@ internal sealed partial class EmailSender
                     "An earlier request of the batch failed, so the client sent nothing for this recipient."));
         }
 
-        /// <summary>The client shut down before chunk <paramref name="position"/> went out.</summary>
         public EmailException ClosedAt(int position)
         {
             var error = new EmailException(
@@ -419,55 +471,16 @@ internal sealed partial class EmailSender
 
         void SkipFrom(int position, EmailException error)
         {
-            foreach (var chunk in Chunks.Skip(position))
+            foreach (var row in Chunks.Skip(position).SelectMany(chunk => chunk.Rows))
             {
-                foreach (var index in chunk.Indices)
-                {
-                    Set(index, "not_attempted", error: error);
-                }
+                row.Set("not_attempted", error: error);
             }
         }
 
-        /// <summary>Recipients a lost answer left without a message ID, with their keys, in input order.</summary>
-        public List<(int Index, string Key)> LostKeys()
-            => _maybeQueued
-                .Where(index => Current(index).MessageId is null)
-                .OrderBy(index => index)
-                .Select(index => (index, _members[index].IdempotencyKey))
-                .ToList();
+        public List<BatchRow> UnconfirmedWithoutMessageId()
+            => _rows.Where(row => row.IsUnconfirmed && row.MessageId is null).ToList();
 
-        public void Accepted(int index, EmailStatus status)
-        {
-            _maybeQueued.Remove(index);
-            Set(index, "queued", status.Id);
-        }
-
-        public List<BatchEmailResult> Outcome() => _results.Select((_, index) => Current(index)).ToList();
-
-        BatchEmailResult Current(int index)
-            => _results[index] ?? throw new InvalidOperationException($"Recipient {index} has no result yet.");
-
-        void Set(
-            int index,
-            string status,
-            string? messageId = null,
-            bool replayed = false,
-            EmailException? error = null,
-            EmailException? laterError = null)
-        {
-            var member = _members[index];
-            _results[index] = new BatchEmailResult
-            {
-                Index = index,
-                To = member.To,
-                IdempotencyKey = member.IdempotencyKey,
-                Status = status,
-                MessageId = messageId,
-                Replayed = replayed,
-                Error = error,
-                LaterError = laterError,
-            };
-        }
+        public List<BatchEmailResult> Outcome() => _rows.Select(row => row.Result()).ToList();
 
         static EmailException SlotError(JsonElement? error, string? messageId)
         {
@@ -492,12 +505,6 @@ internal sealed partial class EmailSender
                 messageId: messageId);
         }
 
-        static EmailException Unconfirmed(string? messageId) => new(
-            "delivery_unavailable",
-            "PostHog didn't confirm this email, so it may still go out. Send it again with the same IdempotencyKey "
-            + "within 24 hours, so it goes out once.",
-            messageId: messageId);
-
         static EmailException RecipientTooLarge() => new(
             "content_too_large",
             "This recipient's email is larger than one batch request takes, so it wasn't sent.",
@@ -505,7 +512,7 @@ internal sealed partial class EmailSender
             field: "recipients");
     }
 
-    static EmailException BatchReplyError(Reply reply, IReadOnlyList<int> indices)
+    static EmailException BatchReplyError(Reply reply, IReadOnlyList<BatchRow> rows)
     {
         var notFound = reply.Status == HttpStatusCode.NotFound;
         var code = Text(reply.Fields, "code") ?? (notFound ? "not_found" : "api_error");
@@ -525,14 +532,11 @@ internal sealed partial class EmailSender
                      : null),
             fix: fix,
             docsUrl: DocsUrl(reply),
-            field: Text(reply.Fields, "attr") is { } attr ? RecipientsField(attr, indices) : null,
+            field: Text(reply.Fields, "attr") is { } attr ? FieldByPositionInRecipients(attr, rows) : null,
             retryAfter: reply.RetryAfter);
     }
 
-    /// <summary>
-    /// Names a field PostHog refused by the recipient's position in the caller's list, not in the request.
-    /// </summary>
-    static string RecipientsField(string attr, IReadOnlyList<int> indices)
+    static string FieldByPositionInRecipients(string attr, IReadOnlyList<BatchRow> rows)
     {
         const string prefix = "recipients__";
         if (!attr.StartsWith(prefix, StringComparison.Ordinal))
@@ -543,23 +547,17 @@ internal sealed partial class EmailSender
         var rest = attr.Substring(prefix.Length);
         var separator = rest.IndexOf("__", StringComparison.Ordinal);
         var position = separator < 0 ? rest : rest.Substring(0, separator);
-        if (position.Length == 0 || position.Any(c => c is < '0' or > '9'))
+        if (!int.TryParse(position, NumberStyles.None, CultureInfo.InvariantCulture, out var inChunk))
         {
             return attr;
         }
 
-        if (position.Length > indices.Count.ToString(CultureInfo.InvariantCulture).Length)
+        if (inChunk >= rows.Count)
         {
             return "recipients";
         }
 
-        var inChunk = int.Parse(position, CultureInfo.InvariantCulture);
-        if (inChunk >= indices.Count)
-        {
-            return "recipients";
-        }
-
-        return prefix + indices[inChunk].ToString(CultureInfo.InvariantCulture)
+        return prefix + rows[inChunk].Index.ToString(CultureInfo.InvariantCulture)
                + (separator < 0 ? string.Empty : rest.Substring(separator));
     }
 }

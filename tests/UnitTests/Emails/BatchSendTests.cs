@@ -384,7 +384,7 @@ public class TheBatchAsyncMethod
 
         Assert.Equal("api_error", error.Code);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
-        Assert.All(error.Results, r => Assert.Equal("api_error", r.LaterError!.Code));
+        Assert.All(error.Results, r => Assert.Equal(("api_error", null), (r.Error!.Code, r.LaterError)));
         Assert.Equal([BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"], harness.Requests.Select(r => r.Url));
     }
 
@@ -417,6 +417,48 @@ public class TheBatchAsyncMethod
             ("api_error", (HttpStatusCode?)(HttpStatusCode)status, retryAfterSeconds),
             (error.Code, error.StatusCode, (int?)error.RetryAfter?.TotalSeconds));
         Assert.Equal(("key-0", outcome), (Assert.Single(error.Results).IdempotencyKey, error.Results[0].Status));
+    }
+
+    [Fact]
+    public async Task ReadsBackEachEmailOfARequestPostHogStillHoldsInFlight()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
+        harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
+        harness.Respond(HttpStatusCode.OK, StatusFound(M0));
+        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+
+        Assert.Equal(
+            [BatchUrl, BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"],
+            harness.Requests.Select(r => r.Url));
+        Assert.Equal([("queued", M0), ("unconfirmed", null)], error.Results.Select(r => (r.Status, r.MessageId)));
+        var unconfirmed = error.Results[1];
+        Assert.Equal(
+            ("idempotency_key_in_flight", "idempotency_key_in_flight"),
+            (unconfirmed.Error!.Code, unconfirmed.LaterError!.Code));
+    }
+
+    [Fact]
+    public async Task BuildsEachRequestOnlyWhenItsTurnComes()
+    {
+        await using var harness = new EmailHarness();
+        var data = new Dictionary<string, object> { ["step"] = "before" };
+        harness.RespondTo(request =>
+        {
+            data["step"] = "after";
+            return AllQueuedAnswer(request);
+        });
+        AllQueued(harness);
+
+        await harness.Client.Emails.BatchAsync(Batch(Recipients(101, data)));
+
+        Assert.Equal(
+            ["before", "after"],
+            harness.Requests.Select(r => JsonDocument.Parse(r.Body!).RootElement
+                .GetProperty("recipients")[0].GetProperty("message_data").GetProperty("step").GetString()));
     }
 
     [Fact]

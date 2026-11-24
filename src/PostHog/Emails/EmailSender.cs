@@ -906,7 +906,7 @@ internal sealed partial class EmailSender : IPostHogEmails
     static PreparedSend PrepareSend(SendEmailOptions email, int defaultMaxRetries)
     {
         NotNull(email);
-        var idempotencyKey = RecipientKey(email.To, email.DistinctId, email.IdempotencyKey, string.Empty, nameof(email));
+        var idempotencyKey = CheckedRecipientKey(email.To, email.DistinctId, email.IdempotencyKey, string.Empty, nameof(email));
         if (email.MaxRetries < 0)
         {
             throw new ArgumentException("MaxRetries must not be negative.", nameof(email));
@@ -937,11 +937,7 @@ internal sealed partial class EmailSender : IPostHogEmails
             scheduledAt);
     }
 
-    /// <summary>
-    /// Checks one recipient's address, distinct ID and idempotency key, and returns the key, made by the client when
-    /// the caller gave none.
-    /// </summary>
-    static string RecipientKey(string? to, string? distinctId, string? idempotencyKey, string where, string paramName)
+    static string CheckedRecipientKey(string? to, string? distinctId, string? idempotencyKey, string where, string paramName)
     {
         if (string.IsNullOrWhiteSpace(to))
         {
@@ -1000,11 +996,7 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
     }
 
-    /// <summary>
-    /// Checks the content fields that a code send and a code batch share, and returns them as the request's first
-    /// fields, with <paramref name="to"/> when the request has one recipient.
-    /// </summary>
-    static Dictionary<string, object?> CodeContent(
+    static Dictionary<string, object?> CheckedCodeContent(
         string? templateKey,
         string? to,
         string? subject,
@@ -1069,7 +1061,7 @@ internal sealed partial class EmailSender : IPostHogEmails
 
     static (Dictionary<string, object?> Body, HashedAttachments Attachments) CodeBody(SendCodeEmailOptions email)
     {
-        var body = CodeContent(
+        var body = CheckedCodeContent(
             email.TemplateKey,
             email.To,
             email.Subject,
