@@ -557,23 +557,72 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
-    public async Task BuildsEachRequestOnlyWhenItsTurnComes()
+    public async Task SendsEachRecipientAsItWasWhenBatchAsyncWasCalled()
     {
         await using var harness = new EmailHarness();
         var data = new Dictionary<string, object> { ["step"] = "before" };
         harness.RespondTo(request =>
         {
             data["step"] = "after";
+            data["filler"] = new string('x', 5 * 1024 * 1024);
             return AllQueuedAnswer(request);
         });
         AllQueued(harness);
 
         await harness.Client.Emails.BatchAsync(Batch(Recipients(101, data)));
 
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.All(harness.Requests, request =>
+        {
+            var recipients = JsonDocument.Parse(request.Body!).RootElement.GetProperty("recipients");
+            Assert.InRange(recipients.GetArrayLength(), 1, 100);
+            Assert.InRange(Encoding.UTF8.GetByteCount(request.Body!), 1, 4 * 1024 * 1024);
+            Assert.All(
+                recipients.EnumerateArray(),
+                recipient => Assert.Equal(
+                    """{"step":"before"}""",
+                    recipient.GetProperty("message_data").GetRawText()));
+        });
+    }
+
+    [Fact]
+    public async Task ReadsEachTemplateDataOnlyOnce()
+    {
+        await using var harness = new EmailHarness();
+        AllQueued(harness, times: 2);
+        var batch = new SendTemplateBatchOptions
+        {
+            TemplateId = TemplateId,
+            TemplateData = new Dictionary<string, object> { ["shared"] = new ReadableOnce("all") },
+            Recipients = Enumerable.Range(0, 101)
+                .Select(i => new BatchRecipient
+                {
+                    To = $"user{i}@example.com",
+                    IdempotencyKey = $"key-{i}",
+                    TemplateData = new Dictionary<string, object> { ["own"] = new ReadableOnce($"r{i}") },
+                })
+                .ToList(),
+        };
+
+        await harness.Client.Emails.BatchAsync(batch);
+
+        var bodies = harness.Requests.Select(r => JsonDocument.Parse(r.Body!).RootElement).ToList();
+        Assert.All(bodies, body => Assert.Equal(
+            """{"shared":{"value":"all"}}""",
+            body.GetProperty("message_data").GetRawText()));
         Assert.Equal(
-            ["before", "after"],
-            harness.Requests.Select(r => JsonDocument.Parse(r.Body!).RootElement
-                .GetProperty("recipients")[0].GetProperty("message_data").GetProperty("step").GetString()));
+            Enumerable.Range(0, 101).Select(i => $$$"""{"own":{"value":"r{{{i}}}"}}"""),
+            bodies.SelectMany(body => body.GetProperty("recipients").EnumerateArray())
+                .Select(recipient => recipient.GetProperty("message_data").GetRawText()));
+    }
+
+    sealed class ReadableOnce(string value)
+    {
+        int _reads;
+
+        public string Value => Interlocked.Increment(ref _reads) == 1
+            ? value
+            : throw new InvalidOperationException("Read a second time.");
     }
 
     [Fact]

@@ -164,12 +164,15 @@ internal sealed partial class EmailSender
         {
             case SendTemplateBatchOptions template:
                 CheckTemplateId(template.TemplateId, nameof(batch));
+                var sharedData = JsonSerializer.SerializeToElement(
+                    template.TemplateData ?? new Dictionary<string, object>(),
+                    JsonSerializerHelper.Options);
                 shared = new Dictionary<string, object?>
                 {
                     ["template_id"] = template.TemplateId.ToString("D"),
-                    ["message_data"] = template.TemplateData ?? new Dictionary<string, object>(),
+                    ["message_data"] = sharedData,
                 };
-                copiedPerRecipient = Utf8Bytes(shared["message_data"]);
+                copiedPerRecipient = Utf8Bytes(sharedData);
                 break;
             case SendCodeBatchOptions code:
                 shared = CheckedCodeContent(
@@ -239,16 +242,32 @@ internal sealed partial class EmailSender
         return rows;
     }
 
-    sealed class BatchRow(int index, BatchRecipient recipient, string idempotencyKey)
+    sealed class BatchRow
     {
-        public int Index { get; } = index;
+        public BatchRow(int index, BatchRecipient recipient, string idempotencyKey)
+        {
+            Index = index;
+            To = recipient.To;
+            IdempotencyKey = idempotencyKey;
+            JsonElement? messageData = recipient.TemplateData is null
+                ? null
+                : JsonSerializer.SerializeToElement(recipient.TemplateData, JsonSerializerHelper.Options);
+            Json = JsonSerializer.Serialize(WireOf(recipient, idempotencyKey, messageData), JsonSerializerHelper.Options);
+            Bytes = Encoding.UTF8.GetByteCount(Json);
+            OwnCopiedBytes = messageData is { } data ? Utf8Bytes(data) : EmptyObjectBytes;
+        }
 
-        public string IdempotencyKey { get; } = idempotencyKey;
+        public int Index { get; }
 
-        public int Bytes { get; } = Utf8Bytes(WireOf(recipient, idempotencyKey));
+        public string To { get; }
 
-        public int OwnCopiedBytes { get; } =
-            recipient.TemplateData is null ? EmptyObjectBytes : Utf8Bytes(recipient.TemplateData);
+        public string IdempotencyKey { get; }
+
+        public string Json { get; }
+
+        public int Bytes { get; }
+
+        public int OwnCopiedBytes { get; }
 
         public string? Status { get; private set; }
 
@@ -262,9 +281,7 @@ internal sealed partial class EmailSender
 
         EmailException? LaterError { get; set; }
 
-        public string Json() => JsonSerializer.Serialize(WireOf(recipient, IdempotencyKey), JsonSerializerHelper.Options);
-
-        static Dictionary<string, object?> WireOf(BatchRecipient recipient, string idempotencyKey)
+        static Dictionary<string, object?> WireOf(BatchRecipient recipient, string idempotencyKey, JsonElement? messageData)
         {
             var wire = new Dictionary<string, object?> { ["to"] = recipient.To, ["idempotency_key"] = idempotencyKey };
             if (recipient.DistinctId is not null)
@@ -272,9 +289,9 @@ internal sealed partial class EmailSender
                 wire["distinct_id"] = recipient.DistinctId;
             }
 
-            if (recipient.TemplateData is not null)
+            if (messageData is { } data)
             {
-                wire["message_data"] = recipient.TemplateData;
+                wire["message_data"] = data;
             }
 
             return wire;
@@ -297,7 +314,7 @@ internal sealed partial class EmailSender
         public BatchEmailResult Result() => new()
         {
             Index = Index,
-            To = recipient.To,
+            To = To,
             IdempotencyKey = IdempotencyKey,
             Status = Status ?? throw new InvalidOperationException($"Recipient {Index} has no result yet."),
             MessageId = MessageId,
@@ -398,7 +415,7 @@ internal sealed partial class EmailSender
 
         public string Body(BatchChunk chunk)
             => _bodyBeforeRecipients
-               + string.Join(",", chunk.Rows.Select(row => row.Json()))
+               + string.Join(",", chunk.Rows.Select(row => row.Json))
                + "]}";
 
         public void Answer(BatchChunk chunk, Reply reply)
