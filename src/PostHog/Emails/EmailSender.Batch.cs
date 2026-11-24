@@ -73,6 +73,11 @@ internal sealed partial class EmailSender
                             chunk.Lost();
                             throw;
                         }
+                        catch (Exception e) when (e is not EmailException && !IsCallerCancellation(e, cancellationToken))
+                        {
+                            chunk.Lost();
+                            throw NetworkError("The request to PostHog failed before it was answered.", e);
+                        }
 
                         run.Answer(chunk, reply);
                         return true;
@@ -139,13 +144,12 @@ internal sealed partial class EmailSender
             {
                 return;
             }
-
-            if (id is null)
+            catch (Exception e) when (!IsCallerCancellation(e, cancellationToken))
             {
                 return;
             }
 
-            if (!IsMessageId(id))
+            if (id is null || !IsMessageId(id))
             {
                 row.AddLaterError(new EmailException(
                     "api_error",
@@ -159,6 +163,9 @@ internal sealed partial class EmailSender
     }
 
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
+
+    static bool IsCallerCancellation(Exception error, CancellationToken cancellationToken)
+        => error is OperationCanceledException && cancellationToken.IsCancellationRequested;
 
     static BatchRun PrepareBatch(SendBatchOptions batch, int defaultMaxRetries)
     {
@@ -615,7 +622,7 @@ internal sealed partial class EmailSender
         var position = separator < 0 ? rest : rest.Substring(0, separator);
         if (!int.TryParse(position, NumberStyles.None, CultureInfo.InvariantCulture, out var inChunk))
         {
-            return attr;
+            return position.Length > 0 && position.All(c => c is >= '0' and <= '9') ? "recipients" : attr;
         }
 
         if (inChunk >= rows.Count)
