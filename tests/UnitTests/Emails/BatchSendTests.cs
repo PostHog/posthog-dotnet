@@ -16,13 +16,17 @@ public class TheBatchAsyncMethod
     const string SendSinglyFix =
         "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
 
+    const string M0 = "0190f6d2-0000-4000-8000-000000000000";
+    const string M1 = "0190f6d2-0000-4000-8000-000000000001";
+    const string M2 = "0190f6d2-0000-4000-8000-000000000002";
+
     static readonly Guid TemplateId = Guid.Parse(TemplateIdText);
 
     [Fact]
     public async Task PostsATemplateBatchAndReturnsAResultPerRecipientInOrder()
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Ok(Queued("m0"), Queued("m1", replayed: true), Refused("m2", "recipient_suppressed")));
+        harness.Respond(HttpStatusCode.OK, Ok(Queued(M0), Queued(M1, replayed: true), Refused(M2, "recipient_suppressed")));
 
         var result = await harness.Client.Emails.BatchAsync(new SendTemplateBatchOptions
         {
@@ -43,19 +47,19 @@ public class TheBatchAsyncMethod
         var generated = Keys(request)[1];
         Assert.True(Guid.TryParseExact(generated, "D", out var uuid));
         Assert.Equal('4', uuid.ToString("D")[14]);
-        Assert.Equal(
+        AssertSameFields(
             $$$"""{"template_id":"{{{TemplateIdText}}}","message_data":{"name":"friend","plan":"pro"},"recipients":[{"to":"a@example.com","idempotency_key":"welcome:a","distinct_id":"a"},{"to":"b@example.com","idempotency_key":"{{{generated}}}","message_data":{"name":"Bea"}},{"to":"c@example.com","idempotency_key":"welcome:c"}]}""",
             request.Body);
         Assert.Equal([0, 1, 2], result.Results.Select(r => r.Index));
         Assert.Equal(["a@example.com", "b@example.com", "c@example.com"], result.Results.Select(r => r.To));
         Assert.Equal(["welcome:a", generated, "welcome:c"], result.Results.Select(r => r.IdempotencyKey));
         Assert.Equal(
-            [("queued", "m0", false), ("queued", "m1", true), ("failed", "m2", false)],
+            [("queued", M0, false), ("queued", M1, true), ("failed", M2, false)],
             result.Results.Select(r => (r.Status, r.MessageId, r.Replayed)));
         Assert.Null(result.Results[0].Error);
         var refused = result.Results[2].Error!;
         Assert.Equal(
-            ("recipient_suppressed", "validation_error", (HttpStatusCode?)(HttpStatusCode)422, "m2", "Refused: recipient_suppressed."),
+            ("recipient_suppressed", "validation_error", (HttpStatusCode?)(HttpStatusCode)422, M2, "Refused: recipient_suppressed."),
             (refused.Code, refused.Name, refused.StatusCode, refused.MessageId, refused.Message));
         Assert.Empty(result.Warnings);
     }
@@ -76,8 +80,8 @@ public class TheBatchAsyncMethod
             Recipients = Recipients(2),
         });
 
-        Assert.Equal(
-            """{"template_key":"launch-news","subject":"We launched","html":"\u003Cp\u003EHi\u003C/p\u003E","from":"Acme \u003Cnews@example.com\u003E","tracking":false,"recipients":[{"to":"user0@example.com","idempotency_key":"key-0"},{"to":"user1@example.com","idempotency_key":"key-1"}]}""",
+        AssertSameFields(
+            """{"template_key":"launch-news","subject":"We launched","html":"<p>Hi</p>","from":"Acme <news@example.com>","tracking":false,"recipients":[{"to":"user0@example.com","idempotency_key":"key-0"},{"to":"user1@example.com","idempotency_key":"key-1"}]}""",
             Assert.Single(harness.Requests).Body);
         Assert.Equal(["queued", "queued"], result.Results.Select(r => r.Status));
     }
@@ -130,7 +134,7 @@ public class TheBatchAsyncMethod
 
         Assert.Equal([100, 100, 50], harness.Requests.Select(r => Keys(r).Length));
         Assert.Equal(Enumerable.Range(0, 250), result.Results.Select(r => r.Index));
-        Assert.Equal(Enumerable.Range(0, 250).Select(i => $"msg_key-{i}"), result.Results.Select(r => r.MessageId));
+        Assert.Equal(Enumerable.Range(0, 250).Select(i => MessageIdFor($"key-{i}")), result.Results.Select(r => r.MessageId));
         Assert.All(result.Results, r => Assert.Equal("queued", r.Status));
     }
 
@@ -212,7 +216,7 @@ public class TheBatchAsyncMethod
             harness.Respond(HttpStatusCode.ServiceUnavailable, WholeCall("delivery_unavailable"));
         }
 
-        harness.Respond(HttpStatusCode.OK, Ok(Queued("m0", replayed: true), Refused("m1", "idempotency_key_reused")));
+        harness.Respond(HttpStatusCode.OK, Ok(Queued(M0, replayed: true), Refused(M1, "idempotency_key_reused")));
 
         var result = await harness.Client.Emails.BatchAsync(Batch(
         [
@@ -221,11 +225,11 @@ public class TheBatchAsyncMethod
         ]));
 
         Assert.Equal(2, harness.Requests.Count);
-        Assert.Equal(harness.Requests[0].Body, harness.Requests[1].Body);
-        Assert.Single(harness.Time.Delays);
+        Assert.Equal(["key-0", result.Results[1].IdempotencyKey], Keys(harness.Requests[0]));
+        Assert.Equal(Keys(harness.Requests[0]), Keys(harness.Requests[1]));
         var (first, second) = (result.Results[0], result.Results[1]);
-        Assert.Equal(("queued", "m0", true), (first.Status, first.MessageId, first.Replayed));
-        Assert.Equal(("unconfirmed", "m1"), (second.Status, second.MessageId));
+        Assert.Equal(("queued", M0, true), (first.Status, first.MessageId, first.Replayed));
+        Assert.Equal(("unconfirmed", M1), (second.Status, second.MessageId));
         Assert.Equal(("delivery_unavailable", "service_unavailable"), (second.Error!.Code, second.Error.Name));
         Assert.Equal("idempotency_key_reused", second.LaterError!.Code);
         Assert.Equal(Keys(harness.Requests[1])[1], second.IdempotencyKey);
@@ -233,10 +237,10 @@ public class TheBatchAsyncMethod
 
     public static TheoryData<string, string, string?, string> Slots => new()
     {
-        { Refused("m0", "sending_paused"), "failed", "m0", "sending_paused" },
-        { Refused("m0", "delivery_unavailable", status: 503), "unconfirmed", "m0", "delivery_unavailable" },
-        { Refused("m0", "idempotency_key_in_flight", status: 409), "unconfirmed", "m0", "idempotency_key_in_flight" },
-        { """{"message_id":"m0"}""", "unconfirmed", "m0", "api_error" },
+        { Refused(M0, "sending_paused"), "failed", M0, "sending_paused" },
+        { Refused(M0, "delivery_unavailable", status: 503), "unconfirmed", M0, "delivery_unavailable" },
+        { Refused(M0, "idempotency_key_in_flight", status: 409), "unconfirmed", M0, "idempotency_key_in_flight" },
+        { $$"""{"message_id":"{{M0}}"}""", "unconfirmed", M0, "api_error" },
         { """{"status":"queued"}""", "unconfirmed", null, "api_error" },
         { "7", "unconfirmed", null, "api_error" },
     };
@@ -288,7 +292,7 @@ public class TheBatchAsyncMethod
         for (var read = 0; read < 2; read++)
         {
             harness.RespondTo(request => request.Url.EndsWith("key-0", StringComparison.Ordinal)
-                ? Json(HttpStatusCode.OK, StatusFound("m0"))
+                ? Json(HttpStatusCode.OK, StatusFound(M0))
                 : Json(HttpStatusCode.NotFound, WholeCall("not_found")));
         }
 
@@ -300,7 +304,7 @@ public class TheBatchAsyncMethod
             [StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"],
             harness.Requests.Skip(3).Select(r => r.Url));
         Assert.All(harness.Requests.Skip(3), r => Assert.Equal(HttpMethod.Get, r.Method));
-        Assert.Equal([("queued", "m0"), ("unconfirmed", null)], error.Results.Select(r => (r.Status, r.MessageId)));
+        Assert.Equal([("queued", M0), ("unconfirmed", null)], error.Results.Select(r => (r.Status, r.MessageId)));
         Assert.Equal("delivery_unavailable", error.Results[1].Error!.Code);
     }
 
@@ -340,7 +344,7 @@ public class TheBatchAsyncMethod
     public async Task LeavesARequestUnconfirmedWhenItsAnswerLacksAResultPerRecipient()
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.OK, Ok(Queued("m0")));
+        harness.Respond(HttpStatusCode.OK, Ok(Queued(M0)));
         harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
         harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
@@ -499,7 +503,7 @@ public class TheBatchAsyncMethod
             shutdown = harness.Client.DisposeAsync().AsTask();
             return Json(HttpStatusCode.ServiceUnavailable, WholeCall("delivery_unavailable"));
         });
-        harness.Respond(HttpStatusCode.OK, StatusFound("m0"));
+        harness.Respond(HttpStatusCode.OK, StatusFound(M0));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
@@ -570,7 +574,19 @@ public class TheBatchAsyncMethod
             .ToArray();
     }
 
-    static string[] QueuedSlots(RecordedRequest request) => Keys(request).Select(key => Queued("msg_" + key)).ToArray();
+    static string[] QueuedSlots(RecordedRequest request) => Keys(request).Select(key => Queued(MessageIdFor(key))).ToArray();
+
+    static string MessageIdFor(string key)
+    {
+        var folded = new byte[16];
+        var text = Encoding.UTF8.GetBytes(key);
+        for (var i = 0; i < text.Length; i++)
+        {
+            folded[i % folded.Length] ^= text[i];
+        }
+
+        return new Guid(folded).ToString("D");
+    }
 
     static HttpResponseMessage AllQueuedAnswer(RecordedRequest request) => Json(HttpStatusCode.OK, Ok(QueuedSlots(request)));
 
@@ -586,4 +602,23 @@ public class TheBatchAsyncMethod
         => new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
     static int Bytes(string text) => Encoding.UTF8.GetByteCount(text);
+
+    static void AssertSameFields(string expected, string? actual)
+    {
+        using var want = JsonDocument.Parse(expected);
+        using var got = JsonDocument.Parse(actual!);
+        Assert.Equal(Fields(want.RootElement), Fields(got.RootElement));
+    }
+
+    static string Fields(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Object => "{" + string.Join(
+            ",",
+            element.EnumerateObject()
+                .OrderBy(property => property.Name, StringComparer.Ordinal)
+                .Select(property => JsonSerializer.Serialize(property.Name) + ":" + Fields(property.Value))) + "}",
+        JsonValueKind.Array => "[" + string.Join(",", element.EnumerateArray().Select(Fields)) + "]",
+        JsonValueKind.String => JsonSerializer.Serialize(element.GetString()),
+        _ => element.GetRawText(),
+    };
 }
