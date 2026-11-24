@@ -6,9 +6,12 @@ namespace PostHog.Emails;
 /// </summary>
 /// <remarks>
 /// When <see cref="SendCodeEmailOptions.TemplateKey"/> resolves to no saved template, PostHog creates the project's
-/// category by <see cref="Key"/> during send validation (before delivery or opt-out refusal) when the project has none
-/// with that key, or restores an archived one, so even a send refused with <c>recipient_opted_out</c> can establish
-/// the initial <see cref="Name"/> and <see cref="Description"/>. Both creating a new category and restoring an
+/// category by <see cref="Key"/> (or restores an archived one) after marketing content/copy checks and sender
+/// selection succeed, before handing the send to delivery checks: on a verified sender, a send that later fails with
+/// <c>recipient_opted_out</c>, <c>workflow_can_wait</c>, or <c>workflow_shape_not_supported</c> (including a marketing
+/// send with a new category and an attachment) still establishes the category's initial <see cref="Name"/> and
+/// <see cref="Description"/>, whereas on the PostHog test sender <c>sandbox_fields_unsupported</c> returns before
+/// category resolution, so no category is created or restored. Both creating a new category and restoring an
 /// archived one count against the project's active-category limit (<c>too_many_categories</c>). <see cref="Name"/>
 /// and <see cref="Description"/> apply only when the send creates the category: a send never renames a category or
 /// changes its description, so change them later in PostHog. A key that exists keeps its type, so a send with another
