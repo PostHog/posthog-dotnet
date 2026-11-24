@@ -8,9 +8,10 @@ namespace PostHog.Emails;
 /// </summary>
 /// <remarks>
 /// Branch on <see cref="Code"/>, PostHog's stable error code, or on <see cref="Name"/>, a coarse category of the
-/// failure. The message never contains the secret key or the request body.
+/// failure. The message never contains the secret key or the request body. A batch that stopped throws
+/// <see cref="EmailBatchException"/>, an <see cref="EmailException"/> that carries each recipient's result.
 /// </remarks>
-public sealed class EmailException : Exception
+public class EmailException : Exception
 {
     const string UnexpectedErrorCode = "unexpected_error";
 
@@ -72,7 +73,11 @@ public sealed class EmailException : Exception
     /// storage refused or redirected an upload), <c>scheduling_requires_cloud</c> (a scheduled send to an app host that
     /// isn't PostHog Cloud), <c>schedule_not_confirmed</c> (PostHog accepted a scheduled send without confirming its
     /// time) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
-    /// <c>message_too_large</c> itself before any request, as PostHog would.
+    /// <c>message_too_large</c> itself before any request, as PostHog would. A batch adds PostHog's
+    /// <c>batch_unavailable</c> (the project can't send batches yet) and, on a recipient's
+    /// <see cref="BatchEmailResult.Error"/>, the client codes <c>content_too_large</c> (the recipient alone is larger
+    /// than one request takes), <c>delivery_unavailable</c> (the client can't tell whether PostHog queued the email)
+    /// and <c>not_attempted</c> (an earlier request of the batch failed).
     /// </summary>
     public string Code { get; }
 
@@ -136,12 +141,12 @@ public sealed class EmailException : Exception
 
         if (statusCode is null)
         {
-            if (code == "network_error")
+            if (code is "network_error" or "delivery_unavailable")
             {
                 return "service_unavailable";
             }
 
-            return code.StartsWith("invalid_", StringComparison.Ordinal) || code is "too_many_attachments" or "message_too_large" or "scheduling_requires_cloud"
+            return code.StartsWith("invalid_", StringComparison.Ordinal) || code is "too_many_attachments" or "message_too_large" or "content_too_large" or "scheduling_requires_cloud"
                 ? "validation_error"
                 : "application_error";
         }

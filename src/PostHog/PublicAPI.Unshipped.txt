@@ -203,3 +203,73 @@ PostHog.Emails.SendEmailResult.ScheduledAt.get -> System.DateTimeOffset?
 PostHog.Emails.SendEmailResult.ScheduledAt.init -> void
 PostHog.Emails.SendEmailResult.Status.get -> string!
 PostHog.Emails.SendEmailResult.Status.init -> void
+PostHog.Emails.BatchEmailResult
+PostHog.Emails.BatchEmailResult.BatchEmailResult() -> void
+PostHog.Emails.BatchEmailResult.Error.get -> PostHog.Emails.EmailException?
+PostHog.Emails.BatchEmailResult.Error.init -> void
+PostHog.Emails.BatchEmailResult.IdempotencyKey.get -> string!
+PostHog.Emails.BatchEmailResult.IdempotencyKey.init -> void
+PostHog.Emails.BatchEmailResult.Index.get -> int
+PostHog.Emails.BatchEmailResult.Index.init -> void
+PostHog.Emails.BatchEmailResult.LaterError.get -> PostHog.Emails.EmailException?
+PostHog.Emails.BatchEmailResult.LaterError.init -> void
+PostHog.Emails.BatchEmailResult.MessageId.get -> string?
+PostHog.Emails.BatchEmailResult.MessageId.init -> void
+PostHog.Emails.BatchEmailResult.Replayed.get -> bool
+PostHog.Emails.BatchEmailResult.Replayed.init -> void
+PostHog.Emails.BatchEmailResult.Status.get -> string!
+PostHog.Emails.BatchEmailResult.Status.init -> void
+PostHog.Emails.BatchEmailResult.To.get -> string!
+PostHog.Emails.BatchEmailResult.To.init -> void
+PostHog.Emails.BatchRecipient
+PostHog.Emails.BatchRecipient.BatchRecipient() -> void
+PostHog.Emails.BatchRecipient.DistinctId.get -> string?
+PostHog.Emails.BatchRecipient.DistinctId.init -> void
+PostHog.Emails.BatchRecipient.IdempotencyKey.get -> string?
+PostHog.Emails.BatchRecipient.IdempotencyKey.init -> void
+PostHog.Emails.BatchRecipient.TemplateData.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>?
+PostHog.Emails.BatchRecipient.TemplateData.init -> void
+PostHog.Emails.BatchRecipient.To.get -> string!
+PostHog.Emails.BatchRecipient.To.init -> void
+PostHog.Emails.EmailBatchException
+PostHog.Emails.EmailBatchException.EmailBatchException() -> void
+PostHog.Emails.EmailBatchException.EmailBatchException(string! message) -> void
+PostHog.Emails.EmailBatchException.EmailBatchException(string! message, System.Exception! innerException) -> void
+PostHog.Emails.EmailBatchException.Results.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.BatchEmailResult!>!
+PostHog.Emails.EmailBatchException.Warnings.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.EmailWarning!>!
+PostHog.Emails.IPostHogEmails.BatchAsync(PostHog.Emails.SendBatchOptions! batch, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<PostHog.Emails.SendBatchResult!>!
+PostHog.Emails.SendBatchOptions
+PostHog.Emails.SendBatchOptions.MaxRetries.get -> int?
+PostHog.Emails.SendBatchOptions.MaxRetries.init -> void
+PostHog.Emails.SendBatchOptions.Recipients.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.BatchRecipient!>!
+PostHog.Emails.SendBatchOptions.Recipients.init -> void
+PostHog.Emails.SendBatchResult
+PostHog.Emails.SendBatchResult.Results.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.BatchEmailResult!>!
+PostHog.Emails.SendBatchResult.Results.init -> void
+PostHog.Emails.SendBatchResult.SendBatchResult() -> void
+PostHog.Emails.SendBatchResult.Warnings.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.EmailWarning!>!
+PostHog.Emails.SendBatchResult.Warnings.init -> void
+PostHog.Emails.SendCodeBatchOptions
+PostHog.Emails.SendCodeBatchOptions.From.get -> string?
+PostHog.Emails.SendCodeBatchOptions.From.init -> void
+PostHog.Emails.SendCodeBatchOptions.Html.get -> string?
+PostHog.Emails.SendCodeBatchOptions.Html.init -> void
+PostHog.Emails.SendCodeBatchOptions.ReplyTo.get -> System.Collections.Generic.IReadOnlyList<string!>?
+PostHog.Emails.SendCodeBatchOptions.ReplyTo.init -> void
+PostHog.Emails.SendCodeBatchOptions.SendCodeBatchOptions() -> void
+PostHog.Emails.SendCodeBatchOptions.Sensitive.get -> bool?
+PostHog.Emails.SendCodeBatchOptions.Sensitive.init -> void
+PostHog.Emails.SendCodeBatchOptions.Subject.get -> string!
+PostHog.Emails.SendCodeBatchOptions.Subject.init -> void
+PostHog.Emails.SendCodeBatchOptions.TemplateKey.get -> string!
+PostHog.Emails.SendCodeBatchOptions.TemplateKey.init -> void
+PostHog.Emails.SendCodeBatchOptions.Text.get -> string?
+PostHog.Emails.SendCodeBatchOptions.Text.init -> void
+PostHog.Emails.SendCodeBatchOptions.Tracking.get -> PostHog.Emails.EmailTracking?
+PostHog.Emails.SendCodeBatchOptions.Tracking.init -> void
+PostHog.Emails.SendTemplateBatchOptions
+PostHog.Emails.SendTemplateBatchOptions.SendTemplateBatchOptions() -> void
+PostHog.Emails.SendTemplateBatchOptions.TemplateData.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object!>?
+PostHog.Emails.SendTemplateBatchOptions.TemplateData.init -> void
+PostHog.Emails.SendTemplateBatchOptions.TemplateId.get -> System.Guid
+PostHog.Emails.SendTemplateBatchOptions.TemplateId.init -> void

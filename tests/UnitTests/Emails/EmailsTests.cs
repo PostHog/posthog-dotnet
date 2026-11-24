@@ -1485,6 +1485,19 @@ sealed class EmailHarness : IAsyncDisposable
             return Task.FromResult(response);
         });
 
+    /// <summary>Answers the next request with what <paramref name="answer"/> makes of it, after <paramref name="delay"/>.</summary>
+    public void RespondTo(Func<RecordedRequest, HttpResponseMessage> answer, TimeSpan delay = default)
+        => _handler.Enqueue(async cancellationToken =>
+        {
+            var request = _handler.Requests[^1];
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
+
+            return answer(request);
+        });
+
     public void Fail(Exception exception) => _handler.Enqueue(_ => Task.FromException<HttpResponseMessage>(exception));
 
     public void Hang() => _handler.Enqueue(async cancellationToken =>
