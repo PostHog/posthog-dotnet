@@ -190,15 +190,45 @@ public class TheBatchAsyncMethod
         Assert.Equal(perRequest, harness.Requests.Select(r => Keys(r).Length));
     }
 
-    [Fact]
-    public async Task WaitsForASlowAnswerLongerThanTheClientTimeout()
+    [Theory]
+    [InlineData(44, "queued")]
+    [InlineData(45, "The request to PostHog timed out after 45s.")]
+    public async Task WaitsUpTo45SecondsForAnAnswerWhateverTheClientTimeout(int seconds, string outcome)
     {
-        await using var harness = new EmailHarness(options => options.EmailRequestTimeout = TimeSpan.FromMilliseconds(50));
-        harness.RespondTo(AllQueuedAnswer, delay: TimeSpan.FromMilliseconds(300));
+        await using var harness = new EmailHarness(options => options.EmailRequestTimeout = TimeSpan.FromSeconds(5));
+        harness.Time.ControlDeadlines();
+        var answer = harness.Hold(AllQueuedAnswer);
+        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
-        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0));
+        var send = harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0));
+        await answer.Arrived;
+        harness.Time.AdvanceDeadlines(TimeSpan.FromSeconds(seconds));
+        answer.Release();
 
-        Assert.Equal("queued", Assert.Single(result.Results).Status);
+        if (outcome == "queued")
+        {
+            Assert.Equal(outcome, Assert.Single((await send).Results).Status);
+        }
+        else
+        {
+            Assert.Equal(outcome, (await Assert.ThrowsAsync<EmailBatchException>(() => send)).Message);
+        }
+    }
+
+    [Fact]
+    public async Task NamesTheAppsHttpClientTimeoutWhenItEndsAnAttemptFirst()
+    {
+        await using var harness = new EmailHarness();
+        harness.HttpClient.Timeout = TimeSpan.FromMilliseconds(50);
+        harness.Hang();
+        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
+
+        Assert.Equal(
+            ("network_error", "The request to PostHog timed out after 0.05s, the Timeout of the app's HttpClient."),
+            (error.Code, error.Message));
     }
 
     [Theory]

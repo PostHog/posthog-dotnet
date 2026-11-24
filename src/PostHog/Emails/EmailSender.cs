@@ -622,8 +622,8 @@ internal sealed partial class EmailSender : IPostHogEmails
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(waitFor);
+        using var deadline = DeadlineAfter(waitFor);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         HttpResponseMessage response;
         try
         {
@@ -631,7 +631,12 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
-            throw NetworkError($"The request to PostHog timed out after {waitFor.TotalSeconds:0.###}s.", e);
+            throw NetworkError(
+                deadline.IsCancellationRequested
+                    ? $"The request to PostHog timed out after {waitFor.TotalSeconds:0.###}s."
+                    : $"The request to PostHog timed out after {_httpClient!.Timeout.TotalSeconds:0.###}s, the Timeout "
+                      + "of the app's HttpClient.",
+                e);
         }
         catch (HttpRequestException e)
         {
@@ -653,6 +658,13 @@ internal sealed partial class EmailSender : IPostHogEmails
             return new Reply(response.StatusCode, ParseObject(text), ReadRetryAfter(response));
         }
     }
+
+    CancellationTokenSource DeadlineAfter(TimeSpan wait)
+#if NET8_0_OR_GREATER
+        => new(wait, _timeProvider);
+#else
+        => _timeProvider.CreateCancellationTokenSource(wait);
+#endif
 
     static EmailException NetworkError(string message, Exception innerException)
         => new("network_error", message, innerException: innerException);

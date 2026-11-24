@@ -1501,18 +1501,21 @@ sealed class EmailHarness : IAsyncDisposable
             return Task.FromResult(response);
         });
 
-    /// <summary>Answers the next request with what <paramref name="answer"/> makes of it, after <paramref name="delay"/>.</summary>
-    public void RespondTo(Func<RecordedRequest, HttpResponseMessage> answer, TimeSpan delay = default)
-        => _handler.Enqueue(async cancellationToken =>
+    public void RespondTo(Func<RecordedRequest, HttpResponseMessage> answer)
+        => _handler.Enqueue(_ => Task.FromResult(answer(_handler.Requests[^1])));
+
+    public HeldAnswer Hold(Func<RecordedRequest, HttpResponseMessage> answer)
+    {
+        var held = new HeldAnswer();
+        _handler.Enqueue(async cancellationToken =>
         {
             var request = _handler.Requests[^1];
-            if (delay > TimeSpan.Zero)
-            {
-                await Task.Delay(delay, cancellationToken);
-            }
-
+            held.Arrive();
+            await held.WaitAsync(cancellationToken);
             return answer(request);
         });
+        return held;
+    }
 
     public void Fail(Exception exception) => _handler.Enqueue(_ => Task.FromException<HttpResponseMessage>(exception));
 
@@ -1533,6 +1536,26 @@ sealed class EmailHarness : IAsyncDisposable
     sealed class SingleHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
+    }
+}
+
+sealed class HeldAnswer
+{
+    readonly TaskCompletionSource<bool> _arrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    readonly TaskCompletionSource<bool> _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Arrived => _arrived.Task;
+
+    public void Arrive() => _arrived.TrySetResult(true);
+
+    public void Release() => _released.TrySetResult(true);
+
+    public async Task WaitAsync(CancellationToken cancellationToken)
+    {
+        using (cancellationToken.Register(() => _released.TrySetCanceled(cancellationToken)))
+        {
+            await _released.Task;
+        }
     }
 }
 
@@ -1600,14 +1623,41 @@ sealed class RecordingHandler : HttpMessageHandler
 
 /// <summary>
 /// Records each one-shot wait, such as a retry backoff, and ends it at once, or holds it until released.
-/// Periodic timers run on the system clock.
+/// Periodic timers, and request deadlines unless <see cref="ControlDeadlines"/> is called, run on the system clock.
 /// </summary>
 sealed class RecordingTimeProvider : TimeProvider
 {
     readonly List<TimeSpan> _delays = [];
     readonly List<Action> _held = [];
+    readonly List<(TimeSpan Due, Action Fire)> _deadlines = [];
     readonly TaskCompletionSource<bool> _firstHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool _holding;
+    bool _controllingDeadlines;
+    TimeSpan _advanced;
+
+    public void ControlDeadlines()
+    {
+        lock (_delays)
+        {
+            _controllingDeadlines = true;
+        }
+    }
+
+    public void AdvanceDeadlines(TimeSpan by)
+    {
+        List<Action> due;
+        lock (_delays)
+        {
+            _advanced += by;
+            due = _deadlines.Where(deadline => deadline.Due <= _advanced).Select(deadline => deadline.Fire).ToList();
+            _deadlines.RemoveAll(deadline => deadline.Due <= _advanced);
+        }
+
+        foreach (var fire in due)
+        {
+            fire();
+        }
+    }
 
     /// <summary>The time the client reads as now; the system clock when unset.</summary>
     public DateTimeOffset? Now { get; set; }
@@ -1665,6 +1715,20 @@ sealed class RecordingTimeProvider : TimeProvider
         }
 
         void Fire() => ThreadPool.QueueUserWorkItem(_ => callback(state));
+        if (state is CancellationTokenSource)
+        {
+            lock (_delays)
+            {
+                if (_controllingDeadlines)
+                {
+                    _deadlines.Add((_advanced + dueTime, Fire));
+                    return new NoOpTimer();
+                }
+            }
+
+            return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
+        }
+
         lock (_delays)
         {
             _delays.Add(dueTime);

@@ -36,8 +36,10 @@ public interface IPostHogEmails
     /// <remarks>
     /// The client sends the recipients in requests of at most 100 recipients and 4 MiB of JSON, one after another, and
     /// waits up to 45 seconds for each answer, or <see cref="PostHogOptions.EmailRequestTimeout"/> when that is
-    /// longer. A recipient too large for any request alone is <c>failed</c> with <c>content_too_large</c>, and the
-    /// rest still go out.
+    /// longer. The <see cref="HttpClient.Timeout"/> of the <see cref="HttpClient"/> the client sends through still
+    /// ends an attempt when it is shorter, so give that <see cref="HttpClient"/> a timeout of at least 45 seconds. A
+    /// recipient too large for any request alone is <c>failed</c> with <c>content_too_large</c>, and the rest still go
+    /// out.
     /// <para>
     /// Each recipient has an idempotency key, its <see cref="BatchRecipient.IdempotencyKey"/> or one the client makes,
     /// that every retry reuses, so a retry never queues an email twice. PostHog replays a key for 24 hours after the
