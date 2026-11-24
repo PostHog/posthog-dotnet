@@ -123,8 +123,8 @@ public sealed class BatchRecipient
     /// it can send the email again. Pass a key you store, such as <c>digest:2026-11-23:user_123</c>, when a batch may
     /// be cut off and run again: a rerun within 24 hours of the first request that passes the same key replays the
     /// email that went out instead of sending it twice. A single send and a batch recipient with the same key and the
-    /// same email replay each other. Never reuse a key for another email: the client reads an <c>unconfirmed</c> email
-    /// by its key, and an earlier email with that key would give its message ID as this one's.
+    /// same email replay each other. Never reuse a key for another email: PostHog refuses a key that an earlier,
+    /// different email used.
     /// </remarks>
     public string? IdempotencyKey { get; init; }
 

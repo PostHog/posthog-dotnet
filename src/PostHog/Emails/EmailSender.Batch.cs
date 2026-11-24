@@ -10,11 +10,11 @@ namespace PostHog.Emails;
 internal sealed partial class EmailSender
 {
     const string BatchPath = "/api/messaging/send/email_batch/";
-    const string StatusByKeyPath = "/api/messaging/emails/status/?idempotency_key=";
     const int BatchMaxRecipients = 100;
     const int BatchMaxBodyBytes = 4 * 1024 * 1024;
     const int PipelineMaxCopiedBytes = 16 * 1024 * 1024;
     const int EmptyObjectBytes = 2;
+    const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours, so it goes out once.";
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
 
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
@@ -87,12 +87,10 @@ internal sealed partial class EmailSender
             catch (EmailException error)
             {
                 run.Stop(position, error);
-                await ReadUnconfirmedAsync(run, appHost, secretKey, cancellationToken).ConfigureAwait(false);
                 throw Failure(run, error);
             }
         }
 
-        await ReadUnconfirmedAsync(run, appHost, secretKey, cancellationToken).ConfigureAwait(false);
         LogWarnings(run.Warnings);
         return new SendBatchResult { Results = run.Outcome(), Warnings = run.Warnings.ToList() };
     }
@@ -112,54 +110,6 @@ internal sealed partial class EmailSender
     {
         LogWarnings(run.Warnings);
         return new EmailBatchException(error, run.Outcome(), run.Warnings.ToList());
-    }
-
-    async Task ReadUnconfirmedAsync(BatchRun run, string appHost, string secretKey, CancellationToken cancellationToken)
-    {
-        foreach (var row in run.UnconfirmedWithoutMessageId())
-        {
-            if (IsClosed)
-            {
-                return;
-            }
-
-            string? id;
-            try
-            {
-                var url = new Uri(appHost + StatusByKeyPath + Uri.EscapeDataString(row.IdempotencyKey));
-                var reply = await RequestAsync(HttpMethod.Get, url, secretKey, body: null, idempotencyKey: null, cancellationToken)
-                    .ConfigureAwait(false);
-                if (!IsSuccess(reply.Status))
-                {
-                    throw ReplyError(reply);
-                }
-
-                id = Text(reply.Fields, "id");
-            }
-            catch (EmailException e) when (e.StatusCode == HttpStatusCode.NotFound)
-            {
-                continue;
-            }
-            catch (EmailException)
-            {
-                return;
-            }
-            catch (Exception e) when (!IsCallerCancellation(e, cancellationToken))
-            {
-                return;
-            }
-
-            if (id is null || !IsMessageId(id))
-            {
-                row.AddLaterError(new EmailException(
-                    "api_error",
-                    "PostHog answered this email's status without a readable message ID, so it may still go out."));
-            }
-            else
-            {
-                row.Identify(id);
-            }
-        }
     }
 
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
@@ -324,8 +274,6 @@ internal sealed partial class EmailSender
             (Status, MessageId, Replayed, Error, LaterError) = (status, messageId, replayed, error, laterError);
         }
 
-        public void Identify(string messageId) => MessageId = messageId;
-
         public void AddLaterError(EmailException later) => Set("unconfirmed", MessageId, error: Error, laterError: later);
 
         public BatchEmailResult Result() => new()
@@ -336,9 +284,23 @@ internal sealed partial class EmailSender
             Status = Status ?? throw new InvalidOperationException($"Recipient {Index} has no result yet."),
             MessageId = MessageId,
             Replayed = Replayed,
-            Error = Error,
+            Error = IsUnconfirmed ? WithResendFix(Error) : Error,
             LaterError = LaterError,
         };
+
+        static EmailException? WithResendFix(EmailException? error) => error is null || error.Fix == ResendWithTheSameKey
+            ? error
+            : new EmailException(
+                error.Code,
+                error.Message,
+                error.StatusCode,
+                error.Why,
+                ResendWithTheSameKey,
+                error.DocsUrl,
+                error.Field,
+                error.RetryAfter,
+                error.InnerException,
+                error.MessageId);
     }
 
     sealed record BatchChunk(IReadOnlyList<BatchRow> Rows)
@@ -361,8 +323,8 @@ internal sealed partial class EmailSender
 
         static EmailException Unconfirmed(string? messageId) => new(
             "delivery_unavailable",
-            "PostHog didn't confirm this email, so it may still go out. Send it again with the same IdempotencyKey "
-            + "within 24 hours, so it goes out once.",
+            "PostHog didn't confirm this email, so it may still go out.",
+            fix: ResendWithTheSameKey,
             messageId: messageId);
     }
 
@@ -549,9 +511,6 @@ internal sealed partial class EmailSender
                 row.Set("not_attempted", error: error);
             }
         }
-
-        public List<BatchRow> UnconfirmedWithoutMessageId()
-            => _rows.Where(row => row.IsUnconfirmed && row.MessageId is null).ToList();
 
         public List<BatchEmailResult> Outcome() => _rows.Select(row => row.Result()).ToList();
 

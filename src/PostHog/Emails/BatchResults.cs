@@ -47,7 +47,7 @@ public sealed class BatchEmailResult
     /// address.</item>
     /// <item><c>unconfirmed</c>: the client can't tell whether PostHog queued the email, such as after a lost answer.
     /// It may still go out. Send it again with the same <see cref="IdempotencyKey"/> within 24 hours, so it goes out
-    /// once. <see cref="LaterError"/> holds what a retry or status read in the same call answered.</item>
+    /// once. <see cref="LaterError"/> holds what a retry in the same call answered.</item>
     /// <item><c>not_attempted</c>: an earlier request of the batch failed, so the client sent nothing for this
     /// recipient.</item>
     /// </list>
@@ -72,7 +72,7 @@ public sealed class BatchEmailResult
     public EmailException? Error { get; init; }
 
     /// <summary>
-    /// For an <c>unconfirmed</c> email, what a later retry or status read in the same call answered about it. It
+    /// For an <c>unconfirmed</c> email, what a later retry in the same call answered about it. It
     /// describes only that answer: the email may still go out.
     /// </summary>
     public EmailException? LaterError { get; init; }

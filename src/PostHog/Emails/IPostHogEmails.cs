@@ -48,10 +48,8 @@ public interface IPostHogEmails
     /// first request that used it: a batch sent again within that window that passes the same
     /// <see cref="BatchRecipient.IdempotencyKey"/> values queues no second email for a recipient PostHog already
     /// accepted. Keys the client makes cover the retries of one call only. Network errors, rate limits, a key still in
-    /// flight and an unavailable service are retried for each request. At the end of every batch, also one that throws,
-    /// the client reads each <c>unconfirmed</c> email without a message ID by its key, in input order, and fills in its
-    /// <see cref="BatchEmailResult.MessageId"/>. The reads stop at the first one PostHog fails to answer, other than a
-    /// key it doesn't know. A read never changes the status: the email stays <c>unconfirmed</c>.
+    /// flight and an unavailable service are retried for each request. An <c>unconfirmed</c> email may still go out:
+    /// send it again with the same key within 24 hours, so it goes out once.
     /// </para>
     /// </remarks>
     /// <param name="batch">

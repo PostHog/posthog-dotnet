@@ -13,7 +13,7 @@ public class TheBatchAsyncMethod
 {
     const string TemplateIdText = "0190f6d2-7c1e-7b3a-9f5e-1c2d3e4f5a6b";
     const string BatchUrl = "https://us.posthog.com/api/messaging/send/email_batch/";
-    const string StatusByKeyUrl = "https://us.posthog.com/api/messaging/emails/status/?idempotency_key=";
+    const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours, so it goes out once.";
     const int FourMiB = 4 * 1024 * 1024;
     const string SendSinglyFix =
         "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
@@ -288,7 +288,6 @@ public class TheBatchAsyncMethod
         await using var harness = new EmailHarness(options => options.EmailRequestTimeout = TimeSpan.FromSeconds(5));
         harness.Time.ControlDeadlines();
         var answer = harness.Hold(AllQueuedAnswer);
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var send = harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0));
         await answer.Arrived;
@@ -328,7 +327,6 @@ public class TheBatchAsyncMethod
         harness.Fail(new TaskCanceledException(
             "The request was canceled due to the configured HttpClient.Timeout of 7 seconds elapsing.",
             new TimeoutException()));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
@@ -389,15 +387,13 @@ public class TheBatchAsyncMethod
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.OK, Ok(slot));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var result = Assert.Single((await harness.Client.Emails.BatchAsync(Batch(Recipients(1)))).Results);
 
         Assert.Equal((status, messageId, code), (result.Status, result.MessageId, result.Error!.Code));
+        Assert.Equal(status == "unconfirmed" ? ResendWithTheSameKey : null, result.Error.Fix);
         Assert.Null(result.LaterError);
-        Assert.Equal(
-            status == "unconfirmed" && messageId is null ? [BatchUrl, StatusByKeyUrl + "key-0"] : [BatchUrl],
-            harness.Requests.Select(r => r.Url));
+        Assert.Equal([BatchUrl], harness.Requests.Select(r => r.Url));
     }
 
     [Fact]
@@ -422,7 +418,7 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
-    public async Task ReadsEachEmailByItsKeyAfterALostAnswer()
+    public async Task LeavesEachEmailOfALostAnswerUnconfirmedWithItsKey()
     {
         await using var harness = new EmailHarness();
         for (var attempt = 0; attempt < 3; attempt++)
@@ -430,91 +426,30 @@ public class TheBatchAsyncMethod
             harness.Fail(new HttpRequestException("connection reset"));
         }
 
-        for (var read = 0; read < 2; read++)
-        {
-            harness.RespondTo(request => request.Url.EndsWith("key-0", StringComparison.Ordinal)
-                ? Json(HttpStatusCode.OK, StatusFound(M0))
-                : Json(HttpStatusCode.NotFound, WholeCall("not_found")));
-        }
-
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
 
         Assert.Equal("network_error", error.Code);
+        Assert.Equal([BatchUrl, BatchUrl, BatchUrl], harness.Requests.Select(r => r.Url));
         Assert.Equal(
-            [StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"],
-            harness.Requests.Skip(3).Select(r => r.Url));
-        Assert.All(harness.Requests.Skip(3), r => Assert.Equal(HttpMethod.Get, r.Method));
-        Assert.Equal([("unconfirmed", M0), ("unconfirmed", null)], error.Results.Select(r => (r.Status, r.MessageId)));
-        Assert.All(error.Results, r => Assert.Equal("delivery_unavailable", r.Error!.Code));
-    }
-
-    [Theory]
-    [InlineData(M0, "sent", M0, null)]
-    [InlineData(M0, "failed", M0, null)]
-    [InlineData("m0", "sent", null, "api_error")]
-    public async Task TakesOnlyTheMessageIdFromAStatusReadByKey(
-        string id,
-        string recorded,
-        string? messageId,
-        string? laterCode)
-    {
-        await using var harness = new EmailHarness();
-        harness.Fail(new HttpRequestException("connection reset"));
-        harness.Respond(HttpStatusCode.OK, StatusFound(id, recorded));
-
-        var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
-
-        var result = Assert.Single(error.Results);
-        Assert.Equal(
-            ("unconfirmed", messageId, "delivery_unavailable", laterCode),
-            (result.Status, result.MessageId, result.Error!.Code, result.LaterError?.Code));
+            [("unconfirmed", "key-0", null), ("unconfirmed", "key-1", null)],
+            error.Results.Select(r => (r.Status, r.IdempotencyKey, r.MessageId)));
+        Assert.All(error.Results, r => Assert.Equal(("delivery_unavailable", ResendWithTheSameKey), (r.Error!.Code, r.Error.Fix)));
     }
 
     [Fact]
-    public async Task TakesTheMessageIdOfAStatusReadByKeyThatLacksOtherFields()
-    {
-        await using var harness = new EmailHarness();
-        const string inFlight = """{"error":{"code":"idempotency_key_in_flight","detail":"In flight.","status":409}}""";
-        harness.Respond(HttpStatusCode.OK, Ok(inFlight, inFlight));
-        harness.Respond(HttpStatusCode.OK, $$"""{"id":"{{M0}}","status":"sent"}""");
-        harness.Respond(HttpStatusCode.OK, StatusFound(M1));
-
-        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(2)));
-
-        Assert.Equal(
-            [("unconfirmed", M0, null), ("unconfirmed", M1, null)],
-            result.Results.Select(r => (r.Status, r.MessageId, r.LaterError)));
-    }
-
-    [Fact]
-    public async Task ReadsEachUnconfirmedEmailByItsKeyAfterABatchThatSucceeds()
+    public async Task LeavesAnEmailPostHogHoldsInFlightUnconfirmedAfterABatchThatSucceeds()
     {
         await using var harness = new EmailHarness();
         harness.Respond(
             HttpStatusCode.OK,
             Ok(Queued(M0), """{"error":{"code":"idempotency_key_in_flight","detail":"In flight.","status":409}}"""));
-        harness.Respond(HttpStatusCode.OK, StatusFound(M1));
 
         var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(2)));
 
-        Assert.Equal([BatchUrl, StatusByKeyUrl + "key-1"], harness.Requests.Select(r => r.Url));
-        Assert.Equal([("queued", M0), ("unconfirmed", M1)], result.Results.Select(r => (r.Status, r.MessageId)));
-    }
-
-    [Fact]
-    public async Task KeepsEveryResultWhenAStatusReadThrows()
-    {
-        await using var harness = new EmailHarness();
-        harness.Respond(
-            HttpStatusCode.OK,
-            Ok(Queued(M0), """{"error":{"code":"idempotency_key_in_flight","detail":"In flight.","status":409}}"""));
-        harness.Fail(new ObjectDisposedException("System.Net.Http.HttpClient"));
-
-        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(2)));
-
+        Assert.Equal([BatchUrl], harness.Requests.Select(r => r.Url));
         Assert.Equal([("queued", M0), ("unconfirmed", null)], result.Results.Select(r => (r.Status, r.MessageId)));
+        Assert.Equal(("idempotency_key_in_flight", ResendWithTheSameKey), (result.Results[1].Error!.Code, result.Results[1].Error!.Fix));
     }
 
     [Fact]
@@ -522,8 +457,6 @@ public class TheBatchAsyncMethod
     {
         await using var harness = new EmailHarness();
         harness.Fail(new ObjectDisposedException("System.Net.Http.HttpClient"));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
@@ -533,31 +466,8 @@ public class TheBatchAsyncMethod
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
     }
 
-    [Theory]
-    [InlineData("""{"id":null,"status":"sent"}""")]
-    [InlineData("""{"status":"sent"}""")]
-    [InlineData("""{"id":"","status":"sent"}""")]
-    [InlineData("""{"id":7,"status":"sent"}""")]
-    public async Task KeepsReadingByKeyPastAStatusReplyWithoutAMessageId(string reply)
-    {
-        await using var harness = new EmailHarness();
-        harness.Respond(
-            HttpStatusCode.OK,
-            Ok(
-                """{"error":{"code":"idempotency_key_in_flight","detail":"In flight.","status":409}}""",
-                """{"error":{"code":"idempotency_key_in_flight","detail":"In flight.","status":409}}"""));
-        harness.Respond(HttpStatusCode.OK, reply);
-        harness.Respond(HttpStatusCode.OK, StatusFound(M1));
-
-        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(2)));
-
-        Assert.Equal([BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"], harness.Requests.Select(r => r.Url));
-        Assert.Equal([("unconfirmed", null), ("unconfirmed", M1)], result.Results.Select(r => (r.Status, r.MessageId)));
-        Assert.Equal("api_error", result.Results[0].LaterError!.Code);
-    }
-
     [Fact]
-    public async Task StopsReadingByKeyWhenPostHogStaysUnreachable()
+    public async Task SendsNothingMoreAfterTheLastRetryOfAnUnavailableRequest()
     {
         await using var harness = new EmailHarness();
         for (var attempt = 0; attempt < 3; attempt++)
@@ -565,27 +475,11 @@ public class TheBatchAsyncMethod
             harness.Respond(HttpStatusCode.ServiceUnavailable, WholeCall("delivery_unavailable"));
         }
 
-        harness.Fail(new HttpRequestException("down"));
-
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(3), maxRetries: 2)));
 
-        Assert.Equal(4, harness.Requests.Count);
-        Assert.All(error.Results, r => Assert.Equal("unconfirmed", r.Status));
-    }
-
-    [Fact]
-    public async Task EncodesAKeyWithReservedCharactersInTheStatusRead()
-    {
-        await using var harness = new EmailHarness();
-        harness.Fail(new HttpRequestException("connection reset"));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
-
-        await Assert.ThrowsAsync<EmailBatchException>(() => harness.Client.Emails.BatchAsync(Batch(
-            [new BatchRecipient { To = "a@example.com", IdempotencyKey = "order#1&x=2" }],
-            maxRetries: 0)));
-
-        Assert.Equal(StatusByKeyUrl + "order%231%26x%3D2", harness.Requests[1].Url);
+        Assert.Equal(3, harness.Requests.Count);
+        Assert.All(error.Results, r => Assert.Equal(("unconfirmed", ResendWithTheSameKey), (r.Status, r.Error!.Fix)));
     }
 
     [Fact]
@@ -622,8 +516,6 @@ public class TheBatchAsyncMethod
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.OK, Ok(Queued(M0)));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
@@ -631,7 +523,7 @@ public class TheBatchAsyncMethod
         Assert.Equal("api_error", error.Code);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
         Assert.All(error.Results, r => Assert.Equal(("api_error", null), (r.Error!.Code, r.LaterError)));
-        Assert.Equal([BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"], harness.Requests.Select(r => r.Url));
+        Assert.Equal([BatchUrl], harness.Requests.Select(r => r.Url));
     }
 
     [Theory]
@@ -654,7 +546,6 @@ public class TheBatchAsyncMethod
 
             return response;
         });
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
@@ -666,47 +557,41 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
-    public async Task ReadsBackEachEmailOfARequestPostHogStillHoldsInFlight()
+    public async Task LeavesEachEmailOfARequestPostHogStillHoldsInFlightUnconfirmed()
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
         harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
-        harness.Respond(HttpStatusCode.OK, StatusFound(M0));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
 
-        Assert.Equal(
-            [BatchUrl, BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"],
-            harness.Requests.Select(r => r.Url));
-        Assert.Equal([("unconfirmed", M0), ("unconfirmed", null)], error.Results.Select(r => (r.Status, r.MessageId)));
-        var unconfirmed = error.Results[1];
-        Assert.Equal(
-            ("idempotency_key_in_flight", "idempotency_key_in_flight"),
-            (unconfirmed.Error!.Code, unconfirmed.LaterError!.Code));
+        Assert.Equal([BatchUrl, BatchUrl], harness.Requests.Select(r => r.Url));
+        Assert.All(
+            error.Results,
+            r => Assert.Equal(
+                ("unconfirmed", (string?)null, "idempotency_key_in_flight", "idempotency_key_in_flight", ResendWithTheSameKey),
+                (r.Status, r.MessageId, r.Error!.Code, r.LaterError!.Code, r.Error.Fix)));
     }
 
     [Theory]
     [InlineData("")]
     [InlineData("<html>Conflict</html>")]
     [InlineData("""{"detail":"Conflict."}""")]
-    public async Task ReadsBackEachEmailOfARequestRefusedWithA409ItCantRead(string body)
+    public async Task LeavesEachEmailOfARequestRefusedWithA409ItCantReadUnconfirmed(string body)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Conflict, body);
-        harness.Respond(HttpStatusCode.OK, StatusFound(M0));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
 
-        Assert.Equal(
-            [BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"],
-            harness.Requests.Select(r => r.Url));
-        Assert.Equal(
-            [("unconfirmed", M0, "api_error"), ("unconfirmed", null, "api_error")],
-            error.Results.Select(r => (r.Status, r.MessageId, r.Error!.Code)));
+        Assert.Equal([BatchUrl], harness.Requests.Select(r => r.Url));
+        Assert.All(
+            error.Results,
+            r => Assert.Equal(
+                ("unconfirmed", (string?)null, "api_error", ResendWithTheSameKey),
+                (r.Status, r.MessageId, r.Error!.Code, r.Error.Fix)));
     }
 
     [Fact]
@@ -715,8 +600,6 @@ public class TheBatchAsyncMethod
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
         harness.Respond((HttpStatusCode)422, WholeCall("sending_paused"));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
-        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
@@ -936,27 +819,6 @@ public class TheBatchAsyncMethod
         Assert.Equal("client_closed", error.Results[0].Error!.Code);
     }
 
-    [Fact]
-    public async Task ReadsNoEmailByItsKeyAfterTheClientShutsDown()
-    {
-        await using var harness = new EmailHarness();
-        Task? shutdown = null;
-        harness.RespondTo(_ =>
-        {
-            shutdown = harness.Client.DisposeAsync().AsTask();
-            return Json(HttpStatusCode.ServiceUnavailable, WholeCall("delivery_unavailable"));
-        });
-        harness.Respond(HttpStatusCode.OK, StatusFound(M0));
-
-        var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
-        await shutdown!;
-
-        Assert.Equal("delivery_unavailable", error.Code);
-        Assert.Single(harness.Requests);
-        Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
-    }
-
     public static TheoryData<Action<PostHogOptions>, string> ClientsThatSendNothing => new()
     {
         { options => options.Disabled = true, "client_disabled" },
@@ -1006,8 +868,6 @@ public class TheBatchAsyncMethod
 
     static string WholeCall(string code) => $$"""{"type":"invalid_request","code":"{{code}}","detail":"Nope."}""";
 
-    static string StatusFound(string messageId, string status = "sent")
-        => $$"""{"id":"{{messageId}}","status":"{{status}}","created_at":"2026-11-22T10:00:00Z","status_at":"2026-11-22T10:00:01Z"}""";
 
     static string[] Keys(RecordedRequest request)
     {
