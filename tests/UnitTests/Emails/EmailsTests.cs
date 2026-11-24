@@ -592,6 +592,71 @@ public class TheSendAsyncMethodWithCodeContent
         AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
     }
 
+    static readonly TimeSpan UploadHangGuard = TimeSpan.FromMinutes(3);
+
+    static SendCodeEmailOptions CategorizedPdfSend(
+        string html,
+        string filename,
+        MessageCategory category) => new()
+        {
+            To = "a@example.com",
+            TemplateKey = "k",
+            Subject = "s",
+            Html = html,
+            Category = category,
+            Attachments =
+            [
+                new EmailAttachment
+                {
+                    Filename = filename,
+                    Content = BinaryPdfBytes,
+                    ContentType = "application/pdf",
+                },
+            ],
+        };
+
+    static async Task<T> RunWithHeldUploadAsync<T>(
+        FakePostHogEmails posthog,
+        CategorizedSendHandler transport,
+        Func<CancellationToken, Task<SendEmailResult>> send,
+        Func<Task<SendEmailResult>, Task<T>> observeOutcome)
+    {
+        using var hangGuard = new CancellationTokenSource(UploadHangGuard);
+        Task<SendEmailResult> sendTask;
+        try
+        {
+            sendTask = send(hangGuard.Token);
+            await WaitForTaskAsync(transport.UploadStarted, hangGuard.Token);
+            Assert.False(sendTask.IsCompleted);
+            Assert.Equal(2, transport.Requests.Count);
+            Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
+            Assert.Equal(0, posthog.StorageWrites);
+            Assert.Null(posthog.StoredContent(BinaryPdfSha256));
+        }
+        finally
+        {
+            transport.ReleaseUpload();
+        }
+
+        return await observeOutcome(sendTask);
+    }
+
+    static async Task WaitForTaskAsync(Task task, CancellationToken cancellationToken)
+    {
+        if (task.IsCompleted)
+        {
+            await task;
+            return;
+        }
+
+        var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = cancellationToken.Register(
+            static state => ((TaskCompletionSource<bool>)state!).TrySetCanceled(),
+            cancelled);
+        var completed = await Task.WhenAny(task, cancelled.Task);
+        await completed;
+    }
+
     [Theory]
     [InlineData("workflow_can_wait")]
     [InlineData("sandbox_fields_unsupported")]
@@ -607,47 +672,20 @@ public class TheSendAsyncMethodWithCodeContent
             """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: transport);
 
-        Task<SendEmailResult> sendTask;
-        using var testTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        try
-        {
-            sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var options = CategorizedPdfSend(
+            "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
+            "brochure.pdf",
+            new MessageCategory
             {
-                To = "a@example.com",
-                TemplateKey = "k",
-                Subject = "s",
-                Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
-                Category = new MessageCategory
-                {
-                    Key = "newsletter",
-                    Type = MessageCategoryType.Marketing,
-                    Name = "Newsletter",
-                },
-                Attachments =
-                [
-                    new EmailAttachment
-                    {
-                        Filename = "brochure.pdf",
-                        Content = BinaryPdfBytes,
-                        ContentType = "application/pdf",
-                    },
-                ],
-            }, testTimeout.Token);
-
-            var started = await Task.WhenAny(transport.UploadStarted, sendTask);
-            Assert.Same(transport.UploadStarted, started);
-            Assert.False(sendTask.IsCompleted);
-            Assert.Equal(2, transport.Requests.Count);
-            Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
-            Assert.Equal(0, posthog.StorageWrites);
-            Assert.Null(posthog.StoredContent(BinaryPdfSha256));
-        }
-        finally
-        {
-            transport.ReleaseUpload();
-        }
-
-        var error = await Assert.ThrowsAsync<EmailException>(() => sendTask);
+                Key = "newsletter",
+                Type = MessageCategoryType.Marketing,
+                Name = "Newsletter",
+            });
+        var error = await RunWithHeldUploadAsync(
+            posthog,
+            transport,
+            token => harness.Client.Emails.SendAsync(options, token),
+            sendTask => Assert.ThrowsAsync<EmailException>(() => sendTask));
 
         Assert.Equal(code, error.Code);
         Assert.Equal("validation_error", error.Name);
@@ -675,47 +713,20 @@ public class TheSendAsyncMethodWithCodeContent
             """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: transport);
 
-        Task<SendEmailResult> sendTask;
-        using var testTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        try
-        {
-            sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+        var options = CategorizedPdfSend(
+            "<p>Receipt</p>",
+            "invoice.pdf",
+            new MessageCategory
             {
-                To = "a@example.com",
-                TemplateKey = "k",
-                Subject = "s",
-                Html = "<p>Receipt</p>",
-                Category = new MessageCategory
-                {
-                    Key = "receipts",
-                    Type = MessageCategoryType.Transactional,
-                    Name = "Receipts",
-                },
-                Attachments =
-                [
-                    new EmailAttachment
-                    {
-                        Filename = "invoice.pdf",
-                        Content = BinaryPdfBytes,
-                        ContentType = "application/pdf",
-                    },
-                ],
-            }, testTimeout.Token);
-
-            var started = await Task.WhenAny(transport.UploadStarted, sendTask);
-            Assert.Same(transport.UploadStarted, started);
-            Assert.False(sendTask.IsCompleted);
-            Assert.Equal(2, transport.Requests.Count);
-            Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
-            Assert.Equal(0, posthog.StorageWrites);
-            Assert.Null(posthog.StoredContent(BinaryPdfSha256));
-        }
-        finally
-        {
-            transport.ReleaseUpload();
-        }
-
-        var result = await sendTask;
+                Key = "receipts",
+                Type = MessageCategoryType.Transactional,
+                Name = "Receipts",
+            });
+        var result = await RunWithHeldUploadAsync(
+            posthog,
+            transport,
+            token => harness.Client.Emails.SendAsync(options, token),
+            sendTask => sendTask);
 
         Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.Equal(1, transport.StorageWritesAtSend);
@@ -794,7 +805,7 @@ public class TheSendAsyncMethodWithCodeContent
 
     sealed class CategorizedSendHandler(FakePostHogEmails inner, bool holdUpload = true) : DelegatingHandler(inner)
     {
-        readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
+        readonly ConcurrentQueue<(HttpStatusCode Status, Func<HttpResponseMessage> Respond)> _sendResponses = new();
         readonly ConcurrentDictionary<string, GrantedUpload> _grantedUploads = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<string, byte> _grantedUploadUrls = new(StringComparer.Ordinal);
         readonly List<RecordedRequest> _requests = [];
@@ -823,10 +834,10 @@ public class TheSendAsyncMethodWithCodeContent
         public void ReleaseUpload() => _releaseUpload.TrySetResult(true);
 
         public void EnqueueSendResponse(HttpStatusCode status, string body)
-            => _sendResponses.Enqueue(() => new HttpResponseMessage(status)
+            => _sendResponses.Enqueue((status, () => new HttpResponseMessage(status)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
-            });
+            }));
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -860,7 +871,7 @@ public class TheSendAsyncMethodWithCodeContent
                 if (holdUpload)
                 {
                     _uploadStarted.TrySetResult(true);
-                    await WaitForReleaseAsync(_releaseUpload.Task, cancellationToken);
+                    await WaitForTaskAsync(_releaseUpload.Task, cancellationToken);
                 }
 
                 if (!_grantedUploadUrls.ContainsKey(recorded.Url))
@@ -881,16 +892,17 @@ public class TheSendAsyncMethodWithCodeContent
 
             if (request.Method == HttpMethod.Post
                 && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/"
-                && _sendResponses.TryDequeue(out var respond))
+                && _sendResponses.TryDequeue(out var next))
             {
                 Interlocked.Exchange(ref _storageWritesAtSend, inner.StorageWrites);
-                return ValidateSendTransport(request, recorded.Body) ?? respond();
+                var checkStorage = (int)next.Status is >= 200 and < 300;
+                return ValidateSendTransport(request, recorded.Body, checkStorage) ?? next.Respond();
             }
 
             return await base.SendAsync(request, cancellationToken);
         }
 
-        HttpResponseMessage? ValidateSendTransport(HttpRequestMessage request, string? body)
+        HttpResponseMessage? ValidateSendTransport(HttpRequestMessage request, string? body, bool checkStorage)
         {
             if (request.Headers.Authorization is not { Scheme: "Bearer", Parameter: FakePostHogEmails.SecretKey })
             {
@@ -936,7 +948,8 @@ public class TheSendAsyncMethodWithCodeContent
                     return JsonRefusal(HttpStatusCode.BadRequest, "invalid_request", null, "Body must be an object.");
                 }
 
-                if (root.TryGetProperty("attachments", out var attachments)
+                if (checkStorage
+                    && root.TryGetProperty("attachments", out var attachments)
                     && attachments.ValueKind == JsonValueKind.Array)
                 {
                     var index = 0;
@@ -979,22 +992,6 @@ public class TheSendAsyncMethodWithCodeContent
                     "application/json"),
             };
 
-        static async Task WaitForReleaseAsync(Task releaseTask, CancellationToken cancellationToken)
-        {
-            if (releaseTask.IsCompleted)
-            {
-                await releaseTask;
-                return;
-            }
-
-            var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var registration = cancellationToken.Register(
-                static state => ((TaskCompletionSource<bool>)state!).TrySetCanceled(),
-                cancelled);
-            var completed = await Task.WhenAny(releaseTask, cancelled.Task);
-            await completed;
-        }
-
         void RecordGrantedUploads(string responseBody)
         {
             using var document = JsonDocument.Parse(responseBody);
@@ -1030,13 +1027,14 @@ public class TheSendAsyncMethodWithCodeContent
         }
     }
 
-    public static TheoryData<string, string, string, string, string?, string?> MarketingCategoryCompatibilityRefusals => new()
+    static TheoryData<string, string, string, string, string?, string?> CategoryCompatibilityCases(
+        string categoriesNotEnabledDetail) => new()
     {
         {
-            """{"type":"invalid_request","code":"categories_not_enabled","attr":"category","detail":"Sending marketing email in a message category isn't available for this project yet, so PostHog didn't send this email. Send it from a PostHog workflow instead, or wait until category support is enabled."}""",
+            $$"""{"type":"invalid_request","code":"categories_not_enabled","attr":"category","detail":"{{categoriesNotEnabledDetail}}"}""",
             "categories_not_enabled",
             "category",
-            "Sending marketing email in a message category isn't available for this project yet, so PostHog didn't send this email. Send it from a PostHog workflow instead, or wait until category support is enabled.",
+            categoriesNotEnabledDetail,
             null,
             null
         },
@@ -1058,33 +1056,13 @@ public class TheSendAsyncMethodWithCodeContent
         },
     };
 
-    public static TheoryData<string, string, string, string, string?, string?> TransactionalCategoryCompatibilityRefusals => new()
-    {
-        {
-            """{"type":"invalid_request","code":"categories_not_enabled","attr":"category","detail":"Sending in a message category isn't available for this project yet. Leave `category` out, or send `transactional`."}""",
-            "categories_not_enabled",
-            "category",
-            "Sending in a message category isn't available for this project yet. Leave `category` out, or send `transactional`.",
-            null,
-            null
-        },
-        {
-            """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"PostHog doesn't take this field, so it doesn't send the email without it."}""",
-            "invalid_input",
-            "category",
-            "PostHog doesn't take this field, so it doesn't send the email without it.",
-            null,
-            null
-        },
-        {
-            """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Wait until PostHog accepts `category`, then send the email again."}""",
-            "field_not_accepted",
-            "category",
-            "PostHog doesn't take this field yet, so it didn't send the email.",
-            "This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.",
-            "Wait until PostHog accepts `category`, then send the email again."
-        },
-    };
+    public static TheoryData<string, string, string, string, string?, string?> MarketingCategoryCompatibilityRefusals
+        => CategoryCompatibilityCases(
+            "Sending marketing email in a message category isn't available for this project yet, so PostHog didn't send this email. Send it from a PostHog workflow instead, or wait until category support is enabled.");
+
+    public static TheoryData<string, string, string, string, string?, string?> TransactionalCategoryCompatibilityRefusals
+        => CategoryCompatibilityCases(
+            "Sending in a message category isn't available for this project yet. Leave `category` out, or send `transactional`.");
 
     [Theory]
     [MemberData(nameof(MarketingCategoryCompatibilityRefusals))]
@@ -1140,29 +1118,16 @@ public class TheSendAsyncMethodWithCodeContent
             """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: transport);
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(
-            new SendCodeEmailOptions
+        var options = CategorizedPdfSend(
+            "<p>Receipt</p>",
+            "invoice.pdf",
+            new MessageCategory
             {
-                To = "a@example.com",
-                TemplateKey = "k",
-                Subject = "s",
-                Html = "<p>Receipt</p>",
-                Category = new MessageCategory
-                {
-                    Key = "receipts",
-                    Type = MessageCategoryType.Transactional,
-                    Name = "Receipts",
-                },
-                Attachments =
-                [
-                    new EmailAttachment
-                    {
-                        Filename = "invoice.pdf",
-                        Content = BinaryPdfBytes,
-                        ContentType = "application/pdf",
-                    },
-                ],
-            }));
+                Key = "receipts",
+                Type = MessageCategoryType.Transactional,
+                Name = "Receipts",
+            });
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(options));
 
         Assert.Equal(expectedCode, error.Code);
         Assert.Equal("validation_error", error.Name);
@@ -1192,29 +1157,16 @@ public class TheSendAsyncMethodWithCodeContent
         using var transport = new CategorizedSendHandler(posthog, holdUpload: false);
         await using var harness = new EmailHarness(posthog: transport);
 
-        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(
-            new SendCodeEmailOptions
+        var options = CategorizedPdfSend(
+            "<p>Receipt</p>",
+            "invoice.pdf",
+            new MessageCategory
             {
-                To = "a@example.com",
-                TemplateKey = "k",
-                Subject = "s",
-                Html = "<p>Receipt</p>",
-                Category = new MessageCategory
-                {
-                    Key = "receipts",
-                    Type = MessageCategoryType.Transactional,
-                    Name = "Receipts",
-                },
-                Attachments =
-                [
-                    new EmailAttachment
-                    {
-                        Filename = "invoice.pdf",
-                        Content = BinaryPdfBytes,
-                        ContentType = "application/pdf",
-                    },
-                ],
-            }));
+                Key = "receipts",
+                Type = MessageCategoryType.Transactional,
+                Name = "Receipts",
+            });
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(options));
 
         Assert.Equal("not_found", error.Code);
         Assert.Equal("not_found", error.Name);

@@ -161,9 +161,10 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// </summary>
     /// <remarks>
     /// Requires a PostHog server with code-send category support: requests that reach the send endpoint on older
-    /// servers refuse <c>category</c> with HTTP 400 naming the unknown field, while a send with
-    /// <see cref="Attachments"/> to a server without the upload route stops at HTTP 404 <c>not_found</c> on
-    /// <c>attachments</c> before submitting the email body. On a compatible server,
+    /// servers fail with HTTP 400 naming the first unknown field the server finds (which can be another newer field
+    /// such as <c>bcc</c> rather than <c>category</c>), while a send with <see cref="Attachments"/> to a server
+    /// without the upload route stops at HTTP 404 <c>not_found</c> on <c>attachments</c> before submitting the email
+    /// body. On a compatible server,
     /// <see cref="MessageCategory.Transactional"/> works even when code-send categories are disabled for the project;
     /// enabling code-send categories for the project gates named <see cref="MessageCategory"/> objects (otherwise
     /// PostHog refuses them with <c>categories_not_enabled</c>) and template-category inheritance when
