@@ -119,9 +119,10 @@ public sealed class BatchRecipient
     /// 1 to 255 visible ASCII characters, without spaces, and a different one for each recipient of the batch.
     /// </summary>
     /// <remarks>
-    /// Without it, the client makes a UUID that covers its own retries but not a second call. Pass a key you store,
-    /// such as <c>digest:2026-11-23:user_123</c>, when a batch may be cut off and run again: a rerun within 24 hours
-    /// of the first request with the key replays the email that went out instead of sending it twice. A single send
+    /// Without it, the client makes a UUID that every retry within this call reuses. A second call makes new keys, so
+    /// it can send the email again. Pass a key you store, such as <c>digest:2026-11-23:user_123</c>, when a batch may
+    /// be cut off and run again: a rerun within 24 hours of the first request that passes the same key replays the
+    /// email that went out instead of sending it twice. A single send
     /// and a batch recipient with the same key and the same email replay each other. Never reuse a key for another
     /// email: after a lost answer, the client reads the email by its key, and an earlier email with that key reads as
     /// this one, <c>queued</c>.

@@ -45,8 +45,9 @@ public interface IPostHogEmails
     /// <para>
     /// Each recipient has an idempotency key, its <see cref="BatchRecipient.IdempotencyKey"/> or one the client makes,
     /// that every retry reuses, so a retry never queues an email twice. PostHog replays a key for 24 hours after the
-    /// first request that used it: a batch sent again within that window with the same keys queues no second email
-    /// for a recipient PostHog already accepted. Network errors, rate limits, a key still in flight and an unavailable
+    /// first request that used it: a batch sent again within that window that passes the same
+    /// <see cref="BatchRecipient.IdempotencyKey"/> values queues no second email for a recipient PostHog already
+    /// accepted. Keys the client makes cover the retries of one call only. Network errors, rate limits, a key still in flight and an unavailable
     /// service are retried for each request. When a request fails after the client may have queued some of its
     /// emails, the client reads each of those emails by its key before it throws, and counts one as <c>queued</c>
     /// only when its status shows PostHog accepted it.
