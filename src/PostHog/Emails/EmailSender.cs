@@ -696,7 +696,7 @@ internal sealed partial class EmailSender : IPostHogEmails
 
     static JsonElement? ParseObject(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (text is null || string.IsNullOrWhiteSpace(text))
         {
             return null;
         }
