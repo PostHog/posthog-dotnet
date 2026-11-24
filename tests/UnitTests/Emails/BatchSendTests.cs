@@ -254,20 +254,31 @@ public class TheBatchAsyncMethod
         Assert.Equal(perRequest, harness.Requests.Select(r => Keys(r).Length));
     }
 
-    [Fact]
-    public async Task CountsEachNumberAtTheLongestSpellingThePipelineCanGiveIt()
+    [Theory]
+    [InlineData("shared", 145_000)]
+    [InlineData("own", 120_000)]
+    public async Task CountsEachNumberAtTheLongestSpellingThePipelineCanGiveIt(string numbersIn, int sharedPadding)
     {
         await using var harness = new EmailHarness();
         AllQueued(harness, times: 2);
+        var amounts = Enumerable.Repeat(1e20, 3_000).ToArray();
+        var shared = new Dictionary<string, object> { ["padding"] = new string('x', sharedPadding) };
+        if (numbersIn == "shared")
+        {
+            shared["amounts"] = amounts;
+        }
+
+        var own = numbersIn == "own" ? new Dictionary<string, object> { ["amounts"] = amounts } : null;
 
         await harness.Client.Emails.BatchAsync(new SendTemplateBatchOptions
         {
             TemplateId = TemplateId,
-            TemplateData = new Dictionary<string, object> { ["amounts"] = Enumerable.Repeat(1e20, 500_000).ToArray() },
-            Recipients = Recipients(2),
+            TemplateData = shared,
+            Recipients = Recipients(100, own),
         });
 
-        Assert.Equal([1, 1], harness.Requests.Select(r => Keys(r).Length));
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.Equal(100, harness.Requests.Sum(r => Keys(r).Length));
     }
 
     [Fact]
