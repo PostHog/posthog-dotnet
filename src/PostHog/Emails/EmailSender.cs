@@ -114,12 +114,14 @@ internal sealed partial class EmailSender : IPostHogEmails
         await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
+        DateTimeOffset? sentAt = prepared.ScheduledAt is null ? null : _timeProvider.GetUtcNow();
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
             async () => ParseSendReply(
                 await RequestAsync(HttpMethod.Post, url, secretKey, prepared.Body, prepared.IdempotencyKey, cancellationToken)
                     .ConfigureAwait(false),
-                prepared.ScheduledAt),
+                prepared.ScheduledAt,
+                sentAt),
             cancellationToken).ConfigureAwait(false);
         return result;
     }
@@ -712,7 +714,7 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
     }
 
-    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt)
+    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt, DateTimeOffset? sentAt)
     {
         if (!IsSuccess(reply.Status))
         {
@@ -728,10 +730,10 @@ internal sealed partial class EmailSender : IPostHogEmails
         LogWarnings(warnings);
 
         var replayed = reply.Fields is { } replyFields
-                       && replyFields.TryGetProperty("replayed", out var replayedValue)
+                       && TryField(replyFields, "replayed", out var replayedValue)
                        && replayedValue.ValueKind == JsonValueKind.True;
-        var (status, confirmedAt) = scheduledAt is { } requested
-            ? ConfirmSchedule(reply, id, requested)
+        var (status, confirmedAt) = scheduledAt is { } requested && sentAt is { } sent
+            ? ConfirmSchedule(reply, id, requested, sent)
             : ("queued", null);
         return new SendEmailResult
         {
@@ -747,7 +749,7 @@ internal sealed partial class EmailSender : IPostHogEmails
     {
         var warnings = new List<EmailWarning>();
         if (fields is { } answer
-            && answer.TryGetProperty("warnings", out var list)
+            && TryField(answer, "warnings", out var list)
             && list.ValueKind == JsonValueKind.Array)
         {
             foreach (var warning in list.EnumerateArray())
@@ -771,7 +773,24 @@ internal sealed partial class EmailSender : IPostHogEmails
     {
         foreach (var warning in warnings)
         {
+            LogWarning(warning);
+        }
+    }
+
+    /// <summary>
+    /// Logs one of PostHog's warnings. PostHog has accepted the email by then, so an exception from the app's logger
+    /// is dropped: it must not hide the message ID, the confirmed time, or <c>schedule_not_confirmed</c>.
+    /// </summary>
+    void LogWarning(EmailWarning warning)
+    {
+        try
+        {
             _logger.LogWarningEmailWarning(warning.Code, warning.Message);
+        }
+#pragma warning disable CA1031 // The app's logger can throw any exception type.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
         }
     }
 
@@ -779,17 +798,23 @@ internal sealed partial class EmailSender : IPostHogEmails
     /// Checks that the 202 for a send with <c>scheduled_at</c> confirms the requested time, or says the time had
     /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field or
     /// sends a time that is still ahead at once, throws <c>schedule_not_confirmed</c> with the accepted email's
-    /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's.
+    /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's. It counts
+    /// from <paramref name="sentAt"/>, before the first attempt, so a slow answer, a slow logger or a retry can't move
+    /// a time that was still ahead into it.
     /// </summary>
-    (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(Reply reply, string id, DateTimeOffset requested)
+    static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(
+        Reply reply,
+        string id,
+        DateTimeOffset requested,
+        DateTimeOffset sentAt)
     {
         var fields = reply.Fields!.Value;
-        if (fields.TryGetProperty(ScheduledAtField, out var answered))
+        if (TryField(fields, ScheduledAtField, out var answered))
         {
             switch (Text(fields, "status"))
             {
                 case "queued" when answered.ValueKind == JsonValueKind.Null
-                                   && requested - _timeProvider.GetUtcNow() <= MaxClockDrift:
+                                   && requested - sentAt <= MaxClockDrift:
                     return ("queued", null);
                 case "scheduled" when AnsweredTime(answered) is { } confirmed && confirmed.UtcTicks == requested.UtcTicks:
                     return ("scheduled", requested);
@@ -823,6 +848,23 @@ internal sealed partial class EmailSender : IPostHogEmails
            || (time.Length > 6 && time[time.Length - 6] is '+' or '-' && time[time.Length - 3] == ':');
 
     // GetString throws on an unpaired surrogate escape, which would hide an accepted email and its message ID.
+    /// <summary>
+    /// Looks up a field of a reply. <c>false</c> when the reply has no such field, and also when the lookup throws on
+    /// an unpaired surrogate escape in another field's name, which would hide an accepted email and its message ID.
+    /// </summary>
+    static bool TryField(JsonElement element, string name, out JsonElement value)
+    {
+        try
+        {
+            return element.TryGetProperty(name, out value);
+        }
+        catch (InvalidOperationException)
+        {
+            value = default;
+            return false;
+        }
+    }
+
     static string? StringValue(JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.String)
@@ -888,7 +930,7 @@ internal sealed partial class EmailSender : IPostHogEmails
 
     static string? Text(JsonElement? element, string name)
         => element is { ValueKind: JsonValueKind.Object } value
-           && value.TryGetProperty(name, out var property)
+           && TryField(value, name, out var property)
            && StringValue(property) is { Length: > 0 } text
             ? text
             : null;

@@ -693,6 +693,8 @@ public class TheSendAsyncMethodWithAttachments
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "https://files.example.com/a", "method": "PUT ", "headers": {}}]}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "https://files.example.com/a", "method": " ", "headers": {}}]}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "archived"}]}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "\ud800", "method": "PUT", "headers": {}}]}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "https://files.example.com/a", "method": "\ud800", "headers": {}}]}""")]
     public async Task SendsNothingWhenAFileHasNoUsableAnswer(string body)
     {
         var posthog = new FakePostHogEmails();
@@ -1443,7 +1445,10 @@ sealed class EmailHarness : IAsyncDisposable
     readonly RecordingHandler _handler = new();
     readonly HttpClient _httpClient;
 
-    public EmailHarness(Action<PostHogOptions>? configure = null, HttpMessageHandler? posthog = null)
+    public EmailHarness(
+        Action<PostHogOptions>? configure = null,
+        HttpMessageHandler? posthog = null,
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         var options = new PostHogOptions
         {
@@ -1459,7 +1464,7 @@ sealed class EmailHarness : IAsyncDisposable
             httpClientFactory: new SingleHttpClientFactory(_httpClient),
             taskScheduler: null,
             timeProvider: Time,
-            loggerFactory: Logs,
+            loggerFactory: loggerFactory ?? Logs,
             uploadTransport: transport);
     }
 
@@ -1662,7 +1667,10 @@ sealed class RecordingTimeProvider : TimeProvider
     /// <summary>The time the client reads as now; the system clock when unset.</summary>
     public DateTimeOffset? Now { get; set; }
 
-    public override DateTimeOffset GetUtcNow() => Now ?? base.GetUtcNow();
+    public bool Broken { get; set; }
+
+    public override DateTimeOffset GetUtcNow()
+        => Broken ? throw new InvalidOperationException("The app's clock is down.") : Now ?? base.GetUtcNow();
 
     public IReadOnlyList<TimeSpan> Delays
     {

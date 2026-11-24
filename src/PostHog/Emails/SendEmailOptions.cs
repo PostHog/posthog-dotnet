@@ -45,13 +45,14 @@ public abstract class SendEmailOptions
     /// <remarks>
     /// PostHog keeps the time to the millisecond, so the client rounds a finer time up to the next millisecond and
     /// sends that time on every retry. The result's <see cref="SendEmailResult.Status"/> is <c>scheduled</c> with the
-    /// confirmed <see cref="SendEmailResult.ScheduledAt"/>, or <c>queued</c> when the time had passed.
+    /// confirmed <see cref="SendEmailResult.ScheduledAt"/>, or <c>queued</c> when the time had passed or was at most
+    /// 60 seconds ahead of this machine's clock when the send went out.
     /// <see cref="IPostHogEmails.GetAsync"/> reads <c>scheduled</c> until the email goes out.
     /// <para>
     /// A client whose app host isn't PostHog Cloud US or EU, such as a self-hosted PostHog, a reverse proxy or a
     /// custom domain, fails with <c>scheduling_requires_cloud</c> before any request, once the client's other app host
     /// checks pass. When PostHog accepts the email without confirming the time, or answers that it goes out now while
-    /// the time is more than 60 seconds ahead of this machine's clock, the send fails with
+    /// the time was more than 60 seconds ahead of this machine's clock when the send went out, the send fails with
     /// <c>schedule_not_confirmed</c> and <see cref="EmailException.MessageId"/> names the email, which may go out at
     /// another time.
     /// </para>
