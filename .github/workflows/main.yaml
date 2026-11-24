@@ -17,6 +17,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
   PackageDirectory: ${{ github.workspace }}/build/packages/Release
+  # Keep in sync with DOTNET_VERSION in release.yml and codeql.yml.
   DOTNET_VERSION: 10.0.404
 
 permissions:
