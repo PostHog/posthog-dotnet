@@ -274,6 +274,7 @@ public class TheBatchAsyncMethod
         { $$"""{"message_id":"{{M0}}"}""", "unconfirmed", M0, "api_error" },
         { """{"status":"queued"}""", "unconfirmed", null, "api_error" },
         { "7", "unconfirmed", null, "api_error" },
+        { Queued("m0"), "unconfirmed", null, "api_error" },
     };
 
     [Theory]
@@ -337,6 +338,30 @@ public class TheBatchAsyncMethod
         Assert.All(harness.Requests.Skip(3), r => Assert.Equal(HttpMethod.Get, r.Method));
         Assert.Equal([("queued", M0), ("unconfirmed", null)], error.Results.Select(r => (r.Status, r.MessageId)));
         Assert.Equal("delivery_unavailable", error.Results[1].Error!.Code);
+    }
+
+    [Theory]
+    [InlineData(M0, "queued", "queued", null)]
+    [InlineData(M0, "delivered", "queued", null)]
+    [InlineData(M0, "failed", "unconfirmed", null)]
+    [InlineData(M0, "canceled", "unconfirmed", null)]
+    [InlineData("m0", "sent", "unconfirmed", "api_error")]
+    public async Task ConfirmsALostEmailOnlyByARecordThatShowsPostHogAcceptedIt(
+        string id,
+        string recorded,
+        string outcome,
+        string? laterCode)
+    {
+        await using var harness = new EmailHarness();
+        harness.Fail(new HttpRequestException("connection reset"));
+        harness.Respond(HttpStatusCode.OK, StatusFound(id, recorded));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
+
+        var result = Assert.Single(error.Results);
+        Assert.Equal((outcome, laterCode), (result.Status, result.LaterError?.Code));
+        Assert.Equal(outcome == "queued" ? id : null, result.MessageId);
     }
 
     [Fact]
@@ -667,8 +692,8 @@ public class TheBatchAsyncMethod
 
     static string WholeCall(string code) => $$"""{"type":"invalid_request","code":"{{code}}","detail":"Nope."}""";
 
-    static string StatusFound(string messageId)
-        => $$"""{"id":"{{messageId}}","status":"sent","created_at":"2026-11-22T10:00:00Z","status_at":"2026-11-22T10:00:01Z"}""";
+    static string StatusFound(string messageId, string status = "sent")
+        => $$"""{"id":"{{messageId}}","status":"{{status}}","created_at":"2026-11-22T10:00:00Z","status_at":"2026-11-22T10:00:01Z"}""";
 
     static string[] Keys(RecordedRequest request)
     {

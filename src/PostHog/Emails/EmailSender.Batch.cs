@@ -23,6 +23,9 @@ internal sealed partial class EmailSender
     static readonly HashSet<string> UnconfirmedSlotCodes =
         new(UnconfirmedRequestCodes, StringComparer.Ordinal) { "api_error" };
 
+    static readonly HashSet<string> StatusesOfAnAcceptedEmail =
+        new(StringComparer.Ordinal) { "queued", "sent", "delivered", "bounced", "complained" };
+
     public async Task<SendBatchResult> BatchAsync(SendBatchOptions batch, CancellationToken cancellationToken = default)
     {
         var run = PrepareBatch(batch, MaxRetriesOption);
@@ -132,9 +135,20 @@ internal sealed partial class EmailSender
                 return;
             }
 
-            row.Set("queued", status.Id);
+            if (!IsMessageId(status.Id))
+            {
+                row.AddLaterError(new EmailException(
+                    "api_error",
+                    "PostHog answered this email's status without a readable message ID, so it may still go out."));
+            }
+            else if (StatusesOfAnAcceptedEmail.Contains(status.Status))
+            {
+                row.Set("queued", status.Id);
+            }
         }
     }
+
+    static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
 
     static BatchRun PrepareBatch(SendBatchOptions batch, int defaultMaxRetries)
     {
@@ -410,7 +424,7 @@ internal sealed partial class EmailSender
 
         static void Settle(BatchRow row, JsonElement slot)
         {
-            var messageId = Text(slot, "message_id");
+            var messageId = Text(slot, "message_id") is { } text && IsMessageId(text) ? text : null;
             JsonElement? error = slot.ValueKind == JsonValueKind.Object
                                  && slot.TryGetProperty("error", out var answered)
                                  && answered.ValueKind != JsonValueKind.Null

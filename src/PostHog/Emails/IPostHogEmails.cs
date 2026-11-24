@@ -46,7 +46,8 @@ public interface IPostHogEmails
     /// first request that used it: a batch sent again within that window with the same keys queues no second email
     /// for a recipient PostHog already accepted. Network errors, rate limits, a key still in flight and an unavailable
     /// service are retried for each request. When a request fails after the client may have queued some of its
-    /// emails, the client reads each of those emails by its key before it throws.
+    /// emails, the client reads each of those emails by its key before it throws, and counts one as <c>queued</c>
+    /// only when its status shows PostHog accepted it.
     /// </para>
     /// </remarks>
     /// <param name="batch">
