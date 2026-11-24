@@ -181,7 +181,7 @@ internal sealed partial class EmailSender
         {
             case SendTemplateBatchOptions template:
                 CheckTemplateId(template.TemplateId, nameof(batch));
-                var sharedData = JsonSerializer.SerializeToElement(
+                var sharedData = JsonSerializer.SerializeToElement<object>(
                     template.TemplateData ?? new Dictionary<string, object>(),
                     JsonSerializerHelper.Options);
                 shared = new Dictionary<string, object?>
@@ -268,7 +268,7 @@ internal sealed partial class EmailSender
             IdempotencyKey = idempotencyKey;
             JsonElement? messageData = recipient.TemplateData is null
                 ? null
-                : JsonSerializer.SerializeToElement(recipient.TemplateData, JsonSerializerHelper.Options);
+                : JsonSerializer.SerializeToElement<object>(recipient.TemplateData, JsonSerializerHelper.Options);
             Json = JsonSerializer.Serialize(WireOf(recipient, idempotencyKey, messageData), JsonSerializerHelper.Options);
             Bytes = Encoding.UTF8.GetByteCount(Json);
             OwnCopiedBytes = messageData is { } data ? Utf8Bytes(data) : EmptyObjectBytes;
@@ -620,9 +620,14 @@ internal sealed partial class EmailSender
         var rest = attr.Substring(prefix.Length);
         var separator = rest.IndexOf("__", StringComparison.Ordinal);
         var position = separator < 0 ? rest : rest.Substring(0, separator);
+        if (position.Length == 0 || !position.All(c => c is >= '0' and <= '9'))
+        {
+            return attr;
+        }
+
         if (!int.TryParse(position, NumberStyles.None, CultureInfo.InvariantCulture, out var inChunk))
         {
-            return position.Length > 0 && position.All(c => c is >= '0' and <= '9') ? "recipients" : attr;
+            return "recipients";
         }
 
         if (inChunk >= rows.Count)

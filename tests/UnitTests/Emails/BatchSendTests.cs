@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using PostHog;
 using PostHog.Emails;
@@ -63,6 +64,44 @@ public class TheBatchAsyncMethod
             ("recipient_suppressed", "validation_error", (HttpStatusCode?)(HttpStatusCode)422, M2, "Refused: recipient_suppressed."),
             (refused.Code, refused.Name, refused.StatusCode, refused.MessageId, refused.Message));
         Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public async Task SendsTemplateDataTheWayItsOwnConverterWritesIt()
+    {
+        await using var harness = new EmailHarness();
+        AllQueued(harness);
+
+        await harness.Client.Emails.BatchAsync(new SendTemplateBatchOptions
+        {
+            TemplateId = TemplateId,
+            TemplateData = new PrefixedData { ["plan"] = "pro" },
+            Recipients = [new BatchRecipient { To = "a@example.com", IdempotencyKey = "k", TemplateData = new PrefixedData { ["name"] = "Ada" } }],
+        });
+
+        AssertSameFields(
+            $$$"""{"template_id":"{{{TemplateIdText}}}","message_data":{"x_plan":"pro"},"recipients":[{"to":"a@example.com","idempotency_key":"k","message_data":{"x_name":"Ada"}}]}""",
+            Assert.Single(harness.Requests).Body);
+    }
+
+    [JsonConverter(typeof(PrefixedDataConverter))]
+    public sealed class PrefixedData : Dictionary<string, object>;
+
+    public sealed class PrefixedDataConverter : JsonConverter<PrefixedData>
+    {
+        public override PrefixedData Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            => throw new NotSupportedException();
+
+        public override void Write(Utf8JsonWriter writer, PrefixedData value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            foreach (var (key, item) in value)
+            {
+                writer.WriteString("x_" + key, (string)item);
+            }
+
+            writer.WriteEndObject();
+        }
     }
 
     [Fact]
@@ -796,6 +835,7 @@ public class TheBatchAsyncMethod
     [InlineData("recipients__99999__idempotency_key", "recipients")]
     [InlineData("recipients__50__idempotency_key", "recipients")]
     [InlineData("recipients__2147483648__to", "recipients")]
+    [InlineData("recipients__1\\u0000__to", "recipients__1\u0000__to")]
     [InlineData("subject", "subject")]
     public async Task NamesARefusedRecipientFieldByItsPositionInRecipients(string attr, string field)
     {
