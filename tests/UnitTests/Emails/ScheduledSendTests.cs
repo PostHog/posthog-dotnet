@@ -196,6 +196,30 @@ public class TheSendAsyncMethodWithScheduledAt
     }
 
     [Fact]
+    public async Task MeasuresTheMinuteFromWhenTheSendWentOut()
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        harness.Time.Now = DueTime.AddSeconds(-61);
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-59);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted)
+            {
+                Content = new StringContent(
+                    $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json"),
+            });
+        });
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
+    }
+
+    [Fact]
     public async Task ReturnsTheConfirmedScheduleWhenTheLoggerThrows()
     {
         await using var harness = new EmailHarness(loggerFactory: new ThrowingLoggerFactory());

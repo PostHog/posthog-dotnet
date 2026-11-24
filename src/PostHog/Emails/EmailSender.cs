@@ -114,12 +114,14 @@ internal sealed class EmailSender : IPostHogEmails
         await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
+        var sentAt = _timeProvider.GetUtcNow();
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
             async () => ParseSendReply(
                 await RequestAsync(HttpMethod.Post, url, secretKey, prepared.Body, prepared.IdempotencyKey, cancellationToken)
                     .ConfigureAwait(false),
-                prepared.ScheduledAt),
+                prepared.ScheduledAt,
+                sentAt),
             cancellationToken).ConfigureAwait(false);
         return result;
     }
@@ -685,7 +687,7 @@ internal sealed class EmailSender : IPostHogEmails
         }
     }
 
-    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt)
+    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt, DateTimeOffset sentAt)
     {
         if (!IsSuccess(reply.Status))
         {
@@ -725,7 +727,7 @@ internal sealed class EmailSender : IPostHogEmails
                        && replyFields.TryGetProperty("replayed", out var replayedValue)
                        && replayedValue.ValueKind == JsonValueKind.True;
         var (status, confirmedAt) = scheduledAt is { } requested
-            ? ConfirmSchedule(reply, id, requested)
+            ? ConfirmSchedule(reply, id, requested, sentAt)
             : ("queued", null);
         return new SendEmailResult
         {
@@ -758,9 +760,15 @@ internal sealed class EmailSender : IPostHogEmails
     /// Checks that the 202 for a send with <c>scheduled_at</c> confirms the requested time, or says the time had
     /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field or
     /// sends a time that is still ahead at once, throws <c>schedule_not_confirmed</c> with the accepted email's
-    /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's.
+    /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's. It counts
+    /// from <paramref name="sentAt"/>, before the first attempt, so a slow answer, a slow logger or a retry can't move
+    /// a time that was still ahead into it.
     /// </summary>
-    (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(Reply reply, string id, DateTimeOffset requested)
+    static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(
+        Reply reply,
+        string id,
+        DateTimeOffset requested,
+        DateTimeOffset sentAt)
     {
         var fields = reply.Fields!.Value;
         if (fields.TryGetProperty(ScheduledAtField, out var answered))
@@ -768,7 +776,7 @@ internal sealed class EmailSender : IPostHogEmails
             switch (Text(fields, "status"))
             {
                 case "queued" when answered.ValueKind == JsonValueKind.Null
-                                   && requested - _timeProvider.GetUtcNow() <= MaxClockDrift:
+                                   && requested - sentAt <= MaxClockDrift:
                     return ("queued", null);
                 case "scheduled" when AnsweredTime(answered) is { } confirmed && confirmed.UtcTicks == requested.UtcTicks:
                     return ("scheduled", requested);
