@@ -14,6 +14,7 @@ internal sealed partial class EmailSender
     const int BatchMaxBodyBytes = 4 * 1024 * 1024;
     const int PipelineMaxCopiedBytes = 16 * 1024 * 1024;
     const int EmptyObjectBytes = 2;
+    const int LongestJavaScriptNumber = 25;
     const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours, so it goes out once.";
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
 
@@ -139,7 +140,7 @@ internal sealed partial class EmailSender
                     ["template_id"] = template.TemplateId.ToString("D"),
                     ["message_data"] = sharedData,
                 };
-                copiedPerRecipient = Utf8Bytes(sharedData);
+                copiedPerRecipient = CopiedBytes(sharedData);
                 break;
             case SendCodeBatchOptions code:
                 shared = CheckedCodeContent(
@@ -172,6 +173,16 @@ internal sealed partial class EmailSender
     }
 
     static int Utf8Bytes(object? value) => JsonSerializer.SerializeToUtf8Bytes(value, JsonSerializerHelper.Options).Length;
+
+    static long CopiedBytes(JsonElement data) => Utf8Bytes(data) + NumberSpellingSlack(data);
+
+    static long NumberSpellingSlack(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Number => Math.Max(0, LongestJavaScriptNumber - element.GetRawText().Length),
+        JsonValueKind.Object => element.EnumerateObject().Sum(field => NumberSpellingSlack(field.Value)),
+        JsonValueKind.Array => element.EnumerateArray().Sum(NumberSpellingSlack),
+        _ => 0,
+    };
 
     static List<BatchRow> BatchRows(IReadOnlyList<BatchRecipient>? recipients, bool isTemplate, string paramName)
     {
@@ -221,7 +232,7 @@ internal sealed partial class EmailSender
                 : JsonSerializer.SerializeToElement<object>(recipient.TemplateData, JsonSerializerHelper.Options);
             Json = JsonSerializer.Serialize(WireOf(recipient, idempotencyKey, messageData), JsonSerializerHelper.Options);
             Bytes = Encoding.UTF8.GetByteCount(Json);
-            OwnCopiedBytes = messageData is { } data ? Utf8Bytes(data) : EmptyObjectBytes;
+            OwnCopiedBytes = messageData is { } data ? CopiedBytes(data) : EmptyObjectBytes;
         }
 
         public int Index { get; }
@@ -234,7 +245,7 @@ internal sealed partial class EmailSender
 
         public int Bytes { get; }
 
-        public int OwnCopiedBytes { get; }
+        public long OwnCopiedBytes { get; }
 
         public string? Status { get; private set; }
 
