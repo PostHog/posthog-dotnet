@@ -61,6 +61,10 @@ sealed class FakePostHogEmails : HttpMessageHandler
     /// <summary>How many files the storage wrote.</summary>
     public int StorageWrites => Volatile.Read(ref _storageWrites);
 
+    /// <summary>The bytes the storage holds for <paramref name="sha256"/>, or <c>null</c> when absent.</summary>
+    public byte[]? StoredContent(string sha256)
+        => _stored.TryGetValue(sha256, out var content) ? content.ToArray() : null;
+
     /// <summary>Stores a file, as an earlier send would have uploaded it.</summary>
     public void Store(byte[] content) => _stored[Sha256Hex(content)] = content;
 

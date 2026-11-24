@@ -607,38 +607,40 @@ public class TheSendAsyncMethodWithCodeContent
             """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: transport);
 
-        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
-        {
-            To = "a@example.com",
-            TemplateKey = "k",
-            Subject = "s",
-            Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
-            Category = new MessageCategory
-            {
-                Key = "newsletter",
-                Type = MessageCategoryType.Marketing,
-                Name = "Newsletter",
-            },
-            Attachments =
-            [
-                new EmailAttachment
-                {
-                    Filename = "brochure.pdf",
-                    Content = BinaryPdfBytes,
-                    ContentType = "application/pdf",
-                },
-            ],
-        });
-
+        Task<SendEmailResult> sendTask;
+        using var testTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         try
         {
+            sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+            {
+                To = "a@example.com",
+                TemplateKey = "k",
+                Subject = "s",
+                Html = "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
+                Category = new MessageCategory
+                {
+                    Key = "newsletter",
+                    Type = MessageCategoryType.Marketing,
+                    Name = "Newsletter",
+                },
+                Attachments =
+                [
+                    new EmailAttachment
+                    {
+                        Filename = "brochure.pdf",
+                        Content = BinaryPdfBytes,
+                        ContentType = "application/pdf",
+                    },
+                ],
+            }, testTimeout.Token);
+
             var started = await Task.WhenAny(transport.UploadStarted, sendTask);
             Assert.Same(transport.UploadStarted, started);
             Assert.False(sendTask.IsCompleted);
             Assert.Equal(2, transport.Requests.Count);
             Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
             Assert.Equal(0, posthog.StorageWrites);
-            Assert.Null(transport.StoredUploadBytes);
+            Assert.Null(posthog.StoredContent(BinaryPdfSha256));
         }
         finally
         {
@@ -654,6 +656,7 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(1, transport.StorageWritesAtSend);
         Assert.Equal(1, posthog.StorageWrites);
         AssertSignedPdfUploadBeforeSend(
+            posthog,
             transport,
             "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
             "brochure.pdf",
@@ -672,38 +675,40 @@ public class TheSendAsyncMethodWithCodeContent
             """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: transport);
 
-        var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
-        {
-            To = "a@example.com",
-            TemplateKey = "k",
-            Subject = "s",
-            Html = "<p>Receipt</p>",
-            Category = new MessageCategory
-            {
-                Key = "receipts",
-                Type = MessageCategoryType.Transactional,
-                Name = "Receipts",
-            },
-            Attachments =
-            [
-                new EmailAttachment
-                {
-                    Filename = "invoice.pdf",
-                    Content = BinaryPdfBytes,
-                    ContentType = "application/pdf",
-                },
-            ],
-        });
-
+        Task<SendEmailResult> sendTask;
+        using var testTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         try
         {
+            sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
+            {
+                To = "a@example.com",
+                TemplateKey = "k",
+                Subject = "s",
+                Html = "<p>Receipt</p>",
+                Category = new MessageCategory
+                {
+                    Key = "receipts",
+                    Type = MessageCategoryType.Transactional,
+                    Name = "Receipts",
+                },
+                Attachments =
+                [
+                    new EmailAttachment
+                    {
+                        Filename = "invoice.pdf",
+                        Content = BinaryPdfBytes,
+                        ContentType = "application/pdf",
+                    },
+                ],
+            }, testTimeout.Token);
+
             var started = await Task.WhenAny(transport.UploadStarted, sendTask);
             Assert.Same(transport.UploadStarted, started);
             Assert.False(sendTask.IsCompleted);
             Assert.Equal(2, transport.Requests.Count);
             Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
             Assert.Equal(0, posthog.StorageWrites);
-            Assert.Null(transport.StoredUploadBytes);
+            Assert.Null(posthog.StoredContent(BinaryPdfSha256));
         }
         finally
         {
@@ -716,6 +721,7 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(1, transport.StorageWritesAtSend);
         Assert.Equal(1, posthog.StorageWrites);
         AssertSignedPdfUploadBeforeSend(
+            posthog,
             transport,
             "<p>Receipt</p>",
             "invoice.pdf",
@@ -725,6 +731,7 @@ public class TheSendAsyncMethodWithCodeContent
     }
 
     static void AssertSignedPdfUploadBeforeSend(
+        FakePostHogEmails posthog,
         CategorizedSendHandler transport,
         string expectedHtml,
         string filename,
@@ -748,39 +755,19 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Equal(BinaryPdfBytes.Length, file.GetProperty("size").GetInt32());
         }
 
-        string grantedUrl;
-        string grantedMethod;
-        Dictionary<string, string> grantedHeaders;
-        Assert.NotNull(transport.UploadGrantResponseBody);
-        using (var grantBody = JsonDocument.Parse(transport.UploadGrantResponseBody))
-        {
-            var grantedFile = Assert.Single(grantBody.RootElement.GetProperty("files").EnumerateArray());
-            Assert.Equal(BinaryPdfSha256, grantedFile.GetProperty("sha256").GetString());
-            Assert.Equal("upload", grantedFile.GetProperty("status").GetString());
-            grantedUrl = grantedFile.GetProperty("url").GetString()!;
-            Assert.False(string.IsNullOrWhiteSpace(grantedUrl));
-            grantedMethod = grantedFile.GetProperty("method").GetString()!;
-            grantedHeaders = grantedFile
-                .GetProperty("headers")
-                .EnumerateObject()
-                .ToDictionary(
-                    header => header.Name,
-                    header => header.Value.GetString()!,
-                    StringComparer.OrdinalIgnoreCase);
-        }
+        var grant = transport.GrantFor(BinaryPdfSha256)
+            ?? throw new InvalidOperationException("Expected upload grant for PDF.");
 
         var upload = requests[1];
-        Assert.Equal(new HttpMethod(grantedMethod), upload.Method);
-        Assert.Equal(grantedUrl, upload.Url);
+        Assert.Equal(new HttpMethod(grant.Method), upload.Method);
+        Assert.Equal(grant.Url, upload.Url);
         Assert.Null(upload.Header("Authorization"));
-        Assert.NotEmpty(grantedHeaders);
-        foreach (var header in grantedHeaders)
+        foreach (var header in grant.Headers)
         {
             Assert.Equal(header.Value, upload.Header(header.Key));
         }
 
         Assert.Equal(BinaryPdfBytes, upload.BodyBytes);
-        Assert.Equal(BinaryPdfBytes, transport.StoredUploadBytes);
 
         var send = requests[2];
         Assert.Equal(HttpMethod.Post, send.Method);
@@ -795,22 +782,25 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(expectedHtml, root.GetProperty("html").GetString());
         var attachment = Assert.Single(root.GetProperty("attachments").EnumerateArray());
         AssertObjectKeys(attachment, AttachmentRefKeys);
-        Assert.Equal(BinaryPdfSha256, attachment.GetProperty("sha256").GetString());
+        var sentSha256 = attachment.GetProperty("sha256").GetString()!;
+        Assert.Equal(BinaryPdfSha256, sentSha256);
+        Assert.Equal(BinaryPdfBytes, posthog.StoredContent(sentSha256));
         Assert.Equal(filename, attachment.GetProperty("filename").GetString());
         Assert.Equal("application/pdf", attachment.GetProperty("content_type").GetString());
         AssertCategoryObject(root.GetProperty("category"), categoryKey, categoryType, categoryName);
     }
 
-    sealed class CategorizedSendHandler(FakePostHogEmails inner) : DelegatingHandler(inner)
+    sealed record GrantedUpload(string Url, string Method, IReadOnlyDictionary<string, string> Headers);
+
+    sealed class CategorizedSendHandler(FakePostHogEmails inner, bool holdUpload = true) : DelegatingHandler(inner)
     {
         readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
+        readonly ConcurrentDictionary<string, GrantedUpload> _grantedUploads = new(StringComparer.Ordinal);
         readonly ConcurrentDictionary<string, byte> _grantedUploadUrls = new(StringComparer.Ordinal);
         readonly List<RecordedRequest> _requests = [];
         readonly TaskCompletionSource<bool> _uploadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly TaskCompletionSource<bool> _releaseUpload = new(TaskCreationOptions.RunContinuationsAsynchronously);
         int _storageWritesAtSend;
-        string? _uploadGrantResponseBody;
-        byte[]? _storedUploadBytes;
 
         public List<RecordedRequest> Requests
         {
@@ -827,9 +817,8 @@ public class TheSendAsyncMethodWithCodeContent
 
         public int StorageWritesAtSend => Volatile.Read(ref _storageWritesAtSend);
 
-        public string? UploadGrantResponseBody => Volatile.Read(ref _uploadGrantResponseBody);
-
-        public byte[]? StoredUploadBytes => Volatile.Read(ref _storedUploadBytes);
+        public GrantedUpload? GrantFor(string sha256)
+            => _grantedUploads.TryGetValue(sha256, out var grant) ? grant : null;
 
         public void ReleaseUpload() => _releaseUpload.TrySetResult(true);
 
@@ -853,15 +842,14 @@ public class TheSendAsyncMethodWithCodeContent
                 && request.RequestUri!.AbsolutePath == "/api/messaging/attachments/uploads/")
             {
                 var response = await base.SendAsync(request, cancellationToken);
-                if (response.Content is not null)
+                if (response.IsSuccessStatusCode && response.Content is not null)
                 {
 #if NET5_0_OR_GREATER
                     var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 #else
                     var responseBody = await response.Content.ReadAsStringAsync();
 #endif
-                    Volatile.Write(ref _uploadGrantResponseBody, responseBody);
-                    RecordGrantedUploadUrls(responseBody);
+                    RecordGrantedUploads(responseBody);
                 }
 
                 return response;
@@ -869,8 +857,12 @@ public class TheSendAsyncMethodWithCodeContent
 
             if (request.Method == HttpMethod.Put)
             {
-                _uploadStarted.TrySetResult(true);
-                await _releaseUpload.Task;
+                if (holdUpload)
+                {
+                    _uploadStarted.TrySetResult(true);
+                    await WaitForReleaseAsync(_releaseUpload.Task, cancellationToken);
+                }
+
                 if (!_grantedUploadUrls.ContainsKey(recorded.Url))
                 {
                     return new HttpResponseMessage(HttpStatusCode.Forbidden)
@@ -884,13 +876,7 @@ public class TheSendAsyncMethodWithCodeContent
                     };
                 }
 
-                var response = await base.SendAsync(request, cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    Volatile.Write(ref _storedUploadBytes, recorded.BodyBytes?.ToArray());
-                }
-
-                return response;
+                return await base.SendAsync(request, cancellationToken);
             }
 
             if (request.Method == HttpMethod.Post
@@ -904,7 +890,23 @@ public class TheSendAsyncMethodWithCodeContent
             return await base.SendAsync(request, cancellationToken);
         }
 
-        void RecordGrantedUploadUrls(string responseBody)
+        static async Task WaitForReleaseAsync(Task releaseTask, CancellationToken cancellationToken)
+        {
+            if (releaseTask.IsCompleted)
+            {
+                await releaseTask;
+                return;
+            }
+
+            var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var registration = cancellationToken.Register(
+                static state => ((TaskCompletionSource<bool>)state!).TrySetCanceled(),
+                cancelled);
+            var completed = await Task.WhenAny(releaseTask, cancelled.Task);
+            await completed;
+        }
+
+        void RecordGrantedUploads(string responseBody)
         {
             using var document = JsonDocument.Parse(responseBody);
             if (!document.RootElement.TryGetProperty("files", out var files)
@@ -917,30 +919,58 @@ public class TheSendAsyncMethodWithCodeContent
             {
                 if (file.TryGetProperty("status", out var status)
                     && status.GetString() == "upload"
+                    && file.TryGetProperty("sha256", out var sha256)
+                    && sha256.GetString() is { Length: > 0 } fileSha256
                     && file.TryGetProperty("url", out var url)
-                    && url.GetString() is { Length: > 0 } uploadUrl)
+                    && url.GetString() is { Length: > 0 } uploadUrl
+                    && file.TryGetProperty("method", out var method)
+                    && method.GetString() is { Length: > 0 } uploadMethod
+                    && file.TryGetProperty("headers", out var headerFields)
+                    && headerFields.ValueKind == JsonValueKind.Object)
                 {
+                    var headers = headerFields
+                        .EnumerateObject()
+                        .ToDictionary(
+                            header => header.Name,
+                            header => header.Value.GetString()!,
+                            StringComparer.OrdinalIgnoreCase);
+                    _grantedUploads[fileSha256] = new GrantedUpload(uploadUrl, uploadMethod, headers);
                     _grantedUploadUrls[uploadUrl] = 0;
                 }
             }
         }
     }
 
+    public static TheoryData<string, string, string, string, string?, string?> CategoryCompatibilityRefusals => new()
+    {
+        {
+            """{"type":"invalid_request","code":"categories_not_enabled","attr":"category","detail":"Sending in a message category isn't available for this project yet. Leave `category` out, or send `transactional`."}""",
+            "categories_not_enabled",
+            "category",
+            "Sending in a message category isn't available for this project yet. Leave `category` out, or send `transactional`.",
+            null,
+            null
+        },
+        {
+            """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"PostHog doesn't take this field, so it doesn't send the email without it."}""",
+            "invalid_input",
+            "category",
+            "PostHog doesn't take this field, so it doesn't send the email without it.",
+            null,
+            null
+        },
+        {
+            """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Wait until PostHog accepts `category`, then send the email again."}""",
+            "field_not_accepted",
+            "category",
+            "PostHog doesn't take this field yet, so it didn't send the email.",
+            "This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.",
+            "Wait until PostHog accepts `category`, then send the email again."
+        },
+    };
+
     [Theory]
-    [InlineData(
-        """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"PostHog doesn't take this field, so it doesn't send the email without it."}""",
-        "invalid_input",
-        "category",
-        "PostHog doesn't take this field, so it doesn't send the email without it.",
-        null,
-        null)]
-    [InlineData(
-        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Wait until PostHog accepts `category`, then send the email again."}""",
-        "field_not_accepted",
-        "category",
-        "PostHog doesn't take this field yet, so it didn't send the email.",
-        "This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.",
-        "Wait until PostHog accepts `category`, then send the email again.")]
+    [MemberData(nameof(CategoryCompatibilityRefusals))]
     public async Task MapsOlderPostHogRefusalEnvelopesWithoutRetrying(
         string responseBody,
         string expectedCode,
@@ -973,6 +1003,111 @@ public class TheSendAsyncMethodWithCodeContent
         AssertObjectKeys(root, CategorizedCodeSendKeys);
         AssertCodeSendFields(root, email);
         AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
+    }
+
+    [Theory]
+    [MemberData(nameof(CategoryCompatibilityRefusals))]
+    public async Task SurfacesCategoryCompatibilityRefusalsAfterAttachmentUploadWithoutRetrying(
+        string responseBody,
+        string expectedCode,
+        string expectedField,
+        string expectedMessage,
+        string? expectedWhy,
+        string? expectedFix)
+    {
+        using var posthog = new FakePostHogEmails();
+        using var transport = new CategorizedSendHandler(posthog, holdUpload: false);
+        transport.EnqueueSendResponse(HttpStatusCode.BadRequest, responseBody);
+        transport.EnqueueSendResponse(
+            HttpStatusCode.Accepted,
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+        await using var harness = new EmailHarness(posthog: transport);
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(
+            new SendCodeEmailOptions
+            {
+                To = "a@example.com",
+                TemplateKey = "k",
+                Subject = "s",
+                Html = "<p>Receipt</p>",
+                Category = new MessageCategory
+                {
+                    Key = "receipts",
+                    Type = MessageCategoryType.Transactional,
+                    Name = "Receipts",
+                },
+                Attachments =
+                [
+                    new EmailAttachment
+                    {
+                        Filename = "invoice.pdf",
+                        Content = BinaryPdfBytes,
+                        ContentType = "application/pdf",
+                    },
+                ],
+            }));
+
+        Assert.Equal(expectedCode, error.Code);
+        Assert.Equal("validation_error", error.Name);
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal(expectedField, error.Field);
+        Assert.Equal(expectedMessage, error.Message);
+        Assert.Equal(expectedWhy, error.Why);
+        Assert.Equal(expectedFix, error.Fix);
+        Assert.Equal(1, transport.StorageWritesAtSend);
+        Assert.Equal(1, posthog.StorageWrites);
+        Assert.Single(transport.Requests, request => request.Url == SendUrl);
+        AssertSignedPdfUploadBeforeSend(
+            posthog,
+            transport,
+            "<p>Receipt</p>",
+            "invoice.pdf",
+            "receipts",
+            "transactional",
+            "Receipts");
+    }
+
+    [Fact]
+    public async Task StopsCategorizedSendWithAttachmentAtNotFoundWhenServerLacksUploadRoute()
+    {
+        using var posthog = new FakePostHogEmails();
+        posthog.RunAnOlderVersion();
+        using var transport = new CategorizedSendHandler(posthog, holdUpload: false);
+        await using var harness = new EmailHarness(posthog: transport);
+
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(
+            new SendCodeEmailOptions
+            {
+                To = "a@example.com",
+                TemplateKey = "k",
+                Subject = "s",
+                Html = "<p>Receipt</p>",
+                Category = new MessageCategory
+                {
+                    Key = "receipts",
+                    Type = MessageCategoryType.Transactional,
+                    Name = "Receipts",
+                },
+                Attachments =
+                [
+                    new EmailAttachment
+                    {
+                        Filename = "invoice.pdf",
+                        Content = BinaryPdfBytes,
+                        ContentType = "application/pdf",
+                    },
+                ],
+            }));
+
+        Assert.Equal("not_found", error.Code);
+        Assert.Equal("not_found", error.Name);
+        Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
+        Assert.Equal("attachments", error.Field);
+        Assert.Equal(0, posthog.StorageWrites);
+        Assert.Null(posthog.StoredContent(BinaryPdfSha256));
+        var request = Assert.Single(transport.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("https://us.posthog.com/api/messaging/attachments/uploads/", request.Url);
     }
 
     [Fact]
