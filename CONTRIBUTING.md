@@ -8,6 +8,8 @@ This repo requires all commits to be signed. To configure commit signing, see th
 
 ## Building
 
+Install the .NET 10 SDK, which CI uses, to build the `net10.0` test targets. Install the .NET 8 runtime too, so the `net8.0` and `netcoreapp3.1` tests run on .NET 8 as they do in CI.
+
 From the repository root, use the same restore, formatting, build, and test flow that CI runs:
 
 ```bash
@@ -37,7 +39,7 @@ You can also run the samples from your preferred IDE or editor.
 
 ## Testing
 
-The test projects target both `net8.0` and `netcoreapp3.1`. While .NET Core 3.1 reached end-of-life in December 2022, we continue to test against it because:
+The test projects target `net8.0` and `net10.0`, and `UnitTests` and `PostHog.AI.Tests` also target `netcoreapp3.1`. While .NET Core 3.1 reached end-of-life in December 2022, we continue to test against it because:
 
 - It was the first runtime to fully support .NET Standard 2.1
 - It serves as our minimum test baseline to ensure the `netstandard2.1` library works correctly on older runtimes

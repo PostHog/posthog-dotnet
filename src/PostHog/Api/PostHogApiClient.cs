@@ -205,7 +205,9 @@ internal sealed class PostHogApiClient : IDisposable
             // We want the caller to handle it.
             throw;
         }
-        catch (Exception e) when (e is not ArgumentException and not NullReferenceException)
+        catch (Exception e) when (e is not ArgumentException
+                                       and not NullReferenceException
+                                   && !(e is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
             _logger.LogErrorUnableToGetFeatureFlagsAndPayloads(e);
             return LocalEvaluationResponse.Failure();
