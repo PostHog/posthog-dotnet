@@ -16,11 +16,12 @@ namespace PostHog.Emails;
 /// a saved template, the send uses that template's transactional category without creating a category or restoring an
 /// archived one: omitting <see cref="SendCodeEmailOptions.Category"/> follows it when code-send categories are enabled
 /// for the project, and passing an explicit <see cref="SendCodeEmailOptions.Category"/> must match it or PostHog
-/// refuses the send with <c>category_mismatch</c>. With code-send categories enabled, a
-/// <see cref="SendCodeEmailOptions.TemplateKey"/> that resolves to a saved push template returns
-/// <c>template_not_sendable</c> first; for a saved email template, PostHog checks whether it is enabled for
-/// transactional sends (<c>template_not_transactional</c> otherwise) before refusing an otherwise sendable email
-/// template in a marketing category with <c>marketing_template</c> or comparing categories.
+/// refuses the send with <c>category_mismatch</c>. With code-send categories enabled, when
+/// <see cref="SendCodeEmailOptions.TemplateKey"/> resolves to a saved template, PostHog refuses a sensitive template
+/// when <see cref="SendCodeEmailOptions.Sensitive"/> is <c>false</c> (<c>sensitive_template</c>) first, then refuses a
+/// saved push template with <c>template_not_sendable</c>; for a saved email template, PostHog checks whether it is
+/// enabled for transactional sends (<c>template_not_transactional</c> otherwise) before refusing an otherwise sendable
+/// email template in a marketing category with <c>marketing_template</c> or comparing categories.
 /// </remarks>
 public sealed class MessageCategory
 {

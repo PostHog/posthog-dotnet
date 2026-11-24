@@ -171,24 +171,28 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// recipient's preferences link.
     /// Among template sendability and category checks, a named <see cref="MessageCategory"/> fails with
     /// <c>categories_not_enabled</c> first when code-send categories are disabled for the project. Otherwise, when
-    /// <see cref="TemplateKey"/> resolves to a saved push template, PostHog returns <c>template_not_sendable</c> first;
-    /// for a saved email template, PostHog checks whether it is enabled for transactional sends
-    /// (<c>template_not_transactional</c> otherwise) before checking whether it is in a marketing category
-    /// (<c>marketing_template</c>) or comparing categories.
+    /// <see cref="TemplateKey"/> resolves to a saved template, PostHog refuses a sensitive template when
+    /// <see cref="Sensitive"/> is <c>false</c> (<c>sensitive_template</c>) first, then refuses a saved push template
+    /// with <c>template_not_sendable</c>; for a saved email template, PostHog checks whether it is enabled for
+    /// transactional sends (<c>template_not_transactional</c> otherwise) before checking whether it is in a marketing
+    /// category (<c>marketing_template</c>) or comparing categories.
     /// PostHog refuses the send with status 400 and an <see cref="EmailException.Code"/> of <c>category_mismatch</c>
     /// when the key names a category of the other type, or when <see cref="TemplateKey"/> names a template in another
     /// category, including <see cref="MessageCategory.Transactional"/> for a template in a category;
     /// <c>too_many_categories</c> when it would create a new category or restore an archived category past the
     /// project's active-category limit; and, for an email in a marketing category whose <see cref="TemplateKey"/>
     /// names no template, <c>unsubscribe_link_required</c> without that link or placeholder, <c>copies_not_allowed</c>
-    /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> on a verified sender (or
-    /// <c>sandbox_fields_unsupported</c> on <c>attachments</c> when using the PostHog test sender) when it has
-    /// <see cref="Attachments"/> (marketing code sends cannot carry attachments because marketing sending limits can
-    /// hold delivery; the client first asks PostHog which attachments it lacks, uploads only those, and fails with any
-    /// upload or storage error before submitting the send for PostHog to refuse). It refuses the send with status 422
-    /// and <c>recipient_opted_out</c> when the recipient opted out of the category or of all marketing (if preference
-    /// lookups fail, in either synchronous or async admission mode, or if async admission checks exceed the admission
-    /// budget, PostHog may still accept the send and defer the preference check to the delivery worker).
+    /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> on a verified sender (preceded by
+    /// <c>workflow_shape_not_supported</c> if an existing code-send workflow for <see cref="TemplateKey"/> has an
+    /// unsupported shape, such as an extra reachable step) or <c>sandbox_fields_unsupported</c> on <c>attachments</c>
+    /// when using the PostHog test sender and the email has <see cref="Attachments"/> (marketing code sends cannot
+    /// carry attachments because marketing sending limits can hold delivery; the client first asks PostHog which
+    /// attachments it lacks, uploads only those, and prevents the send on a terminal upload or storage error after
+    /// retries are exhausted or when the error is not retryable, before submitting the send for PostHog to refuse). It
+    /// refuses the send with status 422 and <c>recipient_opted_out</c> when the recipient opted out of the category or
+    /// of all marketing (if preference lookups fail, in either synchronous or async admission mode, or if async
+    /// admission checks exceed the admission budget, PostHog may still accept the send and defer the preference check
+    /// to the delivery worker).
     /// </remarks>
     public MessageCategory? Category { get; init; }
 

@@ -435,17 +435,41 @@ public class TheSendAsyncMethodWithCodeContent
         AssertCodeSendFields(root, email);
     }
 
-    [Fact]
-    public async Task SendsASeparatelyConstructedCategoryKeyedTransactionalAsAnObject()
+    public static TheoryData<MessageCategory, string, string> SeparatelyConstructedTransactionalCategories => new()
+    {
+        {
+            new MessageCategory
+            {
+                Key = MessageCategory.Transactional.Key,
+                Type = MessageCategory.Transactional.Type,
+                Name = MessageCategory.Transactional.Name,
+                Description = MessageCategory.Transactional.Description,
+            },
+            "transactional",
+            "Transactional"
+        },
+        {
+            new MessageCategory
+            {
+                Key = "transactional",
+                Type = MessageCategoryType.Marketing,
+                Name = "Transactional Updates",
+            },
+            "marketing",
+            "Transactional Updates"
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(SeparatelyConstructedTransactionalCategories))]
+    public async Task SendsASeparatelyConstructedCategoryKeyedTransactionalAsAnObject(
+        MessageCategory category,
+        string expectedType,
+        string expectedName)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
-        var email = CodeSendIn(new MessageCategory
-        {
-            Key = "transactional",
-            Type = MessageCategoryType.Marketing,
-            Name = "Transactional Updates",
-        });
+        var email = CodeSendIn(category);
 
         await harness.Client.Emails.SendAsync(email);
 
@@ -456,14 +480,11 @@ public class TheSendAsyncMethodWithCodeContent
         var root = body.RootElement;
         AssertObjectKeys(root, CategorizedCodeSendKeys);
         AssertCodeSendFields(root, email);
-        AssertCategoryObject(root.GetProperty("category"), "transactional", "marketing", "Transactional Updates");
+        AssertCategoryObject(root.GetProperty("category"), "transactional", expectedType, expectedName);
     }
 
     static readonly byte[] BinaryPdfBytes = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34, 0x0A, 0xFF, 0x00, 0xFE];
     const string BinaryPdfSha256 = "073f87b9f33968773e842aa48a6afbcb4e79ae661452c94e2313d1dc7563072f";
-    const string BinaryPdfChecksum = "Bz+HufM5aHc+hCqkimr7y055rmYUUslOIxPR3HVjBy8=";
-    const string SignedPdfUploadUrl =
-        "https://files.example.com/team/1/" + BinaryPdfSha256 + "?X-Amz-Expires=900&X-Amz-Signature=signed";
 
     public static TheoryData<MessageCategory, HttpStatusCode, string, string?> CategoryRefusals => new()
     {
@@ -617,6 +638,7 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Equal(2, transport.Requests.Count);
             Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
             Assert.Equal(0, posthog.StorageWrites);
+            Assert.Null(transport.StoredUploadBytes);
         }
         finally
         {
@@ -632,7 +654,7 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(1, transport.StorageWritesAtSend);
         Assert.Equal(1, posthog.StorageWrites);
         AssertSignedPdfUploadBeforeSend(
-            transport.Requests,
+            transport,
             "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
             "brochure.pdf",
             "newsletter",
@@ -681,6 +703,7 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Equal(2, transport.Requests.Count);
             Assert.Equal(HttpMethod.Put, transport.Requests[1].Method);
             Assert.Equal(0, posthog.StorageWrites);
+            Assert.Null(transport.StoredUploadBytes);
         }
         finally
         {
@@ -693,7 +716,7 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal(1, transport.StorageWritesAtSend);
         Assert.Equal(1, posthog.StorageWrites);
         AssertSignedPdfUploadBeforeSend(
-            transport.Requests,
+            transport,
             "<p>Receipt</p>",
             "invoice.pdf",
             "receipts",
@@ -702,13 +725,14 @@ public class TheSendAsyncMethodWithCodeContent
     }
 
     static void AssertSignedPdfUploadBeforeSend(
-        List<RecordedRequest> requests,
+        CategorizedSendHandler transport,
         string expectedHtml,
         string filename,
         string categoryKey,
         string categoryType,
         string categoryName)
     {
+        var requests = transport.Requests;
         Assert.Equal(3, requests.Count);
 
         var prepare = requests[0];
@@ -724,15 +748,39 @@ public class TheSendAsyncMethodWithCodeContent
             Assert.Equal(BinaryPdfBytes.Length, file.GetProperty("size").GetInt32());
         }
 
+        string grantedUrl;
+        string grantedMethod;
+        Dictionary<string, string> grantedHeaders;
+        Assert.NotNull(transport.UploadGrantResponseBody);
+        using (var grantBody = JsonDocument.Parse(transport.UploadGrantResponseBody))
+        {
+            var grantedFile = Assert.Single(grantBody.RootElement.GetProperty("files").EnumerateArray());
+            Assert.Equal(BinaryPdfSha256, grantedFile.GetProperty("sha256").GetString());
+            Assert.Equal("upload", grantedFile.GetProperty("status").GetString());
+            grantedUrl = grantedFile.GetProperty("url").GetString()!;
+            Assert.False(string.IsNullOrWhiteSpace(grantedUrl));
+            grantedMethod = grantedFile.GetProperty("method").GetString()!;
+            grantedHeaders = grantedFile
+                .GetProperty("headers")
+                .EnumerateObject()
+                .ToDictionary(
+                    header => header.Name,
+                    header => header.Value.GetString()!,
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
         var upload = requests[1];
-        Assert.Equal(HttpMethod.Put, upload.Method);
-        Assert.Equal(SignedPdfUploadUrl, upload.Url);
+        Assert.Equal(new HttpMethod(grantedMethod), upload.Method);
+        Assert.Equal(grantedUrl, upload.Url);
         Assert.Null(upload.Header("Authorization"));
-        Assert.Equal(
-            BinaryPdfBytes.Length.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            upload.Header("Content-Length"));
-        Assert.Equal(BinaryPdfChecksum, upload.Header("x-amz-checksum-sha256"));
+        Assert.NotEmpty(grantedHeaders);
+        foreach (var header in grantedHeaders)
+        {
+            Assert.Equal(header.Value, upload.Header(header.Key));
+        }
+
         Assert.Equal(BinaryPdfBytes, upload.BodyBytes);
+        Assert.Equal(BinaryPdfBytes, transport.StoredUploadBytes);
 
         var send = requests[2];
         Assert.Equal(HttpMethod.Post, send.Method);
@@ -756,10 +804,13 @@ public class TheSendAsyncMethodWithCodeContent
     sealed class CategorizedSendHandler(FakePostHogEmails inner) : DelegatingHandler(inner)
     {
         readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
+        readonly ConcurrentDictionary<string, byte> _grantedUploadUrls = new(StringComparer.Ordinal);
         readonly List<RecordedRequest> _requests = [];
         readonly TaskCompletionSource<bool> _uploadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly TaskCompletionSource<bool> _releaseUpload = new(TaskCreationOptions.RunContinuationsAsynchronously);
         int _storageWritesAtSend;
+        string? _uploadGrantResponseBody;
+        byte[]? _storedUploadBytes;
 
         public List<RecordedRequest> Requests
         {
@@ -775,6 +826,10 @@ public class TheSendAsyncMethodWithCodeContent
         public Task UploadStarted => _uploadStarted.Task;
 
         public int StorageWritesAtSend => Volatile.Read(ref _storageWritesAtSend);
+
+        public string? UploadGrantResponseBody => Volatile.Read(ref _uploadGrantResponseBody);
+
+        public byte[]? StoredUploadBytes => Volatile.Read(ref _storedUploadBytes);
 
         public void ReleaseUpload() => _releaseUpload.TrySetResult(true);
 
@@ -794,11 +849,48 @@ public class TheSendAsyncMethodWithCodeContent
                 _requests.Add(recorded);
             }
 
+            if (request.Method == HttpMethod.Post
+                && request.RequestUri!.AbsolutePath == "/api/messaging/attachments/uploads/")
+            {
+                var response = await base.SendAsync(request, cancellationToken);
+                if (response.Content is not null)
+                {
+#if NET5_0_OR_GREATER
+                    var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+#else
+                    var responseBody = await response.Content.ReadAsStringAsync();
+#endif
+                    Volatile.Write(ref _uploadGrantResponseBody, responseBody);
+                    RecordGrantedUploadUrls(responseBody);
+                }
+
+                return response;
+            }
+
             if (request.Method == HttpMethod.Put)
             {
                 _uploadStarted.TrySetResult(true);
                 await _releaseUpload.Task;
-                return await base.SendAsync(request, cancellationToken);
+                if (!_grantedUploadUrls.ContainsKey(recorded.Url))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                    {
+                        Content = new StringContent(
+                            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>SignatureDoesNotMatch</Code>"
+                            + "<Message>The request signature we calculated does not match the signature you provided."
+                            + "</Message></Error>",
+                            Encoding.UTF8,
+                            "application/xml"),
+                    };
+                }
+
+                var response = await base.SendAsync(request, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    Volatile.Write(ref _storedUploadBytes, recorded.BodyBytes?.ToArray());
+                }
+
+                return response;
             }
 
             if (request.Method == HttpMethod.Post
@@ -810,6 +902,27 @@ public class TheSendAsyncMethodWithCodeContent
             }
 
             return await base.SendAsync(request, cancellationToken);
+        }
+
+        void RecordGrantedUploadUrls(string responseBody)
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            if (!document.RootElement.TryGetProperty("files", out var files)
+                || files.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            foreach (var file in files.EnumerateArray())
+            {
+                if (file.TryGetProperty("status", out var status)
+                    && status.GetString() == "upload"
+                    && file.TryGetProperty("url", out var url)
+                    && url.GetString() is { Length: > 0 } uploadUrl)
+                {
+                    _grantedUploadUrls[uploadUrl] = 0;
+                }
+            }
         }
     }
 
