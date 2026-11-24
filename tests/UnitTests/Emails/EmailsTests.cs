@@ -1568,8 +1568,6 @@ sealed class HeldAnswer
 
     public void Release() => _released.TrySetResult(true);
 
-    public bool Abandoned => _released.Task.IsCanceled;
-
     public async Task WaitAsync(CancellationToken cancellationToken)
     {
         using (cancellationToken.Register(() => _released.TrySetCanceled(cancellationToken)))

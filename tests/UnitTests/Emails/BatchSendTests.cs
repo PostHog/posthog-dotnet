@@ -254,16 +254,19 @@ public class TheBatchAsyncMethod
         var send = harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0));
         await answer.Arrived;
         harness.Time.AdvanceDeadlines(TimeSpan.FromSeconds(seconds));
-        Assert.Equal(outcome != "queued", answer.Abandoned);
-        answer.Release();
 
         if (outcome == "queued")
         {
+            Assert.False(send.IsCompleted);
+            answer.Release();
             Assert.Equal(outcome, Assert.Single((await send).Results).Status);
         }
         else
         {
-            Assert.Equal(outcome, (await Assert.ThrowsAsync<EmailBatchException>(() => send)).Message);
+            var error = await Assert.ThrowsAsync<EmailBatchException>(
+                () => send.WaitAsync(TimeSpan.FromSeconds(5), TimeProvider.System));
+            answer.Release();
+            Assert.Equal(outcome, error.Message);
         }
     }
 
