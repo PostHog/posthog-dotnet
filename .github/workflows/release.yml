@@ -87,7 +87,7 @@ jobs:
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_NOLOGO: true
-      DOTNET_VERSION: "9.0.102"
+      DOTNET_VERSION: "10.0.404"
     steps:
       - name: Notify Slack - Approved
         if: needs.notify-approval-needed.outputs.slack_ts != ''
@@ -135,7 +135,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          # .NET 8 runs the netcoreapp3.1 tests. See the Test job in main.yaml.
+          dotnet-version: |
+            8.0.x
+            ${{ env.DOTNET_VERSION }}
 
       - name: Apply changesets
         run: pnpm changeset version
@@ -257,7 +260,7 @@ jobs:
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_NOLOGO: true
-      DOTNET_VERSION: "9.0.102"
+      DOTNET_VERSION: "10.0.404"
       PackageDirectory: ${{ github.workspace }}/build/packages/Release
     strategy:
       # If any package fails to publish, stop immediately. PostHog must publish before dependents.
