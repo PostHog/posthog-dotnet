@@ -15,7 +15,6 @@ internal sealed partial class EmailSender
     const int BatchMaxBodyBytes = 4 * 1024 * 1024;
     const int PipelineMaxCopiedBytes = 16 * 1024 * 1024;
     const int EmptyObjectBytes = 2;
-    const int LongestJavaScriptNumber = 25;
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
 
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
@@ -141,9 +140,8 @@ internal sealed partial class EmailSender
             {
                 continue;
             }
-            catch (EmailException e)
+            catch (EmailException)
             {
-                row.KeepLaterError(e);
                 return;
             }
             catch (Exception e) when (!IsCallerCancellation(e, cancellationToken))
@@ -191,7 +189,7 @@ internal sealed partial class EmailSender
                     ["template_id"] = template.TemplateId.ToString("D"),
                     ["message_data"] = sharedData,
                 };
-                copiedPerRecipient = CopiedBytes(sharedData);
+                copiedPerRecipient = Utf8Bytes(sharedData);
                 break;
             case SendCodeBatchOptions code:
                 shared = CheckedCodeContent(
@@ -224,16 +222,6 @@ internal sealed partial class EmailSender
     }
 
     static int Utf8Bytes(object? value) => JsonSerializer.SerializeToUtf8Bytes(value, JsonSerializerHelper.Options).Length;
-
-    static long CopiedBytes(JsonElement data) => Utf8Bytes(data) + NumberSpellingSlack(data);
-
-    static long NumberSpellingSlack(JsonElement element) => element.ValueKind switch
-    {
-        JsonValueKind.Number => Math.Max(0, LongestJavaScriptNumber - element.GetRawText().Length),
-        JsonValueKind.Object => element.EnumerateObject().Sum(field => NumberSpellingSlack(field.Value)),
-        JsonValueKind.Array => element.EnumerateArray().Sum(NumberSpellingSlack),
-        _ => 0,
-    };
 
     static List<BatchRow> BatchRows(IReadOnlyList<BatchRecipient>? recipients, bool isTemplate, string paramName)
     {
@@ -283,7 +271,7 @@ internal sealed partial class EmailSender
                 : JsonSerializer.SerializeToElement<object>(recipient.TemplateData, JsonSerializerHelper.Options);
             Json = JsonSerializer.Serialize(WireOf(recipient, idempotencyKey, messageData), JsonSerializerHelper.Options);
             Bytes = Encoding.UTF8.GetByteCount(Json);
-            OwnCopiedBytes = messageData is { } data ? CopiedBytes(data) : EmptyObjectBytes;
+            OwnCopiedBytes = messageData is { } data ? Utf8Bytes(data) : EmptyObjectBytes;
         }
 
         public int Index { get; }
@@ -296,7 +284,7 @@ internal sealed partial class EmailSender
 
         public int Bytes { get; }
 
-        public long OwnCopiedBytes { get; }
+        public int OwnCopiedBytes { get; }
 
         public string? Status { get; private set; }
 
@@ -339,8 +327,6 @@ internal sealed partial class EmailSender
         public void Identify(string messageId) => MessageId = messageId;
 
         public void AddLaterError(EmailException later) => Set("unconfirmed", MessageId, error: Error, laterError: later);
-
-        public void KeepLaterError(EmailException later) => LaterError ??= later;
 
         public BatchEmailResult Result() => new()
         {

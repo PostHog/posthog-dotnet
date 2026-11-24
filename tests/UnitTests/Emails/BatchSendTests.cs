@@ -255,22 +255,6 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
-    public async Task CountsEachNumberAtTheLongestSpellingThePipelineCanGiveIt()
-    {
-        await using var harness = new EmailHarness();
-        AllQueued(harness, times: 2);
-
-        await harness.Client.Emails.BatchAsync(new SendTemplateBatchOptions
-        {
-            TemplateId = TemplateId,
-            TemplateData = new Dictionary<string, object> { ["amounts"] = Enumerable.Repeat(1e20, 500_000).ToArray() },
-            Recipients = Recipients(2),
-        });
-
-        Assert.Equal([1, 1], harness.Requests.Select(r => Keys(r).Length));
-    }
-
-    [Fact]
     public async Task CountsThePlainTextPostHogDerivesFromHtmlWhenTextIsEmpty()
     {
         var html = "<p>" + new string('x', 100_000) + "</p>";
@@ -310,24 +294,18 @@ public class TheBatchAsyncMethod
         await answer.Arrived;
         harness.Time.AdvanceDeadlines(TimeSpan.FromSeconds(seconds));
 
-        try
+        if (outcome == "queued")
         {
-            if (outcome == "queued")
-            {
-                Assert.False(send.IsCompleted);
-                answer.Release();
-                Assert.Equal(outcome, Assert.Single((await send).Results).Status);
-            }
-            else
-            {
-                var error = await Assert.ThrowsAsync<EmailBatchException>(
-                    () => send.WaitAsync(TimeSpan.FromSeconds(5), TimeProvider.System));
-                Assert.Equal(outcome, error.Message);
-            }
-        }
-        finally
-        {
+            Assert.False(send.IsCompleted);
             answer.Release();
+            Assert.Equal(outcome, Assert.Single((await send).Results).Status);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<EmailBatchException>(
+                () => send.WaitAsync(TimeSpan.FromSeconds(5), TimeProvider.System));
+            answer.Release();
+            Assert.Equal(outcome, error.Message);
         }
     }
 
@@ -594,22 +572,6 @@ public class TheBatchAsyncMethod
 
         Assert.Equal(4, harness.Requests.Count);
         Assert.All(error.Results, r => Assert.Equal("unconfirmed", r.Status));
-    }
-
-    [Fact]
-    public async Task KeepsTheErrorThatStoppedTheReadsByKey()
-    {
-        await using var harness = new EmailHarness();
-        const string inFlight = """{"error":{"code":"idempotency_key_in_flight","detail":"In flight.","status":409}}""";
-        harness.Respond(HttpStatusCode.OK, Ok(inFlight, inFlight));
-        harness.Respond((HttpStatusCode)429, WholeCall("rate_limited"));
-
-        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(2)));
-
-        Assert.Equal(2, harness.Requests.Count);
-        Assert.Equal(
-            new (string, string?)[] { ("unconfirmed", "rate_limited"), ("unconfirmed", null) },
-            result.Results.Select(r => (r.Status, r.LaterError?.Code)));
     }
 
     [Fact]
