@@ -1055,10 +1055,25 @@ public class TheSendAsyncMethodAnswers
         Assert.DoesNotContain("phs_secret", error.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task KeepsTheReadableFieldsOfAnErrorWithAnUnreadableOne()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            (HttpStatusCode)422,
+            """{"type": "validation_error", "code": "recipient_suppressed", "detail": "\ud800", "attr": "to"}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
+
+        Assert.Equal(("recipient_suppressed", (HttpStatusCode)422, "to"), (error.Code, error.StatusCode, error.Field));
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("""{"message_id": ""}""")]
     [InlineData("""{"message_id": 7}""")]
+    [InlineData("""{"message_id": "\ud800"}""")]
     [InlineData("accepted")]
     public async Task TreatsAnAcceptanceWithoutAMessageIdAsAnError(string body)
     {
@@ -1382,6 +1397,7 @@ public class TheGetAsyncMethod
     [InlineData("""{"id": "x", "created_at": "2026-10-28T16:27:44Z", "status_at": "2026-10-28T16:27:44Z"}""")]
     [InlineData("""{"id": "x", "status": "sent", "status_at": "2026-10-28T16:27:44Z"}""")]
     [InlineData("""{"id": "x", "status": "sent", "created_at": "yesterday", "status_at": "2026-10-28T16:27:44Z"}""")]
+    [InlineData("""{"id": "x", "status": "\ud800", "created_at": "2026-10-28T16:27:44Z", "status_at": "2026-10-28T16:27:44Z"}""")]
     public async Task TreatsAnIncompleteRecordAsAnError(string body)
     {
         await using var harness = new EmailHarness();

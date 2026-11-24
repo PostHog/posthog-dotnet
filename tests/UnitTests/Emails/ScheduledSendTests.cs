@@ -53,9 +53,10 @@ public class TheSendAsyncMethodWithScheduledAt
             ScheduledAt = DueTime,
         });
 
+        using var body = JsonDocument.Parse(Assert.Single(harness.Requests).Body!);
         Assert.Equal(
-            $$"""{"template_key":"reminder","to":"user@example.com","subject":"Your trial ends tomorrow","html":"\u003Cp\u003EHi\u003C/p\u003E","scheduled_at":"{{Due}}"}""",
-            Assert.Single(harness.Requests).Body);
+            [("html", "<p>Hi</p>"), ("scheduled_at", Due), ("subject", "Your trial ends tomorrow"), ("template_key", "reminder"), ("to", "user@example.com")],
+            body.RootElement.EnumerateObject().Select(field => (field.Name, field.Value.GetString())).OrderBy(field => field.Name, StringComparer.Ordinal).ToArray());
         Assert.Equal(("scheduled", DueTime), (result.Status, result.ScheduledAt));
     }
 
