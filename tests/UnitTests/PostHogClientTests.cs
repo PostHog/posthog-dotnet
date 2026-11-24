@@ -2683,10 +2683,32 @@ public class TheLoadFeatureFlagsAsyncMethod
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             client.LoadFeatureFlagsAsync(cts.Token));
 
-        // Verify no error was logged for cancellation
+        Assert.Empty(container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error));
+    }
+
+    [Fact]
+    public async Task LogsErrorAndKeepsCachedFlagsWhenRequestTimesOut()
+    {
+        var container = new TestContainer(personalApiKey: "fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(
+            """{"flags": [{"id": 1, "key": "cached-flag", "active": true, "filters": {"groups": [{"properties": [], "rollout_percentage": 100}]}}]}""");
+        var client = container.Activate<PostHogClient>();
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+        container.FakeHttpMessageHandler.AddResponseException(
+            FakeHttpMessageHandlerExtensions.LocalEvaluationUrl,
+            HttpMethod.Get,
+            new TaskCanceledException("The request timed out."));
+
+        await client.LoadFeatureFlagsAsync(CancellationToken.None);
+
         var errorLogs = container.FakeLoggerProvider.GetAllEvents(minimumLevel: LogLevel.Error);
-        Assert.DoesNotContain(errorLogs, log =>
-            log.Message?.Contains("Failed to load feature flags", StringComparison.Ordinal) == true);
+        Assert.Contains(errorLogs, log =>
+            log.Message?.Contains("Unable to get feature flags and payloads", StringComparison.Ordinal) == true);
+        var flags = await client.EvaluateFlagsAsync(
+            "user-1",
+            new AllFeatureFlagsOptions { OnlyEvaluateLocally = true },
+            CancellationToken.None);
+        Assert.True(flags.IsEnabled("cached-flag"));
     }
 }
 
