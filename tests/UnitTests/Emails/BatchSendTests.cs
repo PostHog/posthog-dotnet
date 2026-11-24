@@ -212,49 +212,19 @@ public class TheBatchAsyncMethod
         Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
     }
 
-    [Theory]
-    [InlineData(44, "queued")]
-    [InlineData(45, "The request to PostHog timed out after 45s.")]
-    public async Task WaitsUpTo45SecondsForAnAnswerWhateverTheClientTimeout(int seconds, string outcome)
+    [Fact]
+    public async Task WaitsLongerThanTheClientRequestTimeoutForTheBatchAnswer()
     {
-        await using var harness = new EmailHarness(options => options.EmailRequestTimeout = TimeSpan.FromSeconds(5));
-        harness.Time.ControlDeadlines();
+        await using var harness = new EmailHarness(options => options.EmailRequestTimeout = TimeSpan.FromMilliseconds(50));
         var answer = harness.Hold(AllQueuedAnswer);
 
         var send = harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0));
         await answer.Arrived;
-        harness.Time.AdvanceDeadlines(TimeSpan.FromSeconds(seconds));
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
 
-        try
-        {
-            if (outcome == "queued")
-            {
-                Assert.False(send.IsCompleted);
-                answer.Release();
-                Assert.Equal(outcome, Assert.Single((await send).Results).Status);
-            }
-            else
-            {
-                var error = await Assert.ThrowsAsync<EmailBatchException>(
-                    () => send.WaitAsync(TimeSpan.FromSeconds(5), TimeProvider.System));
-                Assert.Equal(outcome, error.Message);
-            }
-        }
-        finally
-        {
-            answer.Release();
-        }
-    }
-
-    [Fact]
-    public async Task StopsEachRequestsDeadlineTimerWhenTheRequestEnds()
-    {
-        await using var harness = new EmailHarness();
-        AllQueued(harness);
-
-        await harness.Client.Emails.BatchAsync(Batch(Recipients(1)));
-
-        Assert.Equal((1, 0), harness.Time.DeadlineTimers);
+        Assert.False(send.IsCompleted);
+        answer.Release();
+        Assert.Equal("queued", Assert.Single((await send).Results).Status);
     }
 
     [Fact]

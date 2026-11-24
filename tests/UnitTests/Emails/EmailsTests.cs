@@ -1016,17 +1016,18 @@ public class TheSendAsyncMethodRetries
     }
 
     [Fact]
-    public async Task TreatsATimedOutAttemptAsANetworkError()
+    public async Task TreatsATimedOutAttemptAsANetworkErrorOnTheSystemClockWhateverTheAppsClock()
     {
         await using var harness = new EmailHarness(options =>
         {
             options.EmailRequestTimeout = TimeSpan.FromMilliseconds(50);
             options.EmailRequestMaxRetries = 0;
         });
+        harness.Time.HoldDelays();
         harness.Hang();
 
         var error = await Assert.ThrowsAsync<EmailException>(
-            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
+            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()).WaitAsync(TimeSpan.FromSeconds(5), TimeProvider.System));
 
         Assert.Equal("network_error", error.Code);
         Assert.Contains("timed out", error.Message, StringComparison.Ordinal);
@@ -1641,54 +1642,14 @@ sealed class RecordingHandler : HttpMessageHandler
 
 /// <summary>
 /// Records each one-shot wait, such as a retry backoff, and ends it at once, or holds it until released.
-/// Periodic timers, and request deadlines unless <see cref="ControlDeadlines"/> is called, run on the system clock.
+/// Periodic timers run on the system clock.
 /// </summary>
 sealed class RecordingTimeProvider : TimeProvider
 {
     readonly List<TimeSpan> _delays = [];
     readonly List<Action> _held = [];
-    readonly List<DeadlineTimer> _deadlines = [];
     readonly TaskCompletionSource<bool> _firstHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool _holding;
-    bool _controllingDeadlines;
-    TimeSpan _advanced;
-    int _deadlineTimers;
-    int _liveDeadlineTimers;
-
-    public (int Created, int Live) DeadlineTimers
-    {
-        get
-        {
-            lock (_delays)
-            {
-                return (_deadlineTimers, _liveDeadlineTimers);
-            }
-        }
-    }
-
-    public void ControlDeadlines()
-    {
-        lock (_delays)
-        {
-            _controllingDeadlines = true;
-        }
-    }
-
-    public void AdvanceDeadlines(TimeSpan by)
-    {
-        List<Action> due;
-        lock (_delays)
-        {
-            _advanced += by;
-            due = _deadlines.Where(deadline => deadline.Due <= _advanced).Select(deadline => deadline.Fire!).ToList();
-            _deadlines.RemoveAll(deadline => deadline.Due <= _advanced);
-        }
-
-        foreach (var fire in due)
-        {
-            fire();
-        }
-    }
 
     /// <summary>The time the client reads as now; the system clock when unset.</summary>
     public DateTimeOffset? Now { get; set; }
@@ -1749,23 +1710,6 @@ sealed class RecordingTimeProvider : TimeProvider
         }
 
         void Fire() => ThreadPool.QueueUserWorkItem(_ => callback(state));
-        if (state is CancellationTokenSource)
-        {
-            lock (_delays)
-            {
-                _deadlineTimers++;
-                _liveDeadlineTimers++;
-                if (_controllingDeadlines)
-                {
-                    var held = new DeadlineTimer(this, null, _advanced + dueTime, () => callback(state));
-                    _deadlines.Add(held);
-                    return held;
-                }
-            }
-
-            return new DeadlineTimer(this, TimeProvider.System.CreateTimer(callback, state, dueTime, period), TimeSpan.Zero, null);
-        }
-
         lock (_delays)
         {
             _delays.Add(dueTime);
@@ -1779,41 +1723,6 @@ sealed class RecordingTimeProvider : TimeProvider
 
         Fire();
         return new NoOpTimer();
-    }
-
-    void Forget(DeadlineTimer timer)
-    {
-        lock (_delays)
-        {
-            _liveDeadlineTimers--;
-            _deadlines.Remove(timer);
-        }
-    }
-
-    sealed class DeadlineTimer(RecordingTimeProvider owner, ITimer? running, TimeSpan due, Action? fire) : ITimer
-    {
-        int _disposed;
-
-        public TimeSpan Due { get; } = due;
-
-        public Action? Fire { get; } = fire;
-
-        public bool Change(TimeSpan dueTime, TimeSpan period) => running?.Change(dueTime, period) ?? true;
-
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) == 0)
-            {
-                running?.Dispose();
-                owner.Forget(this);
-            }
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            Dispose();
-            return default;
-        }
     }
 
     sealed class NoOpTimer : ITimer

@@ -625,7 +625,7 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
 
         using var deadline = new CancellationTokenSource();
-        using var deadlineTimer = _timeProvider.CreateTimer(CancelDeadline, deadline, waitFor, Timeout.InfiniteTimeSpan);
+        deadline.CancelAfter(waitFor);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         HttpResponseMessage response;
         try
@@ -675,16 +675,6 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
     }
 
-    static void CancelDeadline(object? deadline)
-    {
-        try
-        {
-            ((CancellationTokenSource)deadline!).Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-    }
 
     static EmailException NetworkError(string message, Exception innerException)
         => new("network_error", message, innerException: innerException);
