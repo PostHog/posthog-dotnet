@@ -123,7 +123,7 @@ jobs:
 
       - name: Run Tests
         if: needs.detect-markdown-only.outputs.markdown_only != 'true'
-        run: dotnet test --logger "trx;LogFileName=test-results.trx" --configuration Release --no-restore --nologo
+        run: dotnet test --logger "trx;LogFilePrefix=test-results" --configuration Release --no-restore --nologo
         shell: bash
 
       - name: Collect Test Results
@@ -131,7 +131,7 @@ jobs:
         uses: dorny/test-reporter@b94dfe179d7ff66342276f4bd6b82c3c0f659f52 # v1
         with:
           name: "xUnit Tests"
-          path: "tests/*/TestResults/test-results.trx"
+          path: "tests/*/TestResults/*.trx"
           reporter: 'dotnet-trx'
 
       - name: Upload Test Snapshots
