@@ -63,7 +63,7 @@ public class AllFeatureFlagsOptions
     /// that list any key skip the <see cref="IFeatureFlagCache"/> and always make a fresh <c>/flags</c> request.
     /// </para>
     /// <para>
-    /// The list can hold at most 1000 keys, counting duplicates. A longer list throws an
+    /// The list can hold at most 1000 keys, counting duplicates. A longer list, or a <c>null</c> key, throws an
     /// <see cref="ArgumentException"/>, and the SDK doesn't evaluate or send a request.
     /// </para>
     /// </remarks>
@@ -80,8 +80,8 @@ public class AllFeatureFlagsOptions
     /// Calls that list any key skip the <see cref="IFeatureFlagCache"/> and always make a fresh <c>/flags</c> request.
     /// </para>
     /// <para>
-    /// Each group type's list can hold at most 1000 keys, counting duplicates. A longer list throws an
-    /// <see cref="ArgumentException"/>, and the SDK doesn't evaluate or send a request.
+    /// Each group type's list can hold at most 1000 keys, counting duplicates. A longer list, or a <c>null</c> key,
+    /// throws an <see cref="ArgumentException"/>, and the SDK doesn't evaluate or send a request.
     /// </para>
     /// </remarks>
     public IReadOnlyDictionary<string, IReadOnlyCollection<string>>? GroupPropertyKeysKnownAbsent { get; init; }

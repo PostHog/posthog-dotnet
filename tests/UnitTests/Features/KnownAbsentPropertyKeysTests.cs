@@ -869,6 +869,46 @@ public class ThePostHogClient
         Assert.Empty(flagsHandler.ReceivedRequests);
     }
 
+    public static TheoryData<AllFeatureFlagsOptions> NullKeyOptions => new()
+    {
+        new AllFeatureFlagsOptions { PersonPropertyKeysKnownAbsent = ["plan", null!] },
+        new AllFeatureFlagsOptions
+        {
+            GroupPropertyKeysKnownAbsent = new Dictionary<string, IReadOnlyCollection<string>>
+            {
+                ["organization"] = ["tier", null!]
+            }
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(NullKeyOptions))]
+    public async Task RejectsANullKeyWithoutARequest(AllFeatureFlagsOptions options)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(Definitions);
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        await using var client = container.Activate<PostHogClient>();
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.EvaluateFlagsAsync("user", options, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.GetAllFeatureFlagsAsync("user", options, CancellationToken.None));
+#pragma warning disable CS0618
+        await Assert.ThrowsAsync<ArgumentException>(() => client.GetFeatureFlagAsync(
+            "plan-flag",
+            "user",
+            new FeatureFlagOptions
+            {
+                PersonPropertyKeysKnownAbsent = options.PersonPropertyKeysKnownAbsent,
+                GroupPropertyKeysKnownAbsent = options.GroupPropertyKeysKnownAbsent
+            },
+            CancellationToken.None));
+#pragma warning restore CS0618
+
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
     [Fact]
     public async Task AcceptsExactly1000Keys()
     {

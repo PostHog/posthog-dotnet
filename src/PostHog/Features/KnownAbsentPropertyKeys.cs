@@ -69,15 +69,26 @@ internal sealed class KnownAbsentPropertyKeys
            || options?.GroupPropertyKeysKnownAbsent?.Values.Any(keys => keys is { Count: > 0 }) == true;
 
     /// <summary>
-    /// Throws an <see cref="ArgumentException"/> when a list holds more than <see cref="MaxKeys"/> keys.
+    /// Throws an <see cref="ArgumentException"/> when a list holds more than <see cref="MaxKeys"/> keys or a
+    /// <c>null</c> key.
     /// </summary>
     public static void Validate(AllFeatureFlagsOptions? options)
     {
-        if (options?.PersonPropertyKeysKnownAbsent is { Count: > MaxKeys })
+        if (options?.PersonPropertyKeysKnownAbsent is { Count: > 0 } personKeys)
         {
-            throw new ArgumentException(
-                $"{nameof(AllFeatureFlagsOptions.PersonPropertyKeysKnownAbsent)} allows at most {MaxKeys} keys.",
-                nameof(options));
+            if (personKeys.Count > MaxKeys)
+            {
+                throw new ArgumentException(
+                    $"{nameof(AllFeatureFlagsOptions.PersonPropertyKeysKnownAbsent)} allows at most {MaxKeys} keys.",
+                    nameof(options));
+            }
+
+            if (personKeys.Contains(null!))
+            {
+                throw new ArgumentException(
+                    $"{nameof(AllFeatureFlagsOptions.PersonPropertyKeysKnownAbsent)} cannot contain a null key.",
+                    nameof(options));
+            }
         }
 
         foreach (var (groupType, keys) in options?.GroupPropertyKeysKnownAbsent ?? EmptyGroups)
@@ -86,6 +97,13 @@ internal sealed class KnownAbsentPropertyKeys
             {
                 throw new ArgumentException(
                     $"{nameof(AllFeatureFlagsOptions.GroupPropertyKeysKnownAbsent)} allows at most {MaxKeys} keys per group type, but '{groupType}' has {keys.Count}.",
+                    nameof(options));
+            }
+
+            if (keys is { Count: > 0 } && keys.Contains(null!))
+            {
+                throw new ArgumentException(
+                    $"{nameof(AllFeatureFlagsOptions.GroupPropertyKeysKnownAbsent)} cannot contain a null key, but '{groupType}' has one.",
                     nameof(options));
             }
         }
