@@ -661,8 +661,8 @@ public class TheBatchAsyncMethod
             Assert.All(
                 recipients.EnumerateArray(),
                 recipient => Assert.Equal(
-                    """{"step":"before"}""",
-                    recipient.GetProperty("message_data").GetRawText()));
+                    [("step", "before")],
+                    recipient.GetProperty("message_data").EnumerateObject().Select(p => (p.Name, p.Value.GetString()))));
         });
     }
 
@@ -689,12 +689,12 @@ public class TheBatchAsyncMethod
 
         var bodies = harness.Requests.Select(r => JsonDocument.Parse(r.Body!).RootElement).ToList();
         Assert.All(bodies, body => Assert.Equal(
-            """{"shared":{"value":"all"}}""",
-            body.GetProperty("message_data").GetRawText()));
+            "all",
+            body.GetProperty("message_data").GetProperty("shared").GetProperty("value").GetString()));
         Assert.Equal(
-            Enumerable.Range(0, 101).Select(i => $$$"""{"own":{"value":"r{{{i}}}"}}"""),
+            Enumerable.Range(0, 101).Select(i => $"r{i}"),
             bodies.SelectMany(body => body.GetProperty("recipients").EnumerateArray())
-                .Select(recipient => recipient.GetProperty("message_data").GetRawText()));
+                .Select(recipient => recipient.GetProperty("message_data").GetProperty("own").GetProperty("value").GetString()));
     }
 
     sealed class ReadableOnce(string value)
