@@ -194,8 +194,8 @@ public class TheBatchAsyncMethod
     [Theory]
     [InlineData(413, ",\"fix\":\"Split the recipients into smaller batches.\"", "Split the recipients into smaller batches.")]
     [InlineData(413, "", "Split the recipients into smaller batches and send each with BatchAsync.")]
-    [InlineData(400, ",\"fix\":\"Keep message_data under 256 KiB.\"", "Keep message_data under 256 KiB.")]
-    public async Task ReturnsATooLargeRefusalAsTheErrorWithPostHogsFix(int status, string fixField, string fix)
+    [InlineData(400, "", null)]
+    public async Task ReturnsATooLargeRefusalAsTheErrorWithPostHogsFix(int status, string fixField, string? fix)
     {
         await using var harness = new EmailHarness();
         harness.Respond(
