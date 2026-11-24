@@ -192,6 +192,30 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
+    [InlineData(0, new[] { 64, 36 })]
+    [InlineData(1, new[] { 63, 37 })]
+    public async Task KeepsWhatThePipelineCopiesPerRecipientUnder16MiB(int overByBytes, int[] perRequest)
+    {
+        await using var harness = new EmailHarness();
+        AllQueued(harness, times: 2);
+        const int copyOfSharedData = (16 * 1024 * 1024) / 64;
+        var sharedWithoutNote = Bytes("""{"note":""}""");
+        var ownTemplateData = Bytes("{}");
+
+        await harness.Client.Emails.BatchAsync(new SendTemplateBatchOptions
+        {
+            TemplateId = TemplateId,
+            TemplateData = new Dictionary<string, object>
+            {
+                ["note"] = new string('x', copyOfSharedData - sharedWithoutNote - ownTemplateData + overByBytes),
+            },
+            Recipients = Recipients(100),
+        });
+
+        Assert.Equal(perRequest, harness.Requests.Select(r => Keys(r).Length));
+    }
+
+    [Theory]
     [InlineData(44, "queued")]
     [InlineData(45, "The request to PostHog timed out after 45s.")]
     public async Task WaitsUpTo45SecondsForAnAnswerWhateverTheClientTimeout(int seconds, string outcome)

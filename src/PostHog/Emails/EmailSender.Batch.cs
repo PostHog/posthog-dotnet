@@ -13,6 +13,8 @@ internal sealed partial class EmailSender
     const string StatusByKeyPath = "/api/messaging/emails/status/?idempotency_key=";
     const int BatchMaxRecipients = 100;
     const int BatchMaxBodyBytes = 4 * 1024 * 1024;
+    const int PipelineMaxCopiedBytes = 16 * 1024 * 1024;
+    const int EmptyObjectBytes = 2;
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
 
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
@@ -159,6 +161,7 @@ internal sealed partial class EmailSender
         }
 
         Dictionary<string, object?> shared;
+        long copiedPerRecipient;
         switch (batch)
         {
             case SendTemplateBatchOptions template:
@@ -168,6 +171,7 @@ internal sealed partial class EmailSender
                     ["template_id"] = template.TemplateId.ToString("D"),
                     ["message_data"] = template.TemplateData ?? new Dictionary<string, object>(),
                 };
+                copiedPerRecipient = Utf8Bytes(shared["message_data"]);
                 break;
             case SendCodeBatchOptions code:
                 shared = CheckedCodeContent(
@@ -181,6 +185,9 @@ internal sealed partial class EmailSender
                     "batch",
                     nameof(batch));
                 AddSensitiveAndTracking(shared, code.Sensitive, code.Tracking);
+                copiedPerRecipient = EmptyObjectBytes
+                                     + Utf8Bytes(shared)
+                                     + (code.Text is null && code.Html is not null ? Utf8Bytes(code.Html) : 0);
                 break;
             default:
                 throw new ArgumentException("Send a SendTemplateBatchOptions or a SendCodeBatchOptions.", nameof(batch));
@@ -189,8 +196,14 @@ internal sealed partial class EmailSender
         var rows = BatchRows(batch.Recipients, batch is SendTemplateBatchOptions, nameof(batch));
         shared["recipients"] = Array.Empty<object>();
         var empty = JsonSerializer.Serialize(shared, JsonSerializerHelper.Options);
-        return new BatchRun(empty.Substring(0, empty.Length - "]}".Length), rows, batch.MaxRetries ?? defaultMaxRetries);
+        return new BatchRun(
+            empty.Substring(0, empty.Length - "]}".Length),
+            copiedPerRecipient,
+            rows,
+            batch.MaxRetries ?? defaultMaxRetries);
     }
+
+    static int Utf8Bytes(object? value) => JsonSerializer.SerializeToUtf8Bytes(value, JsonSerializerHelper.Options).Length;
 
     static List<BatchRow> BatchRows(IReadOnlyList<BatchRecipient>? recipients, bool isTemplate, string paramName)
     {
@@ -234,8 +247,10 @@ internal sealed partial class EmailSender
 
         public string IdempotencyKey { get; } = idempotencyKey;
 
-        public int Bytes { get; } =
-            JsonSerializer.SerializeToUtf8Bytes(WireOf(recipient, idempotencyKey), JsonSerializerHelper.Options).Length;
+        public int Bytes { get; } = Utf8Bytes(WireOf(recipient, idempotencyKey));
+
+        public int OwnCopiedBytes { get; } =
+            recipient.TemplateData is null ? EmptyObjectBytes : Utf8Bytes(recipient.TemplateData);
 
         public string? Status { get; private set; }
 
@@ -320,12 +335,14 @@ internal sealed partial class EmailSender
     sealed class BatchRun
     {
         readonly string _bodyBeforeRecipients;
+        readonly long _sharedCopiedBytes;
         readonly List<BatchRow> _rows;
         readonly List<EmailWarning> _warnings = [];
 
-        public BatchRun(string bodyBeforeRecipients, List<BatchRow> rows, int maxRetries)
+        public BatchRun(string bodyBeforeRecipients, long sharedCopiedBytes, List<BatchRow> rows, int maxRetries)
         {
             _bodyBeforeRecipients = bodyBeforeRecipients;
+            _sharedCopiedBytes = sharedCopiedBytes;
             _rows = rows;
             MaxRetries = maxRetries;
             Chunks = Split();
@@ -343,25 +360,32 @@ internal sealed partial class EmailSender
             var chunks = new List<BatchChunk>();
             var current = new List<BatchRow>();
             var size = emptyBytes;
+            var copied = 0L;
             foreach (var row in _rows)
             {
-                if (emptyBytes + row.Bytes > BatchMaxBodyBytes)
+                var rowCopied = _sharedCopiedBytes + row.OwnCopiedBytes;
+                if (emptyBytes + row.Bytes > BatchMaxBodyBytes || rowCopied > PipelineMaxCopiedBytes)
                 {
                     row.Set("failed", error: RecipientTooLarge());
                     continue;
                 }
 
                 var added = row.Bytes + (current.Count > 0 ? 1 : 0);
-                if (current.Count > 0 && (current.Count == BatchMaxRecipients || size + added > BatchMaxBodyBytes))
+                if (current.Count > 0
+                    && (current.Count == BatchMaxRecipients
+                        || size + added > BatchMaxBodyBytes
+                        || copied + rowCopied > PipelineMaxCopiedBytes))
                 {
                     chunks.Add(new BatchChunk(current));
                     current = [];
                     size = emptyBytes;
+                    copied = 0;
                     added = row.Bytes;
                 }
 
                 current.Add(row);
                 size += added;
+                copied += rowCopied;
             }
 
             if (current.Count > 0)
