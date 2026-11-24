@@ -624,7 +624,8 @@ internal sealed partial class EmailSender : IPostHogEmails
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         }
 
-        using var deadline = DeadlineAfter(waitFor);
+        using var deadline = new CancellationTokenSource();
+        using var deadlineTimer = _timeProvider.CreateTimer(CancelDeadline, deadline, waitFor, Timeout.InfiniteTimeSpan);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         HttpResponseMessage response;
         try
@@ -674,12 +675,16 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
     }
 
-    CancellationTokenSource DeadlineAfter(TimeSpan wait)
-#if NET8_0_OR_GREATER
-        => new(wait, _timeProvider);
-#else
-        => _timeProvider.CreateCancellationTokenSource(wait);
-#endif
+    static void CancelDeadline(object? deadline)
+    {
+        try
+        {
+            ((CancellationTokenSource)deadline!).Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
 
     static EmailException NetworkError(string message, Exception innerException)
         => new("network_error", message, innerException: innerException);

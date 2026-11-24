@@ -241,6 +241,17 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
+    public async Task StopsEachRequestsDeadlineTimerWhenTheRequestEnds()
+    {
+        await using var harness = new EmailHarness();
+        AllQueued(harness);
+
+        await harness.Client.Emails.BatchAsync(Batch(Recipients(1)));
+
+        Assert.Equal((1, 0), harness.Time.DeadlineTimers);
+    }
+
+    [Fact]
     public async Task NamesTheAppsHttpClientTimeoutWhenItEndsAnAttemptFirst()
     {
         await using var harness = new EmailHarness();

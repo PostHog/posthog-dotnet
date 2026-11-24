@@ -1647,11 +1647,24 @@ sealed class RecordingTimeProvider : TimeProvider
 {
     readonly List<TimeSpan> _delays = [];
     readonly List<Action> _held = [];
-    readonly List<(TimeSpan Due, Action Fire)> _deadlines = [];
+    readonly List<DeadlineTimer> _deadlines = [];
     readonly TaskCompletionSource<bool> _firstHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool _holding;
     bool _controllingDeadlines;
     TimeSpan _advanced;
+    int _deadlineTimers;
+    int _liveDeadlineTimers;
+
+    public (int Created, int Live) DeadlineTimers
+    {
+        get
+        {
+            lock (_delays)
+            {
+                return (_deadlineTimers, _liveDeadlineTimers);
+            }
+        }
+    }
 
     public void ControlDeadlines()
     {
@@ -1667,7 +1680,7 @@ sealed class RecordingTimeProvider : TimeProvider
         lock (_delays)
         {
             _advanced += by;
-            due = _deadlines.Where(deadline => deadline.Due <= _advanced).Select(deadline => deadline.Fire).ToList();
+            due = _deadlines.Where(deadline => deadline.Due <= _advanced).Select(deadline => deadline.Fire!).ToList();
             _deadlines.RemoveAll(deadline => deadline.Due <= _advanced);
         }
 
@@ -1740,14 +1753,17 @@ sealed class RecordingTimeProvider : TimeProvider
         {
             lock (_delays)
             {
+                _deadlineTimers++;
+                _liveDeadlineTimers++;
                 if (_controllingDeadlines)
                 {
-                    _deadlines.Add((_advanced + dueTime, Fire));
-                    return new NoOpTimer();
+                    var held = new DeadlineTimer(this, null, _advanced + dueTime, Fire);
+                    _deadlines.Add(held);
+                    return held;
                 }
             }
 
-            return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
+            return new DeadlineTimer(this, TimeProvider.System.CreateTimer(callback, state, dueTime, period), TimeSpan.Zero, null);
         }
 
         lock (_delays)
@@ -1763,6 +1779,41 @@ sealed class RecordingTimeProvider : TimeProvider
 
         Fire();
         return new NoOpTimer();
+    }
+
+    void Forget(DeadlineTimer timer)
+    {
+        lock (_delays)
+        {
+            _liveDeadlineTimers--;
+            _deadlines.Remove(timer);
+        }
+    }
+
+    sealed class DeadlineTimer(RecordingTimeProvider owner, ITimer? running, TimeSpan due, Action? fire) : ITimer
+    {
+        int _disposed;
+
+        public TimeSpan Due { get; } = due;
+
+        public Action? Fire { get; } = fire;
+
+        public bool Change(TimeSpan dueTime, TimeSpan period) => running?.Change(dueTime, period) ?? true;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            {
+                running?.Dispose();
+                owner.Forget(this);
+            }
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return default;
+        }
     }
 
     sealed class NoOpTimer : ITimer
