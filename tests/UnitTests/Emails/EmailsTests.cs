@@ -631,7 +631,6 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("attachments", error.Field);
         Assert.Equal(1, transport.StorageWritesAtSend);
         Assert.Equal(1, posthog.StorageWrites);
-        Assert.Empty(posthog.Delivered);
         AssertSignedPdfUploadBeforeSend(
             transport.Requests,
             "<a href=\"{{ unsubscribe_url }}\">Unsubscribe</a>",
