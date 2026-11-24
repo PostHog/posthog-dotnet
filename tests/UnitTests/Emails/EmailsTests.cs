@@ -884,22 +884,13 @@ public class TheSendAsyncMethodWithCodeContent
                 && _sendResponses.TryDequeue(out var respond))
             {
                 Interlocked.Exchange(ref _storageWritesAtSend, inner.StorageWrites);
-                return ValidateCategorizedSend(request, recorded.Body) ?? respond();
+                return ValidateSendTransport(request, recorded.Body) ?? respond();
             }
 
             return await base.SendAsync(request, cancellationToken);
         }
 
-        static readonly string[] AllowedSendFields =
-        [
-            "template_key", "to", "subject", "html", "text", "from", "reply_to", "cc", "bcc",
-            "attachments", "category", "capture_engagement", "sensitive", "tracking", "distinct_id",
-        ];
-
-        static readonly string[] AllowedCategoryFields = ["key", "type", "name", "description"];
-        static readonly string[] AllowedAttachmentFields = ["sha256", "filename", "content_type", "content_id"];
-
-        HttpResponseMessage? ValidateCategorizedSend(HttpRequestMessage request, string? body)
+        HttpResponseMessage? ValidateSendTransport(HttpRequestMessage request, string? body)
         {
             if (request.Headers.Authorization is not { Scheme: "Bearer", Parameter: FakePostHogEmails.SecretKey })
             {
@@ -945,140 +936,33 @@ public class TheSendAsyncMethodWithCodeContent
                     return JsonRefusal(HttpStatusCode.BadRequest, "invalid_request", null, "Body must be an object.");
                 }
 
-                foreach (var property in root.EnumerateObject())
+                if (root.TryGetProperty("attachments", out var attachments)
+                    && attachments.ValueKind == JsonValueKind.Array)
                 {
-                    if (!AllowedSendFields.Contains(property.Name))
+                    var index = 0;
+                    foreach (var reference in attachments.EnumerateArray())
                     {
-                        return JsonRefusal(
-                            HttpStatusCode.BadRequest,
-                            "invalid_request",
-                            property.Name,
-                            "Unknown field.");
-                    }
-                }
+                        var sha256 = reference.ValueKind == JsonValueKind.Object
+                            && reference.TryGetProperty("sha256", out var shaField)
+                            && shaField.ValueKind == JsonValueKind.String
+                            ? shaField.GetString()
+                            : null;
+                        if (string.IsNullOrEmpty(sha256) || inner.StoredContent(sha256) is null)
+                        {
+                            return JsonRefusal(
+                                HttpStatusCode.BadRequest,
+                                "attachment_not_uploaded",
+                                $"attachments__{index}__sha256",
+                                "A file this email names isn't uploaded, so PostHog didn't send the email.");
+                        }
 
-                if (!HasString(root, "template_key")
-                    || !HasString(root, "to")
-                    || !HasString(root, "subject")
-                    || (!HasString(root, "html") && !HasString(root, "text")))
-                {
-                    return JsonRefusal(
-                        HttpStatusCode.BadRequest,
-                        "invalid_request",
-                        null,
-                        "Missing required code-send field.");
-                }
-
-                if (root.TryGetProperty("category", out var category))
-                {
-                    var categoryError = ValidateCategory(category);
-                    if (categoryError is not null)
-                    {
-                        return categoryError;
-                    }
-                }
-
-                if (root.TryGetProperty("attachments", out var attachments))
-                {
-                    var attachmentError = ValidateAttachments(attachments);
-                    if (attachmentError is not null)
-                    {
-                        return attachmentError;
+                        index++;
                     }
                 }
             }
 
             return null;
         }
-
-        static HttpResponseMessage? ValidateCategory(JsonElement category)
-        {
-            if (category.ValueKind == JsonValueKind.String)
-            {
-                return category.GetString() == "transactional"
-                    ? null
-                    : JsonRefusal(HttpStatusCode.BadRequest, "invalid_request", "category", "Invalid category.");
-            }
-
-            if (category.ValueKind != JsonValueKind.Object)
-            {
-                return JsonRefusal(HttpStatusCode.BadRequest, "invalid_request", "category", "Invalid category.");
-            }
-
-            foreach (var property in category.EnumerateObject())
-            {
-                if (!AllowedCategoryFields.Contains(property.Name))
-                {
-                    return JsonRefusal(
-                        HttpStatusCode.BadRequest,
-                        "invalid_request",
-                        "category",
-                        "Unknown category field.");
-                }
-            }
-
-            var type = category.TryGetProperty("type", out var typeField) && typeField.ValueKind == JsonValueKind.String
-                ? typeField.GetString()
-                : null;
-            if (!HasNonBlankString(category, "key")
-                || !HasNonBlankString(category, "name")
-                || type is not ("marketing" or "transactional")
-                || (category.TryGetProperty("description", out var description)
-                    && description.ValueKind != JsonValueKind.String))
-            {
-                return JsonRefusal(HttpStatusCode.BadRequest, "invalid_request", "category", "Invalid category.");
-            }
-
-            return null;
-        }
-
-        HttpResponseMessage? ValidateAttachments(JsonElement attachments)
-        {
-            if (attachments.ValueKind != JsonValueKind.Array || attachments.GetArrayLength() is < 1 or > 10)
-            {
-                return JsonRefusal(HttpStatusCode.BadRequest, "invalid_request", "attachments", "Send 1 to 10 files.");
-            }
-
-            var index = 0;
-            foreach (var reference in attachments.EnumerateArray())
-            {
-                if (reference.ValueKind != JsonValueKind.Object
-                    || reference.EnumerateObject().Any(field => !AllowedAttachmentFields.Contains(field.Name))
-                    || !reference.TryGetProperty("sha256", out var shaField)
-                    || shaField.ValueKind != JsonValueKind.String
-                    || shaField.GetString() is not { Length: 64 } sha256
-                    || !sha256.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
-                    || !HasNonBlankString(reference, "filename"))
-                {
-                    return JsonRefusal(
-                        HttpStatusCode.BadRequest,
-                        "invalid_request",
-                        $"attachments__{index}",
-                        "Invalid attachment reference.");
-                }
-
-                if (inner.StoredContent(sha256) is null)
-                {
-                    return JsonRefusal(
-                        HttpStatusCode.BadRequest,
-                        "attachment_not_uploaded",
-                        $"attachments__{index}__sha256",
-                        "A file this email names isn't uploaded, so PostHog didn't send the email.");
-                }
-
-                index++;
-            }
-
-            return null;
-        }
-
-        static bool HasString(JsonElement element, string name)
-            => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String;
-
-        static bool HasNonBlankString(JsonElement element, string name)
-            => element.TryGetProperty(name, out var value)
-               && value.ValueKind == JsonValueKind.String
-               && !string.IsNullOrWhiteSpace(value.GetString());
 
         static HttpResponseMessage JsonRefusal(HttpStatusCode status, string code, string? attr, string detail)
             => new(status)
