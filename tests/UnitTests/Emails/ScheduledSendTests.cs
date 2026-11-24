@@ -196,6 +196,34 @@ public class TheSendAsyncMethodWithScheduledAt
     }
 
     [Fact]
+    public async Task ReturnsTheConfirmedScheduleWhenTheLoggerThrows()
+    {
+        await using var harness = new EmailHarness(loggerFactory: new ThrowingLoggerFactory());
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "scheduled", "scheduled_at": "{{Due}}", "warnings": [{"code": "no_distinct_id", "detail": "Pass distinct_id."}]}""");
+
+        var result = await harness.Client.Emails.SendAsync(TemplateSend(DueTime));
+
+        Assert.Equal((MessageId, "scheduled", DueTime), (result.Id, result.Status, result.ScheduledAt));
+        Assert.Equal("no_distinct_id", Assert.Single(result.Warnings).Code);
+    }
+
+    [Fact]
+    public async Task FailsWithTheMessageIdOfAnUnconfirmedTimeWhenTheLoggerThrows()
+    {
+        await using var harness = new EmailHarness(loggerFactory: new ThrowingLoggerFactory());
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "warnings": [{"code": "no_distinct_id", "detail": "Pass distinct_id."}]}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
+    }
+
+    [Fact]
     public async Task LogsTheWarningsOfAnAcceptanceWithoutAConfirmedTime()
     {
         await using var harness = new EmailHarness();
@@ -320,5 +348,39 @@ public class TheSendAsyncMethodWithScheduledAt
     {
         using var body = JsonDocument.Parse(request.Body!);
         return body.RootElement.GetProperty("scheduled_at").GetString();
+    }
+}
+
+sealed class ThrowingLoggerFactory : Microsoft.Extensions.Logging.ILoggerFactory
+{
+    public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => new ThrowingLogger();
+
+    public void AddProvider(Microsoft.Extensions.Logging.ILoggerProvider provider)
+    {
+    }
+
+    public void Dispose()
+    {
+    }
+
+    sealed class ThrowingLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning)
+            {
+                throw new InvalidOperationException("The app's log sink is down.");
+            }
+        }
     }
 }

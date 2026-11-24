@@ -718,7 +718,7 @@ internal sealed class EmailSender : IPostHogEmails
 
         foreach (var warning in warnings)
         {
-            _logger.LogWarningEmailWarning(warning.Code, warning.Message);
+            LogWarning(warning);
         }
 
         var replayed = reply.Fields is { } replyFields
@@ -735,6 +735,23 @@ internal sealed class EmailSender : IPostHogEmails
             Status = status,
             ScheduledAt = confirmedAt,
         };
+    }
+
+    /// <summary>
+    /// Logs one of PostHog's warnings. PostHog has accepted the email by then, so an exception from the app's logger
+    /// is dropped: it must not hide the message ID, the confirmed time, or <c>schedule_not_confirmed</c>.
+    /// </summary>
+    void LogWarning(EmailWarning warning)
+    {
+        try
+        {
+            _logger.LogWarningEmailWarning(warning.Code, warning.Message);
+        }
+#pragma warning disable CA1031 // The app's logger can throw any exception type.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+        }
     }
 
     /// <summary>

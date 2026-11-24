@@ -1443,7 +1443,10 @@ sealed class EmailHarness : IAsyncDisposable
     readonly RecordingHandler _handler = new();
     readonly HttpClient _httpClient;
 
-    public EmailHarness(Action<PostHogOptions>? configure = null, HttpMessageHandler? posthog = null)
+    public EmailHarness(
+        Action<PostHogOptions>? configure = null,
+        HttpMessageHandler? posthog = null,
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         var options = new PostHogOptions
         {
@@ -1459,7 +1462,7 @@ sealed class EmailHarness : IAsyncDisposable
             httpClientFactory: new SingleHttpClientFactory(_httpClient),
             taskScheduler: null,
             timeProvider: Time,
-            loggerFactory: Logs,
+            loggerFactory: loggerFactory ?? Logs,
             uploadTransport: transport);
     }
 
