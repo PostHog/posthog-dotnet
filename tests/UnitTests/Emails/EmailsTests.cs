@@ -1604,7 +1604,10 @@ sealed class RecordingTimeProvider : TimeProvider
     /// <summary>The time the client reads as now; the system clock when unset.</summary>
     public DateTimeOffset? Now { get; set; }
 
-    public override DateTimeOffset GetUtcNow() => Now ?? base.GetUtcNow();
+    public bool Broken { get; set; }
+
+    public override DateTimeOffset GetUtcNow()
+        => Broken ? throw new InvalidOperationException("The app's clock is down.") : Now ?? base.GetUtcNow();
 
     public IReadOnlyList<TimeSpan> Delays
     {

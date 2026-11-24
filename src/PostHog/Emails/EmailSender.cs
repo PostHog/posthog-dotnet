@@ -114,7 +114,7 @@ internal sealed class EmailSender : IPostHogEmails
         await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
-        var sentAt = _timeProvider.GetUtcNow();
+        DateTimeOffset? sentAt = prepared.ScheduledAt is null ? null : _timeProvider.GetUtcNow();
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
             async () => ParseSendReply(
@@ -687,7 +687,7 @@ internal sealed class EmailSender : IPostHogEmails
         }
     }
 
-    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt, DateTimeOffset sentAt)
+    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt, DateTimeOffset? sentAt)
     {
         if (!IsSuccess(reply.Status))
         {
@@ -701,7 +701,7 @@ internal sealed class EmailSender : IPostHogEmails
                      reply.Status);
         var warnings = new List<EmailWarning>();
         if (reply.Fields is { } fields
-            && fields.TryGetProperty("warnings", out var list)
+            && TryField(fields, "warnings", out var list)
             && list.ValueKind == JsonValueKind.Array)
         {
             foreach (var warning in list.EnumerateArray())
@@ -724,10 +724,10 @@ internal sealed class EmailSender : IPostHogEmails
         }
 
         var replayed = reply.Fields is { } replyFields
-                       && replyFields.TryGetProperty("replayed", out var replayedValue)
+                       && TryField(replyFields, "replayed", out var replayedValue)
                        && replayedValue.ValueKind == JsonValueKind.True;
-        var (status, confirmedAt) = scheduledAt is { } requested
-            ? ConfirmSchedule(reply, id, requested, sentAt)
+        var (status, confirmedAt) = scheduledAt is { } requested && sentAt is { } sent
+            ? ConfirmSchedule(reply, id, requested, sent)
             : ("queued", null);
         return new SendEmailResult
         {
@@ -771,7 +771,7 @@ internal sealed class EmailSender : IPostHogEmails
         DateTimeOffset sentAt)
     {
         var fields = reply.Fields!.Value;
-        if (fields.TryGetProperty(ScheduledAtField, out var answered))
+        if (TryField(fields, ScheduledAtField, out var answered))
         {
             switch (Text(fields, "status"))
             {
@@ -810,6 +810,23 @@ internal sealed class EmailSender : IPostHogEmails
            || (time.Length > 6 && time[time.Length - 6] is '+' or '-' && time[time.Length - 3] == ':');
 
     // GetString throws on an unpaired surrogate escape, which would hide an accepted email and its message ID.
+    /// <summary>
+    /// Looks up a field of a reply. <c>false</c> when the reply has no such field, and also when the lookup throws on
+    /// an unpaired surrogate escape in another field's name, which would hide an accepted email and its message ID.
+    /// </summary>
+    static bool TryField(JsonElement element, string name, out JsonElement value)
+    {
+        try
+        {
+            return element.TryGetProperty(name, out value);
+        }
+        catch (InvalidOperationException)
+        {
+            value = default;
+            return false;
+        }
+    }
+
     static string? StringValue(JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.String)
@@ -873,7 +890,7 @@ internal sealed class EmailSender : IPostHogEmails
 
     static string? Text(JsonElement? element, string name)
         => element is { ValueKind: JsonValueKind.Object } value
-           && value.TryGetProperty(name, out var property)
+           && TryField(value, name, out var property)
            && StringValue(property) is { Length: > 0 } text
             ? text
             : null;

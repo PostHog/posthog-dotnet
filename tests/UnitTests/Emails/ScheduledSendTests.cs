@@ -220,6 +220,58 @@ public class TheSendAsyncMethodWithScheduledAt
     }
 
     [Fact]
+    public async Task MeasuresTheMinuteFromTheFirstAttemptAcrossARetry()
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        harness.Time.Now = DueTime.AddSeconds(-61);
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-30);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        });
+        posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted)
+        {
+            Content = new StringContent(
+                $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null}""",
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        }));
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Equal(2, posthog.Requests.Count);
+        Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
+    }
+
+    [Fact]
+    public async Task SendsAnEmailWithoutScheduledAtWithoutReadingTheClock()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, $$"""{"message_id": "{{MessageId}}"}""");
+        harness.Time.Broken = true;
+
+        var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal((MessageId, "queued"), (result.Id, result.Status));
+    }
+
+    [Fact]
+    public async Task FailsWithTheMessageIdWhenAFieldNameIsUnreadable()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "scheduled", "schedul\ud800ed_at": "{{Due}}"}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
+    }
+
+    [Fact]
     public async Task ReturnsTheConfirmedScheduleWhenTheLoggerThrows()
     {
         await using var harness = new EmailHarness(loggerFactory: new ThrowingLoggerFactory());

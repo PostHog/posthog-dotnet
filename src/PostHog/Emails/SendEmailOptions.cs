@@ -45,7 +45,8 @@ public abstract class SendEmailOptions
     /// <remarks>
     /// PostHog keeps the time to the millisecond, so the client rounds a finer time up to the next millisecond and
     /// sends that time on every retry. The result's <see cref="SendEmailResult.Status"/> is <c>scheduled</c> with the
-    /// confirmed <see cref="SendEmailResult.ScheduledAt"/>, or <c>queued</c> when the time had passed.
+    /// confirmed <see cref="SendEmailResult.ScheduledAt"/>, or <c>queued</c> when the time had passed or was at most
+    /// 60 seconds ahead of this machine's clock when the send went out.
     /// <see cref="IPostHogEmails.GetAsync"/> reads <c>scheduled</c> until the email goes out.
     /// <para>
     /// A client whose app host isn't PostHog Cloud US or EU, such as a self-hosted PostHog, a reverse proxy or a
