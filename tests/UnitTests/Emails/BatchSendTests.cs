@@ -256,15 +256,17 @@ public class TheBatchAsyncMethod
     public async Task NamesTheAppsHttpClientTimeoutWhenItEndsAnAttemptFirst()
     {
         await using var harness = new EmailHarness();
-        harness.HttpClient.Timeout = TimeSpan.FromMilliseconds(50);
-        harness.Hang();
+        harness.HttpClient.Timeout = TimeSpan.FromSeconds(7);
+        harness.Fail(new TaskCanceledException(
+            "The request was canceled due to the configured HttpClient.Timeout of 7 seconds elapsing.",
+            new TimeoutException()));
         harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
 
         Assert.Equal(
-            ("network_error", "The request to PostHog timed out after 0.05s, the Timeout of the app's HttpClient."),
+            ("network_error", "The request to PostHog timed out after 7s, the Timeout of the app's HttpClient."),
             (error.Code, error.Message));
     }
 
