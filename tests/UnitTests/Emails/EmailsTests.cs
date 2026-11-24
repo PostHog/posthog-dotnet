@@ -577,15 +577,13 @@ public class TheSendAsyncMethodWithCodeContent
     public async Task UploadsAttachmentsBeforeMarketingRefusal(string code)
     {
         using var posthog = new FakePostHogEmails();
-        using var transport = new CategorizedAttachmentTransport(
-            posthog,
-            () => new HttpResponseMessage(HttpStatusCode.BadRequest)
-            {
-                Content = new StringContent(
-                    $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""",
-                    Encoding.UTF8,
-                    "application/json"),
-            });
+        using var transport = new CategorizedSendHandler(posthog);
+        transport.EnqueueSendResponse(
+            HttpStatusCode.BadRequest,
+            $$"""{"type":"invalid_request","code":"{{code}}","detail":"Marketing emails cannot carry attachments.","attr":"attachments"}""");
+        transport.EnqueueSendResponse(
+            HttpStatusCode.Accepted,
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: transport);
 
         var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
@@ -631,6 +629,7 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal("attachments", error.Field);
+        Assert.Equal(1, transport.StorageWritesAtSend);
         Assert.Equal(1, posthog.StorageWrites);
         Assert.Empty(posthog.Delivered);
         AssertSignedPdfUploadBeforeSend(
@@ -646,7 +645,10 @@ public class TheSendAsyncMethodWithCodeContent
     public async Task UploadsAttachmentsAndSendsTransactionalCategoryOnTheWire()
     {
         using var posthog = new FakePostHogEmails();
-        using var transport = new CategorizedAttachmentTransport(posthog);
+        using var transport = new CategorizedSendHandler(posthog);
+        transport.EnqueueSendResponse(
+            HttpStatusCode.Accepted,
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
         await using var harness = new EmailHarness(posthog: transport);
 
         var sendTask = harness.Client.Emails.SendAsync(new SendCodeEmailOptions
@@ -688,13 +690,9 @@ public class TheSendAsyncMethodWithCodeContent
 
         var result = await sendTask;
 
-        Assert.Equal(FakePostHogEmails.MessageId, result.Id);
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        Assert.Equal(1, transport.StorageWritesAtSend);
         Assert.Equal(1, posthog.StorageWrites);
-        var delivered = Assert.Single(posthog.Delivered);
-        var deliveredAttachment = Assert.Single(delivered.Attachments);
-        Assert.Equal("invoice.pdf", deliveredAttachment.Filename);
-        Assert.Equal("application/pdf", deliveredAttachment.ContentType);
-        Assert.Equal(BinaryPdfBytes, deliveredAttachment.Content);
         AssertSignedPdfUploadBeforeSend(
             transport.Requests,
             "<p>Receipt</p>",
@@ -756,15 +754,13 @@ public class TheSendAsyncMethodWithCodeContent
         AssertCategoryObject(root.GetProperty("category"), categoryKey, categoryType, categoryName);
     }
 
-    sealed class CategorizedAttachmentTransport(
-        FakePostHogEmails fake,
-        Func<HttpResponseMessage>? sendRefusal = null) : HttpMessageHandler
+    sealed class CategorizedSendHandler(FakePostHogEmails inner) : DelegatingHandler(inner)
     {
-        readonly HttpMessageInvoker _invoker = new(fake, disposeHandler: false);
+        readonly ConcurrentQueue<Func<HttpResponseMessage>> _sendResponses = new();
         readonly List<RecordedRequest> _requests = [];
         readonly TaskCompletionSource<bool> _uploadStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         readonly TaskCompletionSource<bool> _releaseUpload = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        Func<HttpResponseMessage>? _sendRefusal = sendRefusal;
+        int _storageWritesAtSend;
 
         public List<RecordedRequest> Requests
         {
@@ -779,185 +775,92 @@ public class TheSendAsyncMethodWithCodeContent
 
         public Task UploadStarted => _uploadStarted.Task;
 
+        public int StorageWritesAtSend => Volatile.Read(ref _storageWritesAtSend);
+
         public void ReleaseUpload() => _releaseUpload.TrySetResult(true);
+
+        public void EnqueueSendResponse(HttpStatusCode status, string body)
+            => _sendResponses.Enqueue(() => new HttpResponseMessage(status)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var header in request.Headers)
-            {
-                headers[header.Key] = string.Join(", ", header.Value);
-            }
-
-            string? body = null;
-            byte[]? bodyBytes = null;
-            if (request.Content is not null)
-            {
-                foreach (var header in request.Content.Headers)
-                {
-                    headers[header.Key] = string.Join(", ", header.Value);
-                }
-
-#if NET5_0_OR_GREATER
-                bodyBytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
-#else
-                bodyBytes = await request.Content.ReadAsByteArrayAsync();
-#endif
-                body = Encoding.UTF8.GetString(bodyBytes);
-            }
-
+            var recorded = await RecordedRequest.CaptureAsync(request, cancellationToken);
             lock (_requests)
             {
-                _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body, bodyBytes));
+                _requests.Add(recorded);
             }
 
             if (request.Method == HttpMethod.Put)
             {
                 _uploadStarted.TrySetResult(true);
                 await _releaseUpload.Task;
-                return await _invoker.SendAsync(request, cancellationToken);
+                return await base.SendAsync(request, cancellationToken);
             }
 
-            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/")
+            if (request.Method == HttpMethod.Post
+                && request.RequestUri!.AbsolutePath == "/api/messaging/send/email/"
+                && _sendResponses.TryDequeue(out var respond))
             {
-                var refusal = Interlocked.Exchange(ref _sendRefusal, null);
-                if (refusal is not null)
-                {
-                    if (!await AreAllAttachmentsStoredAsync(bodyBytes!, cancellationToken))
-                    {
-                        return new HttpResponseMessage(HttpStatusCode.BadRequest)
-                        {
-                            Content = new StringContent(
-                                """{"type":"validation_error","code":"attachment_not_uploaded","attr":"attachments__0__sha256","detail":"A file this email names isn't uploaded, so PostHog didn't send the email."}""",
-                                Encoding.UTF8,
-                                "application/json"),
-                        };
-                    }
-
-                    return refusal();
-                }
-
-                using var forwarded = new HttpRequestMessage(request.Method, request.RequestUri)
-                {
-                    Content = new ByteArrayContent(StripCategory(bodyBytes!)),
-                };
-                forwarded.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-                foreach (var header in request.Headers)
-                {
-                    forwarded.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-
-                return await _invoker.SendAsync(forwarded, cancellationToken);
+                Interlocked.Exchange(ref _storageWritesAtSend, inner.StorageWrites);
+                return respond();
             }
 
-            return await _invoker.SendAsync(request, cancellationToken);
+            return await base.SendAsync(request, cancellationToken);
         }
+    }
 
-        async Task<bool> AreAllAttachmentsStoredAsync(byte[] bodyBytes, CancellationToken cancellationToken)
-        {
-            using var document = JsonDocument.Parse(bodyBytes);
-            if (!document.RootElement.TryGetProperty("attachments", out var attachments)
-                || attachments.ValueKind != JsonValueKind.Array
-                || attachments.GetArrayLength() == 0)
-            {
-                return false;
-            }
+    [Fact]
+    public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt()
+    {
+        using var posthog = new FakePostHogEmails();
+        using var transport = new CategorizedSendHandler(posthog);
+        await using var harness = new EmailHarness(posthog: transport);
+        var email = CodeSendIn(
+            new MessageCategory { Key = "newsletter", Type = MessageCategoryType.Marketing, Name = "Newsletter" });
 
-            var probeFiles = new List<Dictionary<string, object>>();
-            foreach (var attachment in attachments.EnumerateArray())
-            {
-                if (!attachment.TryGetProperty("sha256", out var sha256)
-                    || sha256.ValueKind != JsonValueKind.String
-                    || sha256.GetString() is not { } hash)
-                {
-                    return false;
-                }
+        var error = await Assert.ThrowsAsync<EmailException>(() => harness.Client.Emails.SendAsync(email));
 
-                probeFiles.Add(new Dictionary<string, object> { ["sha256"] = hash, ["size"] = 1 });
-            }
-
-            using var probe = new HttpRequestMessage(HttpMethod.Post, "https://us.posthog.com/api/messaging/attachments/uploads/")
-            {
-                Content = new StringContent(
-                    JsonSerializer.Serialize(new Dictionary<string, object> { ["files"] = probeFiles }),
-                    Encoding.UTF8,
-                    "application/json"),
-            };
-            probe.Headers.Authorization = new AuthenticationHeaderValue("Bearer", FakePostHogEmails.SecretKey);
-            using var probeResponse = await _invoker.SendAsync(probe, cancellationToken);
-            if (!probeResponse.IsSuccessStatusCode)
-            {
-                return false;
-            }
-
-#if NET5_0_OR_GREATER
-            var probeBody = await probeResponse.Content.ReadAsByteArrayAsync(cancellationToken);
-#else
-            var probeBody = await probeResponse.Content.ReadAsByteArrayAsync();
-#endif
-            using var probeDocument = JsonDocument.Parse(probeBody);
-            foreach (var file in probeDocument.RootElement.GetProperty("files").EnumerateArray())
-            {
-                if (!string.Equals(file.GetProperty("status").GetString(), "present", StringComparison.Ordinal))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        static byte[] StripCategory(byte[] bodyBytes)
-        {
-            using var document = JsonDocument.Parse(bodyBytes);
-            using var buffer = new MemoryStream();
-            using (var writer = new Utf8JsonWriter(buffer))
-            {
-                writer.WriteStartObject();
-                foreach (var property in document.RootElement.EnumerateObject())
-                {
-                    if (!string.Equals(property.Name, "category", StringComparison.Ordinal))
-                    {
-                        property.WriteTo(writer);
-                    }
-                }
-
-                writer.WriteEndObject();
-            }
-
-            return buffer.ToArray();
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _invoker.Dispose();
-            }
-
-            base.Dispose(disposing);
-        }
+        Assert.Equal("invalid_request", error.Code);
+        Assert.Equal("validation_error", error.Name);
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal("category", error.Field);
+        Assert.Equal("PostHog doesn't take this field, so it doesn't send the email without it.", error.Message);
+        Assert.Empty(posthog.Delivered);
+        var request = Assert.Single(transport.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(SendUrl, request.Url);
+        using var body = JsonDocument.Parse(request.Body!);
+        var root = body.RootElement;
+        AssertObjectKeys(root, CategorizedCodeSendKeys);
+        AssertCodeSendFields(root, email);
+        AssertCategoryObject(root.GetProperty("category"), "newsletter", "marketing", "Newsletter");
     }
 
     [Theory]
     [InlineData(
-        """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"Unknown field: category."}""",
+        """{"type":"validation_error","code":"invalid_input","attr":"category","detail":"PostHog doesn't take this field, so it doesn't send the email without it."}""",
         "invalid_input",
         "category",
+        "PostHog doesn't take this field, so it doesn't send the email without it.",
         null,
         null)]
     [InlineData(
-        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Wait until PostHog accepts `category`, then send the email again."}""",
+        """{"type":"invalid_request","code":"field_not_accepted","attr":"category","detail":"PostHog doesn't take this field yet, so it didn't send the email.","why":"This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.","fix":"Send the email without this field, or send it again once PostHog takes the field."}""",
         "field_not_accepted",
         "category",
+        "PostHog doesn't take this field yet, so it didn't send the email.",
         "This PostHog version doesn't take the field yet, so it refused the email instead of sending it without it.",
-        "Wait until PostHog accepts `category`, then send the email again.")]
-    public async Task RefusesACategoryOnAnOlderPostHogWithoutRetryingOrDroppingIt(
+        "Send the email without this field, or send it again once PostHog takes the field.")]
+    public async Task MapsOlderPostHogRefusalEnvelopesWithoutRetrying(
         string responseBody,
         string expectedCode,
         string expectedField,
+        string expectedMessage,
         string? expectedWhy,
         string? expectedFix)
     {
@@ -974,6 +877,7 @@ public class TheSendAsyncMethodWithCodeContent
         Assert.Equal("validation_error", error.Name);
         Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
         Assert.Equal(expectedField, error.Field);
+        Assert.Equal(expectedMessage, error.Message);
         Assert.Equal(expectedWhy, error.Why);
         Assert.Equal(expectedFix, error.Fix);
         var request = Assert.Single(harness.Requests);
@@ -2272,27 +2176,8 @@ sealed record RecordedRequest(
     byte[]? BodyBytes = null)
 {
     public string? Header(string name) => Headers.TryGetValue(name, out var value) ? value : null;
-}
 
-sealed class RecordingHandler : HttpMessageHandler
-{
-    readonly ConcurrentQueue<Func<CancellationToken, Task<HttpResponseMessage>>> _responses = new();
-    readonly List<RecordedRequest> _requests = [];
-
-    public IReadOnlyList<RecordedRequest> Requests
-    {
-        get
-        {
-            lock (_requests)
-            {
-                return _requests.ToList();
-            }
-        }
-    }
-
-    public void Enqueue(Func<CancellationToken, Task<HttpResponseMessage>> response) => _responses.Enqueue(response);
-
-    protected override async Task<HttpResponseMessage> SendAsync(
+    public static async Task<RecordedRequest> CaptureAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
@@ -2319,9 +2204,36 @@ sealed class RecordingHandler : HttpMessageHandler
             body = Encoding.UTF8.GetString(bodyBytes);
         }
 
+        return new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body, bodyBytes);
+    }
+}
+
+sealed class RecordingHandler : HttpMessageHandler
+{
+    readonly ConcurrentQueue<Func<CancellationToken, Task<HttpResponseMessage>>> _responses = new();
+    readonly List<RecordedRequest> _requests = [];
+
+    public IReadOnlyList<RecordedRequest> Requests
+    {
+        get
+        {
+            lock (_requests)
+            {
+                return _requests.ToList();
+            }
+        }
+    }
+
+    public void Enqueue(Func<CancellationToken, Task<HttpResponseMessage>> response) => _responses.Enqueue(response);
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        var recorded = await RecordedRequest.CaptureAsync(request, cancellationToken);
         lock (_requests)
         {
-            _requests.Add(new RecordedRequest(request.Method, request.RequestUri!.AbsoluteUri, headers, body, bodyBytes));
+            _requests.Add(recorded);
         }
 
         if (!_responses.TryDequeue(out var respond))
