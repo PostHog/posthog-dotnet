@@ -118,13 +118,18 @@ internal sealed partial class EmailSender
                 return;
             }
 
-            EmailStatus status;
+            string? id;
             try
             {
                 var url = new Uri(appHost + StatusByKeyPath + Uri.EscapeDataString(row.IdempotencyKey));
-                status = ParseStatusReply(
-                    await RequestAsync(HttpMethod.Get, url, secretKey, body: null, idempotencyKey: null, cancellationToken)
-                        .ConfigureAwait(false));
+                var reply = await RequestAsync(HttpMethod.Get, url, secretKey, body: null, idempotencyKey: null, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!IsSuccess(reply.Status))
+                {
+                    throw ReplyError(reply);
+                }
+
+                id = Text(reply.Fields, "id");
             }
             catch (EmailException e) when (e.StatusCode == HttpStatusCode.NotFound)
             {
@@ -135,7 +140,12 @@ internal sealed partial class EmailSender
                 return;
             }
 
-            if (!IsMessageId(status.Id))
+            if (id is null)
+            {
+                return;
+            }
+
+            if (!IsMessageId(id))
             {
                 row.AddLaterError(new EmailException(
                     "api_error",
@@ -143,7 +153,7 @@ internal sealed partial class EmailSender
             }
             else
             {
-                row.Identify(status.Id);
+                row.Identify(id);
             }
         }
     }

@@ -431,6 +431,22 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
+    public async Task TakesTheMessageIdOfAStatusReadByKeyThatLacksOtherFields()
+    {
+        await using var harness = new EmailHarness();
+        const string inFlight = """{"error":{"code":"idempotency_key_in_flight","detail":"In flight.","status":409}}""";
+        harness.Respond(HttpStatusCode.OK, Ok(inFlight, inFlight));
+        harness.Respond(HttpStatusCode.OK, $$"""{"id":"{{M0}}","status":"sent"}""");
+        harness.Respond(HttpStatusCode.OK, StatusFound(M1));
+
+        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(2)));
+
+        Assert.Equal(
+            [("unconfirmed", M0, null), ("unconfirmed", M1, null)],
+            result.Results.Select(r => (r.Status, r.MessageId, r.LaterError)));
+    }
+
+    [Fact]
     public async Task ReadsEachUnconfirmedEmailByItsKeyAfterABatchThatSucceeds()
     {
         await using var harness = new EmailHarness();
