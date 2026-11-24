@@ -45,6 +45,8 @@ The test projects target both `net8.0` and `netcoreapp3.1`. While .NET Core 3.1 
 
 This testing approach ensures broad compatibility without requiring users to install legacy runtimes in production.
 
+The .NET Core 3.1 runtime is not installed to run these tests. The test projects use `RollForward=Major`, so the `netcoreapp3.1` tests run on the oldest newer major runtime that is installed. CI installs the .NET 8 runtime for them, and you need it locally too, alongside the .NET 9 SDK. If .NET 9 is the oldest runtime you have, four `EmailsTests` fail on `netcoreapp3.1` with a `MissingMethodException` from `System.Net.NameResolutionMetrics`.
+
 ## Performance benchmarks
 
 Every opened, reopened, or updated pull request runs `.github/workflows/benchmarks.yml`.
