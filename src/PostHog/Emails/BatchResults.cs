@@ -32,12 +32,12 @@ public sealed class BatchEmailResult
     public required string To { get; init; }
 
     /// <summary>
-    /// The recipient's idempotency key, given or made by the client. Every retry of the batch sent this key.
+    /// The recipient's idempotency key, given or made by the client. Every retry of the batch request sent this key.
     /// </summary>
     public required string IdempotencyKey { get; init; }
 
     /// <summary>
-    /// <c>queued</c>, <c>failed</c>, <c>unconfirmed</c> or <c>not_attempted</c>.
+    /// <c>queued</c>, <c>failed</c> or <c>unconfirmed</c>.
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
@@ -47,9 +47,7 @@ public sealed class BatchEmailResult
     /// address.</item>
     /// <item><c>unconfirmed</c>: the client can't tell whether PostHog queued the email, such as after a lost answer.
     /// It may still go out. Send it again with the same <see cref="IdempotencyKey"/> within 24 hours, so it goes out
-    /// once. <see cref="LaterError"/> holds what a retry in the same call answered.</item>
-    /// <item><c>not_attempted</c>: an earlier request of the batch failed, so the client sent nothing for this
-    /// recipient.</item>
+    /// once.</item>
     /// </list>
     /// </remarks>
     public required string Status { get; init; }
@@ -70,10 +68,4 @@ public sealed class BatchEmailResult
     /// <c>queued</c> email.
     /// </summary>
     public EmailException? Error { get; init; }
-
-    /// <summary>
-    /// For an <c>unconfirmed</c> email, what a later retry in the same call answered about it. It
-    /// describes only that answer: the email may still go out.
-    /// </summary>
-    public EmailException? LaterError { get; init; }
 }

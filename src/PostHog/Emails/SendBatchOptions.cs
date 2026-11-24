@@ -15,13 +15,12 @@ public abstract class SendBatchOptions
     }
 
     /// <summary>
-    /// 1 or more recipients, each sent its own email. The client sends at most 100 recipients, and at most 4 MiB of
-    /// JSON, per request.
+    /// 1 to 100 recipients, each sent its own email, all in one request.
     /// </summary>
     public required IReadOnlyList<BatchRecipient> Recipients { get; init; }
 
     /// <summary>
-    /// Overrides <see cref="PostHogOptions.EmailRequestMaxRetries"/> for each request of this batch. <c>0</c> turns
+    /// Overrides <see cref="PostHogOptions.EmailRequestMaxRetries"/> for this batch's request. <c>0</c> turns
     /// retries off.
     /// </summary>
     public int? MaxRetries { get; init; }

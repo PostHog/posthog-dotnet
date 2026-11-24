@@ -211,8 +211,6 @@ PostHog.Emails.BatchEmailResult.IdempotencyKey.get -> string!
 PostHog.Emails.BatchEmailResult.IdempotencyKey.init -> void
 PostHog.Emails.BatchEmailResult.Index.get -> int
 PostHog.Emails.BatchEmailResult.Index.init -> void
-PostHog.Emails.BatchEmailResult.LaterError.get -> PostHog.Emails.EmailException?
-PostHog.Emails.BatchEmailResult.LaterError.init -> void
 PostHog.Emails.BatchEmailResult.MessageId.get -> string?
 PostHog.Emails.BatchEmailResult.MessageId.init -> void
 PostHog.Emails.BatchEmailResult.Replayed.get -> bool

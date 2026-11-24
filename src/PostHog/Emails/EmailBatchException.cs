@@ -1,18 +1,19 @@
 namespace PostHog.Emails;
 
 /// <summary>
-/// A request of <see cref="IPostHogEmails.BatchAsync"/> failed as a whole, such as a rate limit past its retries, so
-/// the batch stopped.
+/// The request of <see cref="IPostHogEmails.BatchAsync"/> failed as a whole, such as a rate limit past its retries or
+/// a batch PostHog refuses as too large.
 /// </summary>
 /// <remarks>
-/// The <see cref="EmailException"/> properties describe that request's error, which is also the
-/// <see cref="Exception.InnerException"/>. <see cref="Results"/> holds every recipient: those of earlier requests as
-/// PostHog answered them, those of the failed request as <c>failed</c>, or <c>unconfirmed</c> where an earlier attempt
-/// may have queued them, and the rest as <c>not_attempted</c>. <see cref="EmailException.Code"/> is
+/// The <see cref="EmailException"/> properties describe the request's error, which is also the
+/// <see cref="Exception.InnerException"/>. <see cref="Results"/> holds every recipient: <c>unconfirmed</c> when the
+/// answer was lost or PostHog still holds the request, so the email may still go out, and <c>failed</c> otherwise.
+/// <see cref="EmailException.Code"/> is <c>too_large</c> with HTTP 413 when the batch is larger than PostHog takes in
+/// one request: split the recipients into smaller batches. <see cref="EmailException.Code"/> is
 /// <c>batch_unavailable</c> when the project can't send batches yet, and <see cref="EmailException.Name"/> is
 /// <c>not_found</c> when the template doesn't exist or batch sends are off for the project: send each email the batch
 /// didn't queue with <see cref="IPostHogEmails.SendAsync"/> and its recipient's idempotency key.
-/// <c>client_closed</c> means the client shut down during the batch.
+/// <c>client_closed</c> means the client shut down before a retry.
 /// </remarks>
 public sealed class EmailBatchException : EmailException
 {
@@ -71,7 +72,7 @@ public sealed class EmailBatchException : EmailException
     public IReadOnlyList<BatchEmailResult> Results { get; } = [];
 
     /// <summary>
-    /// The warnings PostHog returned about the requests that went out, each once. The client also logs each one.
+    /// The warnings PostHog returned about the batch, each once. The client also logs each one.
     /// </summary>
     public IReadOnlyList<EmailWarning> Warnings { get; } = [];
 }

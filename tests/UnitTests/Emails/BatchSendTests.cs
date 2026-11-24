@@ -129,6 +129,7 @@ public class TheBatchAsyncMethod
     public static TheoryData<string, SendBatchOptions> InvalidBatches => new()
     {
         { "Recipients must hold at least one recipient", Batch([]) },
+        { "Recipients holds 101 recipients, and a batch takes at most 100", Batch(Recipients(101)) },
         { "Recipients must hold at least one recipient", new SendTemplateBatchOptions { TemplateId = TemplateId, Recipients = null! } },
         { "Recipients[0] must not be null", Batch([null!]) },
         { "Recipients[1]: To", Batch([.. Recipients(1), new BatchRecipient { To = " " }]) },
@@ -165,159 +166,36 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
-    public async Task SplitsBy100RecipientsAndSendsTheRequestsInOrder()
+    public async Task SendsUpTo100RecipientsInOneRequestWhateverItsSize()
     {
         await using var harness = new EmailHarness();
-        AllQueued(harness, times: 3);
+        AllQueued(harness);
 
-        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(250)));
+        var result = await harness.Client.Emails.BatchAsync(
+            Batch(Recipients(100, new Dictionary<string, object> { ["note"] = new string('x', FourMiB / 50) })));
 
-        Assert.Equal([100, 100, 50], harness.Requests.Select(r => Keys(r).Length));
-        Assert.Equal(Enumerable.Range(0, 250), result.Results.Select(r => r.Index));
-        Assert.Equal(Enumerable.Range(0, 250).Select(i => MessageIdFor($"key-{i}")), result.Results.Select(r => r.MessageId));
+        Assert.Equal(100, Keys(Assert.Single(harness.Requests)).Length);
+        Assert.Equal(Enumerable.Range(0, 100), result.Results.Select(r => r.Index));
         Assert.All(result.Results, r => Assert.Equal("queued", r.Status));
     }
 
     [Fact]
-    public async Task SplitsBy4MiBAndFailsOnlyARecipientTooLargeAlone()
+    public async Task ReturnsATooLargeRefusalAsTheErrorAndSaysToSplitTheBatch()
     {
         await using var harness = new EmailHarness();
-        AllQueued(harness, times: 2);
-        var recipients = Recipients(5, new Dictionary<string, object> { ["note"] = new string('x', FourMiB / 3) });
-        recipients[3] = new BatchRecipient
-        {
-            To = "user3@example.com",
-            IdempotencyKey = "key-3",
-            TemplateData = new Dictionary<string, object> { ["note"] = new string('y', FourMiB) },
-        };
+        harness.Respond(
+            HttpStatusCode.RequestEntityTooLarge,
+            """{"type":"validation_error","code":"too_large","detail":"The batch is too large."}""");
 
-        var result = await harness.Client.Emails.BatchAsync(Batch(recipients));
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
 
-        Assert.All(harness.Requests, r => Assert.InRange(Encoding.UTF8.GetByteCount(r.Body!), 0, FourMiB));
-        Assert.Equal([["key-0", "key-1"], ["key-2", "key-4"]], harness.Requests.Select(Keys));
-        Assert.Equal(["queued", "queued", "queued", "failed", "queued"], result.Results.Select(r => r.Status));
-        var tooLarge = result.Results[3];
-        Assert.Equal((null, "key-3"), (tooLarge.MessageId, tooLarge.IdempotencyKey));
+        Assert.Single(harness.Requests);
         Assert.Equal(
-            ("content_too_large", "validation_error", "recipients"),
-            (tooLarge.Error!.Code, tooLarge.Error.Name, tooLarge.Error.Field));
-    }
-
-    [Theory]
-    [InlineData(0, 0, new[] { 2, 1 })]
-    [InlineData(1, 1, new[] { 1, 2 })]
-    public async Task FillsARequestUpToExactly4MiB(int overByBytes, int firstBodyItemsShort, int[] perRequest)
-    {
-        await using var harness = new EmailHarness();
-        AllQueued(harness, times: 2);
-        var shell = Bytes($$"""{"template_id":"{{TemplateIdText}}","message_data":{},"recipients":[]}""");
-        var item = Bytes("""{"to":"a@example.com","idempotency_key":"k1","message_data":{"n":""}}""");
-        BatchRecipient Recipient(string key, int padding) => new()
-        {
-            To = "a@example.com",
-            IdempotencyKey = key,
-            TemplateData = new Dictionary<string, object> { ["n"] = new string('a', padding) },
-        };
-
-        await harness.Client.Emails.BatchAsync(Batch(
-        [
-            Recipient("k1", FourMiB - shell - item - 1 - item + overByBytes),
-            Recipient("k2", 0),
-            Recipient("k3", 0),
-        ]));
-
-        Assert.Equal(FourMiB - (firstBodyItemsShort * item), Bytes(harness.Requests[0].Body!));
-        Assert.Equal(perRequest, harness.Requests.Select(r => Keys(r).Length));
-    }
-
-    [Theory]
-    [InlineData(0, new[] { 64, 36 })]
-    [InlineData(1, new[] { 63, 37 })]
-    public async Task KeepsWhatThePipelineCopiesPerRecipientUnder16MiB(int overByBytes, int[] perRequest)
-    {
-        await using var harness = new EmailHarness();
-        AllQueued(harness, times: 2);
-        const int copyOfSharedData = (16 * 1024 * 1024) / 64;
-        var sharedWithoutNote = Bytes("""{"note":""}""");
-        var ownTemplateData = Bytes("{}");
-
-        await harness.Client.Emails.BatchAsync(new SendTemplateBatchOptions
-        {
-            TemplateId = TemplateId,
-            TemplateData = new Dictionary<string, object>
-            {
-                ["note"] = new string('x', copyOfSharedData - sharedWithoutNote - ownTemplateData + overByBytes),
-            },
-            Recipients = Recipients(100),
-        });
-
-        Assert.Equal(perRequest, harness.Requests.Select(r => Keys(r).Length));
-    }
-
-    [Theory]
-    [InlineData("shared", 145_000)]
-    [InlineData("own", 120_000)]
-    public async Task CountsEachNumberAtTheLongestSpellingThePipelineCanGiveIt(string numbersIn, int sharedPadding)
-    {
-        await using var harness = new EmailHarness();
-        AllQueued(harness, times: 2);
-        var amounts = Enumerable.Repeat(1e20, 3_000).ToArray();
-        var shared = new Dictionary<string, object> { ["padding"] = new string('x', sharedPadding) };
-        if (numbersIn == "shared")
-        {
-            shared["amounts"] = amounts;
-        }
-
-        var own = numbersIn == "own" ? new Dictionary<string, object> { ["amounts"] = amounts } : null;
-
-        await harness.Client.Emails.BatchAsync(new SendTemplateBatchOptions
-        {
-            TemplateId = TemplateId,
-            TemplateData = shared,
-            Recipients = Recipients(100, own),
-        });
-
-        Assert.Equal(2, harness.Requests.Count);
-        Assert.Equal(100, harness.Requests.Sum(r => Keys(r).Length));
-        Assert.All(harness.Requests, r => Assert.InRange(JavaScriptCopiedBytes(r), 1, 16 * 1024 * 1024));
-    }
-
-    static long JavaScriptCopiedBytes(RecordedRequest request)
-    {
-        var spelledOut = request.Body!.Replace("1E+20", "100000000000000000000", StringComparison.Ordinal);
-        Assert.NotEqual(request.Body, spelledOut);
-        using var body = JsonDocument.Parse(spelledOut);
-        var shared = Encoding.UTF8.GetByteCount(body.RootElement.GetProperty("message_data").GetRawText());
-        return body.RootElement.GetProperty("recipients").EnumerateArray()
-            .Sum(recipient => shared + (recipient.TryGetProperty("message_data", out var own)
-                ? Encoding.UTF8.GetByteCount(own.GetRawText())
-                : 2L));
-    }
-
-    [Fact]
-    public async Task CountsThePlainTextPostHogDerivesFromHtmlWhenTextIsEmpty()
-    {
-        var html = "<p>" + new string('x', 100_000) + "</p>";
-
-        async Task<int[]> RecipientsPerRequest(string? text)
-        {
-            await using var harness = new EmailHarness();
-            AllQueued(harness, times: 2);
-            await harness.Client.Emails.BatchAsync(new SendCodeBatchOptions
-            {
-                TemplateKey = "welcome",
-                Subject = "Welcome",
-                Html = html,
-                Text = text,
-                Recipients = Recipients(100),
-            });
-            return harness.Requests.Select(r => Keys(r).Length).ToArray();
-        }
-
-        var withoutText = await RecipientsPerRequest(null);
-
-        Assert.Equal(2, withoutText.Length);
-        Assert.Equal(withoutText, await RecipientsPerRequest(""));
+            ("too_large", (HttpStatusCode?)HttpStatusCode.RequestEntityTooLarge, "The batch is too large."),
+            (error.Code, error.StatusCode, error.Message));
+        Assert.Equal("Split the recipients into smaller batches and send each with BatchAsync.", error.Fix);
+        Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
     }
 
     [Theory]
@@ -385,7 +263,7 @@ public class TheBatchAsyncMethod
     [Theory]
     [InlineData("network")]
     [InlineData("503")]
-    public async Task KeepsARecipientUnconfirmedWhenARetryAfterALostAnswerRefusesIt(string lost)
+    public async Task TakesEachRecipientsOutcomeFromTheRetryPostHogAnswersAfterALostAnswer(string lost)
     {
         await using var harness = new EmailHarness();
         if (lost == "network")
@@ -410,9 +288,7 @@ public class TheBatchAsyncMethod
         Assert.Equal(Keys(harness.Requests[0]), Keys(harness.Requests[1]));
         var (first, second) = (result.Results[0], result.Results[1]);
         Assert.Equal(("queued", M0, true), (first.Status, first.MessageId, first.Replayed));
-        Assert.Equal(("unconfirmed", M1), (second.Status, second.MessageId));
-        Assert.Equal(("delivery_unavailable", "service_unavailable"), (second.Error!.Code, second.Error.Name));
-        Assert.Equal("idempotency_key_reused", second.LaterError!.Code);
+        Assert.Equal(("failed", M1, "idempotency_key_reused"), (second.Status, second.MessageId, second.Error!.Code));
         Assert.Equal(Keys(harness.Requests[1])[1], second.IdempotencyKey);
     }
 
@@ -438,29 +314,23 @@ public class TheBatchAsyncMethod
 
         Assert.Equal((status, messageId, code), (result.Status, result.MessageId, result.Error!.Code));
         Assert.Equal(status == "unconfirmed" ? ResendWithTheSameKey : null, result.Error.Fix);
-        Assert.Null(result.LaterError);
         Assert.Equal([BatchUrl], harness.Requests.Select(r => r.Url));
     }
 
     [Fact]
-    public async Task StopsAtTheFirstRequestThatFailsAsAWholeAndReturnsEveryRecipient()
+    public async Task ThrowsARequestRefusedAsAWholeWithEveryRecipientFailed()
     {
         await using var harness = new EmailHarness();
-        AllQueued(harness);
         harness.Respond((HttpStatusCode)429, WholeCall("quota_limited"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(250))));
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(3), maxRetries: 0)));
 
         Assert.Equal(("quota_limited", (HttpStatusCode?)(HttpStatusCode)429, "Nope."), (error.Code, error.StatusCode, error.Message));
         Assert.Equal("quota_limited", Assert.IsType<EmailException>(error.InnerException).Code);
-        Assert.Equal(2, harness.Requests.Count);
-        Assert.Equal(
-            Enumerable.Repeat("queued", 100).Concat(Enumerable.Repeat("failed", 100)).Concat(Enumerable.Repeat("not_attempted", 50)),
-            error.Results.Select(r => r.Status));
-        Assert.Equal(("quota_limited", "Nope."), (error.Results[150].Error!.Code, error.Results[150].Error!.Message));
-        Assert.Equal("not_attempted", error.Results[200].Error!.Code);
-        Assert.Equal("key-249", error.Results[249].IdempotencyKey);
+        Assert.Single(harness.Requests);
+        Assert.Equal(["failed", "failed", "failed"], error.Results.Select(r => r.Status));
+        Assert.Equal(("quota_limited", "key-2"), (error.Results[2].Error!.Code, error.Results[2].IdempotencyKey));
     }
 
     [Fact]
@@ -568,7 +438,7 @@ public class TheBatchAsyncMethod
 
         Assert.Equal("api_error", error.Code);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
-        Assert.All(error.Results, r => Assert.Equal(("api_error", null), (r.Error!.Code, r.LaterError)));
+        Assert.All(error.Results, r => Assert.Equal("api_error", r.Error!.Code));
         Assert.Equal([BatchUrl], harness.Requests.Select(r => r.Url));
     }
 
@@ -616,8 +486,8 @@ public class TheBatchAsyncMethod
         Assert.All(
             error.Results,
             r => Assert.Equal(
-                ("unconfirmed", (string?)null, "idempotency_key_in_flight", "idempotency_key_in_flight", ResendWithTheSameKey),
-                (r.Status, r.MessageId, r.Error!.Code, r.LaterError!.Code, r.Error.Fix)));
+                ("unconfirmed", (string?)null, "idempotency_key_in_flight", ResendWithTheSameKey),
+                (r.Status, r.MessageId, r.Error!.Code, r.Error.Fix)));
     }
 
     [Theory]
@@ -641,7 +511,7 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
-    public async Task KeepsARequestPostHogHeldInFlightUnconfirmedAfterALaterRefusal()
+    public async Task TakesTheRefusalOfTheRetryAfterARequestPostHogHeldInFlight()
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
@@ -651,11 +521,7 @@ public class TheBatchAsyncMethod
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
 
         Assert.Equal("sending_paused", error.Code);
-        Assert.All(
-            error.Results,
-            r => Assert.Equal(
-                ("unconfirmed", "idempotency_key_in_flight", "sending_paused"),
-                (r.Status, r.Error!.Code, r.LaterError!.Code)));
+        Assert.All(error.Results, r => Assert.Equal(("failed", "sending_paused"), (r.Status, r.Error!.Code)));
     }
 
     [Fact]
@@ -663,22 +529,19 @@ public class TheBatchAsyncMethod
     {
         await using var harness = new EmailHarness();
         var data = new Dictionary<string, object> { ["step"] = "before" };
-        harness.RespondTo(request =>
+        harness.RespondTo(_ =>
         {
             data["step"] = "after";
-            data["filler"] = new string('x', 5 * 1024 * 1024);
-            return AllQueuedAnswer(request);
+            return Json(HttpStatusCode.ServiceUnavailable, WholeCall("delivery_unavailable"));
         });
         AllQueued(harness);
 
-        await harness.Client.Emails.BatchAsync(Batch(Recipients(101, data)));
+        await harness.Client.Emails.BatchAsync(Batch(Recipients(2, data)));
 
         Assert.Equal(2, harness.Requests.Count);
         Assert.All(harness.Requests, request =>
         {
             var recipients = JsonDocument.Parse(request.Body!).RootElement.GetProperty("recipients");
-            Assert.InRange(recipients.GetArrayLength(), 1, 100);
-            Assert.InRange(Encoding.UTF8.GetByteCount(request.Body!), 1, 4 * 1024 * 1024);
             Assert.All(
                 recipients.EnumerateArray(),
                 recipient => Assert.Equal(
@@ -691,12 +554,13 @@ public class TheBatchAsyncMethod
     public async Task ReadsEachTemplateDataOnlyOnce()
     {
         await using var harness = new EmailHarness();
-        AllQueued(harness, times: 2);
+        harness.Respond(HttpStatusCode.ServiceUnavailable, WholeCall("delivery_unavailable"));
+        AllQueued(harness);
         var batch = new SendTemplateBatchOptions
         {
             TemplateId = TemplateId,
             TemplateData = new Dictionary<string, object> { ["shared"] = new ReadableOnce("all") },
-            Recipients = Enumerable.Range(0, 101)
+            Recipients = Enumerable.Range(0, 100)
                 .Select(i => new BatchRecipient
                 {
                     To = $"user{i}@example.com",
@@ -709,13 +573,15 @@ public class TheBatchAsyncMethod
         await harness.Client.Emails.BatchAsync(batch);
 
         var bodies = harness.Requests.Select(r => JsonDocument.Parse(r.Body!).RootElement).ToList();
-        Assert.All(bodies, body => Assert.Equal(
-            "all",
-            body.GetProperty("message_data").GetProperty("shared").GetProperty("value").GetString()));
-        Assert.Equal(
-            Enumerable.Range(0, 101).Select(i => $"r{i}"),
-            bodies.SelectMany(body => body.GetProperty("recipients").EnumerateArray())
-                .Select(recipient => recipient.GetProperty("message_data").GetProperty("own").GetProperty("value").GetString()));
+        Assert.Equal(2, bodies.Count);
+        Assert.All(bodies, body =>
+        {
+            Assert.Equal("all", body.GetProperty("message_data").GetProperty("shared").GetProperty("value").GetString());
+            Assert.Equal(
+                Enumerable.Range(0, 100).Select(i => $"r{i}"),
+                body.GetProperty("recipients").EnumerateArray()
+                    .Select(recipient => recipient.GetProperty("message_data").GetProperty("own").GetProperty("value").GetString()));
+        });
     }
 
     sealed class ReadableOnce(string value)
@@ -759,86 +625,40 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData("recipients__37__idempotency_key", "recipients__137__idempotency_key")]
+    [InlineData("recipients__37__idempotency_key", "recipients__37__idempotency_key")]
     [InlineData("recipients__²__idempotency_key", "recipients__²__idempotency_key")]
     [InlineData("recipients__99999__idempotency_key", "recipients")]
-    [InlineData("recipients__50__idempotency_key", "recipients")]
+    [InlineData("recipients__100__idempotency_key", "recipients")]
     [InlineData("recipients__2147483648__to", "recipients")]
     [InlineData("recipients__1\\u0000__to", "recipients__1\u0000__to")]
     [InlineData("subject", "subject")]
     public async Task NamesARefusedRecipientFieldByItsPositionInRecipients(string attr, string field)
     {
         await using var harness = new EmailHarness();
-        AllQueued(harness);
         harness.Respond(
             HttpStatusCode.BadRequest,
             $$"""{"type":"validation_error","code":"max_length","detail":"Too long.","attr":"{{attr}}"}""");
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(150))));
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(100))));
 
         Assert.Equal(field, error.Field);
-        Assert.Equal(
-            Enumerable.Repeat("queued", 100).Concat(Enumerable.Repeat("failed", 50)),
-            error.Results.Select(r => r.Status));
+        Assert.All(error.Results, r => Assert.Equal("failed", r.Status));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ReturnsAndLogsEachWarningOnce(bool laterRequestFails)
+    [Fact]
+    public async Task ReturnsAndLogsEachWarningOnce()
     {
         await using var harness = new EmailHarness();
         const string warning = """{"code":"sandbox_sender","detail":"Sent from the test sender."}""";
-        harness.RespondTo(request => Json(HttpStatusCode.OK, OkWithWarnings(warning, QueuedSlots(request))));
-        if (laterRequestFails)
-        {
-            harness.Respond((HttpStatusCode)429, WholeCall("quota_limited"));
-        }
-        else
-        {
-            harness.RespondTo(request => Json(HttpStatusCode.OK, OkWithWarnings(warning, QueuedSlots(request))));
-        }
+        harness.RespondTo(request => Json(HttpStatusCode.OK, OkWithWarnings(warning + "," + warning, QueuedSlots(request))));
 
-        IReadOnlyList<EmailWarning> warnings;
-        if (laterRequestFails)
-        {
-            warnings = (await Assert.ThrowsAsync<EmailBatchException>(
-                () => harness.Client.Emails.BatchAsync(Batch(Recipients(150))))).Warnings;
-        }
-        else
-        {
-            warnings = (await harness.Client.Emails.BatchAsync(Batch(Recipients(150)))).Warnings;
-        }
+        var warnings = (await harness.Client.Emails.BatchAsync(Batch(Recipients(2)))).Warnings;
 
         Assert.Equal(["sandbox_sender"], warnings.Select(w => w.Code));
         Assert.Single(
             harness.Logs.GetAllEvents(minimumLevel: LogLevel.Warning),
             e => e.Message?.Contains("sandbox_sender", StringComparison.Ordinal) == true);
-    }
-
-    [Fact]
-    public async Task StopsBeforeTheNextRequestWhenTheClientShutsDown()
-    {
-        await using var harness = new EmailHarness();
-        Task? shutdown = null;
-        harness.RespondTo(request =>
-        {
-            shutdown = harness.Client.DisposeAsync().AsTask();
-            return AllQueuedAnswer(request);
-        });
-        AllQueued(harness);
-
-        var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(150))));
-        await shutdown!;
-
-        Assert.Equal("client_closed", error.Code);
-        Assert.Single(harness.Requests);
-        Assert.Equal(
-            Enumerable.Repeat("queued", 100).Concat(Enumerable.Repeat("not_attempted", 50)),
-            error.Results.Select(r => r.Status));
-        Assert.Equal("client_closed", error.Results[100].Error!.Code);
     }
 
     [Fact]
@@ -851,17 +671,14 @@ public class TheBatchAsyncMethod
             shutdown = harness.Client.DisposeAsync().AsTask();
             return Json((HttpStatusCode)429, WholeCall("throttled"));
         });
-        AllQueued(harness);
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(150))));
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
         await shutdown!;
 
         Assert.Equal("client_closed", error.Code);
         Assert.Single(harness.Requests);
-        Assert.Equal(
-            Enumerable.Repeat("failed", 100).Concat(Enumerable.Repeat("not_attempted", 50)),
-            error.Results.Select(r => r.Status));
+        Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
         Assert.Equal("client_closed", error.Results[0].Error!.Code);
     }
 
@@ -949,8 +766,6 @@ public class TheBatchAsyncMethod
 
     static HttpResponseMessage Json(HttpStatusCode status, string body)
         => new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-
-    static int Bytes(string text) => Encoding.UTF8.GetByteCount(text);
 
     static void AssertSameFields(string expected, string? actual)
     {

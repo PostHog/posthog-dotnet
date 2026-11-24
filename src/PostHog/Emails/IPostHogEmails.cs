@@ -34,23 +34,19 @@ public interface IPostHogEmails
     /// <see cref="BatchRecipient.TemplateData"/> per recipient, or from content your code rendered.
     /// </summary>
     /// <remarks>
-    /// The client sends the recipients in requests of at most 100 recipients and 4 MiB of JSON, one after another. It
-    /// also splits them by its estimate of the 16 MiB that PostHog's email pipeline copies at once: the shared
-    /// <see cref="SendTemplateBatchOptions.TemplateData"/> or content once per recipient, plus each recipient's own
-    /// <see cref="BatchRecipient.TemplateData"/>. For content your code rendered, the estimate leaves out the sender
-    /// and tracking data PostHog adds, so a request close to that limit can still be refused whole with
-    /// <c>content_too_large</c>. The client waits up to 45 seconds for each answer, or
+    /// The client sends up to 100 recipients in one request. It checks only the number of recipients: PostHog refuses
+    /// a batch that is too large for it as a whole, with HTTP 413 and <c>too_large</c>, and the client throws that
+    /// refusal. Split the recipients into smaller batches then. The client waits up to 45 seconds for the answer, or
     /// <see cref="PostHogOptions.EmailRequestTimeout"/> when that is longer. The <see cref="HttpClient.Timeout"/> of
     /// the <see cref="HttpClient"/> the client sends through still ends an attempt when it is shorter, so give that
-    /// <see cref="HttpClient"/> a timeout of at least 45 seconds. A recipient too large for any request alone is
-    /// <c>failed</c> with <c>content_too_large</c>, and the rest still go out.
+    /// <see cref="HttpClient"/> a timeout of at least 45 seconds.
     /// <para>
     /// Each recipient has an idempotency key, its <see cref="BatchRecipient.IdempotencyKey"/> or one the client makes,
     /// that every retry reuses, so a retry never queues an email twice. PostHog replays a key for 24 hours after the
     /// first request that used it: a batch sent again within that window that passes the same
     /// <see cref="BatchRecipient.IdempotencyKey"/> values queues no second email for a recipient PostHog already
     /// accepted. Keys the client makes cover the retries of one call only. Network errors, rate limits, a key still in
-    /// flight and an unavailable service are retried for each request. An <c>unconfirmed</c> email may still go out:
+    /// flight and an unavailable service are retried. An <c>unconfirmed</c> email may still go out:
     /// send it again with the same key within 24 hours, so it goes out once.
     /// </para>
     /// </remarks>
@@ -64,11 +60,12 @@ public interface IPostHogEmails
     /// <c>unconfirmed</c> email again with the same key within 24 hours, so it goes out once.
     /// </returns>
     /// <exception cref="ArgumentException">
-    /// An option is invalid, such as two recipients with the same idempotency key. No request was made.
+    /// An option is invalid, such as more than 100 recipients or two recipients with the same idempotency key. No
+    /// request was made.
     /// </exception>
     /// <exception cref="EmailBatchException">
-    /// A request failed as a whole, so the batch stopped. <see cref="EmailBatchException.Results"/> holds every
-    /// recipient, those not sent as <c>not_attempted</c>.
+    /// The request failed as a whole, such as a batch PostHog refuses as too large.
+    /// <see cref="EmailBatchException.Results"/> holds every recipient.
     /// </exception>
     /// <exception cref="EmailException">The client sent nothing, such as when it is disabled.</exception>
     Task<SendBatchResult> BatchAsync(SendBatchOptions batch, CancellationToken cancellationToken = default);
