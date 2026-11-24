@@ -30,7 +30,7 @@ internal sealed class EmailSender : IPostHogEmails
 
     const string EuAppHost = "https://eu.posthog.com";
     const string ScheduledAtField = "scheduled_at";
-    static readonly TimeSpan MaxClockDrift = TimeSpan.FromMinutes(1);
+    static readonly TimeSpan MaxClockDrift = TimeSpan.FromSeconds(60);
     static readonly string[] AnsweredTimeFormats =
     [
         "yyyy-MM-dd'T'HH:mm:ssK",
@@ -487,7 +487,7 @@ internal sealed class EmailSender : IPostHogEmails
         }
 
         throw new EmailException(
-            "scheduling_unsupported",
+            "scheduling_requires_cloud",
             $"Only PostHog Cloud ({UsAppHost} or {EuAppHost}) schedules emails, and this client sends to "
             + $"{new Uri(appHost).GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped)}, "
             + "so no email was sent.",
@@ -740,7 +740,7 @@ internal sealed class EmailSender : IPostHogEmails
     /// <summary>
     /// Checks that the 202 for a send with <c>scheduled_at</c> confirms the requested time, or says the time had
     /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field or
-    /// sends a time that is still ahead at once, throws <c>scheduling_unconfirmed</c> with the accepted email's
+    /// sends a time that is still ahead at once, throws <c>schedule_not_confirmed</c> with the accepted email's
     /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's.
     /// </summary>
     (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(Reply reply, string id, DateTimeOffset requested)
@@ -759,7 +759,7 @@ internal sealed class EmailSender : IPostHogEmails
         }
 
         throw new EmailException(
-            "scheduling_unconfirmed",
+            "schedule_not_confirmed",
             $"PostHog accepted email {id} without confirming its ScheduledAt, so it may go out at another time.",
             reply.Status,
             fix: $"Read the email's status with GetAsync(\"{id}\") before you send it again: a send with another "

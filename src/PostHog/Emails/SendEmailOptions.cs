@@ -49,9 +49,10 @@ public abstract class SendEmailOptions
     /// <see cref="IPostHogEmails.GetAsync"/> reads <c>scheduled</c> until the email goes out.
     /// <para>
     /// A client whose app host isn't PostHog Cloud US or EU, such as a self-hosted PostHog, a reverse proxy or a
-    /// custom domain, fails with <c>scheduling_unsupported</c> before any request, once the client's other app host
-    /// checks pass. When PostHog accepts the email without confirming the time, the send fails with
-    /// <c>scheduling_unconfirmed</c> and <see cref="EmailException.MessageId"/> names the email, which may go out at
+    /// custom domain, fails with <c>scheduling_requires_cloud</c> before any request, once the client's other app host
+    /// checks pass. When PostHog accepts the email without confirming the time, or answers that it goes out now while
+    /// the time is more than 60 seconds ahead of this machine's clock, the send fails with
+    /// <c>schedule_not_confirmed</c> and <see cref="EmailException.MessageId"/> names the email, which may go out at
     /// another time.
     /// </para>
     /// <para>

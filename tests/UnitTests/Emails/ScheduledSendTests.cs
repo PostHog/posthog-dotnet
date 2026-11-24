@@ -76,6 +76,7 @@ public class TheSendAsyncMethodWithScheduledAt
     [InlineData(-60)]
     [InlineData(0)]
     [InlineData(59)]
+    [InlineData(60)]
     public async Task ReturnsAnEmailThatGoesOutNowWhenTheTimeHadPassed(int secondsAhead)
     {
         await using var harness = new EmailHarness();
@@ -139,7 +140,7 @@ public class TheSendAsyncMethodWithScheduledAt
             () => harness.Client.Emails.SendAsync(TemplateSend(scheduledAt)));
 
         Assert.Single(harness.Requests);
-        Assert.Equal("scheduling_unconfirmed", error.Code);
+        Assert.Equal("schedule_not_confirmed", error.Code);
         Assert.Equal("application_error", error.Name);
         Assert.Equal(HttpStatusCode.Accepted, error.StatusCode);
         Assert.Equal("scheduled_at", error.Field);
@@ -162,7 +163,7 @@ public class TheSendAsyncMethodWithScheduledAt
             () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
 
         Assert.Single(harness.Requests);
-        Assert.Equal("scheduling_unconfirmed", error.Code);
+        Assert.Equal("schedule_not_confirmed", error.Code);
         Assert.Equal(MessageId, error.MessageId);
     }
 
@@ -269,7 +270,7 @@ public class TheSendAsyncMethodWithScheduledAt
         }));
 
         Assert.Empty(harness.Requests);
-        Assert.Equal("scheduling_unsupported", error.Code);
+        Assert.Equal("scheduling_requires_cloud", error.Code);
         Assert.Equal("validation_error", error.Name);
         Assert.Equal("scheduled_at", error.Field);
         Assert.Contains(appHost, error.Message, StringComparison.Ordinal);
@@ -284,7 +285,7 @@ public class TheSendAsyncMethodWithScheduledAt
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
 
-        Assert.Equal("scheduling_unsupported", error.Code);
+        Assert.Equal("scheduling_requires_cloud", error.Code);
         Assert.Contains("https://proxy.example.com", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("proxy-pass", error.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("proxy-user", error.ToString(), StringComparison.Ordinal);
