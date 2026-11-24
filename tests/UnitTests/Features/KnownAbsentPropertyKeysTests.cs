@@ -147,19 +147,42 @@ public class TheLocalEvaluator
         Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, exception.Reason);
     }
 
-    [Fact]
-    public async Task ValueRequiringOperatorWithoutAValueStaysInconclusive()
+    // A filter whose "value" field is omitted (valueJson is null) or JSON null.
+    static string PlanFlagWithoutValue(string operatorName, string? valueJson) => $$$"""
+        {"flags": [{"key": "plan-flag", "active": true, "filters": {"groups": [{"properties": [
+            {"key": "plan", "type": "person", {{{(valueJson is null ? "" : $"\"value\": {valueJson}, ")}}}"operator": "{{{operatorName}}}"}
+        ], "rollout_percentage": 100}]}}]}
+        """;
+
+    [Theory]
+    [InlineData("is_not", null)]
+    [InlineData("is_not", "null")]
+    [InlineData("exact", "null")]
+    [InlineData("gt", "null")]
+    public async Task ValueRequiringOperatorWithoutAValueStaysInconclusive(string operatorName, string? valueJson)
     {
-        var evaluator = await CreateEvaluatorAsync("""
-            {"flags": [{"key": "plan-flag", "active": true, "filters": {"groups": [{"properties": [
-                {"key": "plan", "type": "person", "operator": "is_not"}
-            ], "rollout_percentage": 100}]}}]}
-            """);
+        var evaluator = await CreateEvaluatorAsync(PlanFlagWithoutValue(operatorName, valueJson));
 
-        var exception = Assert.Throws<InconclusiveMatchException>(
+        var listed = Assert.Throws<InconclusiveMatchException>(
             () => evaluator.EvaluateFeatureFlag("plan-flag", "user", knownAbsent: Person("plan")));
+        var present = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("plan-flag", "user", personProperties: new() { ["plan"] = "pro" }));
 
-        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, exception.Reason);
+        // A listed key reports the same reason as a present key with the same filter.
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, listed.Reason);
+        Assert.Equal(present.Reason, listed.Reason);
+    }
+
+    [Theory]
+    [InlineData("is_not_set", true)]
+    [InlineData("is_set", false)]
+    public async Task SetOperatorWithANullValueResolvesForAListedKey(string operatorName, bool expected)
+    {
+        var evaluator = await CreateEvaluatorAsync(PlanFlagWithoutValue(operatorName, "null"));
+
+        var result = evaluator.EvaluateFeatureFlag("plan-flag", "user", knownAbsent: Person("plan"));
+
+        Assert.Equal(expected, result.Value);
     }
 
     [Fact]
@@ -353,6 +376,55 @@ public class ThePostHogClient
 
         Assert.True(flag?.IsEnabled);
         Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    // "plan" is listed as known absent; is_not would match from the known-absent table if the missing value were ignored.
+    static string IsNotPlanDefinitions(string? valueJson) => $$$"""
+        {"flags": [{"key": "plan-flag", "active": true, "filters": {"groups": [{"properties": [
+            {"key": "plan", "type": "person", {{{(valueJson is null ? "" : $"\"value\": {valueJson}, ")}}}"operator": "is_not"}
+        ], "rollout_percentage": 100}]}}]}
+        """;
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("null")]
+    public async Task OmittedOrNullConditionValueOnAListedKeyIsUnresolvedLocally(string? valueJson)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(IsNotPlanDefinitions(valueJson));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"plan-flag": false}}""");
+        await using var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user",
+            new AllFeatureFlagsOptions { PersonPropertyKeysKnownAbsent = ["plan"], OnlyEvaluateLocally = true },
+            CancellationToken.None);
+
+        Assert.Null(snapshot.GetFlag("plan-flag"));
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, snapshot.UnresolvedFlags["plan-flag"]);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("null")]
+    public async Task OmittedOrNullConditionValueOnAListedKeyFallsBackToFlags(string? valueJson)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(IsNotPlanDefinitions(valueJson));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"plan-flag": false}}""");
+        await using var client = container.Activate<PostHogClient>();
+
+#pragma warning disable CS0618
+        var flag = await client.GetFeatureFlagAsync(
+            "plan-flag",
+            "user",
+            new FeatureFlagOptions { PersonPropertyKeysKnownAbsent = ["plan"], SendFeatureFlagEvents = false },
+            CancellationToken.None);
+#pragma warning restore CS0618
+
+        Assert.False(flag?.IsEnabled);
+        Assert.Single(flagsHandler.ReceivedRequests);
     }
 
     [Fact]
