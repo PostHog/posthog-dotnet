@@ -134,10 +134,7 @@ public class TheLocalEvaluator
     [InlineData("not_icontains_multi", "[\"pro\"]")]
     [InlineData("between", "[1, 2]")]
     [InlineData("not_between", "[1, 2]")]
-    [InlineData("is_date_before", "\"not-a-date\"")]
-    [InlineData("semver_neq", "\"not-a-version\"")]
-    [InlineData("not_regex", "\"(?=pro)\"")]
-    public async Task UnsupportedFilterOnAListedKeyStaysInconclusive(string operatorName, string valueJson)
+    public async Task UnsupportedOperatorOnAListedKeyStaysInconclusive(string operatorName, string valueJson)
     {
         var evaluator = await CreateEvaluatorAsync(PlanFlag(operatorName, valueJson));
 
@@ -185,13 +182,31 @@ public class TheLocalEvaluator
         Assert.Equal(expected, result.Value);
     }
 
-    [Fact]
-    public async Task InvalidRegexOnAListedKeyDoesNotMatch()
+    // The flags service decides a listed key before it reads the condition value, so a value the SDK could not
+    // parse or compile does not change the result.
+    [Theory]
+    [InlineData("not_regex", "\"[\"", true)]
+    [InlineData("regex", "\"[\"", false)]
+    [InlineData("not_regex", "\"\\\\p{L}\"", true)]
+    [InlineData("regex", "\"\\\\p{L}\"", false)]
+    [InlineData("not_regex", "\"(?=pro)\"", true)]
+    [InlineData("regex", "\"(?=pro)\"", false)]
+    [InlineData("gt", "\"not-a-number\"", false)]
+    [InlineData("gte", "\"not-a-number\"", false)]
+    [InlineData("lt", "\"not-a-number\"", false)]
+    [InlineData("lte", "\"not-a-number\"", false)]
+    [InlineData("semver_gt", "\"not-a-version\"", false)]
+    [InlineData("semver_neq", "\"not-a-version\"", false)]
+    [InlineData("semver_wildcard", "\"not-a-version\"", false)]
+    [InlineData("is_date_before", "\"not-a-date\"", false)]
+    [InlineData("is_date_after", "\"not-a-date\"", false)]
+    public async Task ListedKeyResolvesWithoutReadingTheConditionValue(string operatorName, string valueJson, bool expected)
     {
-        // Matches the flag-level result for a present value: a regex .NET can't compile is a no-match.
-        var evaluator = await CreateEvaluatorAsync(PlanFlag("not_regex", "\"[\""));
+        var evaluator = await CreateEvaluatorAsync(PlanFlag(operatorName, valueJson));
 
-        Assert.False(evaluator.EvaluateFeatureFlag("plan-flag", "user", knownAbsent: Person("plan")).Value);
+        var result = evaluator.EvaluateFeatureFlag("plan-flag", "user", knownAbsent: Person("plan"));
+
+        Assert.Equal(expected, result.Value);
     }
 
     const string OrganizationFlag = """
@@ -277,6 +292,26 @@ public class TheLocalEvaluator
             "user",
             personProperties: new() { ["plan"] = "pro" },
             knownAbsent: Person("plan"));
+
+        Assert.Equal(expected, result.Value);
+    }
+
+    [Theory]
+    [InlineData("not_regex", "\"[\"", false, true)]
+    [InlineData("not_regex", "\"[\"", true, false)]
+    [InlineData("regex", "\"\\\\p{L}\"", false, false)]
+    [InlineData("gt", "\"not-a-number\"", true, true)]
+    [InlineData("semver_gt", "\"not-a-version\"", false, false)]
+    [InlineData("is_date_after", "\"not-a-date\"", false, false)]
+    public async Task CohortLeafOnAListedKeyResolvesWithoutReadingTheConditionValue(
+        string operatorName,
+        string valueJson,
+        bool negation,
+        bool expected)
+    {
+        var evaluator = await CreateEvaluatorAsync(CohortFlag(operatorName, negation, valueJson));
+
+        var result = evaluator.EvaluateFeatureFlag("cohort-flag", "user", knownAbsent: Person("plan"));
 
         Assert.Equal(expected, result.Value);
     }
@@ -376,6 +411,98 @@ public class ThePostHogClient
 
         Assert.True(flag?.IsEnabled);
         Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    static string PlanFlagDefinitions(string operatorName, string valueJson) => $$$"""
+        {"flags": [{"key": "plan-flag", "active": true, "filters": {"groups": [{"properties": [
+            {"key": "plan", "type": "person", "value": {{{valueJson}}}, "operator": "{{{operatorName}}}"}
+        ], "rollout_percentage": 100}]}}]}
+        """;
+
+    // The /flags response disagrees with the expected local result, so a request would show in the result.
+    const string FlagsResponseEnabled = """{"featureFlags": {"plan-flag": true}}""";
+    const string FlagsResponseDisabled = """{"featureFlags": {"plan-flag": false}}""";
+
+    public static TheoryData<string, string, bool> ConditionValuesNotRead => new()
+    {
+        { "not_regex", "\"[\"", true },
+        { "regex", "\"[\"", false },
+        { "not_regex", "\"\\\\p{L}\"", true },
+        { "regex", "\"\\\\p{L}\"", false },
+        { "gt", "\"not-a-number\"", false },
+        { "lte", "\"not-a-number\"", false },
+        { "semver_gt", "\"not-a-version\"", false },
+        { "is_date_after", "\"not-a-date\"", false },
+    };
+
+    [Theory]
+    [MemberData(nameof(ConditionValuesNotRead))]
+    public async Task ListedKeyResolvesLocallyWithoutReadingTheConditionValue(string operatorName, string valueJson, bool expected)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(PlanFlagDefinitions(operatorName, valueJson));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(expected ? FlagsResponseDisabled : FlagsResponseEnabled);
+        await using var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user",
+            new AllFeatureFlagsOptions { PersonPropertyKeysKnownAbsent = ["plan"], OnlyEvaluateLocally = true },
+            CancellationToken.None);
+
+        Assert.Equal(expected, snapshot.IsEnabled("plan-flag"));
+        Assert.Empty(snapshot.UnresolvedFlags);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Theory]
+    [MemberData(nameof(ConditionValuesNotRead))]
+    public async Task ListedKeyResolvesWithoutAFlagsRequestWhenTheConditionValueIsUnreadable(string operatorName, string valueJson, bool expected)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(PlanFlagDefinitions(operatorName, valueJson));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse(expected ? FlagsResponseDisabled : FlagsResponseEnabled);
+        await using var client = container.Activate<PostHogClient>();
+
+#pragma warning disable CS0618
+        var flag = await client.GetFeatureFlagAsync(
+            "plan-flag",
+            "user",
+            new FeatureFlagOptions { PersonPropertyKeysKnownAbsent = ["plan"], SendFeatureFlagEvents = false },
+            CancellationToken.None);
+#pragma warning restore CS0618
+
+        Assert.Equal(expected, flag?.IsEnabled);
+        Assert.Empty(flagsHandler.ReceivedRequests);
+    }
+
+    [Theory]
+    [InlineData("icontains_multi", "[\"pro\"]")]
+    [InlineData("not_icontains_multi", "[\"pro\"]")]
+    [InlineData("between", "[1, 2]")]
+    [InlineData("not_between", "[1, 2]")]
+    [InlineData("operator_from_the_future", "\"pro\"")]
+    public async Task UnsupportedOperatorOnAListedKeyFallsBackToFlags(string operatorName, string valueJson)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponse(PlanFlagDefinitions(operatorName, valueJson));
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"plan-flag": true}}""");
+        await using var client = container.Activate<PostHogClient>();
+
+        var localOnly = await client.EvaluateFlagsAsync(
+            "user",
+            new AllFeatureFlagsOptions { PersonPropertyKeysKnownAbsent = ["plan"], OnlyEvaluateLocally = true },
+            CancellationToken.None);
+#pragma warning disable CS0618
+        var flag = await client.GetFeatureFlagAsync(
+            "plan-flag",
+            "user",
+            new FeatureFlagOptions { PersonPropertyKeysKnownAbsent = ["plan"], SendFeatureFlagEvents = false },
+            CancellationToken.None);
+#pragma warning restore CS0618
+
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, localOnly.UnresolvedFlags["plan-flag"]);
+        Assert.True(flag?.IsEnabled);
+        Assert.Single(flagsHandler.ReceivedRequests);
     }
 
     // "plan" is listed as known absent; is_not would match from the known-absent table if the missing value were ignored.

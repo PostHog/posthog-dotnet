@@ -578,9 +578,8 @@ internal sealed class LocalEvaluator
                 {
                     if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsKnownAbsent(property, absentKeys))
                     {
-                        AssertFilterSupported(property);
-                        // An invalid regex is a no-match at flag level, so a negated regex must not match either.
-                        isMatch = !IsCohortRegexUnsupported(property) && MatchesKnownAbsentProperty(property);
+                        AssertOperatorSupported(property);
+                        isMatch = MatchesKnownAbsentProperty(property);
                     }
                     else if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(property, properties))
                     {
@@ -749,13 +748,7 @@ internal sealed class LocalEvaluator
                          && filter.Type is not (FilterType.Cohort or FilterType.Flag)
                          && IsKnownAbsent(knownAbsentFilter, absentKeys))
                 {
-                    AssertFilterSupported(knownAbsentFilter);
-                    if (IsCohortRegexUnsupported(knownAbsentFilter))
-                    {
-                        throw new InconclusiveMatchException(
-                            "Invalid regex cohort property requires server evaluation",
-                            UnresolvedFlagReason.UnsupportedDefinition);
-                    }
+                    AssertOperatorSupported(knownAbsentFilter);
                     // The known-absent result comes before the leaf's negation, as for a present value.
                     isMatch = MatchesKnownAbsentProperty(knownAbsentFilter);
                     negation = knownAbsentFilter.Negation;
@@ -904,7 +897,7 @@ internal sealed class LocalEvaluator
             return false;
         }
 
-        // A new operator here also needs an arm in AssertFilterSupported.
+        // A new operator here also needs an arm in AssertOperatorSupported.
         return propertyFilter.Operator switch
         {
             ComparisonOperator.Exact => value.IsExactMatch(overrideValue, LocalEvaluationApiResult.PropertyMatchingVersion),
@@ -946,8 +939,8 @@ internal sealed class LocalEvaluator
     static bool IsKnownAbsent(PropertyFilter propertyFilter, HashSet<string>? absentKeys)
         => absentKeys is not null && propertyFilter.Key is { } key && absentKeys.Contains(key);
 
-    // The result for a property listed as known absent. Run AssertFilterSupported first, so an operator or filter
-    // value that local evaluation can't use stays inconclusive.
+    // The result for a property listed as known absent. Run AssertOperatorSupported first, so an operator local
+    // evaluation can't run, or a missing filter value, stays inconclusive.
     static bool MatchesKnownAbsentProperty(PropertyFilter propertyFilter)
         => propertyFilter.Operator is ComparisonOperator.IsNotSet
             or ComparisonOperator.IsNot
@@ -966,36 +959,16 @@ internal sealed class LocalEvaluator
     /// reason when local evaluation cannot use the filter, whatever the properties hold: an unknown operator, or a
     /// filter value that the operator cannot parse.
     /// </summary>
-    // Keep the operator list in sync with the switch in MatchProperty. An operator missing here is reported as
-    // unsupported when the property is absent, and in the load-time warning.
     static void AssertFilterSupported(PropertyFilter propertyFilter)
     {
-        if (propertyFilter.Operator is ComparisonOperator.IsSet or ComparisonOperator.IsNotSet)
+        AssertOperatorSupported(propertyFilter);
+        if (propertyFilter.Value is not { } value)
         {
             return;
         }
 
-        if (propertyFilter.Value is not { } value)
-        {
-            throw new InconclusiveMatchException("The filter property value is null", UnresolvedFlagReason.UnsupportedDefinition);
-        }
-
         switch (propertyFilter.Operator)
         {
-            case null
-                or ComparisonOperator.Exact
-                or ComparisonOperator.IsNot
-                or ComparisonOperator.GreaterThan
-                or ComparisonOperator.GreaterThanOrEquals
-                or ComparisonOperator.LessThan
-                or ComparisonOperator.LessThanOrEquals
-                or ComparisonOperator.ContainsIgnoreCase
-                or ComparisonOperator.DoesNotContainIgnoreCase
-                or ComparisonOperator.StartsWith
-                or ComparisonOperator.NotStartsWith
-                or ComparisonOperator.EndsWith
-                or ComparisonOperator.NotEndsWith:
-                return;
             case ComparisonOperator.Regex or ComparisonOperator.NotRegex:
                 if (value.StringValue is { } pattern && !RegexHelpers.IsCompatiblePattern(pattern))
                 {
@@ -1017,6 +990,55 @@ internal sealed class LocalEvaluator
                 return;
             case ComparisonOperator.SemverWildcard:
                 value.ParseFilterWildcard();
+                return;
+        }
+    }
+
+    // The part of AssertFilterSupported that does not read the filter value: the operator must be one MatchProperty
+    // runs, and a value-requiring operator must have a value. A property listed as known absent resolves after this
+    // check alone, as the flags service decides a missing property before it reads the condition value.
+    // Keep the operator list in sync with the switch in MatchProperty. An operator missing here is reported as
+    // unsupported when the property is absent, and in the load-time warning.
+    static void AssertOperatorSupported(PropertyFilter propertyFilter)
+    {
+        if (propertyFilter.Operator is ComparisonOperator.IsSet or ComparisonOperator.IsNotSet)
+        {
+            return;
+        }
+
+        if (propertyFilter.Value is null)
+        {
+            throw new InconclusiveMatchException("The filter property value is null", UnresolvedFlagReason.UnsupportedDefinition);
+        }
+
+        switch (propertyFilter.Operator)
+        {
+            case null
+                or ComparisonOperator.Exact
+                or ComparisonOperator.IsNot
+                or ComparisonOperator.GreaterThan
+                or ComparisonOperator.GreaterThanOrEquals
+                or ComparisonOperator.LessThan
+                or ComparisonOperator.LessThanOrEquals
+                or ComparisonOperator.ContainsIgnoreCase
+                or ComparisonOperator.DoesNotContainIgnoreCase
+                or ComparisonOperator.StartsWith
+                or ComparisonOperator.NotStartsWith
+                or ComparisonOperator.EndsWith
+                or ComparisonOperator.NotEndsWith
+                or ComparisonOperator.Regex
+                or ComparisonOperator.NotRegex
+                or ComparisonOperator.IsDateBefore
+                or ComparisonOperator.IsDateAfter
+                or ComparisonOperator.SemverEquals
+                or ComparisonOperator.SemverNotEquals
+                or ComparisonOperator.SemverGreaterThan
+                or ComparisonOperator.SemverGreaterThanOrEquals
+                or ComparisonOperator.SemverLessThan
+                or ComparisonOperator.SemverLessThanOrEquals
+                or ComparisonOperator.SemverTilde
+                or ComparisonOperator.SemverCaret
+                or ComparisonOperator.SemverWildcard:
                 return;
             default:
                 throw new InconclusiveMatchException($"Unknown operator: {propertyFilter.Operator}", UnresolvedFlagReason.UnsupportedDefinition);
