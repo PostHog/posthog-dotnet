@@ -83,7 +83,7 @@ internal sealed class KnownAbsentPropertyKeys
                     nameof(options));
             }
 
-            if (personKeys.Contains(null!))
+            if (ContainsNullKey(personKeys))
             {
                 throw new ArgumentException(
                     $"{nameof(AllFeatureFlagsOptions.PersonPropertyKeysKnownAbsent)} cannot contain a null key.",
@@ -100,13 +100,26 @@ internal sealed class KnownAbsentPropertyKeys
                     nameof(options));
             }
 
-            if (keys is { Count: > 0 } && keys.Contains(null!))
+            if (keys is { Count: > 0 } && ContainsNullKey(keys))
             {
                 throw new ArgumentException(
                     $"{nameof(AllFeatureFlagsOptions.GroupPropertyKeysKnownAbsent)} cannot contain a null key, but '{groupType}' has one.",
                     nameof(options));
             }
         }
+    }
+
+    // Enumerates instead of calling Contains(null), which throws for collections such as Dictionary<,>.KeyCollection.
+    static bool ContainsNullKey(IReadOnlyCollection<string> keys)
+    {
+        foreach (var key in keys)
+        {
+            if (key is null)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     static readonly IReadOnlyDictionary<string, IReadOnlyCollection<string>> EmptyGroups =

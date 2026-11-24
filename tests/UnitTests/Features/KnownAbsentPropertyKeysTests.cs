@@ -909,6 +909,27 @@ public class ThePostHogClient
         Assert.Empty(flagsHandler.ReceivedRequests);
     }
 
+    // Dictionary<,>.KeyCollection.Contains(null) throws, so the null check must not call Contains.
+    [Fact]
+    public async Task AcceptsDictionaryKeysAsTheKeyCollections()
+    {
+        var container = new TestContainer();
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {}}""");
+        await using var client = container.Activate<PostHogClient>();
+        var keys = new Dictionary<string, int> { ["plan"] = 1 }.Keys;
+
+        await client.GetAllFeatureFlagsAsync(
+            "user",
+            new AllFeatureFlagsOptions
+            {
+                PersonPropertyKeysKnownAbsent = keys,
+                GroupPropertyKeysKnownAbsent = new Dictionary<string, IReadOnlyCollection<string>> { ["organization"] = keys }
+            },
+            CancellationToken.None);
+
+        Assert.Single(flagsHandler.ReceivedRequests);
+    }
+
     [Fact]
     public async Task AcceptsExactly1000Keys()
     {
