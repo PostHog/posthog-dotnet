@@ -33,13 +33,6 @@ internal sealed class KnownAbsentPropertyKeys
         => _groups.TryGetValue(groupType, out var keys) ? keys : null;
 
     /// <summary>
-    /// Returns a copy that uses <paramref name="person"/> as the person keys, for a flag dependency that evaluates
-    /// against the same properties as the condition that depends on it.
-    /// </summary>
-    public KnownAbsentPropertyKeys WithPerson(HashSet<string>? person)
-        => ReferenceEquals(person, Person) ? this : new KnownAbsentPropertyKeys(person, _groups);
-
-    /// <summary>
     /// Creates the known-absent keys from the evaluation options, or returns <c>null</c> when nothing is listed.
     /// </summary>
     public static KnownAbsentPropertyKeys? Create(AllFeatureFlagsOptions? options)

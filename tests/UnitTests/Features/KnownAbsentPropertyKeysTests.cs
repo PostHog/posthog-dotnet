@@ -363,6 +363,101 @@ public class TheLocalEvaluator
     }
 
     [Fact]
+    public async Task PersonKeyDoesNotApplyToAGroupFilterInAPersonFlag()
+    {
+        var evaluator = await CreateEvaluatorAsync("""
+            {"flags": [{"key": "person-flag", "active": true, "filters": {"groups": [{"properties": [
+                {"key": "tier", "type": "group", "group_type_index": 0, "operator": "is_not_set"}
+            ], "rollout_percentage": 100}]}}],
+             "group_type_mapping": {"0": "organization"}}
+            """);
+
+        var exception = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("person-flag", "user", knownAbsent: Person("tier")));
+
+        Assert.Equal(UnresolvedFlagReason.MissingContext, exception.Reason);
+    }
+
+    [Fact]
+    public async Task GroupKeyDoesNotApplyToAPersonFilterOrCohortLeafInAGroupFlag()
+    {
+        var evaluator = await CreateEvaluatorAsync("""
+            {"flags": [
+                {"key": "org-flag", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                    {"key": "tier", "type": "person", "operator": "is_not_set"}
+                ], "rollout_percentage": 100}]}},
+                {"key": "org-cohort-flag", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                    {"key": "id", "type": "cohort", "value": 7}
+                ], "rollout_percentage": 100}]}}
+            ],
+             "cohorts": {"7": {"type": "AND", "values": [{"type": "AND", "values": [
+                {"key": "tier", "type": "person", "operator": "is_not_set"}
+             ]}]}},
+             "group_type_mapping": {"0": "organization"}}
+            """);
+        var groups = new GroupCollection { new Group("organization", "org-1") };
+
+        var flagException = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("org-flag", "user", groups, knownAbsent: Group("organization", "tier")));
+        var cohortException = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("org-cohort-flag", "user", groups, knownAbsent: Group("organization", "tier")));
+
+        Assert.Equal(UnresolvedFlagReason.MissingContext, flagException.Reason);
+        Assert.Equal(UnresolvedFlagReason.MissingContext, cohortException.Reason);
+    }
+
+    [Fact]
+    public async Task GroupKeyDoesNotApplyToAFilterOfAnotherGroupType()
+    {
+        var evaluator = await CreateEvaluatorAsync("""
+            {"flags": [{"key": "org-flag", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "tier", "type": "group", "group_type_index": 1, "operator": "is_not_set"}
+            ], "rollout_percentage": 100}]}}],
+             "group_type_mapping": {"0": "organization", "1": "project"}}
+            """);
+        var groups = new GroupCollection { new Group("organization", "org-1") };
+
+        var exception = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("org-flag", "user", groups, knownAbsent: Group("organization", "tier")));
+
+        Assert.Equal(UnresolvedFlagReason.MissingContext, exception.Reason);
+    }
+
+    // org-flag aggregates by organization and depends on base-flag, which aggregates by person.
+    const string GroupDependsOnPersonDefinitions = """
+        {"flags": [
+            {"key": "base-flag", "active": true, "filters": {"groups": [{"properties": [
+                {"key": "tier", "type": "person", "operator": "is_not_set"}
+            ], "rollout_percentage": 100}]}},
+            {"key": "org-flag", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "base-flag", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["base-flag"]}
+            ], "rollout_percentage": 100}]}}
+        ],
+         "group_type_mapping": {"0": "organization"}}
+        """;
+
+    [Fact]
+    public async Task GroupKeyDoesNotLeakIntoAPersonFlagDependency()
+    {
+        var evaluator = await CreateEvaluatorAsync(GroupDependsOnPersonDefinitions);
+        var groups = new GroupCollection { new Group("organization", "org-1") };
+
+        var exception = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("org-flag", "user", groups, knownAbsent: Group("organization", "tier")));
+
+        Assert.Equal(UnresolvedFlagReason.UnresolvedDependency, exception.Reason);
+    }
+
+    [Fact]
+    public async Task PersonFlagDependencyOfAGroupFlagKeepsThePersonKeys()
+    {
+        var evaluator = await CreateEvaluatorAsync(GroupDependsOnPersonDefinitions);
+        var groups = new GroupCollection { new Group("organization", "org-1") };
+
+        Assert.True(evaluator.EvaluateFeatureFlag("org-flag", "user", groups, knownAbsent: Person("tier")).Value);
+    }
+
+    [Fact]
     public async Task EvaluateAllFlagsResolvesListedKeysWithoutFallback()
     {
         var evaluator = await CreateEvaluatorAsync(PlanFlag("is_not_set"));
@@ -631,6 +726,108 @@ public class ThePostHogClient
         Assert.Single(firstHandler.ReceivedRequests);
         Assert.Single(secondHandler.ReceivedRequests);
         Assert.Contains("person_property_keys_known_absent", secondHandler.GetReceivedRequestBody(indented: false), StringComparison.Ordinal);
+    }
+
+    // created_at is a persons-table field, not a person property, so a person listing never resolves it.
+    public static TheoryData<string> PersonMetadataDefinitions()
+    {
+        var data = new TheoryData<string>();
+        foreach (var (operatorName, valueJson) in new[]
+                 {
+                     ("is_not_set", "null"),
+                     ("is_date_before", "\"2100-01-01T00:00:00Z\""),
+                     ("is_date_after", "\"2000-01-01T00:00:00Z\"")
+                 })
+        {
+            var filter = $$"""{"key": "created_at", "type": "person_metadata", "value": {{valueJson}}, "operator": "{{operatorName}}"}""";
+            data.Add($$$"""
+                {"flags": [{"key": "created-flag", "active": true, "filters": {"groups": [{"properties": [
+                    {{{filter}}}
+                ], "rollout_percentage": 100}]}}]}
+                """);
+            data.Add($$$"""
+                {"flags": [{"key": "created-flag", "active": true, "filters": {"groups": [{"properties": [
+                    {"key": "id", "type": "cohort", "value": 7}
+                ], "rollout_percentage": 100}]}}],
+                 "cohorts": {"7": {"type": "AND", "values": [{"type": "AND", "values": [{{{filter}}}]}]} }}
+                """);
+        }
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(PersonMetadataDefinitions))]
+    public async Task PersonMetadataFilterOnAListedKeyFallsBackToFlags(string definitions)
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(definitions, "\"v1\"");
+        // Every operator here would match from the known-absent table, so a local result would be true.
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"created-flag": false}}""");
+        await using var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user",
+            new AllFeatureFlagsOptions { PersonPropertyKeysKnownAbsent = ["created_at"] },
+            CancellationToken.None);
+
+        Assert.False(snapshot.IsEnabled("created-flag"));
+        Assert.Single(flagsHandler.ReceivedRequests);
+    }
+
+    // org-flag aggregates by organization and depends on base-flag, which aggregates by person.
+    const string GroupDependsOnPersonDefinitions = """
+        {"flags": [
+            {"key": "base-flag", "active": true, "filters": {"groups": [{"properties": [
+                {"key": "tier", "type": "person", "operator": "is_not_set"}
+            ], "rollout_percentage": 100}]}},
+            {"key": "org-flag", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "base-flag", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["base-flag"]}
+            ], "rollout_percentage": 100}]}}
+        ],
+         "group_type_mapping": {"0": "organization"}}
+        """;
+
+    [Fact]
+    public async Task GroupKeyDoesNotLeakIntoAPersonFlagDependency()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(GroupDependsOnPersonDefinitions, "\"v1\"");
+        var flagsHandler = container.FakeHttpMessageHandler.AddFlagsResponse("""{"featureFlags": {"base-flag": false, "org-flag": false}}""");
+        await using var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user",
+            new AllFeatureFlagsOptions
+            {
+                Groups = [new Group("organization", "org-1")],
+                GroupPropertyKeysKnownAbsent = new Dictionary<string, IReadOnlyCollection<string>> { ["organization"] = ["tier"] }
+            },
+            CancellationToken.None);
+
+        Assert.False(snapshot.IsEnabled("base-flag"));
+        Assert.False(snapshot.IsEnabled("org-flag"));
+        Assert.Single(flagsHandler.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task PersonFlagDependencyOfAGroupFlagKeepsThePersonKeys()
+    {
+        var container = new TestContainer("fake-personal-api-key");
+        container.FakeHttpMessageHandler.AddLocalEvaluationResponseWithETag(GroupDependsOnPersonDefinitions, "\"v1\"");
+        await using var client = container.Activate<PostHogClient>();
+
+        var snapshot = await client.EvaluateFlagsAsync(
+            "user",
+            new AllFeatureFlagsOptions
+            {
+                OnlyEvaluateLocally = true,
+                Groups = [new Group("organization", "org-1")],
+                PersonPropertyKeysKnownAbsent = ["tier"]
+            },
+            CancellationToken.None);
+
+        Assert.True(snapshot.IsEnabled("base-flag"));
+        Assert.True(snapshot.IsEnabled("org-flag"));
     }
 
     public static TheoryData<AllFeatureFlagsOptions> OversizedOptions => new()

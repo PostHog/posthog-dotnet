@@ -458,6 +458,7 @@ internal sealed class LocalEvaluator
                     condition,
                     effectiveProperties,
                     effectiveAbsentKeys,
+                    conditionAggregation,
                     evaluationCache,
                     groups,
                     knownAbsent);
@@ -560,6 +561,7 @@ internal sealed class LocalEvaluator
         FeatureFlagGroup condition,
         Dictionary<string, object?>? properties,
         HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex, /* the group type index the absent keys belong to, or null for person keys */
         Dictionary<string, StringOrValue<bool>> evaluationCache,
         GroupCollection? groups,
         KnownAbsentPropertyKeys? knownAbsent)
@@ -576,7 +578,7 @@ internal sealed class LocalEvaluator
                 bool isMatch;
                 try
                 {
-                    if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsKnownAbsent(property, absentKeys))
+                    if (IsKnownAbsent(property, absentKeys, absentKeysGroupTypeIndex))
                     {
                         AssertOperatorSupported(property);
                         isMatch = MatchesKnownAbsentProperty(property);
@@ -593,12 +595,11 @@ internal sealed class LocalEvaluator
                     {
                         isMatch = property.Type switch
                         {
-                            FilterType.Cohort => MatchCohort(property, distinctId, properties, absentKeys),
+                            FilterType.Cohort => MatchCohort(property, distinctId, properties, absentKeys, absentKeysGroupTypeIndex),
                             FilterType.Flag => MatchFlagDependencyFilter(
                                 property,
                                 distinctId,
                                 properties,
-                                absentKeys,
                                 evaluationCache,
                                 groups,
                                 knownAbsent),
@@ -693,7 +694,8 @@ internal sealed class LocalEvaluator
         PropertyFilter filter,
         string distinctId,
         Dictionary<string, object?>? propertyValues,
-        HashSet<string>? absentKeys)
+        HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex)
     {
         // Cohort properties are in the form of property groups like this:
         // {
@@ -711,14 +713,15 @@ internal sealed class LocalEvaluator
                 $"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation");
         }
 
-        return MatchPropertyGroup(conditions, distinctId, propertyValues, absentKeys);
+        return MatchPropertyGroup(conditions, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex);
     }
 
     bool MatchPropertyGroup(
         FilterSet? filterSet,
         string distinctId,
         Dictionary<string, object?>? propertyValues,
-        HashSet<string>? absentKeys)
+        HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex)
     {
         if (filterSet is null)
         {
@@ -742,11 +745,10 @@ internal sealed class LocalEvaluator
                 var negation = false;
                 if (filter is FilterSet childFilterSet)
                 {
-                    isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues, absentKeys);
+                    isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex);
                 }
                 else if (filter is PropertyFilter knownAbsentFilter
-                         && filter.Type is not (FilterType.Cohort or FilterType.Flag)
-                         && IsKnownAbsent(knownAbsentFilter, absentKeys))
+                         && IsKnownAbsent(knownAbsentFilter, absentKeys, absentKeysGroupTypeIndex))
                 {
                     AssertOperatorSupported(knownAbsentFilter);
                     // The known-absent result comes before the leaf's negation, as for a present value.
@@ -771,7 +773,7 @@ internal sealed class LocalEvaluator
                     }
 
                     isMatch = filter.Type is FilterType.Cohort
-                        ? MatchCohort(propertyFilter, distinctId, propertyValues, absentKeys)
+                        ? MatchCohort(propertyFilter, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex)
                         : MatchProperty(propertyFilter, distinctId, propertyValues)
                             ?? throw new InconclusiveMatchException(
                                 "Invalid regex cohort property requires server evaluation",
@@ -936,8 +938,18 @@ internal sealed class LocalEvaluator
         => propertyFilter is { Operator: ComparisonOperator.Regex or ComparisonOperator.NotRegex, Value: { } value }
            && (value.StringValue is not { } pattern || !RegexHelpers.CanMatchLocally(pattern));
 
-    static bool IsKnownAbsent(PropertyFilter propertyFilter, HashSet<string>? absentKeys)
-        => absentKeys is not null && propertyFilter.Key is { } key && absentKeys.Contains(key);
+    // Person keys apply only to person filters, and group keys only to group filters of their own group type. No other
+    // filter type resolves from a listing.
+    static bool IsKnownAbsent(PropertyFilter propertyFilter, HashSet<string>? absentKeys, int? absentKeysGroupTypeIndex)
+        => absentKeys is not null
+           && propertyFilter.Type switch
+           {
+               FilterType.Person => absentKeysGroupTypeIndex is null,
+               FilterType.Group => absentKeysGroupTypeIndex is not null && propertyFilter.GroupTypeIndex == absentKeysGroupTypeIndex,
+               _ => false
+           }
+           && propertyFilter.Key is { } key
+           && absentKeys.Contains(key);
 
     // The result for a property listed as known absent. Run AssertOperatorSupported first, so an operator local
     // evaluation can't run, or a missing filter value, stays inconclusive.
@@ -1051,7 +1063,6 @@ internal sealed class LocalEvaluator
     /// <param name="propertyFilter">The <see cref="PropertyFilter"/> to evaluate.</param>
     /// <param name="distinctId">The identifier you use for the user.</param>
     /// <param name="properties">The overridden values that describe the user/group.</param>
-    /// <param name="absentKeys">The property keys known absent from <paramref name="properties"/>.</param>
     /// <param name="evaluationCache">The cache of already evaluated flags.</param>
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="knownAbsent">The person and group property keys known absent.</param>
@@ -1060,7 +1071,6 @@ internal sealed class LocalEvaluator
         PropertyFilter propertyFilter,
         string distinctId,
         Dictionary<string, object?>? properties,
-        HashSet<string>? absentKeys,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
         GroupCollection? groups,
         KnownAbsentPropertyKeys? knownAbsent)
@@ -1071,12 +1081,13 @@ internal sealed class LocalEvaluator
         var (flagKey, propertyValue) = ValidateFlagDependencyFilter(propertyFilter);
 
         // Evaluate all dependencies in the chain and return the value of the last one
-        // The dependency evaluates against the same properties, so it uses the same known-absent keys.
+        // Each dependency picks the known-absent keys for its own aggregation, so keys never cross between person and
+        // group evaluation.
         EvaluateDependencyChain(
             propertyFilter.DependencyChain!,
             distinctId,
             properties,
-            knownAbsent?.WithPerson(absentKeys),
+            knownAbsent,
             evaluationCache,
             groups);
 
