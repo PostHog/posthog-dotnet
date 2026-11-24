@@ -87,7 +87,7 @@ jobs:
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_NOLOGO: true
-      DOTNET_VERSION: "9.0.321"
+      DOTNET_VERSION: "10.0.404"
     steps:
       - name: Notify Slack - Approved
         if: needs.notify-approval-needed.outputs.slack_ts != ''
@@ -260,7 +260,7 @@ jobs:
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_NOLOGO: true
-      DOTNET_VERSION: "9.0.321"
+      DOTNET_VERSION: "10.0.404"
       PackageDirectory: ${{ github.workspace }}/build/packages/Release
     strategy:
       # If any package fails to publish, stop immediately. PostHog must publish before dependents.

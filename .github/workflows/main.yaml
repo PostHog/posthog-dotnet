@@ -17,7 +17,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
   PackageDirectory: ${{ github.workspace }}/build/packages/Release
-  DOTNET_VERSION: 9.0.321
+  DOTNET_VERSION: 10.0.404
 
 permissions:
   contents: read
@@ -116,6 +116,7 @@ jobs:
         with:
           # The netcoreapp3.1 tests roll forward to the oldest newer runtime installed. Install .NET 8
           # so they don't depend on the runner image. See TheSendAsyncMethodOverTheNetwork for why .NET 9 fails.
+          # The net8.0 and net10.0 tests run on .NET 8 and .NET 10.
           dotnet-version: |
             8.0.x
             ${{ env.DOTNET_VERSION }}

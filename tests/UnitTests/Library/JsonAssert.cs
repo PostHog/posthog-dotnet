@@ -15,7 +15,7 @@ internal static class JsonAssert
     };
 
     public static void Equal<T>(T expectedJson, JsonDocument? actualJson) =>
-        Equal(JsonSerializer.SerializeToDocument(expectedJson, typeof(T)), actualJson);
+        Equal(JsonSerializer.SerializeToDocument(expectedJson), actualJson);
 
     public static void Equal(string? expectedJson, JsonDocument? actualJson) =>
         Equal(expectedJson is null
