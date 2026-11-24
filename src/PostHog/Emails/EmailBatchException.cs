@@ -7,9 +7,10 @@ namespace PostHog.Emails;
 /// <remarks>
 /// The <see cref="EmailException"/> properties describe the request's error, which is also the
 /// <see cref="Exception.InnerException"/>. <see cref="Results"/> holds every recipient: <c>unconfirmed</c> when the
-/// answer was lost or PostHog still holds the request, so the email may still go out, and <c>failed</c> otherwise.
-/// <see cref="EmailException.Code"/> is <c>too_large</c> with HTTP 413 when the batch is larger than PostHog takes in
-/// one request: split the recipients into smaller batches. <see cref="EmailException.Code"/> is
+/// answer to this or an earlier attempt was lost or PostHog still holds the request, so the email may still go out,
+/// and <c>failed</c> otherwise.
+/// <see cref="EmailException.Code"/> is <c>content_too_large</c> with HTTP 413 when the batch is larger than PostHog
+/// takes in one request: split the recipients into smaller batches. <see cref="EmailException.Code"/> is
 /// <c>batch_unavailable</c> when the project can't send batches yet, and <see cref="EmailException.Name"/> is
 /// <c>not_found</c> when the template doesn't exist or batch sends are off for the project: send each email the batch
 /// didn't queue with <see cref="IPostHogEmails.SendAsync"/> and its recipient's idempotency key.

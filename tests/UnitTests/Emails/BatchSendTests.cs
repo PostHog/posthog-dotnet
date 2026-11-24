@@ -185,14 +185,14 @@ public class TheBatchAsyncMethod
         await using var harness = new EmailHarness();
         harness.Respond(
             HttpStatusCode.RequestEntityTooLarge,
-            """{"type":"validation_error","code":"too_large","detail":"The batch is too large."}""");
+            """{"type":"validation_error","code":"content_too_large","detail":"The batch is too large."}""");
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
 
         Assert.Single(harness.Requests);
         Assert.Equal(
-            ("too_large", (HttpStatusCode?)HttpStatusCode.RequestEntityTooLarge, "The batch is too large."),
+            ("content_too_large", (HttpStatusCode?)HttpStatusCode.RequestEntityTooLarge, "The batch is too large."),
             (error.Code, error.StatusCode, error.Message));
         Assert.Equal("Split the recipients into smaller batches and send each with BatchAsync.", error.Fix);
         Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
@@ -510,18 +510,35 @@ public class TheBatchAsyncMethod
                 (r.Status, r.MessageId, r.Error!.Code, r.Error.Fix)));
     }
 
-    [Fact]
-    public async Task TakesTheRefusalOfTheRetryAfterARequestPostHogHeldInFlight()
+    [Theory]
+    [InlineData("in flight", (HttpStatusCode)422, "sending_paused")]
+    [InlineData("lost", (HttpStatusCode)429, "quota_limited")]
+    public async Task LeavesEveryRecipientUnconfirmedWhenTheRetryIsRefusedAfterAnAttemptThatMayHaveQueued(
+        string first,
+        HttpStatusCode refusal,
+        string code)
     {
         await using var harness = new EmailHarness();
-        harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
-        harness.Respond((HttpStatusCode)422, WholeCall("sending_paused"));
+        if (first == "lost")
+        {
+            harness.Fail(new HttpRequestException("connection reset"));
+        }
+        else
+        {
+            harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
+        }
+
+        harness.Respond(refusal, WholeCall(code));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
 
-        Assert.Equal("sending_paused", error.Code);
-        Assert.All(error.Results, r => Assert.Equal(("failed", "sending_paused"), (r.Status, r.Error!.Code)));
+        Assert.Equal(code, error.Code);
+        Assert.All(error.Results, r =>
+        {
+            Assert.Equal(("unconfirmed", code), (r.Status, r.Error!.Code));
+            Assert.Contains("same IdempotencyKey", r.Error.Fix, StringComparison.Ordinal);
+        });
     }
 
     [Fact]

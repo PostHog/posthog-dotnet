@@ -35,7 +35,7 @@ public interface IPostHogEmails
     /// </summary>
     /// <remarks>
     /// The client sends up to 100 recipients in one request. It checks only the number of recipients: PostHog refuses
-    /// a batch that is too large for it as a whole, with HTTP 413 and <c>too_large</c>, and the client throws that
+    /// a batch that is too large for it as a whole, with HTTP 413 and <c>content_too_large</c>, and the client throws that
     /// refusal. Split the recipients into smaller batches then. The client waits up to 45 seconds for the answer, or
     /// <see cref="PostHogOptions.EmailRequestTimeout"/> when that is longer. The <see cref="HttpClient.Timeout"/> of
     /// the <see cref="HttpClient"/> the client sends through still ends an attempt when it is shorter, so give that

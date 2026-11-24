@@ -261,6 +261,7 @@ internal sealed partial class EmailSender
     sealed class BatchRun(string body, List<BatchRow> rows, int maxRetries)
     {
         readonly List<EmailWarning> _warnings = [];
+        bool _mayHaveQueued;
 
         public string Body { get; } = body;
 
@@ -278,6 +279,7 @@ internal sealed partial class EmailSender
 
         public void Lost()
         {
+            _mayHaveQueued = true;
             foreach (var row in rows)
             {
                 row.Set(
@@ -339,7 +341,7 @@ internal sealed partial class EmailSender
         {
             foreach (var row in rows.Where(row => row.Status is null))
             {
-                row.Set("failed", error: error);
+                row.Set(_mayHaveQueued ? "unconfirmed" : "failed", error: error);
             }
         }
 
@@ -347,6 +349,7 @@ internal sealed partial class EmailSender
 
         void UnconfirmWith(EmailException error)
         {
+            _mayHaveQueued = true;
             foreach (var row in rows)
             {
                 row.Set("unconfirmed", error: error);

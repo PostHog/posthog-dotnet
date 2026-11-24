@@ -74,7 +74,7 @@ public class EmailException : Exception
     /// isn't PostHog Cloud), <c>schedule_not_confirmed</c> (PostHog accepted a scheduled send without confirming its
     /// time) or <c>unexpected_error</c>. The client checks <c>too_many_attachments</c> and
     /// <c>message_too_large</c> itself before any request, as PostHog would. A batch adds PostHog's
-    /// <c>batch_unavailable</c> (the project can't send batches yet) and <c>too_large</c> (the batch is larger than
+    /// <c>batch_unavailable</c> (the project can't send batches yet) and <c>content_too_large</c> (the batch is larger than
     /// PostHog takes in one request), and, on a recipient's <see cref="BatchEmailResult.Error"/>, the client code
     /// <c>delivery_unavailable</c> (the client can't tell whether PostHog queued the email).
     /// </summary>
