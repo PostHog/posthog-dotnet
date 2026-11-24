@@ -166,35 +166,49 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
+    public async Task RefusesMoreThan100RecipientsBeforeReadingTheirTemplateData()
+    {
+        await using var harness = new EmailHarness();
+        var batch = new SendTemplateBatchOptions { TemplateId = TemplateId, Recipients = Recipients(101), TemplateData = Cyclic() };
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => harness.Client.Emails.BatchAsync(batch));
+
+        Assert.Contains("Recipients holds 101 recipients", error.Message, StringComparison.Ordinal);
+        Assert.Empty(harness.Requests);
+    }
+
+    [Fact]
     public async Task SendsUpTo100RecipientsInOneRequestWhateverItsSize()
     {
         await using var harness = new EmailHarness();
         AllQueued(harness);
 
         var result = await harness.Client.Emails.BatchAsync(
-            Batch(Recipients(100, new Dictionary<string, object> { ["note"] = new string('x', FourMiB / 50) })));
+            Batch(Recipients(100, new Dictionary<string, object> { ["note"] = new string('x', FourMiB / 90) })));
 
         Assert.Equal(100, Keys(Assert.Single(harness.Requests)).Length);
         Assert.Equal(Enumerable.Range(0, 100), result.Results.Select(r => r.Index));
         Assert.All(result.Results, r => Assert.Equal("queued", r.Status));
     }
 
-    [Fact]
-    public async Task ReturnsATooLargeRefusalAsTheErrorAndSaysToSplitTheBatch()
+    [Theory]
+    [InlineData(413, ",\"fix\":\"Split the recipients into smaller batches.\"", "Split the recipients into smaller batches.")]
+    [InlineData(413, "", "Split the recipients into smaller batches and send each with BatchAsync.")]
+    [InlineData(400, ",\"fix\":\"Keep message_data under 256 KiB.\"", "Keep message_data under 256 KiB.")]
+    public async Task ReturnsATooLargeRefusalAsTheErrorWithPostHogsFix(int status, string fixField, string fix)
     {
         await using var harness = new EmailHarness();
         harness.Respond(
-            HttpStatusCode.RequestEntityTooLarge,
-            """{"type":"validation_error","code":"content_too_large","detail":"The batch is too large."}""");
+            (HttpStatusCode)status,
+            $$"""{"type":"invalid_request","code":"content_too_large","detail":"Too large."{{fixField}}}""");
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
 
         Assert.Single(harness.Requests);
         Assert.Equal(
-            ("content_too_large", (HttpStatusCode?)HttpStatusCode.RequestEntityTooLarge, "The batch is too large."),
-            (error.Code, error.StatusCode, error.Message));
-        Assert.Equal("Split the recipients into smaller batches and send each with BatchAsync.", error.Fix);
+            ("content_too_large", (HttpStatusCode?)status, "Too large.", fix),
+            (error.Code, error.StatusCode, error.Message, error.Fix));
         Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
     }
 
@@ -263,7 +277,7 @@ public class TheBatchAsyncMethod
     [Theory]
     [InlineData("network")]
     [InlineData("503")]
-    public async Task TakesEachRecipientsOutcomeFromTheRetryPostHogAnswersAfterALostAnswer(string lost)
+    public async Task TakesQueuedFromTheRetryButLeavesARefusedRecipientUnconfirmedAfterALostAnswer(string lost)
     {
         await using var harness = new EmailHarness();
         if (lost == "network")
@@ -275,7 +289,7 @@ public class TheBatchAsyncMethod
             harness.Respond(HttpStatusCode.ServiceUnavailable, WholeCall("delivery_unavailable"));
         }
 
-        harness.Respond(HttpStatusCode.OK, Ok(Queued(M0, replayed: true), Refused(M1, "idempotency_key_reused")));
+        harness.Respond(HttpStatusCode.OK, Ok(Queued(M0, replayed: true), Refused(M1, "recipient_suppressed")));
 
         var result = await harness.Client.Emails.BatchAsync(Batch(
         [
@@ -288,7 +302,9 @@ public class TheBatchAsyncMethod
         Assert.Equal(Keys(harness.Requests[0]), Keys(harness.Requests[1]));
         var (first, second) = (result.Results[0], result.Results[1]);
         Assert.Equal(("queued", M0, true), (first.Status, first.MessageId, first.Replayed));
-        Assert.Equal(("failed", M1, "idempotency_key_reused"), (second.Status, second.MessageId, second.Error!.Code));
+        Assert.Equal(
+            ("unconfirmed", M1, "recipient_suppressed", "Send it again with the same IdempotencyKey within 24 hours, so it goes out once."),
+            (second.Status, second.MessageId, second.Error!.Code, second.Error.Fix));
         Assert.Equal(Keys(harness.Requests[1])[1], second.IdempotencyKey);
     }
 
@@ -745,6 +761,13 @@ public class TheBatchAsyncMethod
 
     static string OkWithWarnings(string? warnings, params string[] slots)
         => "{\"results\":[" + string.Join(",", slots) + "]" + (warnings is null ? "" : ",\"warnings\":[" + warnings + "]") + "}";
+
+    static Dictionary<string, object> Cyclic()
+    {
+        var data = new Dictionary<string, object>();
+        data["self"] = data;
+        return data;
+    }
 
     static string WholeCall(string code) => $$"""{"type":"invalid_request","code":"{{code}}","detail":"Nope."}""";
 

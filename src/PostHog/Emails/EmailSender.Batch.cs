@@ -108,6 +108,8 @@ internal sealed partial class EmailSender
             throw new ArgumentException("MaxRetries must not be negative.", nameof(batch));
         }
 
+        CheckRecipientCount(batch.Recipients, nameof(batch));
+
         Dictionary<string, object?> shared;
         switch (batch)
         {
@@ -138,7 +140,7 @@ internal sealed partial class EmailSender
                 throw new ArgumentException("Send a SendTemplateBatchOptions or a SendCodeBatchOptions.", nameof(batch));
         }
 
-        var rows = BatchRows(batch.Recipients, batch is SendTemplateBatchOptions, nameof(batch));
+        var rows = BatchRows(batch.Recipients!, batch is SendTemplateBatchOptions, nameof(batch));
         shared["recipients"] = rows.Select(row => row.Wire).ToList();
         return new BatchRun(
             JsonSerializer.Serialize(shared, JsonSerializerHelper.Options),
@@ -146,7 +148,7 @@ internal sealed partial class EmailSender
             batch.MaxRetries ?? defaultMaxRetries);
     }
 
-    static List<BatchRow> BatchRows(IReadOnlyList<BatchRecipient>? recipients, bool isTemplate, string paramName)
+    static void CheckRecipientCount(IReadOnlyList<BatchRecipient>? recipients, string paramName)
     {
         if (recipients is not { Count: > 0 })
         {
@@ -160,7 +162,10 @@ internal sealed partial class EmailSender
                 + "Split them into batches of 100 or fewer.",
                 paramName);
         }
+    }
 
+    static List<BatchRow> BatchRows(IReadOnlyList<BatchRecipient> recipients, bool isTemplate, string paramName)
+    {
         var firstWithKey = new Dictionary<string, int>(StringComparer.Ordinal);
         var rows = new List<BatchRow>(recipients.Count);
         for (var index = 0; index < recipients.Count; index++)
@@ -325,7 +330,7 @@ internal sealed partial class EmailSender
             var position = 0;
             foreach (var slot in slots.EnumerateArray())
             {
-                Settle(rows[position++], slot);
+                Settle(rows[position++], slot, _mayHaveQueued);
             }
 
             foreach (var warning in ReadWarnings(fields))
@@ -356,7 +361,7 @@ internal sealed partial class EmailSender
             }
         }
 
-        static void Settle(BatchRow row, JsonElement slot)
+        static void Settle(BatchRow row, JsonElement slot, bool mayHaveQueued)
         {
             var messageId = Text(slot, "message_id") is { } text && IsMessageId(text) ? text : null;
             JsonElement? error = slot.ValueKind == JsonValueKind.Object
@@ -372,7 +377,10 @@ internal sealed partial class EmailSender
             }
 
             var answer = SlotError(error, messageId);
-            row.Set(UnconfirmedSlotCodes.Contains(answer.Code) ? "unconfirmed" : "failed", messageId, error: answer);
+            row.Set(
+                mayHaveQueued || UnconfirmedSlotCodes.Contains(answer.Code) ? "unconfirmed" : "failed",
+                messageId,
+                error: answer);
         }
 
         static EmailException SlotError(JsonElement? error, string? messageId)
@@ -405,9 +413,9 @@ internal sealed partial class EmailSender
         var code = Text(reply.Fields, "code") ?? (notFound ? "not_found" : "api_error");
         var fix = code == "batch_unavailable"
             ? "Until batch sends are on for the project, " + SendSingly
-            : reply.Status == HttpStatusCode.RequestEntityTooLarge
-                ? SplitTheBatch
-                : Text(reply.Fields, "fix") ?? (notFound ? "Check TemplateId, or " + SendSingly : null);
+            : Text(reply.Fields, "fix")
+              ?? (reply.Status == HttpStatusCode.RequestEntityTooLarge ? SplitTheBatch
+                  : notFound ? "Check TemplateId, or " + SendSingly : null);
         return new EmailException(
             code,
             Text(reply.Fields, "detail")

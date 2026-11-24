@@ -45,8 +45,8 @@ public sealed class BatchEmailResult
     /// see whether it went out.</item>
     /// <item><c>failed</c>: PostHog didn't queue the email, and <see cref="Error"/> says why, such as a suppressed
     /// address.</item>
-    /// <item><c>unconfirmed</c>: the client can't tell whether PostHog queued the email, such as after a lost answer.
-    /// It may still go out. Send it again with the same <see cref="IdempotencyKey"/> within 24 hours, so it goes out
+    /// <item><c>unconfirmed</c>: the client can't tell whether PostHog queued the email, such as after a lost answer,
+    /// or a refusal of the retry that followed one. It may still go out. Send it again with the same <see cref="IdempotencyKey"/> within 24 hours, so it goes out
     /// once.</item>
     /// </list>
     /// </remarks>
@@ -64,8 +64,8 @@ public sealed class BatchEmailResult
 
     /// <summary>
     /// Why the email is not <c>queued</c>. For an <c>unconfirmed</c> email, <see cref="EmailException.Code"/> is
-    /// <c>delivery_unavailable</c>, <c>idempotency_key_in_flight</c> or <c>api_error</c>. <c>null</c> for a
-    /// <c>queued</c> email.
+    /// <c>delivery_unavailable</c>, <c>idempotency_key_in_flight</c> or <c>api_error</c>, or the refusal of a retry
+    /// after a lost answer. <c>null</c> for a <c>queued</c> email.
     /// </summary>
     public EmailException? Error { get; init; }
 }
