@@ -438,6 +438,37 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
+    public async Task ReadsEachSlotWhoseOtherFieldNameIsUnreadable()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.OK,
+            Ok(
+                $$"""{"message_id":"{{M0}}","status":"queued","err\ud800r":1,"replay\ud800ed":true}""",
+                $$$"""{"message_id":"{{{M1}}}","error":{"code":"sending_paused","detail":"Paused.","stat\ud800us":422}}"""));
+
+        var result = await harness.Client.Emails.BatchAsync(Batch(Recipients(2)));
+
+        var (first, second) = (result.Results[0], result.Results[1]);
+        Assert.Equal(("queued", M0, false), (first.Status, first.MessageId, first.Replayed));
+        Assert.Equal(("failed", M1, "sending_paused", null), (second.Status, second.MessageId, second.Error!.Code, second.Error.StatusCode));
+    }
+
+    [Fact]
+    public async Task LeavesARequestUnconfirmedWhenItsResultsAreUnreadable()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.OK, $$"""{"results":[{{Queued(M0)}}],"resu\ud800lts":1}""");
+        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
+
+        Assert.Equal(("api_error", "unconfirmed"), (error.Code, Assert.Single(error.Results).Status));
+        Assert.Equal([BatchUrl, StatusByKeyUrl + "key-0"], harness.Requests.Select(r => r.Url));
+    }
+
+    [Fact]
     public async Task LeavesARequestUnconfirmedWhenItsAnswerLacksAResultPerRecipient()
     {
         await using var harness = new EmailHarness();

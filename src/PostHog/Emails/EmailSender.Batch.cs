@@ -419,7 +419,7 @@ internal sealed partial class EmailSender
             }
 
             if (reply.Fields is not { } fields
-                || !fields.TryGetProperty("results", out var slots)
+                || !TryField(fields, "results", out var slots)
                 || slots.ValueKind != JsonValueKind.Array
                 || slots.GetArrayLength() != chunk.Rows.Count)
             {
@@ -450,13 +450,13 @@ internal sealed partial class EmailSender
         {
             var messageId = Text(slot, "message_id") is { } text && IsMessageId(text) ? text : null;
             JsonElement? error = slot.ValueKind == JsonValueKind.Object
-                                 && slot.TryGetProperty("error", out var answered)
+                                 && TryField(slot, "error", out var answered)
                                  && answered.ValueKind != JsonValueKind.Null
                 ? answered
                 : null;
             if (error is null && Text(slot, "status") == "queued" && messageId is not null)
             {
-                var replayed = slot.TryGetProperty("replayed", out var flag) && flag.ValueKind == JsonValueKind.True;
+                var replayed = TryField(slot, "replayed", out var flag) && flag.ValueKind == JsonValueKind.True;
                 row.Set("queued", messageId, replayed);
                 return;
             }
@@ -531,7 +531,7 @@ internal sealed partial class EmailSender
             }
 
             var code = Text(answer, "code") ?? "api_error";
-            HttpStatusCode? status = answer.TryGetProperty("status", out var number)
+            HttpStatusCode? status = TryField(answer, "status", out var number)
                                      && number.ValueKind == JsonValueKind.Number
                                      && number.TryGetInt32(out var value)
                 ? (HttpStatusCode)value
