@@ -649,13 +649,26 @@ internal sealed partial class EmailSender : IPostHogEmails
 
         using (response)
         {
-#if NET5_0_OR_GREATER
-            var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-#else
-            var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-#endif
+            return new Reply(
+                response.StatusCode,
+                ParseObject(await ReadTextOrNullAsync(response.Content, cancellationToken).ConfigureAwait(false)),
+                ReadRetryAfter(response));
+        }
+    }
 
-            return new Reply(response.StatusCode, ParseObject(text), ReadRetryAfter(response));
+    static async Task<string?> ReadTextOrNullAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        try
+        {
+#if NET5_0_OR_GREATER
+            return await content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#else
+            return await content.ReadAsStringAsync().ConfigureAwait(false);
+#endif
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
         }
     }
 
@@ -681,7 +694,7 @@ internal sealed partial class EmailSender : IPostHogEmails
         return wait < TimeSpan.Zero ? TimeSpan.Zero : wait;
     }
 
-    static JsonElement? ParseObject(string text)
+    static JsonElement? ParseObject(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {

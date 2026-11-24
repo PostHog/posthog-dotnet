@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -385,6 +386,37 @@ public class TheBatchAsyncMethod
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
         Assert.All(error.Results, r => Assert.Equal("api_error", r.LaterError!.Code));
         Assert.Equal([BatchUrl, StatusByKeyUrl + "key-0", StatusByKeyUrl + "key-1"], harness.Requests.Select(r => r.Url));
+    }
+
+    [Theory]
+    [InlineData(200, null, "unconfirmed")]
+    [InlineData(429, 7, "failed")]
+    public async Task KeepsTheStatusOfAnAnswerItCantDecode(int status, int? retryAfterSeconds, string outcome)
+    {
+        await using var harness = new EmailHarness();
+        harness.RespondTo(_ =>
+        {
+            var response = new HttpResponseMessage((HttpStatusCode)status)
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes(Ok(Queued(M0)))),
+            };
+            response.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json; charset=not-a-charset");
+            if (retryAfterSeconds is { } seconds)
+            {
+                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(seconds));
+            }
+
+            return response;
+        });
+        harness.Respond(HttpStatusCode.NotFound, WholeCall("not_found"));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
+
+        Assert.Equal(
+            ("api_error", (HttpStatusCode?)(HttpStatusCode)status, retryAfterSeconds),
+            (error.Code, error.StatusCode, (int?)error.RetryAfter?.TotalSeconds));
+        Assert.Equal(("key-0", outcome), (Assert.Single(error.Results).IdempotencyKey, error.Results[0].Status));
     }
 
     [Fact]
