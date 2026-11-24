@@ -489,7 +489,7 @@ public class TheBatchAsyncMethod
     public async Task KeepsEveryResultWhenARequestThrows()
     {
         await using var harness = new EmailHarness();
-        harness.Fail(new ObjectDisposedException("System.Net.Http.HttpClient"));
+        harness.HttpClient.Dispose();
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
