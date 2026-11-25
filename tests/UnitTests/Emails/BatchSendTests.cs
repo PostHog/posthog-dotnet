@@ -19,6 +19,14 @@ public class TheBatchAsyncMethod
     const string KeepEachKey =
         "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
     const int FourMiB = 4 * 1024 * 1024;
+    const string NoTemplateOrNoBatchSends =
+        "PostHog found no template with this TemplateId, or batch sends aren't available for this project, so it sent no email of this request.";
+    const string NoBatchSendsFromCode =
+        "Batch sends, or sending from code, aren't available for this project, so PostHog sent no email of this request.";
+    const string SendEachOnItsOwn =
+        "Send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
+    const string CheckTheTemplateFix = "Check TemplateId. If it is right, " +
+        "send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string SendSinglyFix =
         "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
 
@@ -496,7 +504,7 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.NotFound, "Check TemplateId, or " + SendSinglyFix)]
+    [InlineData(HttpStatusCode.NotFound, CheckTheTemplateFix)]
     [InlineData(HttpStatusCode.RequestEntityTooLarge, "Split the recipients into smaller batches and send each with BatchAsync.")]
     public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(HttpStatusCode retry, string posthogsFix)
     {
@@ -955,19 +963,46 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("""{"type":"invalid_request","code":"not_found","detail":"Not found."}""")]
-    public async Task SaysA404MeansNoTemplateOrNoBatchSends(string body)
+    [InlineData("a template", "")]
+    [InlineData("a template", """{"type":"invalid_request","code":"not_found","detail":"Not found.","attr":null}""")]
+    [InlineData("a template", """{"type":"invalid_request","code":"not_found","detail":"Endpoint not found."}""")]
+    [InlineData("a template", """{"type":"invalid_request","code":"api_error","detail":"Nope."}""")]
+    [InlineData("a template", """{"type":"invalid_request","code":"","detail":"Nope."}""")]
+    [InlineData("code", """{"type":"invalid_request","code":"not_found","detail":"Not found.","attr":null}""")]
+    [InlineData("code", """{"type":"invalid_request","code":"not_found","detail":"Endpoint not found."}""")]
+    public async Task SaysA404WithoutAFieldMeansNoTemplateOrNoBatchSends(string from, string body)
     {
         await using var harness = new EmailHarness();
         harness.Respond(HttpStatusCode.NotFound, body);
+        SendBatchOptions batch = from == "code"
+            ? new SendCodeBatchOptions { TemplateKey = "launch-news", Subject = "s", Html = "h", Recipients = Recipients(2) }
+            : Batch(Recipients(2));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(() => harness.Client.Emails.BatchAsync(batch));
+
+        Assert.Single(harness.Requests);
+        Assert.Equal(("not_found", (HttpStatusCode?)HttpStatusCode.NotFound), (error.Code, error.StatusCode));
+        Assert.Equal(
+            from == "code" ? (NoBatchSendsFromCode, SendEachOnItsOwn) : (NoTemplateOrNoBatchSends, CheckTheTemplateFix),
+            (error.Message, error.Fix));
+        Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
+        Assert.All(
+            new[] { error.Message, error.Why ?? "", error.Fix! },
+            text => Assert.DoesNotMatch("(?i)update|upgrade|server|version", text));
+    }
+
+    [Fact]
+    public async Task KeepsPostHogsOwnAnswerForA404ThatNamesAField()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.NotFound,
+            """{"type":"invalid_request","code":"not_found","detail":"No such sender.","attr":"from"}""");
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(1))));
 
-        Assert.Equal(("not_found", "not_found"), (error.Code, error.Name));
-        Assert.Contains("batch sends", error.Why, StringComparison.Ordinal);
-        Assert.Equal("Check TemplateId, or " + SendSinglyFix, error.Fix);
+        Assert.Equal(("not_found", "No such sender.", "from"), (error.Code, error.Message, error.Field));
     }
 
     [Theory]

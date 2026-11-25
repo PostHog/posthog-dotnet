@@ -15,6 +15,8 @@ internal sealed partial class EmailSender
     const string SplitTheBatch = "Split the recipients into smaller batches and send each with BatchAsync.";
     const string ResendTheUnconfirmed = "Send the unconfirmed recipients again with the IdempotencyKey each result holds, within 24 hours of the key's first use, so each email goes out once.";
     const string KeepEachKey = "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
+    const string SendEachOnItsOwn = "Send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
+    const string CheckTheTemplate = "Check TemplateId. If it is right, send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string ShrinkTheEmail = "Make the email's content or TemplateData smaller, so the request fits PostHog's size limit.";
 
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
@@ -201,7 +203,8 @@ internal sealed partial class EmailSender
         return new BatchRun(
             JsonSerializer.Serialize(shared, BatchBodyOptions),
             rows,
-            batch.MaxRetries ?? defaultMaxRetries);
+            batch.MaxRetries ?? defaultMaxRetries,
+            batch is SendTemplateBatchOptions);
     }
 
     static void CheckRecipientCount(int count, string paramName)
@@ -319,7 +322,7 @@ internal sealed partial class EmailSender
                 error.MessageId);
     }
 
-    sealed class BatchRun(string body, List<BatchRow> rows, int maxRetries)
+    sealed class BatchRun(string body, List<BatchRow> rows, int maxRetries, bool fromTemplate)
     {
         readonly List<EmailWarning> _warnings = [];
         bool _mayHaveQueued;
@@ -368,7 +371,7 @@ internal sealed partial class EmailSender
         {
             if (!IsSuccess(reply.Status))
             {
-                var error = BatchReplyError(reply, rows.Count);
+                var error = BatchReplyError(reply, rows.Count, fromTemplate);
                 if ((int)reply.Status >= 500)
                 {
                     Lost();
@@ -488,26 +491,37 @@ internal sealed partial class EmailSender
         }
     }
 
-    static EmailException BatchReplyError(Reply reply, int recipients)
+    static EmailException BatchReplyError(Reply reply, int recipients, bool fromTemplate)
     {
-        var notFound = reply.Status == HttpStatusCode.NotFound;
-        var code = Text(reply.Fields, "code") ?? (notFound ? "not_found" : "api_error");
+        var code = Text(reply.Fields, "code");
+        if (reply.Status == HttpStatusCode.NotFound
+            && code is null or "not_found" or "api_error"
+            && Text(reply.Fields, "attr") is null)
+        {
+            return new EmailException(
+                "not_found",
+                fromTemplate
+                    ? "PostHog found no template with this TemplateId, or batch sends aren't available for this project, so it sent no email of this request."
+                    : "Batch sends, or sending from code, aren't available for this project, so PostHog sent no email of this request.",
+                reply.Status,
+                why: fromTemplate
+                    ? "PostHog answers the same 404 for a template it can't find and for a project without batch sends."
+                    : null,
+                fix: fromTemplate ? CheckTheTemplate : SendEachOnItsOwn,
+                docsUrl: DocsUrl(reply),
+                retryAfter: reply.RetryAfter);
+        }
+
+        code ??= reply.Status == HttpStatusCode.NotFound ? "not_found" : "api_error";
         var fix = code == "batch_unavailable"
             ? "Until batch sends are on for the project, " + SendSingly
             : Text(reply.Fields, "fix")
-              ?? (reply.Status == HttpStatusCode.RequestEntityTooLarge ? (recipients > 1 ? SplitTheBatch : ShrinkTheEmail)
-                  : notFound ? "Check TemplateId, or " + SendSingly : null);
+              ?? (reply.Status == HttpStatusCode.RequestEntityTooLarge ? (recipients > 1 ? SplitTheBatch : ShrinkTheEmail) : null);
         return new EmailException(
             code,
-            Text(reply.Fields, "detail")
-            ?? (notFound
-                ? "PostHog found no batch send for this request, so it sent nothing for this request."
-                : $"PostHog answered HTTP {(int)reply.Status}."),
+            Text(reply.Fields, "detail") ?? $"PostHog answered HTTP {(int)reply.Status}.",
             reply.Status,
-            why: Text(reply.Fields, "why")
-                 ?? (notFound
-                     ? "The template doesn't exist, or batch sends are off for this project or this PostHog version."
-                     : null),
+            why: Text(reply.Fields, "why"),
             fix: fix,
             docsUrl: DocsUrl(reply),
             field: Text(reply.Fields, "attr") is { } attr ? FieldInRecipients(attr, recipients) : null,
