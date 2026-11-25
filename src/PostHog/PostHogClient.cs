@@ -1206,7 +1206,7 @@ public sealed class PostHogClient : IPostHogClient
         }
         var pairs = groups
             .OrderBy(g => g.GroupType, StringComparer.Ordinal)
-            .Select(g => Uri.EscapeDataString(g.GroupType) + "=" + Uri.EscapeDataString(g.GroupKey));
+            .Select(g => Uri.EscapeDataString(g.GroupType) + "=" + Uri.EscapeDataString(g.GroupKey ?? string.Empty));
         return string.Join(";", pairs);
     }
 

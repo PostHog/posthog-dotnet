@@ -324,6 +324,11 @@ internal sealed class LocalEvaluator
         Dictionary<string, object?> PersonProperties,
         KnownAbsentPropertyKeys? KnownAbsent);
 
+    // An empty or null group key counts as no group key, as in the flags service: the group is never used for
+    // aggregation or bucketing.
+    static bool TryGetUsableGroup(GroupCollection groups, string groupType, [NotNullWhen(returnValue: true)] out Group? group)
+        => groups.TryGetGroup(groupType, out group) && !string.IsNullOrEmpty(group.GroupKey);
+
     StringOrValue<bool> ComputeFlagLocallyWithCache(
         LocalFeatureFlag flag,
         string distinctId,
@@ -379,7 +384,7 @@ internal sealed class LocalEvaluator
                     UnresolvedFlagReason.UnsupportedDefinition);
             }
 
-            if (groups.TryGetGroup(groupType, out var group))
+            if (TryGetUsableGroup(groups, groupType, out var group))
             {
                 flagResult = MatchFeatureFlagProperties(
                     flag,
@@ -445,9 +450,9 @@ internal sealed class LocalEvaluator
             if (conditionAggregation != flagAggregation)
             {
                 if (!_groupTypeMapping.TryGetValue(conditionAggregation!.Value, out var groupType)
-                    || !context.Groups.TryGetGroup(groupType, out var group))
+                    || !TryGetUsableGroup(context.Groups, groupType, out var group))
                 {
-                    // Skip this condition: group type unknown or not passed in.
+                    // Skip this condition: group type unknown, not passed in, or passed in without a usable key.
                     continue;
                 }
                 effectiveProperties = group.Properties;
