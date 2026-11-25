@@ -115,21 +115,38 @@ internal sealed partial class EmailSender : IPostHogEmails
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
         DateTimeOffset? firstSentAt = null;
+        DateTimeOffset? mayHaveQueuedAt = null;
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
             async () =>
             {
-                DateTimeOffset? sentAt = prepared.ScheduledAt is null ? null : _timeProvider.GetUtcNow();
+                DateTimeOffset? sentAt = prepared.ScheduledAt is null
+                    ? null
+                    : firstSentAt is null
+                        ? _timeProvider.GetUtcNow()
+                        : NowOrNull() ?? mayHaveQueuedAt ?? firstSentAt;
                 firstSentAt ??= sentAt;
-                var reply = await RequestAsync(
-                        HttpMethod.Post,
-                        url,
-                        secretKey,
-                        prepared.Body,
-                        prepared.IdempotencyKey,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                return ParseSendReply(reply, prepared.ScheduledAt, firstSentAt, sentAt);
+                try
+                {
+                    var reply = await RequestAsync(
+                            HttpMethod.Post,
+                            url,
+                            secretKey,
+                            prepared.Body,
+                            prepared.IdempotencyKey,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return ParseSendReply(
+                        reply,
+                        prepared.ScheduledAt,
+                        replayedSentAt: mayHaveQueuedAt ?? firstSentAt,
+                        sentAt: mayHaveQueuedAt ?? sentAt);
+                }
+                catch (EmailException error) when (error.StatusCode != (HttpStatusCode)429)
+                {
+                    mayHaveQueuedAt ??= sentAt;
+                    throw;
+                }
             },
             cancellationToken).ConfigureAwait(false);
         return result;
@@ -728,7 +745,7 @@ internal sealed partial class EmailSender : IPostHogEmails
     SendEmailResult ParseSendReply(
         Reply reply,
         DateTimeOffset? scheduledAt,
-        DateTimeOffset? firstSentAt,
+        DateTimeOffset? replayedSentAt,
         DateTimeOffset? sentAt)
     {
         if (!IsSuccess(reply.Status))
@@ -747,7 +764,7 @@ internal sealed partial class EmailSender : IPostHogEmails
         var replayed = reply.Fields is { } replyFields
                        && TryField(replyFields, "replayed", out var replayedValue)
                        && replayedValue.ValueKind == JsonValueKind.True;
-        var (status, confirmedAt) = scheduledAt is { } requested && (replayed ? firstSentAt : sentAt) is { } sent
+        var (status, confirmedAt) = scheduledAt is { } requested && (replayed ? replayedSentAt : sentAt) is { } sent
             ? ConfirmSchedule(reply, id, requested, sent)
             : ("queued", null);
         return new SendEmailResult
@@ -793,6 +810,24 @@ internal sealed partial class EmailSender : IPostHogEmails
     }
 
     /// <summary>
+    /// Reads the app's clock for a retry. An exception from it is dropped: an earlier attempt may have queued the email,
+    /// and only the retry with the same key can return its message ID. The caller then counts from an earlier reading.
+    /// </summary>
+    DateTimeOffset? NowOrNull()
+    {
+        try
+        {
+            return _timeProvider.GetUtcNow();
+        }
+#pragma warning disable CA1031 // The app's clock can throw any exception type.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Logs one of PostHog's warnings. PostHog has accepted the email by then, so an exception from the app's logger
     /// is dropped: it must not hide the message ID, the confirmed time, or <c>schedule_not_confirmed</c>.
     /// </summary>
@@ -814,9 +849,9 @@ internal sealed partial class EmailSender : IPostHogEmails
     /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field or
     /// sends a time that is still ahead at once, throws <c>schedule_not_confirmed</c> with the accepted email's
     /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's. It counts
-    /// from <paramref name="sentAt"/>, read before the attempt PostHog answered, so a slow answer or a slow logger
-    /// can't move a time that was still ahead into it. A replayed answer may be to the first attempt, so it counts
-    /// from the first attempt.
+    /// from <paramref name="sentAt"/>, read before the attempt PostHog answered, or before the first attempt that may
+    /// have queued the email, such as one whose answer was lost, so a slow answer, a slow logger or a retry can't move
+    /// a time that was still ahead into it.
     /// </summary>
     static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(
         Reply reply,
@@ -863,7 +898,6 @@ internal sealed partial class EmailSender : IPostHogEmails
         => time[time.Length - 1] == 'Z'
            || (time.Length > 6 && time[time.Length - 6] is '+' or '-' && time[time.Length - 3] == ':');
 
-    // GetString throws on an unpaired surrogate escape, which would hide an accepted email and its message ID.
     /// <summary>
     /// Looks up a field of a reply, as the last field with that name. A field whose name has an unpaired surrogate
     /// escape can't be read, so it is skipped rather than allowed to throw and hide an accepted email, its message ID,
