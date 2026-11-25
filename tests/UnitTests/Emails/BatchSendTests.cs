@@ -253,23 +253,45 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData(7, true, "The request to PostHog timed out after 7s, the Timeout of the app's HttpClient.")]
-    [InlineData(7, false, "The app's HttpClient cancelled the request to PostHog before PostHog answered.")]
-    [InlineData(-1, false, "The app's HttpClient cancelled the request to PostHog before PostHog answered.")]
-    public async Task NamesTheAppsHttpClientTimeoutOnlyWhenItEndsAnAttempt(int timeoutSeconds, bool timedOut, string message)
+    [InlineData("its timeout fires")]
+    [InlineData("the app cancels its pending requests")]
+    [InlineData("a handler times out under an infinite timeout")]
+    public async Task NamesTheAppsHttpClientTimeoutOnlyWhenItEndsAnAttempt(string how)
     {
+        const string cancelled = "The app's HttpClient cancelled the request to PostHog before PostHog answered.";
         await using var harness = new EmailHarness();
-        harness.HttpClient.Timeout = timeoutSeconds < 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(timeoutSeconds);
-        harness.Fail(timedOut
-            ? new TaskCanceledException(
-                "The request was canceled due to the configured HttpClient.Timeout of 7 seconds elapsing.",
-                new TimeoutException())
-            : new TaskCanceledException("A task was canceled."));
+        HeldAnswer? held = null;
+        var expected = cancelled;
+        switch (how)
+        {
+            case "its timeout fires":
+                harness.HttpClient.Timeout = TimeSpan.FromMilliseconds(50);
+                harness.Hang();
+                // Before .NET 5, HttpClient reports its timeout as a bare cancellation, with nothing to name it by.
+                if (Environment.Version.Major >= 5)
+                {
+                    expected = "The request to PostHog timed out after 0.05s, the Timeout of the app's HttpClient.";
+                }
+                break;
+            case "the app cancels its pending requests":
+                held = harness.Hold(AllQueuedAnswer);
+                break;
+            default:
+                harness.HttpClient.Timeout = Timeout.InfiniteTimeSpan;
+                harness.Fail(new TaskCanceledException("The handler timed out.", new TimeoutException()));
+                break;
+        }
 
-        var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
+        var send = harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0));
+        if (held is not null)
+        {
+            await held.Arrived;
+            harness.HttpClient.CancelPendingRequests();
+        }
 
-        Assert.Equal(("network_error", message), (error.Code, error.Message));
+        var error = await Assert.ThrowsAsync<EmailBatchException>(() => send);
+
+        Assert.Equal(("network_error", expected), (error.Code, error.Message));
     }
 
     [Theory]
@@ -303,6 +325,9 @@ public class TheBatchAsyncMethod
         Assert.Equal(
             ("unconfirmed", M1, "recipient_suppressed", "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once."),
             (second.Status, second.MessageId, second.Error!.Code, second.Error.Fix));
+        Assert.Equal(
+            "An earlier attempt may have queued this email, so it may still go out. The retry got: Refused: recipient_suppressed.",
+            second.Error.Message);
         Assert.Equal(Keys(harness.Requests[1])[1], second.IdempotencyKey);
     }
 
@@ -527,11 +552,13 @@ public class TheBatchAsyncMethod
     [Theory]
     [InlineData("in flight", (HttpStatusCode)422, "sending_paused")]
     [InlineData("lost", (HttpStatusCode)429, "quota_limited")]
+    [InlineData("lost", (HttpStatusCode)403, null)]
     public async Task LeavesEveryRecipientUnconfirmedWhenTheRetryIsRefusedAfterAnAttemptThatMayHaveQueued(
         string first,
         HttpStatusCode refusal,
-        string code)
+        string? answeredCode)
     {
+        var code = answeredCode ?? "api_error";
         await using var harness = new EmailHarness();
         if (first == "lost")
         {
@@ -542,7 +569,7 @@ public class TheBatchAsyncMethod
             harness.Respond(HttpStatusCode.Conflict, WholeCall("idempotency_key_in_flight"));
         }
 
-        harness.Respond(refusal, WholeCall(code));
+        harness.Respond(refusal, answeredCode is null ? """{"detail":"Nope."}""" : WholeCall(answeredCode));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));

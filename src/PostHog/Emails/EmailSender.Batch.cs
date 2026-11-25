@@ -255,10 +255,7 @@ internal sealed partial class EmailSender
             ? error
             : new EmailException(
                 error.Code,
-                UnconfirmedSlotCodes.Contains(error.Code)
-                    ? error.Message
-                    : "An earlier attempt may have queued this email, so it may still go out. The retry got: "
-                      + error.Message,
+                error.Message,
                 error.StatusCode,
                 error.Why,
                 ResendWithTheSameKey,
@@ -352,7 +349,7 @@ internal sealed partial class EmailSender
         {
             foreach (var row in rows.Where(row => row.Status is null))
             {
-                row.Set(_mayHaveQueued ? "unconfirmed" : "failed", error: error);
+                row.Set(_mayHaveQueued ? "unconfirmed" : "failed", error: _mayHaveQueued ? AfterAnEarlierAttempt(error) : error);
             }
         }
 
@@ -386,8 +383,20 @@ internal sealed partial class EmailSender
             row.Set(
                 mayHaveQueued || UnconfirmedSlotCodes.Contains(answer.Code) ? "unconfirmed" : "failed",
                 messageId,
-                error: answer);
+                error: mayHaveQueued ? AfterAnEarlierAttempt(answer) : answer);
         }
+
+        static EmailException AfterAnEarlierAttempt(EmailException refusal) => new(
+            refusal.Code,
+            "An earlier attempt may have queued this email, so it may still go out. The retry got: " + refusal.Message,
+            refusal.StatusCode,
+            refusal.Why,
+            ResendWithTheSameKey,
+            refusal.DocsUrl,
+            refusal.Field,
+            refusal.RetryAfter,
+            refusal.InnerException,
+            refusal.MessageId);
 
         static EmailException SlotError(JsonElement? error, string? messageId)
         {

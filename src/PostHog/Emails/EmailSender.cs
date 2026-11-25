@@ -637,7 +637,7 @@ internal sealed partial class EmailSender : IPostHogEmails
             throw NetworkError(
                 deadline.IsCancellationRequested
                     ? $"The request to PostHog timed out after {waitFor.TotalSeconds:0.###}s."
-                    : e.InnerException is TimeoutException
+                    : e.InnerException is TimeoutException && _httpClient!.Timeout != Timeout.InfiniteTimeSpan
                         ? $"The request to PostHog timed out after {_httpClient!.Timeout.TotalSeconds:0.###}s, the "
                           + "Timeout of the app's HttpClient."
                         : "The app's HttpClient cancelled the request to PostHog before PostHog answered.",

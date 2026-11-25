@@ -36,8 +36,9 @@ public interface IPostHogEmails
     /// <remarks>
     /// The client sends up to 100 recipients in one request. It checks only the number of recipients, and throws
     /// PostHog's refusals with PostHog's own fix. HTTP 413 with <c>content_too_large</c> means the batch is too large
-    /// as a whole: split the recipients into smaller batches. HTTP 400 with <c>content_too_large</c> means the shared
-    /// content or template data is too large, which splitting doesn't change: make it smaller. The client waits up to 45 seconds for the answer, or
+    /// as a whole: split the recipients into smaller batches, or make the email smaller when the batch holds one
+    /// recipient. HTTP 400 with <c>content_too_large</c> means the shared content or template data is too large, which
+    /// splitting doesn't change: make it smaller. The client waits up to 45 seconds for the answer, or
     /// <see cref="PostHogOptions.EmailRequestTimeout"/> when that is longer. The <see cref="HttpClient.Timeout"/> of
     /// the <see cref="HttpClient"/> the client sends through still ends an attempt when it is shorter, so give that
     /// <see cref="HttpClient"/> a timeout of at least 45 seconds.
