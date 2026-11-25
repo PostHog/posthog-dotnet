@@ -469,13 +469,17 @@ public class TheBatchAsyncMethod
 
     [Theory]
     [InlineData("its handler")]
+    [InlineData("its handler, before returning")]
     [InlineData("an HttpClient of the app's own")]
     public async Task LeavesEveryRecipientUnconfirmedWhenTheTransportFailsAfterTheRequestLeft(string fails)
     {
         var posthog = new RecordingHandler();
-        await using var harness = fails == "its handler"
-            ? new EmailHarness(posthog: posthog)
-            : new EmailHarness(posthog: posthog, httpClient: transport => new ThrowsAfterSendingHttpClient(transport));
+        await using var harness = fails switch
+        {
+            "its handler" => new EmailHarness(posthog: posthog),
+            "its handler, before returning" => new EmailHarness(posthog: new ThrowsAfterSendingHandler(posthog)),
+            _ => new EmailHarness(posthog: posthog, httpClient: transport => new ThrowsAfterSendingHttpClient(transport)),
+        };
         if (fails == "its handler")
         {
             posthog.Enqueue(_ => throw new ObjectDisposedException("response stream"));
@@ -510,6 +514,15 @@ public class TheBatchAsyncMethod
         Assert.Equal(2, posthog.Requests.Count);
         Assert.Equal("network_error", error.Code);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
+    }
+
+    sealed class ThrowsAfterSendingHandler(HttpMessageHandler posthog) : DelegatingHandler(posthog)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            base.SendAsync(request, cancellationToken).GetAwaiter().GetResult().Dispose();
+            throw new InvalidOperationException("reply");
+        }
     }
 
     sealed class ThrowsAfterSendingHttpClient(HttpMessageHandler transport) : HttpClient(transport, disposeHandler: false)
