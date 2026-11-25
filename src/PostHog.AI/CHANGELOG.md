@@ -1,5 +1,17 @@
 # PostHog.AI
 
+## 0.1.16
+
+### Patch Changes
+
+- 09f7659: The OpenAI handler now maps `max_completion_tokens` (used by reasoning models on Chat Completions) to `$ai_max_tokens`. Previously the limit was missing and appeared in `$ai_model_parameters` as a string.
+
+## 0.1.15
+
+### Patch Changes
+
+- ee94609: The OpenAI handler now captures the Responses API `instructions` as a leading system message in `$ai_input`, and maps `max_output_tokens` to `$ai_max_tokens`. Previously the system prompt was dropped and both fields appeared in `$ai_model_parameters` as strings.
+
 ## 0.1.14
 
 ### Patch Changes

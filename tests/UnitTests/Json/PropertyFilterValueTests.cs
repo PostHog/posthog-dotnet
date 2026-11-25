@@ -315,6 +315,40 @@ public class TheCompareToMethod
         Assert.NotNull(filterPropertyValue);
         Assert.Equal(expected, filterPropertyValue.CompareTo(comparand));
     }
+
+    public static TheoryData<object> NumericOverrides => new()
+    {
+        (short)7,
+        (ushort)7,
+        (uint)7,
+        (ulong)7,
+        (byte)7,
+        (sbyte)7,
+        7.5f,
+        7.5m
+    };
+
+    [Theory]
+    [MemberData(nameof(NumericOverrides))]
+    public void ComparesNumericOverridesOfAnyNumericTypeAsNumbers(object overrideValue)
+    {
+        // "10" would sort before "7" if the override were compared as a string.
+        var filterValue = new PropertyFilterValue("10");
+
+        Assert.True(filterValue > overrideValue);
+        Assert.True(filterValue >= overrideValue);
+        Assert.False(filterValue < overrideValue);
+        Assert.False(filterValue <= overrideValue);
+    }
+
+    [Fact]
+    public void ComparesFractionalFloatAndDecimalOverridesAsEqual()
+    {
+        var filterValue = new PropertyFilterValue("7.5");
+
+        Assert.Equal(0, filterValue.CompareTo(7.5m));
+        Assert.Equal(0, filterValue.CompareTo(7.5f));
+    }
 }
 
 public class TheCreateMethod

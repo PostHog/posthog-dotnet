@@ -15,6 +15,11 @@ jobs:
     permissions:
       security-events: write
       packages: read
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      DOTNET_NOLOGO: true
+      # Keep in sync with DOTNET_VERSION in main.yaml.
+      DOTNET_VERSION: 10.0.404
 
     strategy:
       fail-fast: false
@@ -22,11 +27,18 @@ jobs:
         include:
           - language: actions
             build-mode: none
+          # Autobuild picks the SDK from benchmarks/global.json, which can't build the net10.0 test targets.
           - language: csharp
-            build-mode: autobuild
+            build-mode: manual
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        if: matrix.build-mode == 'manual'
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
@@ -37,6 +49,13 @@ jobs:
           # is never reused, causing wasted cache space.
           # See: https://github.com/github/codeql-action/issues/2030
           trap-caching: false
+
+      - name: Build
+        if: matrix.build-mode == 'manual'
+        run: |
+          dotnet restore --locked-mode
+          dotnet build --configuration Release --no-restore --nologo -p:UseSharedCompilation=false
+        shell: bash
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3

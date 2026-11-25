@@ -283,7 +283,15 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             : temperature.ToString();
                 }
 
-                if (requestJson["max_tokens"] is JsonValue maxTokens)
+                // Chat Completions uses "max_tokens" (or "max_completion_tokens" for reasoning
+                // models); the Responses API uses "max_output_tokens".
+                if (
+                    (
+                        requestJson["max_tokens"]
+                        ?? requestJson["max_completion_tokens"]
+                        ?? requestJson["max_output_tokens"]
+                    ) is JsonValue maxTokens
+                )
                 {
                     eventProperties[PostHogAIFieldNames.MaxTokens] = maxTokens.TryGetValue<int>(
                         out var maxTokensInt
@@ -325,6 +333,9 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             && kvp.Key != "model"
                             && kvp.Key != "temperature"
                             && kvp.Key != "max_tokens"
+                            && kvp.Key != "max_output_tokens"
+                            && kvp.Key != "max_completion_tokens"
+                            && kvp.Key != "instructions"
                             && kvp.Key != "stream"
                             && kvp.Key != "tools"
                             && kvp.Key != "functions"
@@ -566,20 +577,49 @@ public class PostHogOpenAIHandler : DelegatingHandler
             return messages;
         }
 
+        // The Responses API carries the system prompt in a top-level "instructions"
+        // field. Surface it as a leading system message so it is part of $ai_input,
+        // even when "input" is omitted/null (previous_response_id, conversation) or
+        // a stored "prompt" template is used. Legacy completions never send it.
+        if (requestJson["instructions"] is JsonValue instructionsNode
+            && instructionsNode.TryGetValue<string>(out var instructions)
+            && !string.IsNullOrEmpty(instructions))
+        {
+            var combined = new JsonArray
+            {
+                new JsonObject { ["role"] = "system", ["content"] = instructions },
+            };
+            var inputNode = requestJson["input"];
+            if (inputNode is JsonArray items)
+            {
+                foreach (var item in items)
+                {
+                    combined.Add(item?.DeepClone());
+                }
+            }
+            else if (inputNode != null)
+            {
+                combined.Add(
+                    new JsonObject { ["role"] = "user", ["content"] = inputNode.ToString() }
+                );
+            }
+
+            return combined;
+        }
+
         if (requestJson["prompt"] != null)
         {
             return requestJson["prompt"]?.ToString() ?? "";
         }
 
-        if (requestJson["input"] != null) // For embeddings
+        if (requestJson["input"] != null) // For embeddings and the Responses API
         {
-            var inputNode = requestJson["input"];
-            if (inputNode is JsonArray arr)
+            if (requestJson["input"] is JsonArray arr)
             {
                 return arr;
             }
 
-            return inputNode?.ToString() ?? "";
+            return requestJson["input"]?.ToString() ?? "";
         }
 
         return null;

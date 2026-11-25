@@ -843,6 +843,18 @@ internal sealed class LocalEvaluator
             return false;
         }
 
+        // NaN and +/-Infinity serialize as null, so they never satisfy a numeric comparison. Double.CompareTo
+        // would otherwise order them below every finite value and make "less than" rules match.
+        if (propertyFilter.Operator is ComparisonOperator.GreaterThan
+                or ComparisonOperator.GreaterThanOrEquals
+                or ComparisonOperator.LessThan
+                or ComparisonOperator.LessThanOrEquals
+            && overrideValue is float or double
+            && !IsFinite(overrideValue))
+        {
+            return false;
+        }
+
         // A new operator here also needs an arm in AssertFilterSupported.
         return propertyFilter.Operator switch
         {
@@ -983,6 +995,13 @@ internal sealed class LocalEvaluator
         // Match the value against expectations
         return MatchesDependencyValue(propertyValue, immediateDependencyValue);
     }
+
+    static bool IsFinite(object value) => value switch
+    {
+        float f => !float.IsNaN(f) && !float.IsInfinity(f),
+        double d => !double.IsNaN(d) && !double.IsInfinity(d),
+        _ => true
+    };
 
     static (string flagKey, PropertyFilterValue propertyValue) ValidateFlagDependencyFilter(PropertyFilter propertyFilter)
     {
