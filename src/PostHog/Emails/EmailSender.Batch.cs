@@ -73,6 +73,11 @@ internal sealed partial class EmailSender
                         run.Lost();
                         throw;
                     }
+                    catch (EmailException e)
+                    {
+                        run.Lost();
+                        throw NetworkError("The request to PostHog failed before it was answered.", e);
+                    }
                     catch (Exception e) when (!dispatched && e is not EmailException && !IsCallerCancellation(e, cancellationToken))
                     {
                         throw new EmailException(
