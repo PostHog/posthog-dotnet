@@ -219,14 +219,16 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
     }
 
-    [Theory]
-    [InlineData(HttpStatusCode.TooManyRequests)]
-    [InlineData(HttpStatusCode.ServiceUnavailable)]
-    public async Task MeasuresTheMinuteFromTheRetryThatPostHogAccepted(HttpStatusCode firstAnswer)
+    [Fact]
+    public async Task MeasuresTheMinuteFromTheRetryWhenPostHogRefusedTheEarlierAttempt()
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
-        RetryAt30SecondsBeforeTheDueTime(harness, posthog, firstAnswer, replayed: false);
+        RetryAt30SecondsBeforeTheDueTime(
+            harness,
+            posthog,
+            () => new HttpResponseMessage(HttpStatusCode.TooManyRequests),
+            replayed: false);
 
         var result = await harness.Client.Emails.SendAsync(TemplateSend(DueTime));
 
@@ -234,12 +236,28 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal(("queued", MessageId, (DateTimeOffset?)null), (result.Status, result.Id, result.ScheduledAt));
     }
 
-    [Fact]
-    public async Task MeasuresTheMinuteFromTheFirstAttemptWhenTheRetryIsReplayed()
+    [Theory]
+    [InlineData("an unavailable service")]
+    [InlineData("a lost connection")]
+    [InlineData("a key still in flight")]
+    [InlineData("a refusal answered with a replay")]
+    [InlineData("an app clock that fails on the retry")]
+    public async Task MeasuresTheMinuteFromTheFirstAttemptThatMayHaveQueued(string earlierAttempt)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
-        RetryAt30SecondsBeforeTheDueTime(harness, posthog, HttpStatusCode.ServiceUnavailable, replayed: true);
+        RetryAt30SecondsBeforeTheDueTime(
+            harness,
+            posthog,
+            () => earlierAttempt switch
+            {
+                "a lost connection" => throw new HttpRequestException("connection reset"),
+                "a key still in flight" => Json(HttpStatusCode.Conflict, """{"code": "idempotency_key_in_flight"}"""),
+                "a refusal answered with a replay" => new HttpResponseMessage(HttpStatusCode.TooManyRequests),
+                "an app clock that fails on the retry" => BreakClock(harness),
+                _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+            },
+            replayed: earlierAttempt == "a refusal answered with a replay");
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
@@ -248,6 +266,17 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
     }
 
+    static HttpResponseMessage BreakClock(EmailHarness harness)
+    {
+        harness.Time.Broken = true;
+        return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+    }
+
+    static HttpResponseMessage Json(HttpStatusCode status, string body) => new(status)
+    {
+        Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+    };
+
     /// <summary>
     /// Sends the first attempt 61 seconds before the due time and answers it with <paramref name="firstAnswer"/>, then
     /// answers the retry, 30 seconds before the due time, with a <c>queued</c> email whose time had passed.
@@ -255,22 +284,18 @@ public class TheSendAsyncMethodWithScheduledAt
     static void RetryAt30SecondsBeforeTheDueTime(
         EmailHarness harness,
         RecordingHandler posthog,
-        HttpStatusCode firstAnswer,
+        Func<HttpResponseMessage> firstAnswer,
         bool replayed)
     {
         harness.Time.Now = DueTime.AddSeconds(-61);
         posthog.Enqueue(_ =>
         {
             harness.Time.Now = DueTime.AddSeconds(-30);
-            return Task.FromResult(new HttpResponseMessage(firstAnswer));
+            return Task.FromResult(firstAnswer());
         });
-        posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted)
-        {
-            Content = new StringContent(
-                $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null, "replayed": {{(replayed ? "true" : "false")}}}""",
-                System.Text.Encoding.UTF8,
-                "application/json"),
-        }));
+        posthog.Enqueue(_ => Task.FromResult(Json(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null, "replayed": {{(replayed ? "true" : "false")}}}""")));
     }
 
     [Fact]
