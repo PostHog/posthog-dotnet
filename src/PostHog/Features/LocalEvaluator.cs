@@ -315,6 +315,15 @@ internal sealed class LocalEvaluator
             warnOnUnknownGroups);
     }
 
+    // The inputs of a top-level flag evaluation. Flag dependencies are evaluated from them, not from the calling
+    // condition's bucketing identifier and properties. The evaluation cache is keyed by flag key, which holds because
+    // every flag resolves to one value for the same inputs.
+    readonly record struct FlagEvaluationContext(
+        string DistinctId,
+        GroupCollection Groups,
+        Dictionary<string, object?> PersonProperties,
+        KnownAbsentPropertyKeys? KnownAbsent);
+
     StringOrValue<bool> ComputeFlagLocallyWithCache(
         LocalFeatureFlag flag,
         string distinctId,
@@ -346,6 +355,7 @@ internal sealed class LocalEvaluator
 
         var filters = flag.Filters;
         var aggregationGroupIndex = filters?.AggregationGroupTypeIndex;
+        var context = new FlagEvaluationContext(distinctId, groups, personProperties, knownAbsent);
 
         StringOrValue<bool> flagResult;
         if (!aggregationGroupIndex.HasValue)
@@ -356,8 +366,7 @@ internal sealed class LocalEvaluator
                 personProperties,
                 knownAbsent?.Person,
                 evaluationCache,
-                groups,
-                knownAbsent);
+                context);
         }
         else
         {
@@ -378,8 +387,7 @@ internal sealed class LocalEvaluator
                     group.Properties,
                     knownAbsent?.ForGroup(groupType),
                     evaluationCache,
-                    groups,
-                    knownAbsent);
+                    context);
             }
             else
             {
@@ -407,8 +415,7 @@ internal sealed class LocalEvaluator
         Dictionary<string, object?>? properties, /* person or group properties */
         HashSet<string>? absentKeys, /* the known-absent keys for properties */
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups,
-        KnownAbsentPropertyKeys? knownAbsent)
+        FlagEvaluationContext context)
     {
         var filters = flag.Filters;
         var flagConditions = filters?.Groups ?? [];
@@ -438,14 +445,13 @@ internal sealed class LocalEvaluator
             if (conditionAggregation != flagAggregation)
             {
                 if (!_groupTypeMapping.TryGetValue(conditionAggregation!.Value, out var groupType)
-                    || groups is null
-                    || !groups.TryGetGroup(groupType, out var group))
+                    || !context.Groups.TryGetGroup(groupType, out var group))
                 {
                     // Skip this condition: group type unknown or not passed in.
                     continue;
                 }
                 effectiveProperties = group.Properties;
-                effectiveAbsentKeys = knownAbsent?.ForGroup(groupType);
+                effectiveAbsentKeys = context.KnownAbsent?.ForGroup(groupType);
                 effectiveBucketingId = group.GroupKey;
             }
 
@@ -460,8 +466,7 @@ internal sealed class LocalEvaluator
                     effectiveAbsentKeys,
                     conditionAggregation,
                     evaluationCache,
-                    groups,
-                    knownAbsent);
+                    context);
             }
             catch (RequiresServerEvaluationException e)
             {
@@ -563,8 +568,7 @@ internal sealed class LocalEvaluator
         HashSet<string>? absentKeys,
         int? absentKeysGroupTypeIndex, /* the group type index the absent keys belong to, or null for person keys */
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups,
-        KnownAbsentPropertyKeys? knownAbsent)
+        FlagEvaluationContext context)
     {
         var rolloutPercentage = condition.RolloutPercentage;
         if (condition.Properties is not null)
@@ -596,13 +600,7 @@ internal sealed class LocalEvaluator
                         isMatch = property.Type switch
                         {
                             FilterType.Cohort => MatchCohort(property, distinctId, properties, absentKeys, absentKeysGroupTypeIndex),
-                            FilterType.Flag => MatchFlagDependencyFilter(
-                                property,
-                                distinctId,
-                                properties,
-                                evaluationCache,
-                                groups,
-                                knownAbsent),
+                            FilterType.Flag => MatchFlagDependencyFilter(property, evaluationCache, context),
                             _ => MatchProperty(property, distinctId, properties) ?? false
                         };
                     }
@@ -1075,19 +1073,13 @@ internal sealed class LocalEvaluator
     /// Evaluates a flag dependency property filter.
     /// </summary>
     /// <param name="propertyFilter">The <see cref="PropertyFilter"/> to evaluate.</param>
-    /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="properties">The overridden values that describe the user/group.</param>
     /// <param name="evaluationCache">The cache of already evaluated flags.</param>
-    /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
-    /// <param name="knownAbsent">The person and group property keys known absent.</param>
+    /// <param name="context">The inputs of the top-level flag evaluation.</param>
     /// <returns><c>true</c> if the current user/group matches the flag dependency. Otherwise <c>false</c>.</returns>
     bool MatchFlagDependencyFilter(
         PropertyFilter propertyFilter,
-        string distinctId,
-        Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups,
-        KnownAbsentPropertyKeys? knownAbsent)
+        FlagEvaluationContext context)
     {
         Debug.Assert(propertyFilter.Type == FilterType.Flag);
 
@@ -1095,15 +1087,7 @@ internal sealed class LocalEvaluator
         var (flagKey, propertyValue) = ValidateFlagDependencyFilter(propertyFilter);
 
         // Evaluate all dependencies in the chain and return the value of the last one
-        // Each dependency picks the known-absent keys for its own aggregation, so keys never cross between person and
-        // group evaluation.
-        EvaluateDependencyChain(
-            propertyFilter.DependencyChain!,
-            distinctId,
-            properties,
-            knownAbsent,
-            evaluationCache,
-            groups);
+        EvaluateDependencyChain(propertyFilter.DependencyChain!, evaluationCache, context);
 
         // Get the evaluated value for this flag
         var immediateDependencyValue = evaluationCache.TryGetValue(flagKey, out var keyForFlagDependencyFilter)
@@ -1162,11 +1146,8 @@ internal sealed class LocalEvaluator
 
     // Evaluates every flag in the dependency chain in order and returns the result of the last one.
     void EvaluateDependencyChain(IReadOnlyList<string> dependencyChain,
-        string distinctId,
-        Dictionary<string, object?>? properties,
-        KnownAbsentPropertyKeys? knownAbsent,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups)
+        FlagEvaluationContext context)
     {
         // A dependency with no definition outranks one that is only inconclusive, so check the whole chain before
         // evaluating any of it.
@@ -1187,24 +1168,16 @@ internal sealed class LocalEvaluator
                 continue;
             }
 
-            evaluationCache[depFlagKey] = EvaluateSingleDependency(
-                _localFeatureFlags[depFlagKey],
-                distinctId,
-                properties,
-                knownAbsent,
-                evaluationCache,
-                groups);
+            evaluationCache[depFlagKey] = EvaluateSingleDependency(_localFeatureFlags[depFlagKey], evaluationCache, context);
         }
     }
 
-    // Evaluates a single flag dependency and returns the result.
+    // Evaluates a single flag dependency like a standalone flag with the top-level inputs, so it uses its own
+    // aggregation, properties and bucketing identifier, as the flags service does.
     StringOrValue<bool> EvaluateSingleDependency(
         LocalFeatureFlag depFlag,
-        string distinctId,
-        Dictionary<string, object?>? properties,
-        KnownAbsentPropertyKeys? knownAbsent,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups)
+        FlagEvaluationContext context)
     {
         // Check if the dependency flag is active (same check as in ComputeFlagLocallyWithCache)
         if (!depFlag.Active)
@@ -1217,10 +1190,10 @@ internal sealed class LocalEvaluator
         {
             var depResult = ComputeFlagLocallyWithCache(
                 depFlag,
-                distinctId,
-                groups ?? [],
-                properties ?? new Dictionary<string, object?>(),
-                knownAbsent,
+                context.DistinctId,
+                context.Groups,
+                context.PersonProperties,
+                context.KnownAbsent,
                 evaluationCache,
                 false);
             return depResult;
