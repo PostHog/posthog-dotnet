@@ -819,3 +819,197 @@ public class TheToTracePropertiesMethod
         Assert.Empty(prompt.ToTraceProperties());
     }
 }
+
+public class TheGetAllAsyncMethod
+{
+    static Uri ListUrl(string? label = "production")
+        => new($"https://us.i.posthog.com/api/environments/@current/llm_prompts/?token=fake-project-token{(label is null ? "" : $"&label={label}")}&content=full");
+
+    static string Row(string name, int version = 1, string? allLabels = null, string config = "null", string prompt = "\"Prompt for {name}\"")
+        => $$"""
+            {
+              "name": "{{name}}",
+              "prompt": {{prompt.Replace("{name}", name, StringComparison.Ordinal)}},
+              "version": {{version}},
+              "all_labels": {{allLabels ?? $$"""[{"name": "production", "version": {{version}}}]"""}},
+              "config": {{config}}
+            }
+            """;
+
+    static string ListJson(string rows, string? next = null)
+        => $$"""{"count": 0, "next": {{(next is null ? "null" : $"\"{next}\"")}}, "previous": null, "results": [{{rows}}]}""";
+
+    [Fact]
+    public async Task FetchesEveryPageAndSeedsTheCache()
+    {
+        var container = CreateContainer();
+        var nextUrl = "https://us.i.posthog.com/api/environments/@current/llm_prompts/?token=fake-project-token&label=production&content=full&limit=100&offset=100";
+        var firstPage = container.FakeHttpMessageHandler.AddResponse(
+            ListUrl(),
+            HttpMethod.Get,
+            ListJson(Row("prompt-a", config: """{"temperature": 0}"""), next: nextUrl));
+        var secondPage = container.FakeHttpMessageHandler.AddResponse(new Uri(nextUrl), HttpMethod.Get, ListJson(Row("prompt-b", version: 3)));
+        var client = container.Activate<PostHogClient>();
+
+        var results = await client.Prompts.GetAllAsync(label: "production");
+        // A later labeled GetAsync is a cache hit: no handler is registered for a single fetch, so a request would fail.
+        var cached = await client.Prompts.GetAsync("prompt-b", new GetPromptOptions { Label = "production" });
+
+        Assert.Equal("Bearer fake-personal-api-key", firstPage.ReceivedRequest.Headers.Authorization?.ToString());
+        Assert.Single(secondPage.ReceivedRequests);
+        Assert.Equal(["prompt-a", "prompt-b"], results.Keys.OrderBy(name => name, StringComparer.Ordinal));
+        Assert.Equal(PromptSource.Api, results["prompt-a"].Source);
+        Assert.Equal("Prompt for prompt-a", results["prompt-a"].Prompt);
+        Assert.Equal(1, results["prompt-a"].Version);
+        Assert.Equal("production", results["prompt-a"].Label);
+        Assert.Equal(0, results["prompt-a"].Config?.GetProperty("temperature").GetInt32());
+        Assert.Equal(3, results["prompt-b"].Version);
+        Assert.Null(results["prompt-b"].Config);
+        Assert.Equal(PromptSource.Cache, cached.Source);
+        Assert.Equal(3, cached.Version);
+    }
+
+    [Fact]
+    public async Task OmitsTheLabelParameterWhenNoLabelIsGiven()
+    {
+        // Rows without any label must be accepted, since no label was requested.
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(ListUrl(label: null), HttpMethod.Get, ListJson(Row("prompt-a", version: 2, allLabels: "[]")));
+        var client = container.Activate<PostHogClient>();
+
+        var results = await client.Prompts.GetAllAsync();
+        var cached = await client.Prompts.GetAsync("prompt-a");
+
+        var result = Assert.Single(results).Value;
+        Assert.Equal(2, result.Version);
+        Assert.Null(result.Label);
+        Assert.Equal(PromptSource.Cache, cached.Source);
+        Assert.Equal(2, cached.Version);
+    }
+
+    [Fact]
+    public async Task FailsWhenTheServerIgnoresTheLabel()
+    {
+        // An old server ignores the label parameter and returns the latest version of every prompt, including
+        // prompts without the label. Even when some labels happen to point at latest, a partial result hides the rest.
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            ListUrl(),
+            HttpMethod.Get,
+            ListJson($"{Row("prompt-a")}, {Row("prompt-b", allLabels: "[]")}"));
+        var client = container.Activate<PostHogClient>();
+
+        var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAllAsync(label: "production"));
+        var afterwards = await Assert.ThrowsAsync<PromptFetchException>(
+            () => client.Prompts.GetAsync("prompt-a", new GetPromptOptions { Label = "production" }));
+
+        Assert.Equal("label_not_supported", exception.Code);
+        Assert.Contains("does not carry label \"production\"", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("production", exception.Label);
+        // Nothing was cached, so the single fetch went to the server (where no response is registered).
+        Assert.Equal("not_found", afterwards.Code);
+    }
+
+    [Fact]
+    public async Task SkipsAPromptWhoseLabelMovedAndKeepsTheRest()
+    {
+        // A label that moved between the query and the response leaves one stale row. The rest is still returned.
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            ListUrl(),
+            HttpMethod.Get,
+            ListJson($"{Row("prompt-a", allLabels: """[{"name": "production", "version": 2}]""")}, {Row("prompt-b")}"));
+        var client = container.Activate<PostHogClient>();
+
+        var results = await client.Prompts.GetAllAsync(label: "production");
+
+        Assert.Equal(["prompt-b"], results.Keys);
+    }
+
+    [Fact]
+    public async Task FailsWhenEveryPromptWasSkippedAsMoved()
+    {
+        // An old server can serve latest versions while every prompt's label points at an earlier version. Each row
+        // then looks like a moved label, and an empty result would report no labeled prompts despite them existing.
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            ListUrl(),
+            HttpMethod.Get,
+            ListJson(
+                $"{Row("prompt-a", version: 2, allLabels: """[{"name": "production", "version": 1}]""")}, "
+                + $"{Row("prompt-b", version: 3, allLabels: """[{"name": "production", "version": 2}]""")}"));
+        var client = container.Activate<PostHogClient>();
+
+        var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAllAsync(label: "production"));
+        var afterwards = await Assert.ThrowsAsync<PromptFetchException>(
+            () => client.Prompts.GetAsync("prompt-a", new GetPromptOptions { Label = "production" }));
+
+        Assert.Equal("label_not_supported", exception.Code);
+        Assert.Contains("none resolve label \"production\"", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("not_found", afterwards.Code);
+    }
+
+    [Fact]
+    public async Task FailsOnAMalformedRowAndCachesNothing()
+    {
+        // A row that fails validation is a server error, not a moved label. Returning the valid rows would hide it.
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            ListUrl(),
+            HttpMethod.Get,
+            ListJson($"{Row("prompt-b")}, {Row("prompt-a", prompt: "42")}"));
+        var client = container.Activate<PostHogClient>();
+
+        var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAllAsync(label: "production"));
+        var afterwards = await Assert.ThrowsAsync<PromptFetchException>(
+            () => client.Prompts.GetAsync("prompt-b", new GetPromptOptions { Label = "production" }));
+
+        Assert.Equal("invalid_response", exception.Code);
+        Assert.Equal("not_found", afterwards.Code);
+    }
+
+    [Fact]
+    public async Task RefusesAPaginationLinkOffTheConfiguredHost()
+    {
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(
+            ListUrl(),
+            HttpMethod.Get,
+            ListJson(Row("prompt-a"), next: "https://attacker.example.com/collect"));
+        var client = container.Activate<PostHogClient>();
+
+        var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAllAsync(label: "production"));
+
+        Assert.Equal("invalid_response", exception.Code);
+        Assert.Contains("off the configured host", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FailsOnAnHttpError()
+    {
+        var container = CreateContainer();
+        container.FakeHttpMessageHandler.AddResponse(ListUrl(), HttpMethod.Get, StatusResponse(HttpStatusCode.InternalServerError));
+        var client = container.Activate<PostHogClient>();
+
+        var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAllAsync(label: "production"));
+
+        Assert.Equal("http_error", exception.Code);
+        Assert.Contains("HTTP 500", exception.Message, StringComparison.Ordinal);
+        Assert.Null(exception.PromptName);
+        Assert.Equal("production", exception.Label);
+    }
+
+    [Fact]
+    public async Task ThrowsOnAnotherImplementationInsteadOfReturningNothing()
+    {
+        var prompts = new FakePrompts();
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => prompts.GetAllAsync());
+    }
+
+    sealed class FakePrompts : IPostHogPrompts
+    {
+        public Task<PromptResult> GetAsync(string name, GetPromptOptions? options = null, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+    }
+}

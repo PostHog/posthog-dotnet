@@ -234,5 +234,9 @@ public static class Examples
 
         // After you publish a new version, remove the cached one so the next call fetches it.
         posthog.Prompts.ClearCache("support-system-prompt");
+
+        // Load every prompt at a label in one request, so the GetAsync calls that follow are cache hits.
+        var productionPrompts = await posthog.Prompts.GetAllAsync(label: "production");
+        Console.WriteLine(productionPrompts.Count);
     }
 }
