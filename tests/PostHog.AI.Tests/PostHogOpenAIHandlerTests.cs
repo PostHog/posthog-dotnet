@@ -767,18 +767,32 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
         );
     }
 
-    [Fact]
-    public async Task SendAsyncDoesNotMarkCallerCancellationAsStreamError()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SendAsyncDistinguishesCallerCancellationFromConcurrentStreamTimeout(bool hasInnerTimeout)
     {
         var sse = "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Hel\"}}]}\n\n";
         using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
+        const string message = "Stream read canceled";
         await ReadFailingStreamAsync<OperationCanceledException>(
             sse,
-            () => new OperationCanceledException(cts.Token),
+            () =>
+            {
+                // The stream invokes this factory only after it has delivered the SSE bytes.
+                cts.Cancel();
+                return new TaskCanceledException(message, hasInnerTimeout ? new TimeoutException() : null, cts.Token);
+            },
             useSyncRead: false,
             readToken: cts.Token
         );
+
+        Assert.True(cts.IsCancellationRequested);
+        if (hasInnerTimeout)
+        {
+            AssertStreamErrorCaptured(props => props[PostHogAIFieldNames.Error] is string error && error == message);
+            return;
+        }
 
         _postHogClient
             .Received(1)
@@ -838,7 +852,11 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                 Content = requestContent,
             };
             response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
+#if NET5_0_OR_GREATER
             var resultStream = await response.Content.ReadAsStreamAsync(CancellationToken.None);
+#else
+            var resultStream = await response.Content.ReadAsStreamAsync();
+#endif
             var buffer = new byte[4096];
             if (useSyncRead)
             {
