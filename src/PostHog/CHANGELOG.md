@@ -1,5 +1,17 @@
 # PostHog
 
+## 2.26.7
+
+### Patch Changes
+
+- 9a59aec: Local evaluation of `gt`, `gte`, `lt` and `lte` now compares property values of type `float`, `decimal`, `short`, `ushort`, `uint`, `ulong`, `byte` and `sbyte` as numbers. They used to be compared as strings, so `10` was less than `7`.
+
+## 2.26.6
+
+### Patch Changes
+
+- e51c77e: `LoadFeatureFlagsAsync` and other calls that fetch flag definitions for local evaluation now throw `OperationCanceledException` when the caller's cancellation token is canceled, instead of logging "Unable to get feature flags and payloads" and returning as if the load had finished. A request that times out is still logged and does not throw.
+
 ## 2.26.5
 
 ### Patch Changes

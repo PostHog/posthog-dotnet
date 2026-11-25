@@ -6,6 +6,11 @@ using PostHog.Emails;
 
 namespace EmailsTests;
 
+// These tests send real HTTP requests over loopback. On netcoreapp3.1 they fail when the tests roll forward to a
+// .NET 9 runtime: every request throws MissingMethodException for InstrumentAdvice<T>.HistogramBucketBoundaries.
+// The app loads the netstandard2.0 build of System.Diagnostics.DiagnosticSource 10.x, which brings its own
+// IsExternalInit type, so the setter no longer matches the one .NET 9's HTTP and DNS metrics were compiled against.
+// Microsoft doesn't support that package on netcoreapp3.1. They pass on .NET 8 and .NET 10, and CI installs .NET 8.
 public class TheSendAsyncMethodOverTheNetwork
 {
     public static TheoryData<string> Wirings => new()
