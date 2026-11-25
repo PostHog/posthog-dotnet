@@ -467,6 +467,26 @@ public class TheBatchAsyncMethod
         Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
     }
 
+    [Fact]
+    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenTheRetryCantStart()
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        posthog.Enqueue(_ =>
+        {
+            harness.HttpClient.Dispose();
+            throw new HttpRequestException("lost", new SocketException((int)SocketError.ConnectionReset));
+        });
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+
+        Assert.Single(posthog.Requests);
+        Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
+        Assert.DoesNotContain("no email was sent", error.Message, StringComparison.Ordinal);
+        Assert.Contains("may still have queued", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("its handler")]
     [InlineData("its handler, before returning")]

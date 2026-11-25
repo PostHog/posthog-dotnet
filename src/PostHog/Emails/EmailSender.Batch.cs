@@ -77,7 +77,9 @@ internal sealed partial class EmailSender
                     {
                         throw new EmailException(
                             "unexpected_error",
-                            "The request to PostHog couldn't start, so no email was sent.",
+                            run.MayHaveQueued
+                                ? "The retry to PostHog couldn't start, and an earlier attempt may still have queued the emails."
+                                : "The request to PostHog couldn't start, so no email was sent.",
                             innerException: e);
                     }
                     catch (Exception e) when (e is not EmailException && !IsCallerCancellation(e, cancellationToken))
@@ -301,6 +303,8 @@ internal sealed partial class EmailSender
                 row.Set(null);
             }
         }
+
+        public bool MayHaveQueued => _mayHaveQueued;
 
         public void Lost()
         {
