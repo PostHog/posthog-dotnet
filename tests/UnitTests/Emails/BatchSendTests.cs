@@ -467,6 +467,22 @@ public class TheBatchAsyncMethod
         Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
     }
 
+    [Fact]
+    public async Task KeepsPostHogsOwnErrorWhenTheOnlyAttemptIsUnconfirmed()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.ServiceUnavailable,
+            """{"type":"server_error","code":"delivery_unavailable","detail":"Nope.","fix":"Send them again later with the same keys."}""");
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
+
+        Assert.Single(harness.Requests);
+        Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
+        Assert.Equal(("Nope.", "Send them again later with the same keys."), (error.Message, error.Fix));
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.NotFound)]
     [InlineData(HttpStatusCode.RequestEntityTooLarge)]

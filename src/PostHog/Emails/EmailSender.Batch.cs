@@ -103,7 +103,7 @@ internal sealed partial class EmailSender
             run.Fail(error);
             LogWarnings(run.Warnings);
             throw new EmailBatchException(
-                run.MayHaveQueued && error.Code != "network_error" ? AfterAnEarlierBatchAttempt(error) : error,
+                run.EarlierAttemptMayHaveQueued && error.Code != "network_error" ? AfterAnEarlierBatchAttempt(error) : error,
                 run.Outcome(),
                 run.Warnings);
         }
@@ -318,6 +318,7 @@ internal sealed partial class EmailSender
 
         public void StartAttempt()
         {
+            EarlierAttemptMayHaveQueued = _mayHaveQueued;
             foreach (var row in rows)
             {
                 row.Set(null);
@@ -325,6 +326,8 @@ internal sealed partial class EmailSender
         }
 
         public bool MayHaveQueued => _mayHaveQueued;
+
+        public bool EarlierAttemptMayHaveQueued { get; private set; }
 
         public void Lost()
         {
