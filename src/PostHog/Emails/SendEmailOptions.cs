@@ -47,7 +47,9 @@ public abstract class SendEmailOptions
     /// sends that time on every retry. The result's <see cref="SendEmailResult.Status"/> is <c>scheduled</c> with the
     /// confirmed <see cref="SendEmailResult.ScheduledAt"/>, or <c>queued</c> when the time had passed or was at most
     /// 60 seconds ahead of this machine's clock when the send went out: when the first attempt that may have queued
-    /// it started, such as one whose answer was lost, or else the attempt PostHog accepted.
+    /// it started, such as one whose answer was lost, or else the attempt PostHog accepted. A replay of your own
+    /// <see cref="IdempotencyKey"/> counts from this call's first attempt, since the key may have queued the email
+    /// before the call.
     /// <see cref="IPostHogEmails.GetAsync"/> reads <c>scheduled</c> until the email goes out.
     /// <para>
     /// A client whose app host isn't PostHog Cloud US or EU, such as a self-hosted PostHog, a reverse proxy or a

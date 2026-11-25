@@ -293,6 +293,62 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
     }
 
+    [Theory]
+    [InlineData(null, "queued")]
+    [InlineData("order-42", "schedule_not_confirmed")]
+    public async Task MeasuresAReplayFromTheFirstAttemptWhenTheAppReusesItsKey(string? idempotencyKey, string outcome)
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        harness.Time.Now = DueTime.AddSeconds(-61);
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-59);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        });
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-30);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        });
+        posthog.Enqueue(_ => Task.FromResult(Json(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null, "replayed": true}""")));
+
+        var send = harness.Client.Emails.SendAsync(TemplateSend(DueTime, idempotencyKey));
+        var answer = outcome == "queued"
+            ? (await send).Status
+            : (await Assert.ThrowsAsync<EmailException>(() => send)).Code;
+
+        Assert.Equal(3, posthog.Requests.Count);
+        Assert.Equal(outcome, answer);
+    }
+
+    [Theory]
+    [InlineData(", \"replayed\": \"true\"")]
+    [InlineData(", \"replayed\": 1")]
+    [InlineData("")]
+    public async Task TreatsAReplayMarkerThatIsNotFalseAsAReplay(string marker)
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        harness.Time.Now = DueTime.AddSeconds(-61);
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-30);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        });
+        posthog.Enqueue(_ => Task.FromResult(Json(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null{{marker}}}""")));
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Equal(2, posthog.Requests.Count);
+        Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
+    }
+
     static HttpResponseMessage BreakClock(EmailHarness harness)
     {
         harness.Time.Broken = true;
@@ -490,11 +546,12 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Empty(harness.Requests);
     }
 
-    static SendTemplateEmailOptions TemplateSend(DateTimeOffset scheduledAt) => new()
+    static SendTemplateEmailOptions TemplateSend(DateTimeOffset scheduledAt, string? idempotencyKey = null) => new()
     {
         To = "user@example.com",
         TemplateId = Guid.Parse("0190f6d2-7c1e-7b3a-9f5e-1c2d3e4f5a6b"),
         ScheduledAt = scheduledAt,
+        IdempotencyKey = idempotencyKey,
     };
 
     static string Scheduled(string scheduledAt)

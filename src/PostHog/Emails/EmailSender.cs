@@ -139,7 +139,7 @@ internal sealed partial class EmailSender : IPostHogEmails
                     return ParseSendReply(
                         reply,
                         prepared.ScheduledAt,
-                        replayedSentAt: mayHaveQueuedAt ?? firstSentAt,
+                        replayedSentAt: email.IdempotencyKey is null ? mayHaveQueuedAt ?? firstSentAt : firstSentAt,
                         sentAt: mayHaveQueuedAt ?? sentAt);
                 }
                 catch (EmailException error) when (error.StatusCode != (HttpStatusCode)429)
@@ -761,10 +761,12 @@ internal sealed partial class EmailSender : IPostHogEmails
         var warnings = ReadWarnings(reply.Fields);
         LogWarnings(warnings);
 
-        var replayed = reply.Fields is { } replyFields
-                       && TryField(replyFields, "replayed", out var replayedValue)
-                       && replayedValue.ValueKind == JsonValueKind.True;
-        var (status, confirmedAt) = scheduledAt is { } requested && (replayed ? replayedSentAt : sentAt) is { } sent
+        var replayedKind = reply.Fields is { } replyFields && TryField(replyFields, "replayed", out var replayedValue)
+            ? replayedValue.ValueKind
+            : JsonValueKind.Undefined;
+        var replayed = replayedKind == JsonValueKind.True;
+        var acceptedNow = replayedKind == JsonValueKind.False;
+        var (status, confirmedAt) = scheduledAt is { } requested && (acceptedNow ? sentAt : replayedSentAt) is { } sent
             ? ConfirmSchedule(reply, id, requested, sent)
             : ("queued", null);
         return new SendEmailResult
@@ -851,7 +853,9 @@ internal sealed partial class EmailSender : IPostHogEmails
     /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's. It counts
     /// from <paramref name="sentAt"/>, read before the attempt PostHog answered, or before the first attempt that may
     /// have queued the email, such as one whose answer was lost, so a slow answer, a slow logger or a retry can't move
-    /// a time that was still ahead into it.
+    /// a time that was still ahead into it. A reply that doesn't say <c>replayed: false</c> counts as a replay, and a
+    /// replay of the app's own key counts from the call's first attempt, since that key may have queued the email
+    /// before the call.
     /// </summary>
     static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(
         Reply reply,
