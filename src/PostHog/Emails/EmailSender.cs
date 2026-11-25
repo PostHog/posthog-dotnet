@@ -12,8 +12,6 @@ using static PostHog.Library.Ensure;
 
 namespace PostHog.Emails;
 
-/// <summary>
-/// </summary>
 internal sealed partial class EmailSender : IPostHogEmails
 {
     const string SendPath = "/api/messaging/send/email/";
