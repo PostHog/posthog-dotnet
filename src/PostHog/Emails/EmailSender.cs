@@ -114,6 +114,7 @@ internal sealed class EmailSender : IPostHogEmails
         await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
+        var appKey = email.IdempotencyKey is not null;
         DateTimeOffset? firstSentAt = null;
         DateTimeOffset? mayHaveQueuedAt = null;
         var result = await WithRetriesAsync(
@@ -139,8 +140,8 @@ internal sealed class EmailSender : IPostHogEmails
                     return ParseSendReply(
                         reply,
                         prepared.ScheduledAt,
-                        replayedSentAt: email.IdempotencyKey is null ? mayHaveQueuedAt ?? firstSentAt : firstSentAt,
-                        sentAt: mayHaveQueuedAt ?? sentAt);
+                        replayedSentAt: appKey ? firstSentAt : mayHaveQueuedAt ?? firstSentAt,
+                        sentAt: appKey ? firstSentAt : mayHaveQueuedAt ?? sentAt);
                 }
                 catch (EmailException error) when (error.StatusCode != (HttpStatusCode)429)
                 {
@@ -771,10 +772,6 @@ internal sealed class EmailSender : IPostHogEmails
         };
     }
 
-    /// <summary>
-    /// Reads the app's clock for a retry. An exception from it is dropped: an earlier attempt may have queued the email,
-    /// and only the retry with the same key can return its message ID. The caller then counts from an earlier reading.
-    /// </summary>
     DateTimeOffset? NowOrNull()
     {
         try
@@ -789,10 +786,6 @@ internal sealed class EmailSender : IPostHogEmails
         }
     }
 
-    /// <summary>
-    /// Logs one of PostHog's warnings. PostHog has accepted the email by then, so an exception from the app's logger
-    /// is dropped: it must not hide the message ID, the confirmed time, or <c>schedule_not_confirmed</c>.
-    /// </summary>
     void LogWarning(EmailWarning warning)
     {
         try
@@ -806,17 +799,6 @@ internal sealed class EmailSender : IPostHogEmails
         }
     }
 
-    /// <summary>
-    /// Checks that the 202 for a send with <c>scheduled_at</c> confirms the requested time, or says the time had
-    /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field or
-    /// sends a time that is still ahead at once, throws <c>schedule_not_confirmed</c> with the accepted email's
-    /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's. It counts
-    /// from <paramref name="sentAt"/>, read before the attempt PostHog answered, or before the first attempt that may
-    /// have queued the email, such as one whose answer was lost, so a slow answer, a slow logger or a retry can't move
-    /// a time that was still ahead into it. A reply that doesn't say <c>replayed: false</c> counts as a replay, and a
-    /// replay of the app's own key counts from the call's first attempt, since that key may have queued the email
-    /// before the call.
-    /// </summary>
     static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(
         Reply reply,
         string id,
@@ -862,11 +844,6 @@ internal sealed class EmailSender : IPostHogEmails
         => time[time.Length - 1] == 'Z'
            || (time.Length > 6 && time[time.Length - 6] is '+' or '-' && time[time.Length - 3] == ':');
 
-    /// <summary>
-    /// Looks up a field of a reply, as the last field with that name. A field whose name has an unpaired surrogate
-    /// escape can't be read, so it is skipped rather than allowed to throw and hide an accepted email, its message ID,
-    /// or a readable field next to it.
-    /// </summary>
     static bool TryField(JsonElement element, string name, out JsonElement value)
     {
         value = default;
@@ -1026,10 +1003,6 @@ internal sealed class EmailSender : IPostHogEmails
             scheduledAt);
     }
 
-    /// <summary>
-    /// The UTC time PostHog keeps for <paramref name="time"/>: rounded up to the next millisecond, so the email never
-    /// goes out before the time the caller asked for. <c>null</c> when that time is past the last one .NET holds.
-    /// </summary>
     static DateTimeOffset? CeilingToMillisecond(DateTimeOffset time)
     {
         var belowAMillisecond = time.UtcTicks % TimeSpan.TicksPerMillisecond;
