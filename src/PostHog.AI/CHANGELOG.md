@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.16
+
+### Patch Changes
+
+- 09f7659: The OpenAI handler now maps `max_completion_tokens` (used by reasoning models on Chat Completions) to `$ai_max_tokens`. Previously the limit was missing and appeared in `$ai_model_parameters` as a string.
+
 ## 0.1.15
 
 ### Patch Changes

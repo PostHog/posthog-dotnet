@@ -128,6 +128,16 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             && !hasInstructionsParam;
     }
 
+    private static bool HasMaxCompletionTokensPayload(Dictionary<string, object> props)
+    {
+        var inModelParams =
+            props.TryGetValue(PostHogAIFieldNames.ModelParameters, out var modelParams)
+            && modelParams is Dictionary<string, object> dict
+            && dict.ContainsKey("max_completion_tokens");
+
+        return (int)props[PostHogAIFieldNames.MaxTokens] == 456 && !inModelParams;
+    }
+
     [Fact]
     public async Task SendAsyncCapturesResponsesApiInstructionsAndMaxOutputTokens()
     {
@@ -311,6 +321,57 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
                     !props.ContainsKey(PostHogAIFieldNames.Input)
                     && !SerializedContains(props, "Secret system prompt.")
                 ),
+                null,
+                false,
+                Arg.Any<DateTimeOffset?>()
+            );
+    }
+
+    [Fact]
+    public async Task SendAsyncMapsMaxCompletionTokensToMaxTokens()
+    {
+        var requestBody = new
+        {
+            model = "o3-mini",
+            messages = new[] { new { role = "user", content = "Hello" } },
+            max_completion_tokens = 456,
+        };
+        var responseBody = new
+        {
+            id = "chatcmpl-123",
+            @object = "chat.completion",
+            model = "o3-mini",
+            choices = Array.Empty<object>(),
+            usage = new { prompt_tokens = 9, completion_tokens = 12, total_tokens = 21 },
+        };
+
+        using var responseContent = new StringContent(
+            JsonSerializer.Serialize(responseBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+        _innerHandler.Response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = responseContent,
+        };
+        using var requestContent = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        using var response = await _client.PostAsync(
+            new Uri("/v1/chat/completions", UriKind.Relative),
+            requestContent
+        );
+        Assert.True(response.IsSuccessStatusCode);
+
+        _postHogClient
+            .Received(1)
+            .Capture(
+                Arg.Any<string>(),
+                PostHogAIFieldNames.Generation,
+                Arg.Is<Dictionary<string, object>>(props => HasMaxCompletionTokensPayload(props)),
                 null,
                 false,
                 Arg.Any<DateTimeOffset?>()

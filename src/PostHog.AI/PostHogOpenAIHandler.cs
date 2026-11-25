@@ -283,10 +283,14 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             : temperature.ToString();
                 }
 
-                // Chat Completions uses "max_tokens"; the Responses API uses "max_output_tokens".
+                // Chat Completions uses "max_tokens" (or "max_completion_tokens" for reasoning
+                // models); the Responses API uses "max_output_tokens".
                 if (
-                    (requestJson["max_tokens"] ?? requestJson["max_output_tokens"])
-                    is JsonValue maxTokens
+                    (
+                        requestJson["max_tokens"]
+                        ?? requestJson["max_completion_tokens"]
+                        ?? requestJson["max_output_tokens"]
+                    ) is JsonValue maxTokens
                 )
                 {
                     eventProperties[PostHogAIFieldNames.MaxTokens] = maxTokens.TryGetValue<int>(
@@ -330,6 +334,7 @@ public class PostHogOpenAIHandler : DelegatingHandler
                             && kvp.Key != "temperature"
                             && kvp.Key != "max_tokens"
                             && kvp.Key != "max_output_tokens"
+                            && kvp.Key != "max_completion_tokens"
                             && kvp.Key != "instructions"
                             && kvp.Key != "stream"
                             && kvp.Key != "tools"
