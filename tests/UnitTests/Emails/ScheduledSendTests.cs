@@ -325,6 +325,28 @@ public class TheSendAsyncMethodWithScheduledAt
     }
 
     [Theory]
+    [InlineData(null, "queued")]
+    [InlineData("order-42", "schedule_not_confirmed")]
+    public async Task TrustsAFreshAnswerAfterARefusalOnlyForAKeyTheClientMade(string? idempotencyKey, string outcome)
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        RetryAt30SecondsBeforeTheDueTime(
+            harness,
+            posthog,
+            () => new HttpResponseMessage(HttpStatusCode.TooManyRequests),
+            replayed: false);
+
+        var send = harness.Client.Emails.SendAsync(TemplateSend(DueTime, idempotencyKey));
+        var answer = outcome == "queued"
+            ? (await send).Status
+            : (await Assert.ThrowsAsync<EmailException>(() => send)).Code;
+
+        Assert.Equal(2, posthog.Requests.Count);
+        Assert.Equal(outcome, answer);
+    }
+
+    [Theory]
     [InlineData(", \"replayed\": \"true\"")]
     [InlineData(", \"replayed\": 1")]
     [InlineData("")]
@@ -360,10 +382,6 @@ public class TheSendAsyncMethodWithScheduledAt
         Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
     };
 
-    /// <summary>
-    /// Sends the first attempt 61 seconds before the due time and answers it with <paramref name="firstAnswer"/>, then
-    /// answers the retry, 30 seconds before the due time, with a <c>queued</c> email whose time had passed.
-    /// </summary>
     static void RetryAt30SecondsBeforeTheDueTime(
         EmailHarness harness,
         RecordingHandler posthog,
