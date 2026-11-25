@@ -14,6 +14,7 @@ public class TheBatchAsyncMethod
 {
     const string TemplateIdText = "0190f6d2-7c1e-7b3a-9f5e-1c2d3e4f5a6b";
     const string BatchUrl = "https://us.posthog.com/api/messaging/send/email_batch/";
+    const string Unconfirmed = "PostHog didn't confirm this email, so it may still go out.";
     const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
     const int FourMiB = 4 * 1024 * 1024;
     const string SendSinglyFix =
@@ -463,8 +464,17 @@ public class TheBatchAsyncMethod
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
 
         Assert.Empty(harness.Requests);
-        Assert.Equal("unexpected_error", error.Code);
-        Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
+        if (how == "a disposed HttpClient" && Environment.Version.Major < 5)
+        {
+            Assert.Equal("network_error", error.Code);
+            Assert.DoesNotContain("no email was sent", error.Message, StringComparison.Ordinal);
+            Assert.All(error.Results, r => Assert.Equal(("unconfirmed", Unconfirmed), (r.Status, r.Error!.Message)));
+        }
+        else
+        {
+            Assert.Equal("unexpected_error", error.Code);
+            Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
+        }
     }
 
     [Fact]
@@ -520,7 +530,15 @@ public class TheBatchAsyncMethod
         Assert.Single(posthog.Requests);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
         Assert.DoesNotContain("no email was sent", error.Message, StringComparison.Ordinal);
-        Assert.Contains("may have queued", error.Message, StringComparison.Ordinal);
+        if (Environment.Version.Major < 5)
+        {
+            Assert.Equal("network_error", error.Code);
+            Assert.All(error.Results, r => Assert.Equal(Unconfirmed, r.Error!.Message));
+        }
+        else
+        {
+            Assert.Contains("may have queued", error.Message, StringComparison.Ordinal);
+        }
     }
 
     [Theory]
