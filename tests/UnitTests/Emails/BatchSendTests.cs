@@ -238,6 +238,20 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
+    public async Task ReturnsARefusalWithoutABodyAsTheErrorWithoutRetrying()
+    {
+        await using var harness = new EmailHarness();
+        harness.RespondTo(_ => new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = null });
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 2)));
+
+        Assert.Single(harness.Requests);
+        Assert.Equal(("api_error", (HttpStatusCode?)HttpStatusCode.Forbidden), (error.Code, error.StatusCode));
+        Assert.Equal("failed", Assert.Single(error.Results).Status);
+    }
+
+    [Fact]
     public async Task WaitsLongerThanTheClientRequestTimeoutForTheBatchAnswer()
     {
         await using var harness = new EmailHarness(options => options.EmailRequestTimeout = TimeSpan.FromMilliseconds(50));
@@ -553,6 +567,7 @@ public class TheBatchAsyncMethod
     [InlineData("in flight", (HttpStatusCode)422, "sending_paused")]
     [InlineData("lost", (HttpStatusCode)429, "quota_limited")]
     [InlineData("lost", (HttpStatusCode)403, null)]
+    [InlineData("lost", (HttpStatusCode)409, null)]
     public async Task LeavesEveryRecipientUnconfirmedWhenTheRetryIsRefusedAfterAnAttemptThatMayHaveQueued(
         string first,
         HttpStatusCode refusal,

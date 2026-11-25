@@ -357,10 +357,11 @@ internal sealed partial class EmailSender
 
         void UnconfirmWith(EmailException error)
         {
+            var answer = _mayHaveQueued ? AfterAnEarlierAttempt(error) : error;
             _mayHaveQueued = true;
             foreach (var row in rows)
             {
-                row.Set("unconfirmed", error: error);
+                row.Set("unconfirmed", error: answer);
             }
         }
 

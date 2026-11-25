@@ -661,8 +661,13 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
     }
 
-    static async Task<string?> ReadTextOrNullAsync(HttpContent content, CancellationToken cancellationToken)
+    static async Task<string?> ReadTextOrNullAsync(HttpContent? content, CancellationToken cancellationToken)
     {
+        if (content is null)
+        {
+            return null;
+        }
+
         try
         {
 #if NET5_0_OR_GREATER
