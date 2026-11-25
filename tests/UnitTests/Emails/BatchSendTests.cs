@@ -166,10 +166,15 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
-    public async Task RefusesMoreThan100RecipientsBeforeReadingTheirTemplateData()
+    public async Task RefusesMoreThan100RecipientsBeforeReadingThemOrTheirTemplateData()
     {
         await using var harness = new EmailHarness();
-        var batch = new SendTemplateBatchOptions { TemplateId = TemplateId, Recipients = Recipients(101), TemplateData = Cyclic() };
+        var batch = new SendTemplateBatchOptions
+        {
+            TemplateId = TemplateId,
+            Recipients = new UnreadableRecipients(101),
+            TemplateData = Cyclic(),
+        };
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() => harness.Client.Emails.BatchAsync(batch));
 
@@ -211,10 +216,11 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData(413, ",\"fix\":\"Split the recipients into smaller batches.\"", "Split the recipients into smaller batches.")]
-    [InlineData(413, "", "Split the recipients into smaller batches and send each with BatchAsync.")]
-    [InlineData(400, "", null)]
-    public async Task ReturnsATooLargeRefusalAsTheErrorWithPostHogsFix(int status, string fixField, string? fix)
+    [InlineData(413, 2, ",\"fix\":\"Split the recipients into smaller batches.\"", "Split the recipients into smaller batches.")]
+    [InlineData(413, 2, "", "Split the recipients into smaller batches and send each with BatchAsync.")]
+    [InlineData(413, 1, "", "Make the email's content or TemplateData smaller, so the request fits PostHog's size limit.")]
+    [InlineData(400, 2, "", null)]
+    public async Task ReturnsATooLargeRefusalAsTheErrorWithPostHogsFix(int status, int recipients, string fixField, string? fix)
     {
         await using var harness = new EmailHarness();
         harness.Respond(
@@ -222,13 +228,13 @@ public class TheBatchAsyncMethod
             $$"""{"type":"invalid_request","code":"content_too_large","detail":"Too large."{{fixField}}}""");
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(recipients))));
 
         Assert.Single(harness.Requests);
         Assert.Equal(
             ("content_too_large", (HttpStatusCode?)status, "Too large.", fix),
             (error.Code, error.StatusCode, error.Message, error.Fix));
-        Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
+        Assert.Equal(Enumerable.Repeat("failed", recipients), error.Results.Select(r => r.Status));
     }
 
     [Fact]
@@ -246,21 +252,24 @@ public class TheBatchAsyncMethod
         Assert.Equal("queued", Assert.Single((await send).Results).Status);
     }
 
-    [Fact]
-    public async Task NamesTheAppsHttpClientTimeoutWhenItEndsAnAttemptFirst()
+    [Theory]
+    [InlineData(7, true, "The request to PostHog timed out after 7s, the Timeout of the app's HttpClient.")]
+    [InlineData(7, false, "The app's HttpClient cancelled the request to PostHog before PostHog answered.")]
+    [InlineData(-1, false, "The app's HttpClient cancelled the request to PostHog before PostHog answered.")]
+    public async Task NamesTheAppsHttpClientTimeoutOnlyWhenItEndsAnAttempt(int timeoutSeconds, bool timedOut, string message)
     {
         await using var harness = new EmailHarness();
-        harness.HttpClient.Timeout = TimeSpan.FromSeconds(7);
-        harness.Fail(new TaskCanceledException(
-            "The request was canceled due to the configured HttpClient.Timeout of 7 seconds elapsing.",
-            new TimeoutException()));
+        harness.HttpClient.Timeout = timeoutSeconds < 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(timeoutSeconds);
+        harness.Fail(timedOut
+            ? new TaskCanceledException(
+                "The request was canceled due to the configured HttpClient.Timeout of 7 seconds elapsing.",
+                new TimeoutException())
+            : new TaskCanceledException("A task was canceled."));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0)));
 
-        Assert.Equal(
-            ("network_error", "The request to PostHog timed out after 7s, the Timeout of the app's HttpClient."),
-            (error.Code, error.Message));
+        Assert.Equal(("network_error", message), (error.Code, error.Message));
     }
 
     [Theory]
@@ -541,7 +550,9 @@ public class TheBatchAsyncMethod
         Assert.Equal(code, error.Code);
         Assert.All(error.Results, r =>
         {
-            Assert.Equal(("unconfirmed", code), (r.Status, r.Error!.Code));
+            Assert.Equal(
+                ("unconfirmed", code, "An earlier attempt may have queued this email, so it may still go out. The retry got: Nope."),
+                (r.Status, r.Error!.Code, r.Error.Message));
             Assert.Contains("same IdempotencyKey", r.Error.Fix, StringComparison.Ordinal);
         });
     }
@@ -772,6 +783,17 @@ public class TheBatchAsyncMethod
             recipients.Add(new BatchRecipient { To = "late@example.com" });
             return _data.GetEnumerator();
         }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    sealed class UnreadableRecipients(int count) : IReadOnlyList<BatchRecipient>
+    {
+        public int Count => count;
+
+        public BatchRecipient this[int index] => throw new InvalidOperationException("The batch read a recipient.");
+
+        public IEnumerator<BatchRecipient> GetEnumerator() => throw new InvalidOperationException("The batch read the recipients.");
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }

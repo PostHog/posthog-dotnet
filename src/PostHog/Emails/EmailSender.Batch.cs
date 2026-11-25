@@ -13,6 +13,7 @@ internal sealed partial class EmailSender
     const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
     const string SplitTheBatch = "Split the recipients into smaller batches and send each with BatchAsync.";
+    const string ShrinkTheEmail = "Make the email's content or TemplateData smaller, so the request fits PostHog's size limit.";
 
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
 
@@ -108,8 +109,9 @@ internal sealed partial class EmailSender
             throw new ArgumentException("MaxRetries must not be negative.", nameof(batch));
         }
 
-        var recipients = batch.Recipients?.ToList();
-        CheckRecipientCount(recipients, nameof(batch));
+        CheckRecipientCount(batch.Recipients?.Count ?? 0, nameof(batch));
+        var recipients = batch.Recipients!.ToList();
+        CheckRecipientCount(recipients.Count, nameof(batch));
 
         Dictionary<string, object?> shared;
         switch (batch)
@@ -149,17 +151,17 @@ internal sealed partial class EmailSender
             batch.MaxRetries ?? defaultMaxRetries);
     }
 
-    static void CheckRecipientCount(List<BatchRecipient>? recipients, string paramName)
+    static void CheckRecipientCount(int count, string paramName)
     {
-        if (recipients is not { Count: > 0 })
+        if (count <= 0)
         {
             throw new ArgumentException("Recipients must hold at least one recipient.", paramName);
         }
 
-        if (recipients.Count > BatchMaxRecipients)
+        if (count > BatchMaxRecipients)
         {
             throw new ArgumentException(
-                $"Recipients holds {recipients.Count} recipients, and a batch takes at most {BatchMaxRecipients}. "
+                $"Recipients holds {count} recipients, and a batch takes at most {BatchMaxRecipients}. "
                 + "Split them into batches of 100 or fewer.",
                 paramName);
         }
@@ -253,7 +255,10 @@ internal sealed partial class EmailSender
             ? error
             : new EmailException(
                 error.Code,
-                error.Message,
+                UnconfirmedSlotCodes.Contains(error.Code)
+                    ? error.Message
+                    : "An earlier attempt may have queued this email, so it may still go out. The retry got: "
+                      + error.Message,
                 error.StatusCode,
                 error.Why,
                 ResendWithTheSameKey,
@@ -415,7 +420,7 @@ internal sealed partial class EmailSender
         var fix = code == "batch_unavailable"
             ? "Until batch sends are on for the project, " + SendSingly
             : Text(reply.Fields, "fix")
-              ?? (reply.Status == HttpStatusCode.RequestEntityTooLarge ? SplitTheBatch
+              ?? (reply.Status == HttpStatusCode.RequestEntityTooLarge ? (recipients > 1 ? SplitTheBatch : ShrinkTheEmail)
                   : notFound ? "Check TemplateId, or " + SendSingly : null);
         return new EmailException(
             code,
