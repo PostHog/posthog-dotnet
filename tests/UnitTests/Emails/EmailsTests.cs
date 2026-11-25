@@ -1502,7 +1502,8 @@ sealed class EmailHarness : IAsyncDisposable
     public EmailHarness(
         Action<PostHogOptions>? configure = null,
         HttpMessageHandler? posthog = null,
-        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null,
+        Func<HttpMessageHandler, HttpClient>? httpClient = null)
     {
         var options = new PostHogOptions
         {
@@ -1511,7 +1512,7 @@ sealed class EmailHarness : IAsyncDisposable
         };
         configure?.Invoke(options);
         var transport = posthog ?? _handler;
-        _httpClient = new HttpClient(transport, disposeHandler: false);
+        _httpClient = httpClient?.Invoke(transport) ?? new HttpClient(transport, disposeHandler: false);
         Client = new PostHogClient(
             options,
             featureFlagsCache: null,

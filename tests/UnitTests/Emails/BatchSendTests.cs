@@ -467,12 +467,23 @@ public class TheBatchAsyncMethod
         Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
     }
 
-    [Fact]
-    public async Task LeavesEveryRecipientUnconfirmedWhenTheTransportFailsAfterTheRequestLeft()
+    [Theory]
+    [InlineData("its handler")]
+    [InlineData("an HttpClient of the app's own")]
+    public async Task LeavesEveryRecipientUnconfirmedWhenTheTransportFailsAfterTheRequestLeft(string fails)
     {
         var posthog = new RecordingHandler();
-        await using var harness = new EmailHarness(posthog: posthog);
-        posthog.Enqueue(_ => throw new ObjectDisposedException("response stream"));
+        await using var harness = fails == "its handler"
+            ? new EmailHarness(posthog: posthog)
+            : new EmailHarness(posthog: posthog, httpClient: transport => new ThrowsAfterSendingHttpClient(transport));
+        if (fails == "its handler")
+        {
+            posthog.Enqueue(_ => throw new ObjectDisposedException("response stream"));
+        }
+        else
+        {
+            posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        }
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
@@ -499,6 +510,15 @@ public class TheBatchAsyncMethod
         Assert.Equal(2, posthog.Requests.Count);
         Assert.Equal("network_error", error.Code);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
+    }
+
+    sealed class ThrowsAfterSendingHttpClient(HttpMessageHandler transport) : HttpClient(transport, disposeHandler: false)
+    {
+        public override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            base.SendAsync(request, cancellationToken).GetAwaiter().GetResult().Dispose();
+            throw new ObjectDisposedException("response stream");
+        }
     }
 
     [Fact]
