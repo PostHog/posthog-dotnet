@@ -1,5 +1,11 @@
 # PostHog.AI
 
+## 0.1.17
+
+### Patch Changes
+
+- 14916ea: The OpenAI handler now records `$ai_is_error` (with the exception message) when a streamed response fails mid-read, such as a dropped connection. Previously the generation was reported as a success with HTTP 200 while the caller got the exception.
+
 ## 0.1.16
 
 ### Patch Changes
