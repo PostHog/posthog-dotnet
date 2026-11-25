@@ -51,6 +51,9 @@ public class TheParseMethod
     [InlineData("--1d")]
     [InlineData("+1d")]
     [InlineData(" 1d")]
+    // $ would also match before a trailing newline.
+    [InlineData("7d\n")]
+    [InlineData("-7d\n")]
     public void ReturnsNullForBadFormats(string relativeDateString)
     {
         Assert.Null(RelativeDate.Parse(relativeDateString));
@@ -60,6 +63,13 @@ public class TheParseMethod
     [InlineData("-2025y", "2025-01-08T00:00:00Z")]
     [InlineData("9999y", "2025-01-08T00:00:00Z")]
     [InlineData("-9999m", "0500-01-08T00:00:00Z")]
+    // Before the year 1 in UTC while the local date is inside it, and the other way round.
+    [InlineData("2024y", "2025-01-01T01:00:00+02:00")]
+    [InlineData("5988m", "0500-01-01T01:00:00+02:00")]
+    [InlineData("4h", "0001-01-01T03:00:00-05:00")]
+    [InlineData("1h", "0001-01-01T00:00:00Z")]
+    [InlineData("1d", "0001-01-01T00:00:00Z")]
+    [InlineData("-1w", "0001-01-01T00:00:00Z")]
     public void HasNoDateBeforeTheFirstYear(string relativeDateString, string nowDate)
     {
         var now = DateTimeOffset.Parse(nowDate, CultureInfo.InvariantCulture);

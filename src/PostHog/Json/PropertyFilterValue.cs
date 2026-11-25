@@ -922,17 +922,8 @@ public class PropertyFilterValue
     // positive when it is after. is_date_before and is_date_after are both strict for instants.
     internal int CompareDate(object? overrideValue, DateTimeOffset now)
     {
-        // Parse the filter first, so a bad filter is reported even when the override value is bad too.
-        DateTimeOffset comparand = ParseFilterDate() switch
-        {
-            RelativeDate relativeDate => relativeDate.GetDate(now)
-                ?? throw new InconclusiveMatchException("The relative date unit is not supported, or the date falls before the year 1", UnresolvedFlagReason.UnsupportedDefinition),
-            DateTimeOffset comparandDate => comparandDate,
-            // ToUniversalTime clamps a date near DateTime.MinValue or MaxValue; converting it to a
-            // DateTimeOffset at a local offset would throw instead.
-            DateTime comparandDate => new DateTimeOffset(comparandDate.ToUniversalTime()),
-            _ => throw new InconclusiveMatchException("The date provided is not a valid format", UnresolvedFlagReason.UnsupportedDefinition)
-        };
+        // Resolve the filter first, so a bad filter is reported even when the override value is bad too.
+        var comparand = ResolveFilterDate(now);
 
         return ParseDate(overrideValue, UnresolvedFlagReason.MissingContext) switch
         {
@@ -948,6 +939,19 @@ public class PropertyFilterValue
             _ => throw new InconclusiveMatchException("The date provided must be a string, DateTime, DateTimeOffset, or DateOnly object", UnresolvedFlagReason.MissingContext)
         };
     }
+
+    // Returns the date the filter value names at the given time. A relative date that has no date then, such as
+    // one with an unsupported unit or one before the year 1, is a definition local evaluation can't use.
+    internal DateTimeOffset ResolveFilterDate(DateTimeOffset now) => ParseFilterDate() switch
+    {
+        RelativeDate relativeDate => relativeDate.GetDate(now)
+            ?? throw new InconclusiveMatchException("The relative date unit is not supported, or the date falls before the year 1", UnresolvedFlagReason.UnsupportedDefinition),
+        DateTimeOffset comparandDate => comparandDate,
+        // ToUniversalTime clamps a date near DateTime.MinValue or MaxValue; converting it to a
+        // DateTimeOffset at a local offset would throw instead.
+        DateTime comparandDate => new DateTimeOffset(comparandDate.ToUniversalTime()),
+        _ => throw new InconclusiveMatchException("The date provided is not a valid format", UnresolvedFlagReason.UnsupportedDefinition)
+    };
 
     // Returns a RelativeDate, or the absolute date the filter value names.
     internal object? ParseFilterDate()
