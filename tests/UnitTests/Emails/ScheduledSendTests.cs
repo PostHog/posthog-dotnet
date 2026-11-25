@@ -219,30 +219,58 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
     }
 
-    [Fact]
-    public async Task MeasuresTheMinuteFromTheFirstAttemptAcrossARetry()
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task MeasuresTheMinuteFromTheRetryThatPostHogAccepted(HttpStatusCode firstAnswer)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
-        harness.Time.Now = DueTime.AddSeconds(-61);
-        posthog.Enqueue(_ =>
-        {
-            harness.Time.Now = DueTime.AddSeconds(-30);
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-        });
-        posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted)
-        {
-            Content = new StringContent(
-                $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null}""",
-                System.Text.Encoding.UTF8,
-                "application/json"),
-        }));
+        RetryAt30SecondsBeforeTheDueTime(harness, posthog, firstAnswer, replayed: false);
+
+        var result = await harness.Client.Emails.SendAsync(TemplateSend(DueTime));
+
+        Assert.Equal(2, posthog.Requests.Count);
+        Assert.Equal(("queued", MessageId, (DateTimeOffset?)null), (result.Status, result.Id, result.ScheduledAt));
+    }
+
+    [Fact]
+    public async Task MeasuresTheMinuteFromTheFirstAttemptWhenTheRetryIsReplayed()
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        RetryAt30SecondsBeforeTheDueTime(harness, posthog, HttpStatusCode.ServiceUnavailable, replayed: true);
 
         var error = await Assert.ThrowsAsync<EmailException>(
             () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
 
         Assert.Equal(2, posthog.Requests.Count);
         Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
+    }
+
+    /// <summary>
+    /// Sends the first attempt 61 seconds before the due time and answers it with <paramref name="firstAnswer"/>, then
+    /// answers the retry, 30 seconds before the due time, with a <c>queued</c> email whose time had passed.
+    /// </summary>
+    static void RetryAt30SecondsBeforeTheDueTime(
+        EmailHarness harness,
+        RecordingHandler posthog,
+        HttpStatusCode firstAnswer,
+        bool replayed)
+    {
+        harness.Time.Now = DueTime.AddSeconds(-61);
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-30);
+            return Task.FromResult(new HttpResponseMessage(firstAnswer));
+        });
+        posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted)
+        {
+            Content = new StringContent(
+                $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null, "replayed": {{(replayed ? "true" : "false")}}}""",
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        }));
     }
 
     [Fact]
