@@ -3898,6 +3898,40 @@ public class TheFlagDependencyContext
     }
 
     [Fact]
+    public void DependencySharedByConditionsOfDifferentGroupTypesHasOneResult()
+    {
+        // Both conditions depend on person-parent. The evaluation cache is keyed by flag key, so the first condition's
+        // dependency result is reused by the second. That holds because the dependency reads the person context in
+        // both conditions, not the condition's group.
+        var evaluator = new LocalEvaluator(JsonSerializer.Deserialize<LocalEvaluationApiResult>(
+            """
+            {"flags": [
+                {"key": "person-parent", "active": true, "filters": {"groups": [{"properties": [
+                    {"key": "region", "type": "person", "value": "us", "operator": "exact"}
+                ], "rollout_percentage": 100}]}},
+                {"key": "mixed-child", "active": true, "filters": {"groups": [
+                    {"aggregation_group_type_index": 0, "properties": [
+                        {"key": "person-parent", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["person-parent"]}
+                    ], "rollout_percentage": 100},
+                    {"aggregation_group_type_index": 1, "properties": [
+                        {"key": "person-parent", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["person-parent"]}
+                    ], "rollout_percentage": 100}
+                ]}}
+            ],
+             "group_type_mapping": {"0": "organization", "1": "project"}}
+            """,
+            JsonSerializerHelper.Options)!);
+        var groups = new GroupCollection
+        {
+            new Group("organization", "acme", new Dictionary<string, object?> { ["region"] = "eu" }),
+            new Group("project", "web", new Dictionary<string, object?> { ["region"] = "us" })
+        };
+        var personProperties = new Dictionary<string, object?> { ["region"] = "us" };
+
+        Assert.True(evaluator.EvaluateFeatureFlag("mixed-child", "user", groups, personProperties).Value);
+    }
+
+    [Fact]
     public void OrganizationFlagDependencyBucketsByTheGroupKey()
     {
         var evaluator = CreateEvaluator($$$"""
