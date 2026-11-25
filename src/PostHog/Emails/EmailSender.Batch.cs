@@ -83,7 +83,7 @@ internal sealed partial class EmailSender
                         throw new EmailException(
                             "unexpected_error",
                             run.MayHaveQueued
-                                ? "The retry to PostHog couldn't start, and an earlier attempt may still have queued the emails."
+                                ? "The retry to PostHog couldn't start."
                                 : "The request to PostHog couldn't start, so no email was sent.",
                             innerException: e);
                     }
@@ -102,7 +102,10 @@ internal sealed partial class EmailSender
         {
             run.Fail(error);
             LogWarnings(run.Warnings);
-            throw new EmailBatchException(error, run.Outcome(), run.Warnings);
+            throw new EmailBatchException(
+                run.MayHaveQueued && error.Code != "network_error" ? AfterAnEarlierBatchAttempt(error) : error,
+                run.Outcome(),
+                run.Warnings);
         }
 
         LogWarnings(run.Warnings);
@@ -119,6 +122,18 @@ internal sealed partial class EmailSender
             }
         }
     }
+
+    static EmailException AfterAnEarlierBatchAttempt(EmailException refusal) => new(
+        refusal.Code,
+        "An earlier attempt may have queued these emails, so they may still go out. The retry got: " + refusal.Message,
+        refusal.StatusCode,
+        refusal.Why,
+        "Send the unconfirmed recipients again with the IdempotencyKey each result holds, within 24 hours of the key's first use, so each email goes out once.",
+        refusal.DocsUrl,
+        refusal.Field,
+        refusal.RetryAfter,
+        refusal.InnerException,
+        refusal.MessageId);
 
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
 
@@ -462,7 +477,7 @@ internal sealed partial class EmailSender
             code,
             Text(reply.Fields, "detail")
             ?? (notFound
-                ? "PostHog found no batch send for this request, so no email was sent."
+                ? "PostHog found no batch send for this request, so it sent nothing for this request."
                 : $"PostHog answered HTTP {(int)reply.Status}."),
             reply.Status,
             why: Text(reply.Fields, "why")

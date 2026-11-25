@@ -467,6 +467,26 @@ public class TheBatchAsyncMethod
         Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge)]
+    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(HttpStatusCode retry)
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        posthog.Enqueue(_ => throw new HttpRequestException("lost", new SocketException((int)SocketError.ConnectionReset)));
+        posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(retry)));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+
+        Assert.Equal(2, posthog.Requests.Count);
+        Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
+        Assert.DoesNotContain("no email was sent", error.Message, StringComparison.Ordinal);
+        Assert.Contains("may have queued", error.Message, StringComparison.Ordinal);
+        Assert.Contains("IdempotencyKey", error.Fix, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task SaysAnEarlierAttemptMayHaveQueuedWhenTheRetryCantStart()
     {
@@ -484,7 +504,7 @@ public class TheBatchAsyncMethod
         Assert.Single(posthog.Requests);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
         Assert.DoesNotContain("no email was sent", error.Message, StringComparison.Ordinal);
-        Assert.Contains("may still have queued", error.Message, StringComparison.Ordinal);
+        Assert.Contains("may have queued", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
