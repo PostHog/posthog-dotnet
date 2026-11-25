@@ -985,7 +985,8 @@ internal sealed partial class EmailSender : IPostHogEmails
     static string? Text(JsonElement? element, string name)
         => element is { ValueKind: JsonValueKind.Object } value
            && TryField(value, name, out var property)
-           && StringValue(property) is { Length: > 0 } text
+           && StringValue(property) is { } text
+           && !string.IsNullOrWhiteSpace(text)
             ? text
             : null;
 

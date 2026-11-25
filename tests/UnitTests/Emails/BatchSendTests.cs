@@ -829,6 +829,7 @@ public class TheBatchAsyncMethod
     [InlineData("")]
     [InlineData("<html>Conflict</html>")]
     [InlineData("""{"detail":"Conflict."}""")]
+    [InlineData("""{"code":" ","detail":"Conflict."}""")]
     public async Task LeavesEachEmailOfARequestRefusedWithA409ItCantReadUnconfirmed(string body)
     {
         await using var harness = new EmailHarness();
@@ -971,6 +972,7 @@ public class TheBatchAsyncMethod
     [InlineData("a template", """{"type":"invalid_request","code":"not_found","detail":"Endpoint not found."}""")]
     [InlineData("a template", """{"type":"invalid_request","code":"api_error","detail":"Nope."}""")]
     [InlineData("a template", """{"type":"invalid_request","code":"","detail":"Nope."}""")]
+    [InlineData("a template", """{"type":"invalid_request","code":" ","detail":"Nope."}""")]
     [InlineData("code", """{"type":"invalid_request","code":"not_found","detail":"Not found.","attr":null}""")]
     [InlineData("code", """{"type":"invalid_request","code":"not_found","detail":"Endpoint not found."}""")]
     public async Task SaysA404WithoutAFieldMeansNoTemplateOrNoBatchSends(string from, string body)
