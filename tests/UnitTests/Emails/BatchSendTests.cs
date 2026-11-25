@@ -483,10 +483,10 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData(SocketError.ConnectionRefused, "failed")]
-    [InlineData(SocketError.HostNotFound, "failed")]
-    [InlineData(SocketError.ConnectionReset, "unconfirmed")]
-    public async Task FailsEveryRecipientOnlyWhenNoAttemptReachedPostHog(SocketError firstAttempt, string status)
+    [InlineData(SocketError.ConnectionRefused)]
+    [InlineData(SocketError.HostNotFound)]
+    [InlineData(SocketError.ConnectionReset)]
+    public async Task LeavesEveryRecipientUnconfirmedWhenAConnectionFailsAfterTheRequestLeft(SocketError firstAttempt)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
@@ -498,7 +498,7 @@ public class TheBatchAsyncMethod
 
         Assert.Equal(2, posthog.Requests.Count);
         Assert.Equal("network_error", error.Code);
-        Assert.Equal([status, status], error.Results.Select(r => r.Status));
+        Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
     }
 
     [Fact]

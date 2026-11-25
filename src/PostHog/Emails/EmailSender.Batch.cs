@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
@@ -71,11 +70,7 @@ internal sealed partial class EmailSender
                     }
                     catch (EmailException e) when (e.Code == "network_error")
                     {
-                        if (!NeverConnected(e.InnerException))
-                        {
-                            run.Lost();
-                        }
-
+                        run.Lost();
                         throw;
                     }
                     catch (Exception e) when (!dispatched && e is not EmailException && !IsCallerCancellation(e, cancellationToken))
@@ -119,17 +114,6 @@ internal sealed partial class EmailSender
     }
 
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
-
-    static bool NeverConnected(Exception? error) => error is HttpRequestException
-    {
-        InnerException: SocketException
-        {
-            SocketErrorCode: SocketError.ConnectionRefused
-            or SocketError.HostNotFound
-            or SocketError.HostUnreachable
-            or SocketError.NetworkUnreachable,
-        },
-    };
 
     static bool IsCallerCancellation(Exception error, CancellationToken cancellationToken)
         => error is OperationCanceledException && cancellationToken.IsCancellationRequested;
