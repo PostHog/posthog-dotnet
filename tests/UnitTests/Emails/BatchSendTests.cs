@@ -16,6 +16,8 @@ public class TheBatchAsyncMethod
     const string BatchUrl = "https://us.posthog.com/api/messaging/send/email_batch/";
     const string Unconfirmed = "PostHog didn't confirm this email, so it may still go out.";
     const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
+    const string KeepEachKey =
+        "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
     const int FourMiB = 4 * 1024 * 1024;
     const string SendSinglyFix =
         "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
@@ -494,9 +496,9 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.NotFound)]
-    [InlineData(HttpStatusCode.RequestEntityTooLarge)]
-    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(HttpStatusCode retry)
+    [InlineData(HttpStatusCode.NotFound, "Check TemplateId, or " + SendSinglyFix)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, "Split the recipients into smaller batches and send each with BatchAsync.")]
+    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(HttpStatusCode retry, string posthogsFix)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
@@ -510,7 +512,78 @@ public class TheBatchAsyncMethod
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
         Assert.DoesNotContain("no email was sent", error.Message, StringComparison.Ordinal);
         Assert.Contains("may have queued", error.Message, StringComparison.Ordinal);
-        Assert.Contains("IdempotencyKey", error.Fix, StringComparison.Ordinal);
+        Assert.Equal(posthogsFix + " " + KeepEachKey, error.Fix);
+        Assert.Equal(retry, Assert.IsType<EmailException>(error.InnerException!.InnerException).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("while PostHog holds the answer")]
+    [InlineData("while it waits to retry a lost answer")]
+    [InlineData("while it waits to retry a rate limit after a lost answer")]
+    public async Task CarriesEveryRecipientsKeyWhenTheCallerCancelsAfterTheRequestLeft(string when)
+    {
+        await using var harness = new EmailHarness();
+        using var cancellation = new CancellationTokenSource();
+        Task requestOut;
+        if (when == "while PostHog holds the answer")
+        {
+            requestOut = harness.Hold(AllQueuedAnswer).Arrived;
+        }
+        else if (when == "while it waits to retry a lost answer")
+        {
+            harness.Time.HoldDelays();
+            harness.Fail(new HttpRequestException("connection reset"));
+            requestOut = harness.Time.WaitForHeldDelayAsync();
+        }
+        else
+        {
+            harness.Fail(new HttpRequestException("connection reset"));
+            harness.RespondTo(_ =>
+            {
+                harness.Time.HoldDelays();
+                return Json((HttpStatusCode)429, WholeCall("rate_limited"));
+            });
+            requestOut = harness.Time.WaitForHeldDelayAsync();
+        }
+
+        var send = harness.Client.Emails.BatchAsync(Batch(UnkeyedRecipients(2)), cancellation.Token);
+        await requestOut;
+        await cancellation.CancelAsync();
+
+        Assert.Same(send, await Task.WhenAny(send, Task.Delay(TimeSpan.FromSeconds(5))));
+        var error = await Assert.ThrowsAsync<EmailBatchCanceledException>(() => send);
+        Assert.Equal(cancellation.Token, error.CancellationToken);
+        Assert.Equal(
+            Keys(harness.Requests[^1]).Select(key => ("unconfirmed", key, Unconfirmed)),
+            error.Results.Select(r => (r.Status, r.IdempotencyKey, r.Error!.Message)));
+    }
+
+    [Theory]
+    [InlineData("before the call")]
+    [InlineData("while it waits to retry a rate limit")]
+    public async Task KeepsAPlainCancelWhenNoRequestCouldHaveQueued(string when)
+    {
+        await using var harness = new EmailHarness();
+        using var cancellation = new CancellationTokenSource();
+        Task<SendBatchResult> send;
+        if (when == "before the call")
+        {
+            await cancellation.CancelAsync();
+            send = harness.Client.Emails.BatchAsync(Batch(Recipients(2)), cancellation.Token);
+        }
+        else
+        {
+            harness.Time.HoldDelays();
+            harness.Respond((HttpStatusCode)429, WholeCall("rate_limited"));
+            send = harness.Client.Emails.BatchAsync(Batch(Recipients(2)), cancellation.Token);
+            await harness.Time.WaitForHeldDelayAsync();
+            await cancellation.CancelAsync();
+        }
+
+        Assert.Same(send, await Task.WhenAny(send, Task.Delay(TimeSpan.FromSeconds(5))));
+        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => send);
+        Assert.IsNotType<EmailBatchCanceledException>(error);
+        Assert.Equal(when == "before the call" ? 0 : 1, harness.Requests.Count);
     }
 
     [Fact]
@@ -694,6 +767,7 @@ public class TheBatchAsyncMethod
 
     [Theory]
     [InlineData(200, null, "unconfirmed")]
+    [InlineData(409, null, "unconfirmed")]
     [InlineData(429, 7, "failed")]
     public async Task KeepsTheStatusOfAnAnswerItCantDecode(int status, int? retryAfterSeconds, string outcome)
     {
@@ -979,6 +1053,9 @@ public class TheBatchAsyncMethod
         Recipients = recipients,
         MaxRetries = maxRetries,
     };
+
+    static List<BatchRecipient> UnkeyedRecipients(int count)
+        => Enumerable.Range(0, count).Select(i => new BatchRecipient { To = $"user{i}@example.com" }).ToList();
 
     static List<BatchRecipient> Recipients(int count, IReadOnlyDictionary<string, object>? templateData = null)
         => Enumerable.Range(0, count)

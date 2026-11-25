@@ -13,6 +13,8 @@ internal sealed partial class EmailSender
     const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
     const string SplitTheBatch = "Split the recipients into smaller batches and send each with BatchAsync.";
+    const string ResendTheUnconfirmed = "Send the unconfirmed recipients again with the IdempotencyKey each result holds, within 24 hours of the key's first use, so each email goes out once.";
+    const string KeepEachKey = "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
     const string ShrinkTheEmail = "Make the email's content or TemplateData smaller, so the request fits PostHog's size limit.";
 
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
@@ -52,6 +54,7 @@ internal sealed partial class EmailSender
                             "The PostHog client is shut down, so it didn't retry the batch.");
                     }
 
+                    cancellationToken.ThrowIfCancellationRequested();
                     run.StartAttempt();
                     Reply reply;
                     var dispatched = false;
@@ -67,6 +70,11 @@ internal sealed partial class EmailSender
                                 attemptTimeout,
                                 onDispatch: () => dispatched = true)
                             .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (dispatched && cancellationToken.IsCancellationRequested)
+                    {
+                        run.Lost();
+                        throw;
                     }
                     catch (EmailException e) when (e.Code == "network_error")
                     {
@@ -107,6 +115,12 @@ internal sealed partial class EmailSender
                 run.Outcome(),
                 run.Warnings);
         }
+        catch (OperationCanceledException e) when (run.MayHaveQueued && cancellationToken.IsCancellationRequested)
+        {
+            run.Cancel();
+            LogWarnings(run.Warnings);
+            throw new EmailBatchCanceledException(e, run.Outcome(), run.Warnings, cancellationToken);
+        }
 
         LogWarnings(run.Warnings);
         return new SendBatchResult { Results = run.Outcome(), Warnings = run.Warnings };
@@ -128,11 +142,11 @@ internal sealed partial class EmailSender
         "An earlier attempt may have queued these emails, so they may still go out. The retry got: " + refusal.Message,
         refusal.StatusCode,
         refusal.Why,
-        "Send the unconfirmed recipients again with the IdempotencyKey each result holds, within 24 hours of the key's first use, so each email goes out once.",
+        refusal.Fix is { } fix ? fix + " " + KeepEachKey : ResendTheUnconfirmed,
         refusal.DocsUrl,
         refusal.Field,
         refusal.RetryAfter,
-        refusal.InnerException,
+        refusal,
         refusal.MessageId);
 
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
@@ -332,7 +346,14 @@ internal sealed partial class EmailSender
         public void Lost()
         {
             _mayHaveQueued = true;
-            foreach (var row in rows)
+            Unconfirm(rows);
+        }
+
+        public void Cancel() => Unconfirm(rows.Where(row => row.Status is null));
+
+        static void Unconfirm(IEnumerable<BatchRow> unanswered)
+        {
+            foreach (var row in unanswered)
             {
                 row.Set(
                     "unconfirmed",

@@ -69,6 +69,11 @@ public interface IPostHogEmails
     /// The request failed as a whole, such as a batch PostHog refuses as too large.
     /// <see cref="EmailBatchException.Results"/> holds every recipient.
     /// </exception>
+    /// <exception cref="EmailBatchCanceledException">
+    /// The caller cancelled after a request of the batch went out, so PostHog may still send its emails.
+    /// <see cref="EmailBatchCanceledException.Results"/> holds every recipient with its idempotency key. It is an
+    /// <see cref="OperationCanceledException"/>; a cancel before any request went out throws a plain one.
+    /// </exception>
     /// <exception cref="EmailException">The client sent nothing, such as when it is disabled.</exception>
     Task<SendBatchResult> BatchAsync(SendBatchOptions batch, CancellationToken cancellationToken = default);
 

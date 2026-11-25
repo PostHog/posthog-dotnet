@@ -229,6 +229,12 @@ PostHog.Emails.BatchRecipient.TemplateData.get -> System.Collections.Generic.IRe
 PostHog.Emails.BatchRecipient.TemplateData.init -> void
 PostHog.Emails.BatchRecipient.To.get -> string!
 PostHog.Emails.BatchRecipient.To.init -> void
+PostHog.Emails.EmailBatchCanceledException
+PostHog.Emails.EmailBatchCanceledException.EmailBatchCanceledException() -> void
+PostHog.Emails.EmailBatchCanceledException.EmailBatchCanceledException(string! message) -> void
+PostHog.Emails.EmailBatchCanceledException.EmailBatchCanceledException(string! message, System.Exception! innerException) -> void
+PostHog.Emails.EmailBatchCanceledException.Results.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.BatchEmailResult!>!
+PostHog.Emails.EmailBatchCanceledException.Warnings.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.EmailWarning!>!
 PostHog.Emails.EmailBatchException
 PostHog.Emails.EmailBatchException.EmailBatchException() -> void
 PostHog.Emails.EmailBatchException.EmailBatchException(string! message) -> void
