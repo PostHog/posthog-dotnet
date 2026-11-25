@@ -266,6 +266,33 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
     }
 
+    [Fact]
+    public async Task MeasuresTheMinuteFromTheFirstOfSeveralAttemptsThatMayHaveQueued()
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        harness.Time.Now = DueTime.AddSeconds(-61);
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-59);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        });
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(-30);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        });
+        posthog.Enqueue(_ => Task.FromResult(Json(
+            HttpStatusCode.Accepted,
+            $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null}""")));
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(TemplateSend(DueTime)));
+
+        Assert.Equal(3, posthog.Requests.Count);
+        Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
+    }
+
     static HttpResponseMessage BreakClock(EmailHarness harness)
     {
         harness.Time.Broken = true;
