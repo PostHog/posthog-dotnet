@@ -950,14 +950,16 @@ internal sealed class LocalEvaluator
         => propertyFilter is { Operator: ComparisonOperator.Regex or ComparisonOperator.NotRegex, Value: { } value }
            && (value.StringValue is not { } pattern || !RegexHelpers.CanMatchLocally(pattern));
 
-    // Person keys apply only to person filters, and group keys only to group filters of their own group type. No other
-    // filter type resolves from a listing.
+    // Person keys apply only to person filters, and group keys only to group filters of their own group type. Like the
+    // flags service, a group filter without its own index reads the group type it is evaluated in. No other filter
+    // type resolves from a listing.
     static bool IsKnownAbsent(PropertyFilter propertyFilter, HashSet<string>? absentKeys, int? absentKeysGroupTypeIndex)
         => absentKeys is not null
            && propertyFilter.Type switch
            {
                FilterType.Person => absentKeysGroupTypeIndex is null,
-               FilterType.Group => absentKeysGroupTypeIndex is not null && propertyFilter.GroupTypeIndex == absentKeysGroupTypeIndex,
+               FilterType.Group => absentKeysGroupTypeIndex is not null
+                                   && (propertyFilter.GroupTypeIndex is null || propertyFilter.GroupTypeIndex == absentKeysGroupTypeIndex),
                _ => false
            }
            && propertyFilter.Key is { } key

@@ -227,6 +227,24 @@ public class TheLocalEvaluator
         Assert.True(result.Value);
     }
 
+    [Theory]
+    [InlineData("exact", false)]
+    [InlineData("is_not_set", true)]
+    public async Task GroupFilterWithoutAnIndexUsesTheConditionGroupType(string operatorName, bool expected)
+    {
+        var evaluator = await CreateEvaluatorAsync($$$"""
+            {"flags": [{"key": "org-flag", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "tier", "type": "group", "value": "enterprise", "operator": "{{{operatorName}}}"}
+            ], "rollout_percentage": 100}]}}],
+             "group_type_mapping": {"0": "organization"}}
+            """);
+        var groups = new GroupCollection { new Group("organization", "acme", new Dictionary<string, object?> { ["tier"] = "enterprise" }) };
+
+        var result = evaluator.EvaluateFeatureFlag("org-flag", "user", groups, knownAbsent: Group("organization", "tier"));
+
+        Assert.Equal(expected, result.Value);
+    }
+
     [Fact]
     public async Task GroupKeyListedForAnotherGroupTypeStaysInconclusive()
     {
