@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using PostHog.Json;
 using static PostHog.Library.Ensure;
@@ -16,6 +17,14 @@ internal sealed partial class EmailSender
     const string ShrinkTheEmail = "Make the email's content or TemplateData smaller, so the request fits PostHog's size limit.";
 
     static readonly TimeSpan BatchAttemptTimeout = TimeSpan.FromSeconds(45);
+
+    static readonly JsonSerializerOptions BatchBodyOptions = new(JsonSerializerHelper.Options)
+    {
+        MaxDepth = DefaultMaxDepth + RecipientRowLevels,
+    };
+
+    const int DefaultMaxDepth = 64;
+    const int RecipientRowLevels = 2;
 
     static readonly HashSet<string> UnconfirmedRequestCodes =
         new(StringComparer.Ordinal) { "idempotency_key_in_flight", "delivery_unavailable" };
@@ -46,6 +55,7 @@ internal sealed partial class EmailSender
 
                     run.StartAttempt();
                     Reply reply;
+                    var dispatched = false;
                     try
                     {
                         reply = await RequestAsync(
@@ -55,13 +65,25 @@ internal sealed partial class EmailSender
                                 run.Body,
                                 idempotencyKey: null,
                                 cancellationToken,
-                                attemptTimeout)
+                                attemptTimeout,
+                                onDispatch: () => dispatched = true)
                             .ConfigureAwait(false);
                     }
                     catch (EmailException e) when (e.Code == "network_error")
                     {
-                        run.Lost();
+                        if (!NeverConnected(e.InnerException))
+                        {
+                            run.Lost();
+                        }
+
                         throw;
+                    }
+                    catch (Exception e) when (!dispatched && e is not EmailException && !IsCallerCancellation(e, cancellationToken))
+                    {
+                        throw new EmailException(
+                            "unexpected_error",
+                            "The request to PostHog couldn't start, so no email was sent.",
+                            innerException: e);
                     }
                     catch (Exception e) when (e is not EmailException && !IsCallerCancellation(e, cancellationToken))
                     {
@@ -97,6 +119,17 @@ internal sealed partial class EmailSender
     }
 
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
+
+    static bool NeverConnected(Exception? error) => error is HttpRequestException
+    {
+        InnerException: SocketException
+        {
+            SocketErrorCode: SocketError.ConnectionRefused
+            or SocketError.HostNotFound
+            or SocketError.HostUnreachable
+            or SocketError.NetworkUnreachable,
+        },
+    };
 
     static bool IsCallerCancellation(Exception error, CancellationToken cancellationToken)
         => error is OperationCanceledException && cancellationToken.IsCancellationRequested;
@@ -146,7 +179,7 @@ internal sealed partial class EmailSender
         var rows = BatchRows(recipients!, batch is SendTemplateBatchOptions, nameof(batch));
         shared["recipients"] = rows.Select(row => row.Wire).ToList();
         return new BatchRun(
-            JsonSerializer.Serialize(shared, JsonSerializerHelper.Options),
+            JsonSerializer.Serialize(shared, BatchBodyOptions),
             rows,
             batch.MaxRetries ?? defaultMaxRetries);
     }

@@ -13,8 +13,6 @@ using static PostHog.Library.Ensure;
 namespace PostHog.Emails;
 
 /// <summary>
-/// Sends transactional email to the messaging send API on the app host, one email or a batch per call, and reads the
-/// status of a sent email. Owns the attempt loop, so every attempt of a send carries the same idempotency keys.
 /// </summary>
 internal sealed partial class EmailSender : IPostHogEmails
 {
@@ -629,7 +627,8 @@ internal sealed partial class EmailSender : IPostHogEmails
         string? body,
         string? idempotencyKey,
         CancellationToken cancellationToken,
-        TimeSpan? attemptTimeout = null)
+        TimeSpan? attemptTimeout = null,
+        Action? onDispatch = null)
     {
         var waitFor = attemptTimeout ?? RequestTimeout;
         using var request = new HttpRequestMessage(method, url);
@@ -657,7 +656,9 @@ internal sealed partial class EmailSender : IPostHogEmails
         HttpResponseMessage response;
         try
         {
-            response = await _httpClient!.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            var sending = _httpClient!.SendAsync(request, timeout.Token);
+            onDispatch?.Invoke();
+            response = await sending.ConfigureAwait(false);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {

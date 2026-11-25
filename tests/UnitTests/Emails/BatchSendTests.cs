@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -202,6 +203,27 @@ public class TheBatchAsyncMethod
     }
 
     [Fact]
+    public async Task SendsARecipientsTemplateDataAsDeepAsASingleSendTakes()
+    {
+        var templateData = Nested(62);
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Accepted, $$"""{"message_id": "{{M0}}", "replayed": false}""");
+        await harness.Client.Emails.SendAsync(new SendTemplateEmailOptions
+        {
+            To = "a@example.com",
+            TemplateId = TemplateId,
+            TemplateData = templateData,
+        });
+        harness.Respond(HttpStatusCode.OK, Ok(Queued(M1)));
+
+        var result = await harness.Client.Emails.BatchAsync(
+            Batch([new BatchRecipient { To = "a@example.com", TemplateData = templateData }]));
+
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.Equal("queued", Assert.Single(result.Results).Status);
+    }
+
+    [Fact]
     public async Task SendsUpTo100RecipientsInOneRequestWhateverItsSize()
     {
         await using var harness = new EmailHarness();
@@ -281,7 +303,6 @@ public class TheBatchAsyncMethod
             case "its timeout fires":
                 harness.HttpClient.Timeout = TimeSpan.FromMilliseconds(50);
                 harness.Hang();
-                // Before .NET 5, HttpClient reports its timeout as a bare cancellation, with nothing to name it by.
                 if (Environment.Version.Major >= 5)
                 {
                     expected = "The request to PostHog timed out after 0.05s, the Timeout of the app's HttpClient.";
@@ -421,18 +442,63 @@ public class TheBatchAsyncMethod
         Assert.Equal(("idempotency_key_in_flight", ResendWithTheSameKey), (result.Results[1].Error!.Code, result.Results[1].Error!.Fix));
     }
 
-    [Fact]
-    public async Task KeepsEveryResultWhenARequestThrows()
+    [Theory]
+    [InlineData("a disposed HttpClient")]
+    [InlineData("a deadline too long to set")]
+    public async Task FailsEveryRecipientWithoutRetryingWhenTheRequestCantStart(string how)
     {
-        await using var harness = new EmailHarness();
-        harness.HttpClient.Dispose();
+        await using var harness = new EmailHarness(options =>
+        {
+            if (how == "a deadline too long to set")
+            {
+                options.EmailRequestTimeout = TimeSpan.FromDays(60);
+            }
+        });
+        if (how == "a disposed HttpClient")
+        {
+            harness.HttpClient.Dispose();
+        }
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2))));
+
+        Assert.Empty(harness.Requests);
+        Assert.Equal("unexpected_error", error.Code);
+        Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
+    }
+
+    [Fact]
+    public async Task LeavesEveryRecipientUnconfirmedWhenTheTransportFailsAfterTheRequestLeft()
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        posthog.Enqueue(_ => throw new ObjectDisposedException("response stream"));
 
         var error = await Assert.ThrowsAsync<EmailBatchException>(
             () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 0)));
 
+        Assert.Single(posthog.Requests);
         Assert.Equal("network_error", error.Code);
-        Assert.IsType<ObjectDisposedException>(error.InnerException!.InnerException);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
+    }
+
+    [Theory]
+    [InlineData(SocketError.ConnectionRefused, "failed")]
+    [InlineData(SocketError.HostNotFound, "failed")]
+    [InlineData(SocketError.ConnectionReset, "unconfirmed")]
+    public async Task FailsEveryRecipientOnlyWhenNoAttemptReachedPostHog(SocketError firstAttempt, string status)
+    {
+        var posthog = new RecordingHandler();
+        await using var harness = new EmailHarness(posthog: posthog);
+        posthog.Enqueue(_ => throw new HttpRequestException("first attempt", new SocketException((int)firstAttempt)));
+        posthog.Enqueue(_ => throw new HttpRequestException("retry", new SocketException((int)SocketError.ConnectionRefused)));
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+
+        Assert.Equal(2, posthog.Requests.Count);
+        Assert.Equal("network_error", error.Code);
+        Assert.Equal([status, status], error.Results.Select(r => r.Status));
     }
 
     [Fact]
@@ -792,6 +858,17 @@ public class TheBatchAsyncMethod
                 TemplateData = templateData,
             })
             .ToList();
+
+    static Dictionary<string, object> Nested(int objects)
+    {
+        var data = new Dictionary<string, object> { ["leaf"] = "x" };
+        for (var level = 1; level < objects; level++)
+        {
+            data = new Dictionary<string, object> { ["next"] = data };
+        }
+
+        return data;
+    }
 
     static string Queued(string messageId, bool replayed = false)
         => $$"""{"message_id":"{{messageId}}","status":"queued","replayed":{{(replayed ? "true" : "false")}}}""";
