@@ -970,6 +970,32 @@ public class TheSendAsyncMethodRetries
         Assert.Equal(status, error.StatusCode);
     }
 
+    [Theory]
+    [InlineData("no content")]
+    [InlineData("an undecodable charset")]
+    public async Task RetriesAnUnavailableAnswerItCantRead(string answer)
+    {
+        await using var harness = new EmailHarness();
+        harness.RespondTo(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = null };
+            if (answer == "an undecodable charset")
+            {
+                response.Content = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("{}"));
+                response.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json; charset=not-a-charset");
+            }
+
+            return response;
+        });
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.Equal(harness.Requests[0].Header("Idempotency-Key"), harness.Requests[1].Header("Idempotency-Key"));
+    }
+
     [Fact]
     public async Task WaitsForALongerRetryAfter()
     {
