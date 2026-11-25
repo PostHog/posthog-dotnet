@@ -1076,6 +1076,20 @@ public class TheSendAsyncMethodRetries
 public class TheSendAsyncMethodAnswers
 {
     [Fact]
+    public async Task ReturnsTheAcceptedEmailWhenTheLoggerThrows()
+    {
+        await using var harness = new EmailHarness(loggerFactory: new ThrowingLoggerFactory());
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188", "warnings": [{"code": "no_distinct_id", "detail": "Pass distinct_id."}]}""");
+
+        var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        Assert.Equal("no_distinct_id", Assert.Single(result.Warnings).Code);
+    }
+
+    [Fact]
     public async Task KeepsPostHogsErrorFields()
     {
         await using var harness = new EmailHarness();
