@@ -15,7 +15,7 @@ internal sealed partial class EmailSender
     const string SplitTheBatch = "Split the recipients into smaller batches and send each with BatchAsync.";
     const string ResendTheUnconfirmed = "Send the unconfirmed recipients again with the IdempotencyKey each result holds, within 24 hours of the key's first use, so each email goes out once.";
     const string KeepEachKey = "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
-    const string SendEachOnItsOwn = "Send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
+    const string SendEachOnItsOwn = "If this project can send email from code, send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string CheckTheTemplate = "Check TemplateId. If it is right, send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string ShrinkTheEmail = "Make the email's content or TemplateData smaller, so the request fits PostHog's size limit.";
 
@@ -371,7 +371,7 @@ internal sealed partial class EmailSender
         {
             if (!IsSuccess(reply.Status))
             {
-                var error = BatchReplyError(reply, rows.Count, fromTemplate);
+                var error = BatchReplyError(reply, rows.Count, fromTemplate, EarlierAttemptMayHaveQueued);
                 if ((int)reply.Status >= 500)
                 {
                     Lost();
@@ -491,7 +491,7 @@ internal sealed partial class EmailSender
         }
     }
 
-    static EmailException BatchReplyError(Reply reply, int recipients, bool fromTemplate)
+    static EmailException BatchReplyError(Reply reply, int recipients, bool fromTemplate, bool earlierAttemptMayHaveQueued)
     {
         var code = Text(reply.Fields, "code");
         if (reply.Status == HttpStatusCode.NotFound
@@ -500,9 +500,10 @@ internal sealed partial class EmailSender
         {
             return new EmailException(
                 "not_found",
-                fromTemplate
-                    ? "PostHog found no template with this TemplateId, or batch sends aren't available for this project, so it sent no email of this request."
-                    : "Batch sends, or sending from code, aren't available for this project, so PostHog sent no email of this request.",
+                (fromTemplate
+                    ? "PostHog found no template with this TemplateId, or batch sends aren't available for this project"
+                    : "Batch sends, or sending from code, aren't available for this project")
+                + (earlierAttemptMayHaveQueued ? "." : ", so PostHog sent no email of this request."),
                 reply.Status,
                 why: fromTemplate
                     ? "PostHog answers the same 404 for a template it can't find and for a project without batch sends."

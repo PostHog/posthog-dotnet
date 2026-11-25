@@ -20,11 +20,11 @@ public class TheBatchAsyncMethod
         "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
     const int FourMiB = 4 * 1024 * 1024;
     const string NoTemplateOrNoBatchSends =
-        "PostHog found no template with this TemplateId, or batch sends aren't available for this project, so it sent no email of this request.";
+        "PostHog found no template with this TemplateId, or batch sends aren't available for this project, so PostHog sent no email of this request.";
     const string NoBatchSendsFromCode =
         "Batch sends, or sending from code, aren't available for this project, so PostHog sent no email of this request.";
-    const string SendEachOnItsOwn =
-        "Send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
+    const string SendEachOnItsOwn = "If this project can send email from code, " +
+        "send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string CheckTheTemplateFix = "Check TemplateId. If it is right, " +
         "send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string SendSinglyFix =
@@ -504,21 +504,24 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.NotFound, CheckTheTemplateFix)]
-    [InlineData(HttpStatusCode.RequestEntityTooLarge, "Split the recipients into smaller batches and send each with BatchAsync.")]
-    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(HttpStatusCode retry, string posthogsFix)
+    [InlineData("a template", HttpStatusCode.NotFound, CheckTheTemplateFix)]
+    [InlineData("code", HttpStatusCode.NotFound, SendEachOnItsOwn)]
+    [InlineData("a template", HttpStatusCode.RequestEntityTooLarge, "Split the recipients into smaller batches and send each with BatchAsync.")]
+    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(string from, HttpStatusCode retry, string posthogsFix)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
         posthog.Enqueue(_ => throw new HttpRequestException("lost", new SocketException((int)SocketError.ConnectionReset)));
         posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(retry)));
+        SendBatchOptions batch = from == "code"
+            ? new SendCodeBatchOptions { TemplateKey = "launch-news", Subject = "s", Html = "h", Recipients = Recipients(2), MaxRetries = 1 }
+            : Batch(Recipients(2), maxRetries: 1);
 
-        var error = await Assert.ThrowsAsync<EmailBatchException>(
-            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+        var error = await Assert.ThrowsAsync<EmailBatchException>(() => harness.Client.Emails.BatchAsync(batch));
 
         Assert.Equal(2, posthog.Requests.Count);
         Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
-        Assert.DoesNotContain("no email was sent", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotMatch("no email was sent|sent no email", error.Message);
         Assert.Contains("may have queued", error.Message, StringComparison.Ordinal);
         Assert.Equal(posthogsFix + " " + KeepEachKey, error.Fix);
         Assert.Equal(retry, Assert.IsType<EmailException>(error.InnerException!.InnerException).StatusCode);
