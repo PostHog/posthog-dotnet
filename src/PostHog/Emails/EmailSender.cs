@@ -114,14 +114,23 @@ internal sealed partial class EmailSender : IPostHogEmails
         await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
-        DateTimeOffset? sentAt = prepared.ScheduledAt is null ? null : _timeProvider.GetUtcNow();
+        DateTimeOffset? firstSentAt = null;
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
-            async () => ParseSendReply(
-                await RequestAsync(HttpMethod.Post, url, secretKey, prepared.Body, prepared.IdempotencyKey, cancellationToken)
-                    .ConfigureAwait(false),
-                prepared.ScheduledAt,
-                sentAt),
+            async () =>
+            {
+                DateTimeOffset? sentAt = prepared.ScheduledAt is null ? null : _timeProvider.GetUtcNow();
+                firstSentAt ??= sentAt;
+                var reply = await RequestAsync(
+                        HttpMethod.Post,
+                        url,
+                        secretKey,
+                        prepared.Body,
+                        prepared.IdempotencyKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return ParseSendReply(reply, prepared.ScheduledAt, firstSentAt, sentAt);
+            },
             cancellationToken).ConfigureAwait(false);
         return result;
     }
@@ -716,7 +725,11 @@ internal sealed partial class EmailSender : IPostHogEmails
         }
     }
 
-    SendEmailResult ParseSendReply(Reply reply, DateTimeOffset? scheduledAt, DateTimeOffset? sentAt)
+    SendEmailResult ParseSendReply(
+        Reply reply,
+        DateTimeOffset? scheduledAt,
+        DateTimeOffset? firstSentAt,
+        DateTimeOffset? sentAt)
     {
         if (!IsSuccess(reply.Status))
         {
@@ -734,7 +747,7 @@ internal sealed partial class EmailSender : IPostHogEmails
         var replayed = reply.Fields is { } replyFields
                        && TryField(replyFields, "replayed", out var replayedValue)
                        && replayedValue.ValueKind == JsonValueKind.True;
-        var (status, confirmedAt) = scheduledAt is { } requested && sentAt is { } sent
+        var (status, confirmedAt) = scheduledAt is { } requested && (replayed ? firstSentAt : sentAt) is { } sent
             ? ConfirmSchedule(reply, id, requested, sent)
             : ("queued", null);
         return new SendEmailResult
@@ -801,8 +814,9 @@ internal sealed partial class EmailSender : IPostHogEmails
     /// passed with <c>scheduled_at: null</c>. Any other answer, such as one from a PostHog that dropped the field or
     /// sends a time that is still ahead at once, throws <c>schedule_not_confirmed</c> with the accepted email's
     /// message ID. <see cref="MaxClockDrift"/> allows for this machine's clock running behind PostHog's. It counts
-    /// from <paramref name="sentAt"/>, before the first attempt, so a slow answer, a slow logger or a retry can't move
-    /// a time that was still ahead into it.
+    /// from <paramref name="sentAt"/>, read before the attempt PostHog answered, so a slow answer or a slow logger
+    /// can't move a time that was still ahead into it. A replayed answer may be to the first attempt, so it counts
+    /// from the first attempt.
     /// </summary>
     static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(
         Reply reply,
