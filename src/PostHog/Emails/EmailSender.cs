@@ -778,7 +778,7 @@ internal sealed class EmailSender : IPostHogEmails
         {
             return _timeProvider.GetUtcNow();
         }
-#pragma warning disable CA1031 // The app's clock can throw any exception type.
+#pragma warning disable CA1031
         catch (Exception)
 #pragma warning restore CA1031
         {
@@ -792,7 +792,7 @@ internal sealed class EmailSender : IPostHogEmails
         {
             _logger.LogWarningEmailWarning(warning.Code, warning.Message);
         }
-#pragma warning disable CA1031 // The app's logger can throw any exception type.
+#pragma warning disable CA1031
         catch (Exception)
 #pragma warning restore CA1031
         {
