@@ -963,3 +963,51 @@ public class ThePostHogClient
         Assert.Single(flagsHandler.ReceivedRequests);
     }
 }
+
+public class TheKnownAbsentPropertyKeys
+{
+    [Fact]
+    public void ValidateAndCreateDoNotAllocateWhenNoKeysAreListed()
+    {
+        var defaultOptions = new FeatureFlagOptions
+        {
+            OnlyEvaluateLocally = true,
+            PersonProperties = new() { ["plan"] = "pro" }
+        };
+        var emptyOptions = new AllFeatureFlagsOptions
+        {
+            PersonPropertyKeysKnownAbsent = Array.Empty<string>(),
+            GroupPropertyKeysKnownAbsent = new Dictionary<string, IReadOnlyCollection<string>>()
+        };
+
+        // Warm up JIT and static initialization so only the measured calls count.
+        ValidateAndCreate(null);
+        ValidateAndCreate(defaultOptions);
+        ValidateAndCreate(emptyOptions);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var fromNull = ValidateAndCreate(null);
+        var allocatedForNull = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        var fromDefault = ValidateAndCreate(defaultOptions);
+        var allocatedForDefault = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        var fromEmpty = ValidateAndCreate(emptyOptions);
+        var allocatedForEmpty = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Null(fromNull);
+        Assert.Null(fromDefault);
+        Assert.Null(fromEmpty);
+        Assert.True(
+            allocatedForNull == 0 && allocatedForDefault == 0 && allocatedForEmpty == 0,
+            $"Allocated bytes: null={allocatedForNull}, default={allocatedForDefault}, empty={allocatedForEmpty}");
+    }
+
+    static KnownAbsentPropertyKeys? ValidateAndCreate(AllFeatureFlagsOptions? options)
+    {
+        KnownAbsentPropertyKeys.Validate(options);
+        return KnownAbsentPropertyKeys.Create(options);
+    }
+}

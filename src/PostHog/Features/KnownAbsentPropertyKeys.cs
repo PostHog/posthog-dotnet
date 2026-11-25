@@ -13,9 +13,9 @@ internal sealed class KnownAbsentPropertyKeys
     // Keys with this prefix name persons-table fields such as created_at, not person properties.
     const string PersonMetadataPrefix = "__posthog_person_metadata__";
 
-    readonly Dictionary<string, HashSet<string>> _groups;
+    readonly Dictionary<string, HashSet<string>>? _groups;
 
-    KnownAbsentPropertyKeys(HashSet<string>? person, Dictionary<string, HashSet<string>> groups)
+    KnownAbsentPropertyKeys(HashSet<string>? person, Dictionary<string, HashSet<string>>? groups)
     {
         Person = person;
         _groups = groups;
@@ -30,7 +30,7 @@ internal sealed class KnownAbsentPropertyKeys
     /// Returns the keys known absent for the group type, or <c>null</c> when none are listed for it.
     /// </summary>
     public HashSet<string>? ForGroup(string groupType)
-        => _groups.TryGetValue(groupType, out var keys) ? keys : null;
+        => _groups is not null && _groups.TryGetValue(groupType, out var keys) ? keys : null;
 
     /// <summary>
     /// Creates the known-absent keys from the evaluation options, or returns <c>null</c> when nothing is listed.
@@ -38,7 +38,7 @@ internal sealed class KnownAbsentPropertyKeys
     public static KnownAbsentPropertyKeys? Create(AllFeatureFlagsOptions? options)
     {
         HashSet<string>? person = null;
-        if (options?.PersonPropertyKeysKnownAbsent is { } personKeys)
+        if (options?.PersonPropertyKeysKnownAbsent is { Count: > 0 } personKeys)
         {
             person = new HashSet<string>(
                 personKeys.Where(key => !key.StartsWith(PersonMetadataPrefix, StringComparison.Ordinal)),
@@ -49,16 +49,20 @@ internal sealed class KnownAbsentPropertyKeys
             }
         }
 
-        var groups = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (var (groupType, keys) in options?.GroupPropertyKeysKnownAbsent ?? EmptyGroups)
+        Dictionary<string, HashSet<string>>? groups = null;
+        if (options?.GroupPropertyKeysKnownAbsent is { Count: > 0 } groupKeys)
         {
-            if (keys is { Count: > 0 })
+            foreach (var (groupType, keys) in groupKeys)
             {
-                groups[groupType] = new HashSet<string>(keys, StringComparer.Ordinal);
+                if (keys is { Count: > 0 })
+                {
+                    groups ??= new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+                    groups[groupType] = new HashSet<string>(keys, StringComparer.Ordinal);
+                }
             }
         }
 
-        return person is null && groups.Count is 0 ? null : new KnownAbsentPropertyKeys(person, groups);
+        return person is null && groups is null ? null : new KnownAbsentPropertyKeys(person, groups);
     }
 
     /// <summary>
@@ -91,7 +95,12 @@ internal sealed class KnownAbsentPropertyKeys
             }
         }
 
-        foreach (var (groupType, keys) in options?.GroupPropertyKeysKnownAbsent ?? EmptyGroups)
+        if (options?.GroupPropertyKeysKnownAbsent is not { Count: > 0 } groupKeys)
+        {
+            return;
+        }
+
+        foreach (var (groupType, keys) in groupKeys)
         {
             if (keys is { Count: > MaxKeys })
             {
@@ -121,7 +130,4 @@ internal sealed class KnownAbsentPropertyKeys
         }
         return false;
     }
-
-    static readonly IReadOnlyDictionary<string, IReadOnlyCollection<string>> EmptyGroups =
-        new Dictionary<string, IReadOnlyCollection<string>>();
 }
