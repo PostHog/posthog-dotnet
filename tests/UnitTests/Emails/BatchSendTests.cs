@@ -232,6 +232,10 @@ public class TheBatchAsyncMethod
 
         Assert.Equal(2, harness.Requests.Count);
         Assert.Equal("queued", Assert.Single(result.Results).Status);
+        Assert.Contains(
+            "\"message_data\":" + string.Concat(Enumerable.Repeat("{\"next\":", 61)) + "{\"leaf\":\"x\"" + new string('}', 62),
+            harness.Requests[^1].Body,
+            StringComparison.Ordinal);
     }
 
     [Fact]
