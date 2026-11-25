@@ -799,7 +799,11 @@ public sealed class PostHogOpenAIHandlerTests : IDisposable
             .Capture(
                 Arg.Any<string>(),
                 PostHogAIFieldNames.Generation,
-                Arg.Is<Dictionary<string, object>>(props => !props.ContainsKey(PostHogAIFieldNames.IsError)),
+                Arg.Is<Dictionary<string, object>>(props =>
+                    !props.ContainsKey(PostHogAIFieldNames.IsError)
+                    && !props.ContainsKey(PostHogAIFieldNames.Error)
+                    && props.ContainsKey(PostHogAIFieldNames.OutputChoices)
+                ),
                 null,
                 false,
                 Arg.Any<DateTimeOffset?>()
