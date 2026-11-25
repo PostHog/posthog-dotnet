@@ -396,6 +396,46 @@ public class TheLocalEvaluator
         Assert.Equal(UnresolvedFlagReason.MissingContext, exception.Reason);
     }
 
+    const string PersonFlagWithAnOrganizationFilter = """
+        {"flags": [{"key": "person-flag", "active": true, "filters": {"groups": [{"properties": [
+            {"key": "tier", "type": "group", "group_type_index": 0, "operator": "is_not_set"}
+        ], "rollout_percentage": 100}]}}],
+         "group_type_mapping": {"0": "organization"}}
+        """;
+
+    [Fact]
+    public async Task GroupFilterInAPersonConditionReadsItsOwnGroupType()
+    {
+        var evaluator = await CreateEvaluatorAsync(PersonFlagWithAnOrganizationFilter);
+        var groups = new GroupCollection { new Group("organization", "org-1") };
+        var personProperties = new Dictionary<string, object?> { ["tier"] = "gold" };
+
+        var result = evaluator.EvaluateFeatureFlag(
+            "person-flag",
+            "user",
+            groups,
+            personProperties,
+            knownAbsent: Group("organization", "tier"));
+
+        Assert.True(result.Value);
+    }
+
+    [Fact]
+    public async Task GroupFilterInAPersonConditionDoesNotReadPersonProperties()
+    {
+        var evaluator = await CreateEvaluatorAsync(PersonFlagWithAnOrganizationFilter);
+        var personProperties = new Dictionary<string, object?> { ["tier"] = "gold" };
+        var groupsWithoutTier = new GroupCollection { new Group("organization", "org-1") };
+
+        var withoutGroup = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("person-flag", "user", personProperties: personProperties));
+        var withoutGroupProperty = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("person-flag", "user", groupsWithoutTier, personProperties));
+
+        Assert.Equal(UnresolvedFlagReason.MissingContext, withoutGroup.Reason);
+        Assert.Equal(UnresolvedFlagReason.MissingContext, withoutGroupProperty.Reason);
+    }
+
     [Fact]
     public async Task GroupKeyDoesNotApplyToAPersonFilterOrCohortLeafInAGroupFlag()
     {

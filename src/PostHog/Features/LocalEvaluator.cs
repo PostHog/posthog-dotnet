@@ -580,14 +580,16 @@ internal sealed class LocalEvaluator
             foreach (var property in condition.Properties)
             {
                 bool isMatch;
+                var (filterProperties, filterAbsentKeys, filterAbsentKeysGroupTypeIndex) =
+                    ResolveFilterContext(property, properties, absentKeys, absentKeysGroupTypeIndex, context);
                 try
                 {
-                    if (IsKnownAbsent(property, absentKeys, absentKeysGroupTypeIndex))
+                    if (IsKnownAbsent(property, filterAbsentKeys, filterAbsentKeysGroupTypeIndex))
                     {
                         AssertOperatorSupported(property);
                         isMatch = MatchesKnownAbsentProperty(property);
                     }
-                    else if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(property, properties))
+                    else if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(property, filterProperties))
                     {
                         // Same result as MatchProperty for an absent key, without the cost of throwing for every
                         // missing filter.
@@ -601,7 +603,7 @@ internal sealed class LocalEvaluator
                         {
                             FilterType.Cohort => MatchCohort(property, distinctId, properties, absentKeys, absentKeysGroupTypeIndex),
                             FilterType.Flag => MatchFlagDependencyFilter(property, evaluationCache, context),
-                            _ => MatchProperty(property, distinctId, properties) ?? false
+                            _ => MatchProperty(property, distinctId, filterProperties) ?? false
                         };
                     }
                 }
@@ -657,6 +659,31 @@ internal sealed class LocalEvaluator
         return hashValue > rolloutPercentage / 100.0
             ? ConditionMatchResult.OutOfRolloutBound
             : ConditionMatchResult.Match;
+    }
+
+    // A group filter that sets its own group type index reads that group type's properties and known-absent keys,
+    // never the condition's person or group context. Without a supplied group of that type, it has no properties,
+    // so the filter stays inconclusive with missing context.
+    (Dictionary<string, object?>? Properties, HashSet<string>? AbsentKeys, int? AbsentKeysGroupTypeIndex) ResolveFilterContext(
+        PropertyFilter property,
+        Dictionary<string, object?>? properties,
+        HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex,
+        FlagEvaluationContext context)
+    {
+        if (property is not { Type: FilterType.Group, GroupTypeIndex: { } filterGroupTypeIndex }
+            || filterGroupTypeIndex == absentKeysGroupTypeIndex)
+        {
+            return (properties, absentKeys, absentKeysGroupTypeIndex);
+        }
+
+        if (_groupTypeMapping.TryGetValue(filterGroupTypeIndex, out var groupType)
+            && context.Groups.TryGetGroup(groupType, out var group))
+        {
+            return (group.Properties, context.KnownAbsent?.ForGroup(groupType), filterGroupTypeIndex);
+        }
+
+        return ([], null, filterGroupTypeIndex);
     }
 
     static string? GetMatchingVariant(LocalFeatureFlag flag, string distinctId)
