@@ -654,8 +654,14 @@ internal sealed partial class EmailSender : IPostHogEmails
         HttpResponseMessage response;
         try
         {
+            if (_httpClient!.GetType() != typeof(HttpClient) || Environment.Version.Major < 5)
+            {
+                onDispatch?.Invoke();
+            }
+
+            var sending = _httpClient.SendAsync(request, timeout.Token);
             onDispatch?.Invoke();
-            response = await _httpClient!.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            response = await sending.ConfigureAwait(false);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {

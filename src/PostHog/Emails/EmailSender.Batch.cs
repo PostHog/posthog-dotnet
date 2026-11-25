@@ -73,7 +73,7 @@ internal sealed partial class EmailSender
                         run.Lost();
                         throw;
                     }
-                    catch (Exception e) when ((!dispatched || IsDisposedHttpClient(e)) && e is not EmailException && !IsCallerCancellation(e, cancellationToken))
+                    catch (Exception e) when (!dispatched && e is not EmailException && !IsCallerCancellation(e, cancellationToken))
                     {
                         throw new EmailException(
                             "unexpected_error",
@@ -114,9 +114,6 @@ internal sealed partial class EmailSender
     }
 
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
-
-    static bool IsDisposedHttpClient(Exception error)
-        => error is ObjectDisposedException { ObjectName: var name } && name == typeof(HttpClient).FullName;
 
     static bool IsCallerCancellation(Exception error, CancellationToken cancellationToken)
         => error is OperationCanceledException && cancellationToken.IsCancellationRequested;

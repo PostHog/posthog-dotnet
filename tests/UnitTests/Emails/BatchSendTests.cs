@@ -470,6 +470,7 @@ public class TheBatchAsyncMethod
     [Theory]
     [InlineData("its handler")]
     [InlineData("its handler, before returning")]
+    [InlineData("its handler, through a disposed HttpClient")]
     [InlineData("an HttpClient of the app's own")]
     public async Task LeavesEveryRecipientUnconfirmedWhenTheTransportFailsAfterTheRequestLeft(string fails)
     {
@@ -478,6 +479,7 @@ public class TheBatchAsyncMethod
         {
             "its handler" => new EmailHarness(posthog: posthog),
             "its handler, before returning" => new EmailHarness(posthog: new ThrowsAfterSendingHandler(posthog)),
+            "its handler, through a disposed HttpClient" => new EmailHarness(posthog: new SendsThroughADisposedClientAfterSendingHandler(posthog)),
             _ => new EmailHarness(posthog: posthog, httpClient: transport => new ThrowsAfterSendingHttpClient(transport)),
         };
         if (fails == "its handler")
@@ -522,6 +524,17 @@ public class TheBatchAsyncMethod
         {
             base.SendAsync(request, cancellationToken).GetAwaiter().GetResult().Dispose();
             throw new InvalidOperationException("reply");
+        }
+    }
+
+    sealed class SendsThroughADisposedClientAfterSendingHandler(HttpMessageHandler posthog) : DelegatingHandler(posthog)
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            (await base.SendAsync(request, cancellationToken)).Dispose();
+            var disposed = new HttpClient();
+            disposed.Dispose();
+            return await disposed.GetAsync(new Uri("https://example.com/"), cancellationToken);
         }
     }
 
