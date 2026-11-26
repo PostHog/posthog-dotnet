@@ -362,18 +362,7 @@ internal sealed class LocalEvaluator
         var aggregationGroupIndex = filters?.AggregationGroupTypeIndex;
         var context = new FlagEvaluationContext(distinctId, groups, personProperties, knownAbsent);
 
-        StringOrValue<bool> flagResult;
-        if (!aggregationGroupIndex.HasValue)
-        {
-            flagResult = MatchFeatureFlagProperties(
-                flag,
-                distinctId,
-                personProperties,
-                knownAbsent?.Person,
-                evaluationCache,
-                context);
-        }
-        else
+        if (aggregationGroupIndex.HasValue)
         {
             if (!_groupTypeMapping.TryGetValue(aggregationGroupIndex.Value, out var groupType))
             {
@@ -384,19 +373,17 @@ internal sealed class LocalEvaluator
                     UnresolvedFlagReason.UnsupportedDefinition);
             }
 
-            if (TryGetUsableGroup(groups, groupType, out var group))
+            if (!TryGetUsableGroup(groups, groupType, out _))
             {
-                flagResult = MatchFeatureFlagProperties(
-                    flag,
-                    group.GroupKey,
-                    group.Properties,
-                    knownAbsent?.ForGroup(groupType),
-                    evaluationCache,
-                    context);
-            }
-            else
-            {
-                // Don't failover to `/flags`, since response will be the same
+                // The flags service evaluates a holdout before the conditions and buckets it by the flag-level group
+                // key. Without one it hashes an empty identifier and may hold the flag out, so only it can answer.
+                if (filters?.HoldoutExclusionPercentage > 0)
+                {
+                    throw new InconclusiveMatchException(
+                        $"Flag \"{flag.Key}\" has a holdout but no usable {groupType} group key",
+                        UnresolvedFlagReason.MissingContext);
+                }
+
                 if (warnOnUnknownGroups)
                 {
                     _logger.LogWarnGroupTypeNotPassedIn(flag.Key);
@@ -405,20 +392,18 @@ internal sealed class LocalEvaluator
                 {
                     _logger.LogDebugGroupTypeNotPassedIn(flag.Key);
                 }
-
-                flagResult = false;
             }
         }
 
+        // Each condition resolves its own aggregation. Conditions on a group without a usable key are skipped, and
+        // the other conditions still decide the flag, as in the flags service.
+        var flagResult = MatchFeatureFlagProperties(flag, evaluationCache, context);
         evaluationCache[flag.Key] = flagResult;
         return flagResult;
     }
 
     StringOrValue<bool> MatchFeatureFlagProperties(
         LocalFeatureFlag flag,
-        string distinctId,
-        Dictionary<string, object?>? properties, /* person or group properties */
-        HashSet<string>? absentKeys, /* the known-absent keys for properties */
         Dictionary<string, StringOrValue<bool>> evaluationCache,
         FlagEvaluationContext context)
     {
@@ -431,30 +416,27 @@ internal sealed class LocalEvaluator
 
         foreach (var condition in flagConditions)
         {
-            // Per-condition aggregation overrides only when the condition explicitly
-            // sets its own AggregationGroupTypeIndex (mixed targeting). When absent,
-            // fall back to the flag-level aggregation so existing pure person and
-            // pure group flags keep their original behavior.
-            var conditionAggregation = condition.AggregationGroupTypeIndex ?? flagAggregation;
+            // A condition uses its own aggregation when it sets one, also an explicit null (person), otherwise the
+            // flag-level aggregation, as in the flags service.
+            var conditionAggregation = condition.EffectiveAggregation(flagAggregation);
 
-            var effectiveProperties = properties;
-            var effectiveAbsentKeys = absentKeys;
-            var effectiveBucketingId = distinctId;
-
-            // The condition explicitly sets its own aggregation, different from the
-            // flag level. Re-resolve properties and bucketing id from the condition's
-            // group so this condition evaluates against that group.
-            // conditionAggregation is non-null here: if it were null and flagAggregation
-            // were also null they'd be equal, and the only way conditionAggregation can
-            // be null at all (after the ?? above) is that case.
-            if (conditionAggregation != flagAggregation)
+            Dictionary<string, object?>? effectiveProperties;
+            HashSet<string>? effectiveAbsentKeys;
+            string effectiveBucketingId;
+            if (conditionAggregation is null)
             {
-                if (!_groupTypeMapping.TryGetValue(conditionAggregation!.Value, out var groupType)
-                    || !TryGetUsableGroup(context.Groups, groupType, out var group))
-                {
-                    // Skip this condition: group type unknown, not passed in, or passed in without a usable key.
-                    continue;
-                }
+                effectiveProperties = context.PersonProperties;
+                effectiveAbsentKeys = context.KnownAbsent?.Person;
+                effectiveBucketingId = context.DistinctId;
+            }
+            else if (!_groupTypeMapping.TryGetValue(conditionAggregation.Value, out var groupType)
+                     || !TryGetUsableGroup(context.Groups, groupType, out var group))
+            {
+                // Skip this condition: group type unknown, not passed in, or passed in without a usable key.
+                continue;
+            }
+            else
+            {
                 effectiveProperties = group.Properties;
                 effectiveAbsentKeys = context.KnownAbsent?.ForGroup(groupType);
                 effectiveBucketingId = group.GroupKey;
