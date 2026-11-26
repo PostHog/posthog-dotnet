@@ -569,6 +569,83 @@ public class TheLocalEvaluator
         Assert.True(result.Value);
     }
 
+    // person-cohort is a person flag and org-cohort an organization flag. Both require cohort 7, and nested-person-cohort
+    // and nested-org-cohort require cohort 8, which requires cohort 7. Cohort 7 has one is_not_set leaf on tier.
+    static string CohortLeafScopeFlags(string leafJson) => $$$"""
+        {"flags": [
+            {"key": "person-cohort", "active": true, "filters": {"groups": [{"properties": [
+                {"key": "id", "type": "cohort", "value": 7}
+            ], "rollout_percentage": 100}]}},
+            {"key": "org-cohort", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "id", "type": "cohort", "value": 7}
+            ], "rollout_percentage": 100}]}},
+            {"key": "nested-person-cohort", "active": true, "filters": {"groups": [{"properties": [
+                {"key": "id", "type": "cohort", "value": 8}
+            ], "rollout_percentage": 100}]}},
+            {"key": "nested-org-cohort", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "id", "type": "cohort", "value": 8}
+            ], "rollout_percentage": 100}]}}
+        ],
+         "cohorts": {
+            "7": {"type": "AND", "values": [{"type": "AND", "values": [{{{leafJson}}}]}]},
+            "8": {"type": "AND", "values": [{"type": "AND", "values": [{"key": "id", "type": "cohort", "value": 7}]}]}
+         },
+         "group_type_mapping": {"0": "organization", "1": "project"}}
+        """;
+
+    const string PersonLeaf = """{"key": "tier", "type": "person", "operator": "is_not_set"}""";
+    const string GroupLeafWithoutIndex = """{"key": "tier", "type": "group", "operator": "is_not_set"}""";
+    const string OrganizationLeaf = """{"key": "tier", "type": "group", "group_type_index": 0, "operator": "is_not_set"}""";
+    const string ProjectLeaf = """{"key": "tier", "type": "group", "group_type_index": 1, "operator": "is_not_set"}""";
+
+    // The listing that resolves each cohort leaf, or null when no listing does. A person leaf reads the person listing.
+    // A group leaf reads the condition's group type's listing, so none in a person condition. A group leaf whose own
+    // index differs from the condition's group type stays inconclusive for every listing and falls back to the server.
+    public static TheoryData<string, string, string?> CohortLeafListingScopes()
+    {
+        var data = new TheoryData<string, string, string?>();
+        foreach (var (personFlag, organizationFlag) in new[] { ("person-cohort", "org-cohort"), ("nested-person-cohort", "nested-org-cohort") })
+        {
+            data.Add(PersonLeaf, personFlag, "person");
+            data.Add(PersonLeaf, organizationFlag, "person");
+            data.Add(GroupLeafWithoutIndex, personFlag, null);
+            data.Add(GroupLeafWithoutIndex, organizationFlag, "organization");
+            data.Add(OrganizationLeaf, personFlag, null);
+            data.Add(OrganizationLeaf, organizationFlag, "organization");
+            data.Add(ProjectLeaf, personFlag, null);
+            data.Add(ProjectLeaf, organizationFlag, null);
+        }
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(CohortLeafListingScopes))]
+    public async Task CohortLeafResolvesFromOneListingAtMost(string leafJson, string flagKey, string? resolvingListing)
+    {
+        var evaluator = await CreateEvaluatorAsync(CohortLeafScopeFlags(leafJson));
+        var groups = new GroupCollection { new Group("organization", "acme"), new Group("project", "web") };
+        var listings = new Dictionary<string, KnownAbsentPropertyKeys?>
+        {
+            ["person"] = Person("tier"),
+            ["organization"] = Group("organization", "tier"),
+            ["project"] = Group("project", "tier")
+        };
+
+        foreach (var (listing, knownAbsent) in listings)
+        {
+            if (listing == resolvingListing)
+            {
+                Assert.True(evaluator.EvaluateFeatureFlag(flagKey, "user", groups, knownAbsent: knownAbsent).Value);
+            }
+            else
+            {
+                var exception = Assert.Throws<InconclusiveMatchException>(
+                    () => evaluator.EvaluateFeatureFlag(flagKey, "user", groups, knownAbsent: knownAbsent));
+                Assert.Equal(UnresolvedFlagReason.MissingContext, exception.Reason);
+            }
+        }
+    }
+
     // org-flag aggregates by organization and depends on base-flag, which aggregates by person.
     const string GroupDependsOnPersonDefinitions = """
         {"flags": [
