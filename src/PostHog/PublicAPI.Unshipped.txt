@@ -200,3 +200,4 @@ static PostHog.Emails.EmailTracking.implicit operator PostHog.Emails.EmailTracki
 static PostHog.Emails.EmailTracking.None.get -> PostHog.Emails.EmailTracking!
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
 static PostHog.PromptsExtensions.ClearCache(this PostHog.Prompts.IPostHogPrompts! prompts, string? name = null, int? version = null) -> void
+static PostHog.PromptsExtensions.GetAllAsync(this PostHog.Prompts.IPostHogPrompts! prompts, string? label = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyDictionary<string!, PostHog.Prompts.PromptResult!>!>!
