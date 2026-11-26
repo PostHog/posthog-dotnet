@@ -1007,6 +1007,52 @@ public class TheGetAllAsyncMethod
     }
 
     [Fact]
+    public async Task DoesNotCacheRowsWhenTheCacheWasClearedDuringTheRequest()
+    {
+        var container = CreateContainer();
+        var gate = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        container.FakeHttpMessageHandler.AddResponse(ListUrl(), HttpMethod.Get, () => gate.Task);
+        var afterwards = container.FakeHttpMessageHandler.AddResponse(
+            PromptUrl("prompt-a", query: "&label=production"),
+            HttpMethod.Get,
+            Row("prompt-a", version: 5));
+        var prompts = container.Activate<PostHogClient>().Prompts;
+
+        var bulk = prompts.GetAllAsync(label: "production");
+        prompts.ClearCache();
+        gate.SetResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ListJson(Row("prompt-a", version: 4))) });
+        var results = await bulk;
+        var single = await prompts.GetAsync("prompt-a", new GetPromptOptions { Label = "production" });
+
+        // The call that waited for the bulk fetch still gets its rows, but the cleared cache is not refilled with them.
+        Assert.Equal(4, results["prompt-a"].Version);
+        Assert.Single(afterwards.ReceivedRequests);
+        Assert.Equal(PromptSource.Api, single.Source);
+        Assert.Equal(5, single.Version);
+    }
+
+    [Fact]
+    public async Task DoesNotOverwriteAPromptFetchedAfterTheRequestStarted()
+    {
+        var container = CreateContainer();
+        var gate = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        container.FakeHttpMessageHandler.AddResponse(ListUrl(), HttpMethod.Get, () => gate.Task);
+        container.FakeHttpMessageHandler.AddResponse(PromptUrl("prompt-a", query: "&label=production"), HttpMethod.Get, Row("prompt-a", version: 5));
+        var prompts = container.Activate<PostHogClient>().Prompts;
+
+        var bulk = prompts.GetAllAsync(label: "production");
+        var single = await prompts.GetAsync("prompt-a", new GetPromptOptions { Label = "production" });
+        container.FakeTimeProvider.Advance(TimeSpan.FromSeconds(1));
+        gate.SetResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ListJson(Row("prompt-a", version: 4))) });
+        await bulk;
+        var cached = await prompts.GetAsync("prompt-a", new GetPromptOptions { Label = "production" });
+
+        Assert.Equal(5, single.Version);
+        Assert.Equal(PromptSource.Cache, cached.Source);
+        Assert.Equal(5, cached.Version);
+    }
+
+    [Fact]
     public async Task ThrowsOnAnotherImplementationInsteadOfReturningNothing()
     {
         var prompts = new FakePrompts();

@@ -44,6 +44,10 @@ internal sealed class PromptFetcher : IPostHogPrompts
     // sent before a clear cannot put its result back afterwards.
     readonly object _outcomeLock = new();
 
+    // Counts ClearCache calls. A bulk fetch has no in-flight entry to lose, so it compares this count instead:
+    // a clear during the request means its rows may be stale, and none of them is cached.
+    long _clearCount;
+
     public PromptFetcher(
         HttpClient httpClient,
         PostHogOptions options,
@@ -124,6 +128,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
 
         lock (_outcomeLock)
         {
+            _clearCount++;
             foreach (var key in _cache.Keys.Concat(_failures.Keys).Concat(_inFlight.Keys).Where(Matches))
             {
                 _cache.TryRemove(key, out _);
@@ -254,6 +259,13 @@ internal sealed class PromptFetcher : IPostHogPrompts
     public async Task<IReadOnlyDictionary<string, PromptResult>> GetAllAsync(string? label, CancellationToken cancellationToken)
     {
         var reference = FetchReference.ForList(label);
+        var startedAt = _timeProvider.GetUtcNow();
+        long clearCountAtStart;
+        lock (_outcomeLock)
+        {
+            clearCountAtStart = _clearCount;
+        }
+
         var rows = await FetchListAsync(reference, label, cancellationToken).ConfigureAwait(false);
 
         var resolved = new List<ParsedPrompt>();
@@ -307,13 +319,19 @@ internal sealed class PromptFetcher : IPostHogPrompts
         var results = new Dictionary<string, PromptResult>(StringComparer.Ordinal);
         lock (_outcomeLock)
         {
+            // The rows are returned either way. They are cached only when nothing newer could be in the cache:
+            // no clear ran during the request, and no single fetch for the key finished since it started.
+            var cacheable = _clearCount == clearCountAtStart;
             foreach (var prompt in resolved)
             {
                 var key = new PromptCacheKey(prompt.Name, null, label);
                 var cached = new CachedPrompt(prompt.Prompt, prompt.Name, prompt.Version, label, prompt.Config, now);
-                _cache[key] = cached;
-                _failures.TryRemove(key, out _);
                 results[prompt.Name] = cached.ToResult(PromptSource.Api);
+                if (cacheable && !(_cache.TryGetValue(key, out var existing) && existing.FetchedAt >= startedAt))
+                {
+                    _cache[key] = cached;
+                    _failures.TryRemove(key, out _);
+                }
             }
         }
 
