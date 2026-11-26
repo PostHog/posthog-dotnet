@@ -234,6 +234,29 @@ public class TheUnsupportedFilterTypes
         Assert.Null(evaluator.GetDefinitionUnresolvedReason(definitions.Flags[1]));
     }
 
+    [Theory]
+    [InlineData("AND")]
+    [InlineData("OR")]
+    public async Task ReportsAGroupInAFlagConditionInTheDefinitionReason(string groupType)
+    {
+        // Evaluation leaves a group placed directly in a flag condition inconclusive, so the load-time check reports
+        // it too, even when every leaf in it is supported.
+        var group = $$$"""{"type": "{{{groupType}}}", "values": [{"type": "person", {{{CreatedAtAfter2025}}}}]}""";
+        var definitions = await PostHog.Json.JsonSerializerHelper.DeserializeFromCamelCaseJsonStringAsync<LocalEvaluationApiResult>(
+            Definitions($$$"""{"properties": [{{{group}}}], "rollout_percentage": 100}"""));
+        var evaluator = new LocalEvaluator(definitions!);
+
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, evaluator.GetDefinitionUnresolvedReason(definitions!.Flags[0]));
+        Assert.Null(evaluator.GetDefinitionUnresolvedReason(definitions.Flags[1]));
+
+        var result = await EvaluateAsync(
+            Definitions($$$"""{"properties": [{{{group}}}], "rollout_percentage": 100}"""),
+            new() { ["created_at"] = "2026-06-01" });
+        Assert.Null(result.Flag);
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, result.UnresolvedFlags["flag"]);
+        Assert.True(result.Sibling);
+    }
+
     [Fact]
     public async Task RefreshLoadsDefinitionsWithAnUnsupportedConditionFilterType()
     {

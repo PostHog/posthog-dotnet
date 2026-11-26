@@ -219,9 +219,10 @@ internal sealed class LocalEvaluator
         }
 
         var visitedCohortIds = new HashSet<long>();
+        // Evaluation can't use a group placed directly in a condition, so it counts as unsupported here too.
         var usesUnsupportedFilter = (flag.Filters?.Groups ?? [])
             .SelectMany(condition => condition.Properties ?? [])
-            .Any(filter => IsUnsupportedFilter(filter, visitedCohortIds, inCohort: false));
+            .Any(filter => filter is not PropertyFilter || IsUnsupportedFilter(filter, visitedCohortIds, inCohort: false));
         return usesUnsupportedFilter ? UnresolvedFlagReason.UnsupportedDefinition : null;
     }
 
