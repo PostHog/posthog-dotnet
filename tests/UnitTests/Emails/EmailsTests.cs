@@ -970,6 +970,32 @@ public class TheSendAsyncMethodRetries
         Assert.Equal(status, error.StatusCode);
     }
 
+    [Theory]
+    [InlineData("no content")]
+    [InlineData("an undecodable charset")]
+    public async Task RetriesAnUnavailableAnswerItCantRead(string answer)
+    {
+        await using var harness = new EmailHarness();
+        harness.RespondTo(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = null };
+            if (answer == "an undecodable charset")
+            {
+                response.Content = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("{}"));
+                response.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json; charset=not-a-charset");
+            }
+
+            return response;
+        });
+        harness.Respond(HttpStatusCode.Accepted, """{"message_id": "01a18356-c56c-0001-e494-7666bc915188"}""");
+
+        var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        Assert.Equal(2, harness.Requests.Count);
+        Assert.Equal(harness.Requests[0].Header("Idempotency-Key"), harness.Requests[1].Header("Idempotency-Key"));
+    }
+
     [Fact]
     public async Task WaitsForALongerRetryAfter()
     {
@@ -1016,17 +1042,18 @@ public class TheSendAsyncMethodRetries
     }
 
     [Fact]
-    public async Task TreatsATimedOutAttemptAsANetworkError()
+    public async Task TreatsATimedOutAttemptAsANetworkErrorOnTheSystemClockWhateverTheAppsClock()
     {
         await using var harness = new EmailHarness(options =>
         {
             options.EmailRequestTimeout = TimeSpan.FromMilliseconds(50);
             options.EmailRequestMaxRetries = 0;
         });
+        harness.Time.HoldDelays();
         harness.Hang();
 
         var error = await Assert.ThrowsAsync<EmailException>(
-            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
+            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()).WaitAsync(TimeSpan.FromSeconds(5), TimeProvider.System));
 
         Assert.Equal("network_error", error.Code);
         Assert.Contains("timed out", error.Message, StringComparison.Ordinal);
@@ -1475,7 +1502,8 @@ sealed class EmailHarness : IAsyncDisposable
     public EmailHarness(
         Action<PostHogOptions>? configure = null,
         HttpMessageHandler? posthog = null,
-        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null,
+        Func<HttpMessageHandler, HttpClient>? httpClient = null)
     {
         var options = new PostHogOptions
         {
@@ -1484,7 +1512,7 @@ sealed class EmailHarness : IAsyncDisposable
         };
         configure?.Invoke(options);
         var transport = posthog ?? _handler;
-        _httpClient = new HttpClient(transport, disposeHandler: false);
+        _httpClient = httpClient?.Invoke(transport) ?? new HttpClient(transport, disposeHandler: false);
         Client = new PostHogClient(
             options,
             featureFlagsCache: null,
@@ -1533,6 +1561,22 @@ sealed class EmailHarness : IAsyncDisposable
             return Task.FromResult(response);
         });
 
+    public void RespondTo(Func<RecordedRequest, HttpResponseMessage> answer)
+        => _handler.Enqueue(_ => Task.FromResult(answer(_handler.Requests[^1])));
+
+    public HeldAnswer Hold(Func<RecordedRequest, HttpResponseMessage> answer)
+    {
+        var held = new HeldAnswer();
+        _handler.Enqueue(async cancellationToken =>
+        {
+            var request = _handler.Requests[^1];
+            held.Arrive();
+            await held.WaitAsync(cancellationToken);
+            return answer(request);
+        });
+        return held;
+    }
+
     public void Fail(Exception exception) => _handler.Enqueue(_ => Task.FromException<HttpResponseMessage>(exception));
 
     public void Hang() => _handler.Enqueue(async cancellationToken =>
@@ -1552,6 +1596,26 @@ sealed class EmailHarness : IAsyncDisposable
     sealed class SingleHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
+    }
+}
+
+sealed class HeldAnswer
+{
+    readonly TaskCompletionSource<bool> _arrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    readonly TaskCompletionSource<bool> _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Arrived => _arrived.Task;
+
+    public void Arrive() => _arrived.TrySetResult(true);
+
+    public void Release() => _released.TrySetResult(true);
+
+    public async Task WaitAsync(CancellationToken cancellationToken)
+    {
+        using (cancellationToken.Register(() => _released.TrySetCanceled(cancellationToken)))
+        {
+            await _released.Task;
+        }
     }
 }
 

@@ -12,11 +12,7 @@ using static PostHog.Library.Ensure;
 
 namespace PostHog.Emails;
 
-/// <summary>
-/// Sends one transactional email per call to the messaging send API on the app host, and reads the status of a sent
-/// email. Owns the attempt loop, so every attempt of a send carries the same idempotency key.
-/// </summary>
-internal sealed class EmailSender : IPostHogEmails
+internal sealed partial class EmailSender : IPostHogEmails
 {
     const string SendPath = "/api/messaging/send/email/";
     const string StatusPath = "/api/messaging/emails/";
@@ -27,6 +23,8 @@ internal sealed class EmailSender : IPostHogEmails
     static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(15);
     const int DefaultMaxRetries = 2;
     const string UsAppHost = "https://us.posthog.com";
+    const string SendNeedsSecretKey =
+        "Sending email needs SecretKey, a project secret API key with the transactional_email:write scope.";
 
     const string EuAppHost = "https://eu.posthog.com";
     const string ScheduledAtField = "scheduled_at";
@@ -103,9 +101,7 @@ internal sealed class EmailSender : IPostHogEmails
     {
         var prepared = PrepareSend(email, MaxRetriesOption);
         using var _ = Enter("no email was sent");
-        var (appHost, secretKey) = Connect(
-            "no email was sent",
-            "Sending email needs SecretKey, a project secret API key with the transactional_email:write scope.");
+        var (appHost, secretKey) = Connect("no email was sent", SendNeedsSecretKey);
         if (prepared.ScheduledAt is not null)
         {
             RefuseToScheduleOffCloud(appHost);
@@ -609,8 +605,11 @@ internal sealed class EmailSender : IPostHogEmails
         string secretKey,
         string? body,
         string? idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? attemptTimeout = null,
+        Action? onDispatch = null)
     {
+        var waitFor = attemptTimeout ?? RequestTimeout;
         using var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -630,16 +629,31 @@ internal sealed class EmailSender : IPostHogEmails
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
+        using var deadline = new CancellationTokenSource();
+        deadline.CancelAfter(waitFor);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         HttpResponseMessage response;
         try
         {
-            response = await _httpClient!.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            if (_httpClient!.GetType() != typeof(HttpClient) || Environment.Version.Major < 5)
+            {
+                onDispatch?.Invoke();
+            }
+
+            var sending = _httpClient.SendAsync(request, timeout.Token);
+            onDispatch?.Invoke();
+            response = await sending.ConfigureAwait(false);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
-            throw NetworkError($"The request to PostHog timed out after {RequestTimeout.TotalSeconds:0.###}s.", e);
+            throw NetworkError(
+                deadline.IsCancellationRequested
+                    ? $"The request to PostHog timed out after {waitFor.TotalSeconds:0.###}s."
+                    : e.InnerException is TimeoutException && _httpClient!.Timeout != Timeout.InfiniteTimeSpan
+                        ? $"The request to PostHog timed out after {_httpClient!.Timeout.TotalSeconds:0.###}s, the "
+                          + "Timeout of the app's HttpClient."
+                        : "The app's HttpClient cancelled the request to PostHog before PostHog answered.",
+                e);
         }
         catch (HttpRequestException e)
         {
@@ -652,15 +666,34 @@ internal sealed class EmailSender : IPostHogEmails
 
         using (response)
         {
-#if NET5_0_OR_GREATER
-            var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-#else
-            var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-#endif
-
-            return new Reply(response.StatusCode, ParseObject(text), ReadRetryAfter(response));
+            return new Reply(
+                response.StatusCode,
+                ParseObject(await ReadTextOrNullAsync(response.Content, cancellationToken).ConfigureAwait(false)),
+                ReadRetryAfter(response));
         }
     }
+
+    static async Task<string?> ReadTextOrNullAsync(HttpContent? content, CancellationToken cancellationToken)
+    {
+        if (content is null)
+        {
+            return null;
+        }
+
+        try
+        {
+#if NET5_0_OR_GREATER
+            return await content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#else
+            return await content.ReadAsStringAsync().ConfigureAwait(false);
+#endif
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
 
     static EmailException NetworkError(string message, Exception innerException)
         => new("network_error", message, innerException: innerException);
@@ -677,9 +710,9 @@ internal sealed class EmailSender : IPostHogEmails
         return wait < TimeSpan.Zero ? TimeSpan.Zero : wait;
     }
 
-    static JsonElement? ParseObject(string text)
+    static JsonElement? ParseObject(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        if (text is null || string.IsNullOrWhiteSpace(text))
         {
             return null;
         }
@@ -710,29 +743,8 @@ internal sealed class EmailSender : IPostHogEmails
                      "api_error",
                      "PostHog answered without a message ID.",
                      reply.Status);
-        var warnings = new List<EmailWarning>();
-        if (reply.Fields is { } fields
-            && TryField(fields, "warnings", out var list)
-            && list.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var warning in list.EnumerateArray())
-            {
-                if (warning.ValueKind == JsonValueKind.Object)
-                {
-                    warnings.Add(new EmailWarning
-                    {
-                        Code = Text(warning, "code") ?? "warning",
-                        Message = Text(warning, "detail") ?? Text(warning, "message") ?? string.Empty,
-                        Fix = Text(warning, "fix"),
-                    });
-                }
-            }
-        }
-
-        foreach (var warning in warnings)
-        {
-            LogWarning(warning);
-        }
+        var warnings = ReadWarnings(reply.Fields);
+        LogWarnings(warnings);
 
         var replayedKind = reply.Fields is { } replyFields && TryField(replyFields, "replayed", out var replayedValue)
             ? replayedValue.ValueKind
@@ -749,6 +761,38 @@ internal sealed class EmailSender : IPostHogEmails
             Status = status,
             ScheduledAt = confirmedAt,
         };
+    }
+
+    static List<EmailWarning> ReadWarnings(JsonElement? fields)
+    {
+        var warnings = new List<EmailWarning>();
+        if (fields is { } answer
+            && TryField(answer, "warnings", out var list)
+            && list.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var warning in list.EnumerateArray())
+            {
+                if (warning.ValueKind == JsonValueKind.Object)
+                {
+                    warnings.Add(new EmailWarning
+                    {
+                        Code = Text(warning, "code") ?? "warning",
+                        Message = Text(warning, "detail") ?? Text(warning, "message") ?? string.Empty,
+                        Fix = Text(warning, "fix"),
+                    });
+                }
+            }
+        }
+
+        return warnings;
+    }
+
+    void LogWarnings(IEnumerable<EmailWarning> warnings)
+    {
+        foreach (var warning in warnings)
+        {
+            LogWarning(warning);
+        }
     }
 
     void LogWarning(EmailWarning warning)
@@ -887,24 +931,27 @@ internal sealed class EmailSender : IPostHogEmails
 
     static EmailException ReplyError(Reply reply, string defaultCode = "api_error", string? defaultField = null)
     {
-        var docsUrl = Text(reply.Fields, "docs_url") is { } docs && Uri.TryCreate(docs, UriKind.Absolute, out var uri)
-            ? uri
-            : null;
         return new EmailException(
             Text(reply.Fields, "code") ?? defaultCode,
             Text(reply.Fields, "detail") ?? $"PostHog answered HTTP {(int)reply.Status}.",
             reply.Status,
             why: Text(reply.Fields, "why"),
             fix: Text(reply.Fields, "fix"),
-            docsUrl: docsUrl,
+            docsUrl: DocsUrl(reply),
             field: Text(reply.Fields, "attr") ?? defaultField,
             retryAfter: reply.RetryAfter);
     }
 
+    static Uri? DocsUrl(Reply reply)
+        => Text(reply.Fields, "docs_url") is { } docs && Uri.TryCreate(docs, UriKind.Absolute, out var uri)
+            ? uri
+            : null;
+
     static string? Text(JsonElement? element, string name)
         => element is { ValueKind: JsonValueKind.Object } value
            && TryField(value, name, out var property)
-           && StringValue(property) is { Length: > 0 } text
+           && StringValue(property) is { } text
+           && !string.IsNullOrWhiteSpace(text)
             ? text
             : null;
 
@@ -921,23 +968,7 @@ internal sealed class EmailSender : IPostHogEmails
     static PreparedSend PrepareSend(SendEmailOptions email, int defaultMaxRetries)
     {
         NotNull(email);
-        if (string.IsNullOrWhiteSpace(email.To))
-        {
-            throw new ArgumentException("To must be one email address.", nameof(email));
-        }
-
-        if (email.DistinctId is { Length: 0 })
-        {
-            throw new ArgumentException("DistinctId must not be empty. Leave it null to leave it out.", nameof(email));
-        }
-
-        if (email.IdempotencyKey is { } key && !IsVisibleAscii(key, MaxIdempotencyKeyLength))
-        {
-            throw new ArgumentException(
-                "IdempotencyKey must be 1 to 255 visible ASCII characters without spaces.",
-                nameof(email));
-        }
-
+        var idempotencyKey = CheckedRecipientKey(email.To, email.DistinctId, email.IdempotencyKey, string.Empty, nameof(email));
         if (email.MaxRetries < 0)
         {
             throw new ArgumentException("MaxRetries must not be negative.", nameof(email));
@@ -963,9 +994,31 @@ internal sealed class EmailSender : IPostHogEmails
         return new PreparedSend(
             JsonSerializer.Serialize(body, JsonSerializerHelper.Options),
             attachments,
-            email.IdempotencyKey ?? Guid.NewGuid().ToString("D"),
+            idempotencyKey,
             email.MaxRetries ?? defaultMaxRetries,
             scheduledAt);
+    }
+
+    static string CheckedRecipientKey(string? to, string? distinctId, string? idempotencyKey, string where, string paramName)
+    {
+        if (string.IsNullOrWhiteSpace(to))
+        {
+            throw new ArgumentException($"{where}To must be one email address.", paramName);
+        }
+
+        if (distinctId is { Length: 0 })
+        {
+            throw new ArgumentException($"{where}DistinctId must not be empty. Leave it null to leave it out.", paramName);
+        }
+
+        if (idempotencyKey is { } key && !IsVisibleAscii(key, MaxIdempotencyKeyLength))
+        {
+            throw new ArgumentException(
+                $"{where}IdempotencyKey must be 1 to 255 visible ASCII characters without spaces.",
+                paramName);
+        }
+
+        return idempotencyKey ?? Guid.NewGuid().ToString("D");
     }
 
     static DateTimeOffset? CeilingToMillisecond(DateTimeOffset time)
@@ -977,10 +1030,7 @@ internal sealed class EmailSender : IPostHogEmails
 
     static Dictionary<string, object?> TemplateBody(SendTemplateEmailOptions email)
     {
-        if (email.TemplateId == Guid.Empty)
-        {
-            throw new ArgumentException("TemplateId must be the ID of a template made in PostHog.", nameof(email));
-        }
+        CheckTemplateId(email.TemplateId, nameof(email));
 
         var body = new Dictionary<string, object?>
         {
@@ -996,30 +1046,89 @@ internal sealed class EmailSender : IPostHogEmails
         return body;
     }
 
-    static (Dictionary<string, object?> Body, HashedAttachments Attachments) CodeBody(SendCodeEmailOptions email)
+    static void CheckTemplateId(Guid templateId, string paramName)
     {
-        if (!IsTemplateKey(email.TemplateKey))
+        if (templateId == Guid.Empty)
+        {
+            throw new ArgumentException("TemplateId must be the ID of a template made in PostHog.", paramName);
+        }
+    }
+
+    static Dictionary<string, object?> CheckedCodeContent(
+        string? templateKey,
+        string? to,
+        string? subject,
+        string? html,
+        string? text,
+        string? from,
+        IReadOnlyList<string>? replyTo,
+        string request,
+        string paramName)
+    {
+        if (!IsTemplateKey(templateKey))
         {
             throw new ArgumentException(
                 "TemplateKey can only have letters, digits, hyphens (-) and underscores (_), at most 400.",
-                nameof(email));
+                paramName);
         }
 
-        if (email.Subject is null)
+        if (subject is null)
         {
-            throw new ArgumentException("A send with TemplateKey needs a Subject.", nameof(email));
+            throw new ArgumentException($"A {request} with TemplateKey needs a Subject.", paramName);
         }
 
-        if (email.Html is null && email.Text is null)
+        if (html is null && text is null)
         {
-            throw new ArgumentException("A send with TemplateKey needs Html, Text or both.", nameof(email));
+            throw new ArgumentException($"A {request} with TemplateKey needs Html, Text or both.", paramName);
         }
 
-        if (email.ReplyTo is { } replyTo && replyTo.Any(string.IsNullOrWhiteSpace))
+        if (replyTo is not null && replyTo.Any(string.IsNullOrWhiteSpace))
         {
-            throw new ArgumentException("ReplyTo must not hold a blank address.", nameof(email));
+            throw new ArgumentException("ReplyTo must not hold a blank address.", paramName);
         }
 
+        var body = new Dictionary<string, object?> { ["template_key"] = templateKey };
+        if (to is not null)
+        {
+            body["to"] = to;
+        }
+
+        body["subject"] = subject;
+        if (html is not null)
+        {
+            body["html"] = html;
+        }
+
+        if (text is not null)
+        {
+            body["text"] = text;
+        }
+
+        if (from is not null)
+        {
+            body["from"] = from;
+        }
+
+        if (replyTo is not null)
+        {
+            body["reply_to"] = replyTo;
+        }
+
+        return body;
+    }
+
+    static (Dictionary<string, object?> Body, HashedAttachments Attachments) CodeBody(SendCodeEmailOptions email)
+    {
+        var body = CheckedCodeContent(
+            email.TemplateKey,
+            email.To,
+            email.Subject,
+            email.Html,
+            email.Text,
+            email.From,
+            email.ReplyTo,
+            "send",
+            nameof(email));
         if (email.Cc is { } cc && cc.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException("Cc must not hold a blank address.", nameof(email));
@@ -1050,32 +1159,6 @@ internal sealed class EmailSender : IPostHogEmails
         var hashed = email.Attachments is { Count: > 0 } files
             ? HashedAttachments.Hash(files, email.Subject, email.Html, email.Text)
             : HashedAttachments.None;
-        var body = new Dictionary<string, object?>
-        {
-            ["template_key"] = email.TemplateKey,
-            ["to"] = email.To,
-            ["subject"] = email.Subject,
-        };
-        if (email.Html is not null)
-        {
-            body["html"] = email.Html;
-        }
-
-        if (email.Text is not null)
-        {
-            body["text"] = email.Text;
-        }
-
-        if (email.From is not null)
-        {
-            body["from"] = email.From;
-        }
-
-        if (email.ReplyTo is not null)
-        {
-            body["reply_to"] = email.ReplyTo;
-        }
-
         if (email.Cc is { Count: > 0 })
         {
             body["cc"] = email.Cc;
@@ -1096,22 +1179,26 @@ internal sealed class EmailSender : IPostHogEmails
             body["capture_engagement"] = captureEngagement;
         }
 
-        if (email.Sensitive is { } sensitive)
-        {
-            body["sensitive"] = sensitive;
-        }
-
-        if (email.Tracking is not null)
-        {
-            body["tracking"] = email.Tracking;
-        }
-
+        AddSensitiveAndTracking(body, email.Sensitive, email.Tracking);
         if (email.DistinctId is not null)
         {
             body["distinct_id"] = email.DistinctId;
         }
 
         return (body, hashed);
+    }
+
+    static void AddSensitiveAndTracking(Dictionary<string, object?> body, bool? sensitive, EmailTracking? tracking)
+    {
+        if (sensitive is { } isSensitive)
+        {
+            body["sensitive"] = isSensitive;
+        }
+
+        if (tracking is not null)
+        {
+            body["tracking"] = tracking;
+        }
     }
 
     static Dictionary<string, object> ReferenceBody(HashedAttachment attachment)
