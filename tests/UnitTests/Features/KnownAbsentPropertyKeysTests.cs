@@ -481,6 +481,36 @@ public class TheLocalEvaluator
         Assert.Equal(UnresolvedFlagReason.MissingContext, exception.Reason);
     }
 
+    const string CompanyFlagWithAProjectFilter = """
+        {"flags": [{"key": "company-flag", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+            {"key": "tier", "type": "group", "group_type_index": 1, "operator": "is_not_set"}
+        ], "rollout_percentage": 100}]}}],
+         "group_type_mapping": {"0": "company", "1": "project"}}
+        """;
+
+    [Fact]
+    public async Task GroupFilterWithAnIndexDoesNotReadTheConditionGroupListing()
+    {
+        var evaluator = await CreateEvaluatorAsync(CompanyFlagWithAProjectFilter);
+        var groups = new GroupCollection { new Group("company", "acme"), new Group("project", "p1") };
+
+        var exception = Assert.Throws<InconclusiveMatchException>(
+            () => evaluator.EvaluateFeatureFlag("company-flag", "user", groups, knownAbsent: Group("company", "tier")));
+
+        Assert.Equal(UnresolvedFlagReason.MissingContext, exception.Reason);
+    }
+
+    [Fact]
+    public async Task GroupFilterWithAnIndexReadsItsOwnGroupListing()
+    {
+        var evaluator = await CreateEvaluatorAsync(CompanyFlagWithAProjectFilter);
+        var groups = new GroupCollection { new Group("company", "acme"), new Group("project", "p1") };
+
+        var result = evaluator.EvaluateFeatureFlag("company-flag", "user", groups, knownAbsent: Group("project", "tier"));
+
+        Assert.True(result.Value);
+    }
+
     // org-flag aggregates by organization and depends on base-flag, which aggregates by person.
     const string GroupDependsOnPersonDefinitions = """
         {"flags": [
