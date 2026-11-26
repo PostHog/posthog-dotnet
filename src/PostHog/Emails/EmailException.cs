@@ -145,7 +145,7 @@ public class EmailException : Exception
                 return "service_unavailable";
             }
 
-            return code.StartsWith("invalid_", StringComparison.Ordinal) || code is "too_many_attachments" or "message_too_large" or "content_too_large" or "scheduling_requires_cloud"
+            return code.StartsWith("invalid_", StringComparison.Ordinal) || code is "too_many_attachments" or "message_too_large" or "content_too_large"
                 ? "validation_error"
                 : "application_error";
         }
