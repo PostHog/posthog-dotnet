@@ -46,18 +46,18 @@ public abstract class SendEmailOptions
     /// PostHog keeps the time to the millisecond, so the client rounds a finer time up to the next millisecond and
     /// sends that time on every retry. The result's <see cref="SendEmailResult.Status"/> is <c>scheduled</c> with the
     /// confirmed <see cref="SendEmailResult.ScheduledAt"/>, or <c>queued</c> when the time had passed or was at most
-    /// 60 seconds ahead of this machine's clock when the send went out: when the first attempt that may have queued
-    /// it started, such as one whose answer was lost, or else the attempt PostHog accepted. With your own
-    /// <see cref="IdempotencyKey"/>, it counts from this call's first attempt, since the key may have queued the email
-    /// before the call.
+    /// 60 seconds ahead of this machine's clock when the send's first attempt started, whatever its retries or
+    /// <see cref="IdempotencyKey"/>. A send whose retries carry it past a time just over a minute ahead fails with
+    /// <c>schedule_not_confirmed</c>, so read the email with <see cref="IPostHogEmails.GetAsync"/> before you send it
+    /// again.
     /// <see cref="IPostHogEmails.GetAsync"/> reads <c>scheduled</c> until the email goes out.
     /// <para>
     /// A client whose app host isn't PostHog Cloud US or EU, such as a self-hosted PostHog, a reverse proxy or a
     /// custom domain, fails with <c>scheduling_requires_cloud</c> before any request, once the client's other app host
     /// checks pass. When PostHog accepts the email without confirming the time, or answers that it goes out now while
-    /// the time was more than 60 seconds ahead of this machine's clock when the send went out, the send fails with
-    /// <c>schedule_not_confirmed</c> and <see cref="EmailException.MessageId"/> names the email, which may go out at
-    /// another time.
+    /// the time was more than 60 seconds ahead of this machine's clock when the send's first attempt started, the
+    /// send fails with <c>schedule_not_confirmed</c> and <see cref="EmailException.MessageId"/> names the email,
+    /// which may go out at another time.
     /// </para>
     /// <para>
     /// Work out a relative time once, and pass the same time when you send again with the same
