@@ -16,8 +16,8 @@ public class TheBatchAsyncMethod
     const string BatchUrl = "https://us.posthog.com/api/messaging/send/email_batch/";
     const string Unconfirmed = "PostHog didn't confirm this email, so it may still go out.";
     const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
-    const string KeepEachKey =
-        "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
+    const string ReadEachResult = "Read each recipient's result in Results, and send each unconfirmed one again with "
+        + "the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
     const int FourMiB = 4 * 1024 * 1024;
     const string NoTemplateOrNoBatchSends =
         "PostHog found no template with this TemplateId, or batch sends aren't available for this project, so PostHog sent no email of this request.";
@@ -375,9 +375,7 @@ public class TheBatchAsyncMethod
         Assert.Equal(
             ("unconfirmed", M1, "recipient_suppressed", "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once."),
             (second.Status, second.MessageId, second.Error!.Code, second.Error.Fix));
-        Assert.Equal(
-            "An earlier attempt may have queued this email, so it may still go out. The retry got: Refused: recipient_suppressed.",
-            second.Error.Message);
+        Assert.Equal(Unconfirmed, second.Error.Message);
         Assert.Equal(Keys(harness.Requests[1])[1], second.IdempotencyKey);
     }
 
@@ -508,15 +506,21 @@ public class TheBatchAsyncMethod
     }
 
     [Theory]
-    [InlineData("a template", HttpStatusCode.NotFound, CheckTheTemplateFix)]
-    [InlineData("code", HttpStatusCode.NotFound, SendEachOnItsOwn)]
-    [InlineData("a template", HttpStatusCode.RequestEntityTooLarge, "Split the recipients into smaller batches and send each with BatchAsync.")]
-    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(string from, HttpStatusCode retry, string posthogsFix)
+    [InlineData("a template", HttpStatusCode.BadRequest, """{"type":"invalid_request","code":"content_too_large","detail":"Too large.","fix":"Make the template data smaller."}""")]
+    [InlineData("a template", HttpStatusCode.NotFound, "")]
+    [InlineData("code", HttpStatusCode.NotFound, "")]
+    [InlineData("a template", HttpStatusCode.Conflict, """{"type":"invalid_request","code":"batch_unavailable","detail":"No email was sent."}""")]
+    [InlineData("a template", HttpStatusCode.RequestEntityTooLarge, """{"type":"invalid_request","code":"content_too_large","detail":"Nothing was sent.","fix":"Split the recipients into smaller batches and send each with BatchAsync."}""")]
+    [InlineData("a template", HttpStatusCode.RequestEntityTooLarge, "")]
+    public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(string from, HttpStatusCode retry, string body)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
         posthog.Enqueue(_ => throw new HttpRequestException("lost", new SocketException((int)SocketError.ConnectionReset)));
-        posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(retry)));
+        posthog.Enqueue(_ => Task.FromResult(new HttpResponseMessage(retry)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        }));
         SendBatchOptions batch = from == "code"
             ? new SendCodeBatchOptions { TemplateKey = "launch-news", Subject = "s", Html = "h", Recipients = Recipients(2), MaxRetries = 1 }
             : Batch(Recipients(2), maxRetries: 1);
@@ -524,11 +528,61 @@ public class TheBatchAsyncMethod
         var error = await Assert.ThrowsAsync<EmailBatchException>(() => harness.Client.Emails.BatchAsync(batch));
 
         Assert.Equal(2, posthog.Requests.Count);
-        Assert.Equal(["unconfirmed", "unconfirmed"], error.Results.Select(r => r.Status));
-        Assert.DoesNotMatch("no email was sent|sent no email", error.Message);
-        Assert.Contains("may have queued", error.Message, StringComparison.Ordinal);
-        Assert.Equal(posthogsFix + " " + KeepEachKey, error.Fix);
+        Assert.Equal(
+            [("unconfirmed", "key-0", Unconfirmed, ResendWithTheSameKey), ("unconfirmed", "key-1", Unconfirmed, ResendWithTheSameKey)],
+            error.Results.Select(r => (r.Status, r.IdempotencyKey, r.Error!.Message, r.Error.Fix)));
+        Assert.Contains("may still go out", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotMatch("(?i)sent no|no email|nothing|split|smaller|new key|another key", error.Message + " " + error.Fix);
+        Assert.Equal(ReadEachResult, error.Fix);
         Assert.Equal(retry, Assert.IsType<EmailException>(error.InnerException!.InnerException).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("""{"type":"invalid_request","code":"conflict","detail":"Conflict."}""")]
+    [InlineData("""{"type":"invalid_request","code":"api_error","detail":"Not sent."}""")]
+    public async Task LeavesEachRecipientUnconfirmedAfterACoded409OtherThanBatchUnavailable(string body)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.Conflict, body);
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+
+        Assert.Single(harness.Requests);
+        Assert.Equal(
+            [("unconfirmed", "key-0", Unconfirmed, ResendWithTheSameKey), ("unconfirmed", "key-1", Unconfirmed, ResendWithTheSameKey)],
+            error.Results.Select(r => (r.Status, r.IdempotencyKey, r.Error!.Message, r.Error.Fix)));
+    }
+
+    [Theory]
+    [InlineData("a slot PostHog left without a detail")]
+    [InlineData("a slot whose detail says it wasn't sent")]
+    [InlineData("a whole request still in flight")]
+    [InlineData("a whole request PostHog can't deliver yet")]
+    public async Task TellsAnUnconfirmedRecipientOnlyThatPostHogDidNotConfirmIt(string answer)
+    {
+        await using var harness = new EmailHarness();
+        if (answer == "a slot PostHog left without a detail")
+        {
+            harness.Respond(HttpStatusCode.OK, Ok("""{"error":{"code":"delivery_unavailable","status":503}}"""));
+        }
+        else if (answer == "a slot whose detail says it wasn't sent")
+        {
+            harness.Respond(HttpStatusCode.OK, Ok("""{"error":{"code":"idempotency_key_in_flight","detail":"Not queued: failed.","status":409}}"""));
+        }
+        else
+        {
+            harness.Respond(
+                answer == "a whole request still in flight" ? HttpStatusCode.Conflict : HttpStatusCode.UnprocessableEntity,
+                WholeCall(answer == "a whole request still in flight" ? "idempotency_key_in_flight" : "delivery_unavailable"));
+        }
+
+        var send = harness.Client.Emails.BatchAsync(Batch(Recipients(1), maxRetries: 0));
+        var result = answer.StartsWith("a slot", StringComparison.Ordinal)
+            ? Assert.Single((await send).Results)
+            : Assert.Single((await Assert.ThrowsAsync<EmailBatchException>(() => send)).Results);
+
+        Assert.Equal(("unconfirmed", "key-0", Unconfirmed, ResendWithTheSameKey), (result.Status, result.IdempotencyKey, result.Error!.Message, result.Error.Fix));
     }
 
     [Theory]
@@ -880,7 +934,7 @@ public class TheBatchAsyncMethod
         Assert.All(error.Results, r =>
         {
             Assert.Equal(
-                ("unconfirmed", code, "An earlier attempt may have queued this email, so it may still go out. The retry got: Nope."),
+                ("unconfirmed", code, Unconfirmed),
                 (r.Status, r.Error!.Code, r.Error.Message));
             Assert.Contains("same IdempotencyKey", r.Error.Fix, StringComparison.Ordinal);
         });

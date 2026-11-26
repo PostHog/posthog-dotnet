@@ -13,8 +13,8 @@ internal sealed partial class EmailSender
     const string ResendWithTheSameKey = "Send it again with the same IdempotencyKey within 24 hours of the key's first use, so it goes out once.";
     const string SendSingly = "send each email the batch didn't queue with SendAsync and its recipient's IdempotencyKey.";
     const string SplitTheBatch = "Split the recipients into smaller batches and send each with BatchAsync.";
-    const string ResendTheUnconfirmed = "Send the unconfirmed recipients again with the IdempotencyKey each result holds, within 24 hours of the key's first use, so each email goes out once.";
-    const string KeepEachKey = "Resend each unconfirmed recipient with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
+    const string ReadEachResult = "Read each recipient's result in Results, and send each unconfirmed one again with the IdempotencyKey its result holds, within 24 hours of the key's first use, so each email goes out once.";
+    const string UnconfirmedMessage = "PostHog didn't confirm this email, so it may still go out.";
     const string SendEachOnItsOwn = "If this project can send email from code, send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string CheckTheTemplate = "Check TemplateId. If it is right, send each recipient on its own with SendAsync and its IdempotencyKey until batch sends are available.";
     const string ShrinkTheEmail = "Make the email's content or TemplateData smaller, so the request fits PostHog's size limit.";
@@ -141,10 +141,10 @@ internal sealed partial class EmailSender
 
     static EmailException AfterAnEarlierBatchAttempt(EmailException refusal) => new(
         refusal.Code,
-        "An earlier attempt may have queued these emails, so they may still go out. The retry got: " + refusal.Message,
+        $"An earlier attempt may have queued some of these emails, so they may still go out. PostHog refused the retry with {refusal.Code}.",
         refusal.StatusCode,
         refusal.Why,
-        refusal.Fix is { } fix ? fix + " " + KeepEachKey : ResendTheUnconfirmed,
+        ReadEachResult,
         refusal.DocsUrl,
         refusal.Field,
         refusal.RetryAfter,
@@ -304,22 +304,23 @@ internal sealed partial class EmailSender
             Status = Status ?? throw new InvalidOperationException($"Recipient {Index} has no result yet."),
             MessageId = MessageId,
             Replayed = Replayed,
-            Error = Status == "unconfirmed" ? WithResendFix(Error) : Error,
+            Error = Status == "unconfirmed" ? AsUnconfirmed(Error) : Error,
         };
 
-        static EmailException? WithResendFix(EmailException? error) => error is null || error.Fix == ResendWithTheSameKey
-            ? error
-            : new EmailException(
-                error.Code,
-                error.Message,
-                error.StatusCode,
-                error.Why,
-                ResendWithTheSameKey,
-                error.DocsUrl,
-                error.Field,
-                error.RetryAfter,
-                error.InnerException,
-                error.MessageId);
+        static EmailException? AsUnconfirmed(EmailException? error)
+            => error is null || (error.Message == UnconfirmedMessage && error.Fix == ResendWithTheSameKey)
+                ? error
+                : new EmailException(
+                    error.Code,
+                    UnconfirmedMessage,
+                    error.StatusCode,
+                    error.Why,
+                    ResendWithTheSameKey,
+                    error.DocsUrl,
+                    error.Field,
+                    error.RetryAfter,
+                    error,
+                    error.MessageId);
     }
 
     sealed class BatchRun(string body, List<BatchRow> rows, int maxRetries, bool fromTemplate)
@@ -362,7 +363,7 @@ internal sealed partial class EmailSender
                     "unconfirmed",
                     error: new EmailException(
                         "delivery_unavailable",
-                        "PostHog didn't confirm this email, so it may still go out.",
+                        UnconfirmedMessage,
                         fix: ResendWithTheSameKey));
             }
         }
@@ -377,7 +378,7 @@ internal sealed partial class EmailSender
                     Lost();
                 }
                 else if (UnconfirmedRequestCodes.Contains(error.Code)
-                         || (reply.Status == HttpStatusCode.Conflict && Text(reply.Fields, "code") is null))
+                         || (reply.Status == HttpStatusCode.Conflict && error.Code != "batch_unavailable"))
                 {
                     UnconfirmWith(error);
                 }
@@ -417,7 +418,7 @@ internal sealed partial class EmailSender
         {
             foreach (var row in rows.Where(row => row.Status is null))
             {
-                row.Set(_mayHaveQueued ? "unconfirmed" : "failed", error: _mayHaveQueued ? AfterAnEarlierAttempt(error) : error);
+                row.Set(_mayHaveQueued ? "unconfirmed" : "failed", error: error);
             }
         }
 
@@ -425,11 +426,10 @@ internal sealed partial class EmailSender
 
         void UnconfirmWith(EmailException error)
         {
-            var answer = _mayHaveQueued ? AfterAnEarlierAttempt(error) : error;
             _mayHaveQueued = true;
             foreach (var row in rows)
             {
-                row.Set("unconfirmed", error: answer);
+                row.Set("unconfirmed", error: error);
             }
         }
 
@@ -452,20 +452,8 @@ internal sealed partial class EmailSender
             row.Set(
                 mayHaveQueued || UnconfirmedSlotCodes.Contains(answer.Code) ? "unconfirmed" : "failed",
                 messageId,
-                error: mayHaveQueued ? AfterAnEarlierAttempt(answer) : answer);
+                error: answer);
         }
-
-        static EmailException AfterAnEarlierAttempt(EmailException refusal) => new(
-            refusal.Code,
-            "An earlier attempt may have queued this email, so it may still go out. The retry got: " + refusal.Message,
-            refusal.StatusCode,
-            refusal.Why,
-            ResendWithTheSameKey,
-            refusal.DocsUrl,
-            refusal.Field,
-            refusal.RetryAfter,
-            refusal.InnerException,
-            refusal.MessageId);
 
         static EmailException SlotError(JsonElement? error, string? messageId)
         {
