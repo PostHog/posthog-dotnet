@@ -223,6 +223,11 @@ internal sealed class LocalEvaluator
             return UnresolvedFlagReason.UnsupportedDefinition;
         }
 
+        if (flag.Filters?.HoldoutExclusionPercentage > 0)
+        {
+            return UnresolvedFlagReason.UnsupportedDefinition;
+        }
+
         var visitedCohortIds = new HashSet<long>();
         var usesUnsupportedFilter = (flag.Filters?.Groups ?? [])
             .SelectMany(condition => condition.Properties ?? [])
@@ -393,6 +398,15 @@ internal sealed class LocalEvaluator
                     _logger.LogDebugGroupTypeNotPassedIn(flag.Key);
                 }
             }
+        }
+
+        // The SDK does not evaluate holdouts, so only the flags service can answer for a flag with one. A flag-level
+        // group without a usable key reports missing_context above instead.
+        if (filters?.HoldoutExclusionPercentage > 0)
+        {
+            throw new InconclusiveMatchException(
+                $"Flag \"{flag.Key}\" has a holdout, which local evaluation does not support",
+                UnresolvedFlagReason.UnsupportedDefinition);
         }
 
         // Each condition resolves its own aggregation. Conditions on a group without a usable key are skipped, and
