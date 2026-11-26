@@ -550,7 +550,7 @@ public class TheSendAsyncMethodWithScheduledAt
 
         Assert.Empty(harness.Requests);
         Assert.Equal("scheduling_requires_cloud", error.Code);
-        Assert.Equal("validation_error", error.Name);
+        Assert.Equal("application_error", error.Name);
         Assert.Equal("scheduled_at", error.Field);
         Assert.Contains(appHost, error.Message, StringComparison.Ordinal);
     }
