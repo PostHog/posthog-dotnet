@@ -552,6 +552,9 @@ public class TheBatchAsyncMethod
         Assert.Equal(
             [("unconfirmed", "key-0", Unconfirmed, ResendWithTheSameKey), ("unconfirmed", "key-1", Unconfirmed, ResendWithTheSameKey)],
             error.Results.Select(r => (r.Status, r.IdempotencyKey, r.Error!.Message, r.Error.Fix)));
+        Assert.Contains("may still go out", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotMatch("(?i)not sent|nothing|no email|conflict\\.", error.Message);
+        Assert.Equal(ReadEachResult, error.Fix);
     }
 
     [Theory]

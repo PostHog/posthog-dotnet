@@ -151,6 +151,18 @@ internal sealed partial class EmailSender
         refusal,
         refusal.MessageId);
 
+    static EmailException NotConfirmed(EmailException answer) => new(
+        answer.Code,
+        "PostHog didn't confirm these emails, so they may still go out.",
+        answer.StatusCode,
+        answer.Why,
+        ReadEachResult,
+        answer.DocsUrl,
+        answer.Field,
+        answer.RetryAfter,
+        answer,
+        answer.MessageId);
+
     static bool IsMessageId(string text) => Guid.TryParseExact(text, "D", out _);
 
     static bool IsCallerCancellation(Exception error, CancellationToken cancellationToken)
@@ -381,6 +393,10 @@ internal sealed partial class EmailSender
                          || (reply.Status == HttpStatusCode.Conflict && error.Code != "batch_unavailable"))
                 {
                     UnconfirmWith(error);
+                    if (!EarlierAttemptMayHaveQueued)
+                    {
+                        throw NotConfirmed(error);
+                    }
                 }
 
                 throw error;
