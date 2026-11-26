@@ -31,6 +31,8 @@ public class TheSendAsyncMethodWithATemplate
         Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
         Assert.False(result.Replayed);
         Assert.Empty(result.Warnings);
+        Assert.Equal("queued", result.Status);
+        Assert.Null(result.ScheduledAt);
         var request = Assert.Single(harness.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("https://us.posthog.com/api/messaging/send/email/", request.Url);
@@ -166,6 +168,19 @@ public class TheSendAsyncMethodWithATemplate
         Assert.Equal("Add it.", warning.Fix);
         var logged = Assert.Single(harness.Logs.GetAllEvents(minimumLevel: LogLevel.Warning));
         Assert.Equal("PostHog email warning no_distinct_id: Pass distinct_id.", logged.Message);
+    }
+
+    [Fact]
+    public async Task ReturnsAReplayWhenAnotherFieldNameIsUnreadable()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188", "replayed": true, "replay\ud800ed": false}""");
+
+        var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal(("01a18356-c56c-0001-e494-7666bc915188", true), (result.Id, result.Replayed));
     }
 
     [Fact]
@@ -691,6 +706,8 @@ public class TheSendAsyncMethodWithAttachments
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "https://files.example.com/a", "method": "PUT ", "headers": {}}]}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "https://files.example.com/a", "method": " ", "headers": {}}]}""")]
     [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "archived"}]}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "\ud800", "method": "PUT", "headers": {}}]}""")]
+    [InlineData("""{"files": [{"sha256": "315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027", "status": "upload", "url": "https://files.example.com/a", "method": "\ud800", "headers": {}}]}""")]
     public async Task SendsNothingWhenAFileHasNoUsableAnswer(string body)
     {
         var posthog = new FakePostHogEmails();
@@ -1032,6 +1049,20 @@ public class TheSendAsyncMethodRetries
 public class TheSendAsyncMethodAnswers
 {
     [Fact]
+    public async Task ReturnsTheAcceptedEmailWhenTheLoggerThrows()
+    {
+        await using var harness = new EmailHarness(loggerFactory: new ThrowingLoggerFactory());
+        harness.Respond(
+            HttpStatusCode.Accepted,
+            """{"message_id": "01a18356-c56c-0001-e494-7666bc915188", "warnings": [{"code": "no_distinct_id", "detail": "Pass distinct_id."}]}""");
+
+        var result = await harness.Client.Emails.SendAsync(EmailHarness.TemplateSend());
+
+        Assert.Equal("01a18356-c56c-0001-e494-7666bc915188", result.Id);
+        Assert.Equal("no_distinct_id", Assert.Single(result.Warnings).Code);
+    }
+
+    [Fact]
     public async Task KeepsPostHogsErrorFields()
     {
         await using var harness = new EmailHarness();
@@ -1053,10 +1084,25 @@ public class TheSendAsyncMethodAnswers
         Assert.DoesNotContain("phs_secret", error.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task KeepsTheReadableFieldsOfAnErrorWithAnUnreadableOne()
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(
+            (HttpStatusCode)422,
+            """{"type": "validation_error", "code": "recipient_suppressed", "detail": "\ud800", "attr": "to"}""");
+
+        var error = await Assert.ThrowsAsync<EmailException>(
+            () => harness.Client.Emails.SendAsync(EmailHarness.TemplateSend()));
+
+        Assert.Equal(("recipient_suppressed", (HttpStatusCode)422, "to"), (error.Code, error.StatusCode, error.Field));
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("""{"message_id": ""}""")]
     [InlineData("""{"message_id": 7}""")]
+    [InlineData("""{"message_id": "\ud800"}""")]
     [InlineData("accepted")]
     public async Task TreatsAnAcceptanceWithoutAMessageIdAsAnError(string body)
     {
@@ -1380,6 +1426,7 @@ public class TheGetAsyncMethod
     [InlineData("""{"id": "x", "created_at": "2026-10-28T16:27:44Z", "status_at": "2026-10-28T16:27:44Z"}""")]
     [InlineData("""{"id": "x", "status": "sent", "status_at": "2026-10-28T16:27:44Z"}""")]
     [InlineData("""{"id": "x", "status": "sent", "created_at": "yesterday", "status_at": "2026-10-28T16:27:44Z"}""")]
+    [InlineData("""{"id": "x", "status": "\ud800", "created_at": "2026-10-28T16:27:44Z", "status_at": "2026-10-28T16:27:44Z"}""")]
     public async Task TreatsAnIncompleteRecordAsAnError(string body)
     {
         await using var harness = new EmailHarness();
@@ -1425,7 +1472,10 @@ sealed class EmailHarness : IAsyncDisposable
     readonly RecordingHandler _handler = new();
     readonly HttpClient _httpClient;
 
-    public EmailHarness(Action<PostHogOptions>? configure = null, HttpMessageHandler? posthog = null)
+    public EmailHarness(
+        Action<PostHogOptions>? configure = null,
+        HttpMessageHandler? posthog = null,
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         var options = new PostHogOptions
         {
@@ -1441,7 +1491,7 @@ sealed class EmailHarness : IAsyncDisposable
             httpClientFactory: new SingleHttpClientFactory(_httpClient),
             taskScheduler: null,
             timeProvider: Time,
-            loggerFactory: Logs,
+            loggerFactory: loggerFactory ?? Logs,
             uploadTransport: transport);
     }
 
@@ -1577,6 +1627,13 @@ sealed class RecordingTimeProvider : TimeProvider
     readonly List<Action> _held = [];
     readonly TaskCompletionSource<bool> _firstHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool _holding;
+
+    public DateTimeOffset? Now { get; set; }
+
+    public bool Broken { get; set; }
+
+    public override DateTimeOffset GetUtcNow()
+        => Broken ? throw new InvalidOperationException("The app's clock is down.") : Now ?? base.GetUtcNow();
 
     public IReadOnlyList<TimeSpan> Delays
     {

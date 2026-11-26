@@ -1,14 +1,25 @@
 namespace PostHog.Emails;
 
 /// <summary>
-/// The email PostHog queued. A result means PostHog queued the email, not that it was delivered.
+/// The email PostHog accepted. A result means PostHog queued or scheduled the email, not that it was delivered.
 /// </summary>
 public sealed class SendEmailResult
 {
     /// <summary>
-    /// The queued email's message ID, a UUID. Pass it to <see cref="IPostHogEmails.GetAsync"/>.
+    /// The accepted email's message ID, a UUID. Pass it to <see cref="IPostHogEmails.GetAsync"/>.
     /// </summary>
     public required string Id { get; init; }
+
+    /// <summary>
+    /// <c>scheduled</c> when the email waits for <see cref="ScheduledAt"/>, or <c>queued</c> when it goes out now.
+    /// </summary>
+    public string Status { get; init; } = "queued";
+
+    /// <summary>
+    /// When a scheduled email goes out, in UTC, as PostHog confirmed it. <c>null</c> for an email that goes out now,
+    /// also when <see cref="SendEmailOptions.ScheduledAt"/> had passed when PostHog accepted it.
+    /// </summary>
+    public DateTimeOffset? ScheduledAt { get; init; }
 
     /// <summary>
     /// <c>true</c> when PostHog had already accepted this idempotency key and returned the first send's result.
@@ -53,10 +64,12 @@ public sealed class EmailStatus
     public required string Id { get; init; }
 
     /// <summary>
-    /// One of <c>queued</c>, <c>sent</c>, <c>failed</c>, <c>delivered</c>, <c>bounced</c> or <c>complained</c>.
+    /// One of <c>scheduled</c>, <c>queued</c>, <c>sent</c>, <c>failed</c>, <c>delivered</c>, <c>bounced</c> or
+    /// <c>complained</c>.
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
+    /// <item><c>scheduled</c>: the email waits for its <see cref="SendEmailOptions.ScheduledAt"/>.</item>
     /// <item><c>queued</c>: the email waits to go out.</item>
     /// <item><c>sent</c>: PostHog handed the email to the email provider.</item>
     /// <item><c>failed</c>: the email was not sent, and <see cref="Reason"/> says why.</item>

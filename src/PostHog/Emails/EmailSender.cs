@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -28,6 +29,19 @@ internal sealed class EmailSender : IPostHogEmails
     const string UsAppHost = "https://us.posthog.com";
 
     const string EuAppHost = "https://eu.posthog.com";
+    const string ScheduledAtField = "scheduled_at";
+    static readonly TimeSpan MaxClockDrift = TimeSpan.FromSeconds(60);
+    static readonly string[] AnsweredTimeFormats =
+    [
+        "yyyy-MM-dd'T'HH:mm:ssK",
+        "yyyy-MM-dd'T'HH:mm:ss.fK",
+        "yyyy-MM-dd'T'HH:mm:ss.ffK",
+        "yyyy-MM-dd'T'HH:mm:ss.fffK",
+        "yyyy-MM-dd'T'HH:mm:ss.ffffK",
+        "yyyy-MM-dd'T'HH:mm:ss.fffffK",
+        "yyyy-MM-dd'T'HH:mm:ss.ffffffK",
+        "yyyy-MM-dd'T'HH:mm:ss.fffffffK",
+    ];
 
     /// <summary>
     /// Makes the client that uploads files, whatever <see cref="IHttpClientFactory"/> the app supplied. Over the
@@ -92,20 +106,31 @@ internal sealed class EmailSender : IPostHogEmails
         var (appHost, secretKey) = Connect(
             "no email was sent",
             "Sending email needs SecretKey, a project secret API key with the transactional_email:write scope.");
+        if (prepared.ScheduledAt is not null)
+        {
+            RefuseToScheduleOffCloud(appHost);
+        }
+
         await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
+        DateTimeOffset? firstAttemptAt = null;
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
-            async () => ParseSendReply(
-                await RequestAsync(HttpMethod.Post, url, secretKey, prepared.Body, prepared.IdempotencyKey, cancellationToken)
-                    .ConfigureAwait(false)),
+            async () =>
+            {
+                firstAttemptAt ??= prepared.ScheduledAt is null ? null : _timeProvider.GetUtcNow();
+                var reply = await RequestAsync(
+                        HttpMethod.Post,
+                        url,
+                        secretKey,
+                        prepared.Body,
+                        prepared.IdempotencyKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return ParseSendReply(reply, prepared.ScheduledAt, firstAttemptAt);
+            },
             cancellationToken).ConfigureAwait(false);
-        foreach (var warning in result.Warnings)
-        {
-            _logger.LogWarningEmailWarning(warning.Code, warning.Message);
-        }
-
         return result;
     }
 
@@ -464,6 +489,24 @@ internal sealed class EmailSender : IPostHogEmails
         return (appHost, secretKey!);
     }
 
+    static void RefuseToScheduleOffCloud(string appHost)
+    {
+        if (appHost is UsAppHost or EuAppHost)
+        {
+            return;
+        }
+
+        throw new EmailException(
+            "scheduling_requires_cloud",
+            $"Only PostHog Cloud ({UsAppHost} or {EuAppHost}) schedules emails, and this client sends to "
+            + $"{new Uri(appHost).GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped)}, "
+            + "so no email was sent.",
+            why: "A PostHog that doesn't schedule emails, such as a self-hosted one, or a proxy in front of PostHog "
+                 + "Cloud, could send the email at once instead of at ScheduledAt.",
+            fix: "Send through PostHog Cloud US or EU, or leave out ScheduledAt to send the email now.",
+            field: ScheduledAtField);
+    }
+
     string MissingAppHostMessage(string nothingDone) => _options.AppHost is null
         ? "The client's HostUrl is not PostHog Cloud, so the client can't tell where to send email "
           + $"and {nothingDone}. Set AppHost to your PostHog app host in PostHogOptions."
@@ -652,7 +695,10 @@ internal sealed class EmailSender : IPostHogEmails
         }
     }
 
-    static SendEmailResult ParseSendReply(Reply reply)
+    SendEmailResult ParseSendReply(
+        Reply reply,
+        DateTimeOffset? scheduledAt,
+        DateTimeOffset? firstAttemptAt)
     {
         if (!IsSuccess(reply.Status))
         {
@@ -666,7 +712,7 @@ internal sealed class EmailSender : IPostHogEmails
                      reply.Status);
         var warnings = new List<EmailWarning>();
         if (reply.Fields is { } fields
-            && fields.TryGetProperty("warnings", out var list)
+            && TryField(fields, "warnings", out var list)
             && list.ValueKind == JsonValueKind.Array)
         {
             foreach (var warning in list.EnumerateArray())
@@ -683,10 +729,132 @@ internal sealed class EmailSender : IPostHogEmails
             }
         }
 
-        var replayed = reply.Fields is { } replyFields
-                       && replyFields.TryGetProperty("replayed", out var replayedValue)
-                       && replayedValue.ValueKind == JsonValueKind.True;
-        return new SendEmailResult { Id = id, Replayed = replayed, Warnings = warnings };
+        foreach (var warning in warnings)
+        {
+            LogWarning(warning);
+        }
+
+        var replayedKind = reply.Fields is { } replyFields && TryField(replyFields, "replayed", out var replayedValue)
+            ? replayedValue.ValueKind
+            : JsonValueKind.Undefined;
+        var replayed = replayedKind == JsonValueKind.True;
+        var (status, confirmedAt) = scheduledAt is { } requested && firstAttemptAt is { } sent
+            ? ConfirmSchedule(reply, id, requested, sent)
+            : ("queued", null);
+        return new SendEmailResult
+        {
+            Id = id,
+            Replayed = replayed,
+            Warnings = warnings,
+            Status = status,
+            ScheduledAt = confirmedAt,
+        };
+    }
+
+    void LogWarning(EmailWarning warning)
+    {
+        try
+        {
+            _logger.LogWarningEmailWarning(warning.Code, warning.Message);
+        }
+#pragma warning disable CA1031
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+        }
+    }
+
+    static (string Status, DateTimeOffset? ScheduledAt) ConfirmSchedule(
+        Reply reply,
+        string id,
+        DateTimeOffset requested,
+        DateTimeOffset sentAt)
+    {
+        var fields = reply.Fields!.Value;
+        if (TryField(fields, ScheduledAtField, out var answered))
+        {
+            switch (Text(fields, "status"))
+            {
+                case "queued" when answered.ValueKind == JsonValueKind.Null
+                                   && requested - sentAt <= MaxClockDrift:
+                    return ("queued", null);
+                case "scheduled" when AnsweredTime(answered) is { } confirmed && confirmed.UtcTicks == requested.UtcTicks:
+                    return ("scheduled", requested);
+            }
+        }
+
+        throw new EmailException(
+            "schedule_not_confirmed",
+            $"PostHog accepted email {id} without confirming its ScheduledAt, so it may go out at another time.",
+            reply.Status,
+            fix: $"Read the email's status with GetAsync(\"{id}\") before you send it again: a send with another "
+                 + "IdempotencyKey makes a second email.",
+            field: ScheduledAtField,
+            messageId: id);
+    }
+
+    static DateTimeOffset? AnsweredTime(JsonElement answered)
+        => StringValue(answered) is { Length: > 0 } text
+           && HasOffset(text)
+           && DateTimeOffset.TryParseExact(
+               text,
+               AnsweredTimeFormats,
+               CultureInfo.InvariantCulture,
+               DateTimeStyles.AssumeUniversal,
+               out var time)
+            ? time
+            : null;
+
+    static bool HasOffset(string time)
+        => time[time.Length - 1] == 'Z'
+           || (time.Length > 6 && time[time.Length - 6] is '+' or '-' && time[time.Length - 3] == ':');
+
+    static bool TryField(JsonElement element, string name, out JsonElement value)
+    {
+        value = default;
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var found = false;
+        foreach (var field in element.EnumerateObject())
+        {
+            bool matches;
+            try
+            {
+                matches = field.NameEquals(name);
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            if (matches)
+            {
+                value = field.Value;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
+    static string? StringValue(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        try
+        {
+            return value.GetString();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     static EmailStatus ParseStatusReply(Reply reply)
@@ -735,9 +903,8 @@ internal sealed class EmailSender : IPostHogEmails
 
     static string? Text(JsonElement? element, string name)
         => element is { ValueKind: JsonValueKind.Object } value
-           && value.TryGetProperty(name, out var property)
-           && property.ValueKind == JsonValueKind.String
-           && property.GetString() is { Length: > 0 } text
+           && TryField(value, name, out var property)
+           && StringValue(property) is { Length: > 0 } text
             ? text
             : null;
 
@@ -745,8 +912,8 @@ internal sealed class EmailSender : IPostHogEmails
         => Text(element, name) is { } text
            && DateTimeOffset.TryParse(
                text,
-               System.Globalization.CultureInfo.InvariantCulture,
-               System.Globalization.DateTimeStyles.RoundtripKind,
+               CultureInfo.InvariantCulture,
+               DateTimeStyles.RoundtripKind,
                out var time)
             ? time
             : null;
@@ -784,11 +951,28 @@ internal sealed class EmailSender : IPostHogEmails
                 "Send a SendTemplateEmailOptions or a SendCodeEmailOptions.",
                 nameof(email)),
         };
+        var scheduledAt = email.ScheduledAt is { } requested
+            ? CeilingToMillisecond(requested)
+              ?? throw new ArgumentException("ScheduledAt must be a time PostHog can keep to the millisecond.", nameof(email))
+            : (DateTimeOffset?)null;
+        if (scheduledAt is { } due)
+        {
+            body[ScheduledAtField] = due.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+        }
+
         return new PreparedSend(
             JsonSerializer.Serialize(body, JsonSerializerHelper.Options),
             attachments,
             email.IdempotencyKey ?? Guid.NewGuid().ToString("D"),
-            email.MaxRetries ?? defaultMaxRetries);
+            email.MaxRetries ?? defaultMaxRetries,
+            scheduledAt);
+    }
+
+    static DateTimeOffset? CeilingToMillisecond(DateTimeOffset time)
+    {
+        var belowAMillisecond = time.UtcTicks % TimeSpan.TicksPerMillisecond;
+        var ticks = belowAMillisecond == 0 ? time.UtcTicks : time.UtcTicks + (TimeSpan.TicksPerMillisecond - belowAMillisecond);
+        return ticks > DateTimeOffset.MaxValue.UtcTicks ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
     }
 
     static Dictionary<string, object?> TemplateBody(SendTemplateEmailOptions email)
@@ -990,7 +1174,8 @@ internal sealed class EmailSender : IPostHogEmails
         string Body,
         HashedAttachments Attachments,
         string IdempotencyKey,
-        int MaxRetries);
+        int MaxRetries,
+        DateTimeOffset? ScheduledAt);
 
     sealed record UploadTarget(Uri Url, HttpMethod Method, IReadOnlyDictionary<string, string> Headers);
 
