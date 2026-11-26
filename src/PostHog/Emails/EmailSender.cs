@@ -114,40 +114,21 @@ internal sealed class EmailSender : IPostHogEmails
         await UploadAsync(prepared.Attachments, appHost, secretKey, prepared.MaxRetries, cancellationToken)
             .ConfigureAwait(false);
         var url = new Uri(appHost + SendPath);
-        var appKey = email.IdempotencyKey is not null;
-        DateTimeOffset? firstSentAt = null;
-        DateTimeOffset? mayHaveQueuedAt = null;
+        DateTimeOffset? firstAttemptAt = null;
         var result = await WithRetriesAsync(
             prepared.MaxRetries,
             async () =>
             {
-                DateTimeOffset? sentAt = prepared.ScheduledAt is null
-                    ? null
-                    : firstSentAt is null
-                        ? _timeProvider.GetUtcNow()
-                        : NowOrNull() ?? mayHaveQueuedAt ?? firstSentAt;
-                firstSentAt ??= sentAt;
-                try
-                {
-                    var reply = await RequestAsync(
-                            HttpMethod.Post,
-                            url,
-                            secretKey,
-                            prepared.Body,
-                            prepared.IdempotencyKey,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                    return ParseSendReply(
-                        reply,
-                        prepared.ScheduledAt,
-                        replayedSentAt: appKey ? firstSentAt : mayHaveQueuedAt ?? firstSentAt,
-                        sentAt: appKey ? firstSentAt : mayHaveQueuedAt ?? sentAt);
-                }
-                catch (EmailException error) when (error.StatusCode != (HttpStatusCode)429)
-                {
-                    mayHaveQueuedAt ??= sentAt;
-                    throw;
-                }
+                firstAttemptAt ??= prepared.ScheduledAt is null ? null : _timeProvider.GetUtcNow();
+                var reply = await RequestAsync(
+                        HttpMethod.Post,
+                        url,
+                        secretKey,
+                        prepared.Body,
+                        prepared.IdempotencyKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return ParseSendReply(reply, prepared.ScheduledAt, firstAttemptAt);
             },
             cancellationToken).ConfigureAwait(false);
         return result;
@@ -717,8 +698,7 @@ internal sealed class EmailSender : IPostHogEmails
     SendEmailResult ParseSendReply(
         Reply reply,
         DateTimeOffset? scheduledAt,
-        DateTimeOffset? replayedSentAt,
-        DateTimeOffset? sentAt)
+        DateTimeOffset? firstAttemptAt)
     {
         if (!IsSuccess(reply.Status))
         {
@@ -758,8 +738,7 @@ internal sealed class EmailSender : IPostHogEmails
             ? replayedValue.ValueKind
             : JsonValueKind.Undefined;
         var replayed = replayedKind == JsonValueKind.True;
-        var acceptedNow = replayedKind == JsonValueKind.False;
-        var (status, confirmedAt) = scheduledAt is { } requested && (acceptedNow ? sentAt : replayedSentAt) is { } sent
+        var (status, confirmedAt) = scheduledAt is { } requested && firstAttemptAt is { } sent
             ? ConfirmSchedule(reply, id, requested, sent)
             : ("queued", null);
         return new SendEmailResult
@@ -770,20 +749,6 @@ internal sealed class EmailSender : IPostHogEmails
             Status = status,
             ScheduledAt = confirmedAt,
         };
-    }
-
-    DateTimeOffset? NowOrNull()
-    {
-        try
-        {
-            return _timeProvider.GetUtcNow();
-        }
-#pragma warning disable CA1031
-        catch (Exception)
-#pragma warning restore CA1031
-        {
-            return null;
-        }
     }
 
     void LogWarning(EmailWarning warning)

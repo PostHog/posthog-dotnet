@@ -219,21 +219,41 @@ public class TheSendAsyncMethodWithScheduledAt
         Assert.Equal(("schedule_not_confirmed", MessageId), (error.Code, error.MessageId));
     }
 
-    [Fact]
-    public async Task MeasuresTheMinuteFromTheRetryWhenPostHogRefusedTheEarlierAttempt()
+    [Theory]
+    [InlineData(62, 3, "no retry", "schedule_not_confirmed")]
+    [InlineData(58, 30, "a rate limit", "queued")]
+    [InlineData(58, 30, "an unavailable service", "queued")]
+    [InlineData(61, 31, "a rate limit", "schedule_not_confirmed")]
+    public async Task MeasuresTheMinuteFromTheSendsFirstAttempt(int secondsAhead, int answerAfter, string retry, string outcome)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
-        RetryAt30SecondsBeforeTheDueTime(
-            harness,
-            posthog,
-            () => new HttpResponseMessage(HttpStatusCode.TooManyRequests),
-            replayed: false);
+        harness.Time.Now = DueTime.AddSeconds(-secondsAhead);
+        if (retry != "no retry")
+        {
+            posthog.Enqueue(_ =>
+            {
+                harness.Time.Now = DueTime.AddSeconds(answerAfter - secondsAhead);
+                return Task.FromResult(new HttpResponseMessage(
+                    retry == "a rate limit" ? HttpStatusCode.TooManyRequests : HttpStatusCode.ServiceUnavailable));
+            });
+        }
 
-        var result = await harness.Client.Emails.SendAsync(TemplateSend(DueTime));
+        posthog.Enqueue(_ =>
+        {
+            harness.Time.Now = DueTime.AddSeconds(answerAfter - secondsAhead);
+            return Task.FromResult(Json(
+                HttpStatusCode.Accepted,
+                $$"""{"message_id": "{{MessageId}}", "status": "queued", "scheduled_at": null, "replayed": false}"""));
+        });
 
-        Assert.Equal(2, posthog.Requests.Count);
-        Assert.Equal(("queued", MessageId, (DateTimeOffset?)null), (result.Status, result.Id, result.ScheduledAt));
+        var send = harness.Client.Emails.SendAsync(TemplateSend(DueTime));
+        var answer = outcome == "queued"
+            ? (await send).Status
+            : (await Assert.ThrowsAsync<EmailException>(() => send)).Code;
+
+        Assert.Equal(retry == "no retry" ? 1 : 2, posthog.Requests.Count);
+        Assert.Equal(outcome, answer);
     }
 
     [Theory]
@@ -294,9 +314,9 @@ public class TheSendAsyncMethodWithScheduledAt
     }
 
     [Theory]
-    [InlineData(null, "queued")]
+    [InlineData(null, "schedule_not_confirmed")]
     [InlineData("order-42", "schedule_not_confirmed")]
-    public async Task MeasuresAReplayFromTheFirstAttemptWhenTheAppReusesItsKey(string? idempotencyKey, string outcome)
+    public async Task MeasuresAReplayFromTheFirstAttemptWhateverTheKey(string? idempotencyKey, string outcome)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
@@ -325,9 +345,9 @@ public class TheSendAsyncMethodWithScheduledAt
     }
 
     [Theory]
-    [InlineData(null, "queued")]
+    [InlineData(null, "schedule_not_confirmed")]
     [InlineData("order-42", "schedule_not_confirmed")]
-    public async Task TrustsAFreshAnswerAfterARefusalOnlyForAKeyTheClientMade(string? idempotencyKey, string outcome)
+    public async Task MeasuresAFreshAnswerAfterARefusalFromTheFirstAttemptWhateverTheKey(string? idempotencyKey, string outcome)
     {
         var posthog = new RecordingHandler();
         await using var harness = new EmailHarness(posthog: posthog);
