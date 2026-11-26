@@ -606,10 +606,17 @@ public class TheGetAsyncMethod
         Assert.Equal(PromptSource.CodeFallback, withFallback.Source);
     }
 
-    [Fact]
-    public async Task ReturnsTheFallbackOrFailsWhenTheClientIsDisabled()
+    [Theory]
+    [InlineData(true, "fake-project-token")]
+    [InlineData(false, null)]
+    public async Task ReturnsTheFallbackOrFailsWhenTheClientIsDisabled(bool disabled, string? projectToken)
     {
-        var container = CreateContainer(options => options.Disabled = true);
+        // A missing project token also disables the client. The fetch must report that, not fail on the URL.
+        var container = CreateContainer(options =>
+        {
+            options.Disabled = disabled;
+            options.ProjectToken = projectToken;
+        });
         var client = container.Activate<PostHogClient>();
 
         var exception = await Assert.ThrowsAsync<PromptFetchException>(() => client.Prompts.GetAsync(PromptName));

@@ -230,10 +230,11 @@ internal sealed class PromptFetcher : IPostHogPrompts
     async Task<CachedPrompt> FetchAsync(PromptCacheKey key, CancellationToken cancellationToken)
     {
         var reference = FetchReference.For(key);
+        var secretKey = RequireCredentials(reference);
         using var timeout = StartRequestTimeout(cancellationToken);
         try
         {
-            using var response = await SendAsync(BuildUrl(key), reference, timeout.Token).ConfigureAwait(false);
+            using var response = await SendAsync(BuildUrl(key), secretKey, reference, timeout.Token).ConfigureAwait(false);
             return await ReadPromptAsync(key, response, timeout.Token).ConfigureAwait(false);
         }
         catch (HttpRequestException e)
@@ -327,6 +328,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
     async Task<List<JsonElement>> FetchListAsync(FetchReference reference, string? label, CancellationToken cancellationToken)
     {
         var rows = new List<JsonElement>();
+        var secretKey = RequireCredentials(reference);
         var url = BuildListUrl(label);
         var pages = 0;
         while (url is not null)
@@ -342,7 +344,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
             using var timeout = StartRequestTimeout(cancellationToken);
             try
             {
-                using var response = await SendAsync(url, reference, timeout.Token).ConfigureAwait(false);
+                using var response = await SendAsync(url, secretKey, reference, timeout.Token).ConfigureAwait(false);
                 url = await ReadListPageAsync(reference, response, rows, timeout.Token).ConfigureAwait(false);
             }
             catch (HttpRequestException e)
@@ -407,22 +409,29 @@ internal sealed class PromptFetcher : IPostHogPrompts
             && url.Port == host.Port;
 
     /// <summary>
-    /// Sends one authenticated request and returns the successful response. The caller disposes it.
+    /// The secret key to send, after checking that the client can fetch at all. This runs before any URL is built,
+    /// because a client without a project token is disabled and has no token to put in a URL.
     /// </summary>
-    async Task<HttpResponseMessage> SendAsync(Uri url, FetchReference reference, CancellationToken cancellationToken)
+    string RequireCredentials(FetchReference reference)
     {
         if (_isDisabled)
         {
             throw Error(reference, "client_disabled", "The PostHog client is disabled, so no prompt was fetched.");
         }
 
-        var secretKey = _options.SecretKey
+        return _options.SecretKey
             ?? throw Error(
                 reference,
                 "missing_secret_key",
                 "Fetching prompts needs SecretKey set to a personal API key (phx_...) or a project secret API key "
                 + "(phs_...) with the llm_prompt:read scope.");
+    }
 
+    /// <summary>
+    /// Sends one authenticated request and returns the successful response. The caller disposes it.
+    /// </summary>
+    async Task<HttpResponseMessage> SendAsync(Uri url, string secretKey, FetchReference reference, CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
 
