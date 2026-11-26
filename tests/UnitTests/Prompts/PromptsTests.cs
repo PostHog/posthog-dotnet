@@ -832,14 +832,21 @@ public class TheGetAllAsyncMethod
     static Uri ListUrl(string? label = "production")
         => new($"https://us.i.posthog.com/api/environments/@current/llm_prompts/?token=fake-project-token{(label is null ? "" : $"&label={label}")}&content=full");
 
-    static string Row(string name, int version = 1, string? allLabels = null, string config = "null", string prompt = "\"Prompt for {name}\"")
+    static string Row(
+        string name,
+        int version = 1,
+        string? allLabels = null,
+        string config = "null",
+        string prompt = "\"Prompt for {name}\"",
+        string resolvedReferences = "[]")
         => $$"""
             {
               "name": "{{name}}",
               "prompt": {{prompt.Replace("{name}", name, StringComparison.Ordinal)}},
               "version": {{version}},
               "all_labels": {{allLabels ?? $$"""[{"name": "production", "version": {{version}}}]"""}},
-              "config": {{config}}
+              "config": {{config}},
+              "resolved_references": {{resolvedReferences}}
             }
             """;
 
@@ -1004,6 +1011,33 @@ public class TheGetAllAsyncMethod
         Assert.Contains("HTTP 500", exception.Message, StringComparison.Ordinal);
         Assert.Null(exception.PromptName);
         Assert.Equal("production", exception.Label);
+    }
+
+    [Fact]
+    public async Task FetchesAPromptOnItsOwnWhenTheServerLeftItsReferencesUnresolved()
+    {
+        // An older server returns the unlabeled list with @@@prompt@@@ tags left in place and no resolved_references.
+        // The single fetch assembles them, so that row comes from a single fetch instead of being cached with tags.
+        var container = CreateContainer();
+        const string tagged = "\"Intro. @@@prompt:name=guardrails|version=1@@@\"";
+        container.FakeHttpMessageHandler.AddResponse(
+            ListUrl(label: null),
+            HttpMethod.Get,
+            ListJson($"{Row("agent", prompt: tagged, resolvedReferences: "null")}, {Row("plain", version: 2, resolvedReferences: "null")}"));
+        var single = container.FakeHttpMessageHandler.AddResponse(
+            PromptUrl("agent"),
+            HttpMethod.Get,
+            Row("agent", prompt: "\"Intro. G.\"", resolvedReferences: """[{"name": "guardrails", "version": 1, "label": null}]"""));
+        var client = container.Activate<PostHogClient>();
+
+        var results = await client.Prompts.GetAllAsync();
+        var cached = await client.Prompts.GetAsync("agent");
+
+        Assert.Single(single.ReceivedRequests);
+        Assert.Equal("Intro. G.", results["agent"].Prompt);
+        Assert.Equal("Prompt for plain", results["plain"].Prompt);
+        Assert.Equal(PromptSource.Cache, cached.Source);
+        Assert.Equal("Intro. G.", cached.Prompt);
     }
 
     [Fact]

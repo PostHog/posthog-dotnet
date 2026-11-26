@@ -270,6 +270,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
 
         var resolved = new List<ParsedPrompt>();
         var skipped = new List<string>();
+        var unresolved = 0;
         foreach (var row in rows)
         {
             if (!TryParsePrompt(row, out var parsed))
@@ -277,31 +278,38 @@ internal sealed class PromptFetcher : IPostHogPrompts
                 throw InvalidResponse(reference);
             }
 
-            if (label is null)
+            if (label is not null)
             {
-                resolved.Add(parsed);
-                continue;
+                switch (GetLabelState(row, label, parsed.Version))
+                {
+                    case LabelState.Absent:
+                        // Even one unlabeled row proves the server did not filter by label. The rows that look
+                        // resolved are then only labels that happen to point at the latest version, so a partial
+                        // result would hide the rest.
+                        throw Error(
+                            reference,
+                            "label_not_supported",
+                            $"The server returned a prompt that does not carry label \"{label}\". It may not support "
+                            + "fetching prompts by label on the list endpoint yet. Upgrade PostHog, or fetch prompts one "
+                            + "by one with GetAsync.");
+                    case LabelState.Moved:
+                        skipped.Add(parsed.Name);
+                        continue;
+                }
             }
 
-            switch (GetLabelState(row, label, parsed.Version))
+            // An older server leaves @@@prompt:...@@@ references in list rows as raw tags. The single fetch
+            // always serves the assembled text, so such a row is fetched on its own instead of being served
+            // and cached with the tags in it.
+            if (HasUnresolvedReferences(row, parsed.Prompt))
             {
-                case LabelState.Absent:
-                    // Even one unlabeled row proves the server did not filter by label. The rows that look
-                    // resolved are then only labels that happen to point at the latest version, so a partial
-                    // result would hide the rest.
-                    throw Error(
-                        reference,
-                        "label_not_supported",
-                        $"The server returned a prompt that does not carry label \"{label}\". It may not support "
-                        + "fetching prompts by label on the list endpoint yet. Upgrade PostHog, or fetch prompts one "
-                        + "by one with GetAsync.");
-                case LabelState.Moved:
-                    skipped.Add(parsed.Name);
-                    continue;
-                default:
-                    resolved.Add(parsed);
-                    break;
+                var fetched = await FetchAsync(new PromptCacheKey(parsed.Name, null, label), cancellationToken).ConfigureAwait(false);
+                var result = fetched.ToResult(PromptSource.Api);
+                parsed = new ParsedPrompt(result.Prompt, result.Name!, result.Version!.Value, result.Label, result.Config);
+                unresolved++;
             }
+
+            resolved.Add(parsed);
         }
 
         if (label is not null && rows.Count > 0 && resolved.Count == 0)
@@ -338,6 +346,11 @@ internal sealed class PromptFetcher : IPostHogPrompts
         if (skipped.Count > 0)
         {
             _logger.LogWarningSkippedMovedLabels(skipped.Count, label!, string.Join(", ", skipped));
+        }
+
+        if (unresolved > 0)
+        {
+            _logger.LogWarningUnresolvedReferences(unresolved, reference.Description);
         }
 
         return results;
@@ -636,6 +649,20 @@ internal sealed class PromptFetcher : IPostHogPrompts
     }
 
     /// <summary>
+    /// Whether the server left prompt references in this row as raw tags. A server that resolved the row sets
+    /// <c>resolved_references</c> to an array, empty when the prompt has no tags.
+    /// </summary>
+    static bool HasUnresolvedReferences(JsonElement row, string prompt)
+    {
+        if (row.TryGetProperty("resolved_references", out var references) && references.ValueKind == JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        return prompt.Contains("@@@prompt:", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// How a list row relates to the requested label, read from its <c>all_labels</c>.
     /// </summary>
     static LabelState GetLabelState(JsonElement row, string label, int version)
@@ -794,4 +821,10 @@ internal static partial class PromptFetcherLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[PROMPTS] Skipped {Count} prompt(s) that did not resolve label \"{Label}\": {Names}")]
     public static partial void LogWarningSkippedMovedLabels(this ILogger<PromptFetcher> logger, int count, string label, string names);
+
+    [LoggerMessage(
+        EventId = 1305,
+        Level = LogLevel.Warning,
+        Message = "[PROMPTS] The server returned {Count} prompt(s) with unresolved references for {Reference}, so they were fetched one by one. Upgrade PostHog to get them assembled in the list request")]
+    public static partial void LogWarningUnresolvedReferences(this ILogger<PromptFetcher> logger, int count, string reference);
 }
