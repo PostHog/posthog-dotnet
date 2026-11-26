@@ -24,7 +24,9 @@ internal class FilterJsonConverter : JsonConverter<Filter>
         return typeElement.GetString() switch
         {
             "" or "person" or "group" or "cohort" or "flag" => filterElement.Deserialize<PropertyFilter>(options),
-            "AND" or "OR" => filterElement.Deserialize<FilterSet>(options),
+            // A group without a values array can't be read as a group, so it stays unsupported for its flag only.
+            "AND" or "OR" when filterElement.TryGetProperty("values", out var values) && values.ValueKind is JsonValueKind.Array
+                => filterElement.Deserialize<FilterSet>(options),
             _ => new UnsupportedFilter(filterElement.Clone())
         };
     }

@@ -257,6 +257,29 @@ public class TheUnsupportedFilterTypes
         Assert.True(result.Sibling);
     }
 
+    [Theory]
+    [InlineData("AND")]
+    [InlineData("OR")]
+    public async Task LeavesAGroupTypedLeafWithoutValuesUnresolved(string groupType)
+    {
+        var leaf = $$$"""{"type": "{{{groupType}}}", "key": "plan", "value": "pro"}""";
+
+        var inCondition = await EvaluateAsync(
+            Definitions($$$"""{"properties": [{{{leaf}}}], "rollout_percentage": 100}"""),
+            new() { ["plan"] = "pro" });
+        var inCohort = await EvaluateAsync(
+            Definitions(CohortCondition, Cohort("AND", leaf)),
+            new() { ["plan"] = "pro" });
+
+        foreach (var result in new[] { inCondition, inCohort })
+        {
+            Assert.Null(result.Flag);
+            Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, result.UnresolvedFlags["flag"]);
+            Assert.True(result.Sibling);
+            Assert.Equal(0, result.RemoteRequests);
+        }
+    }
+
     [Fact]
     public async Task RefreshLoadsDefinitionsWithAnUnsupportedConditionFilterType()
     {
