@@ -18,6 +18,11 @@ namespace PostHog.Prompts;
 internal sealed class PromptFetcher : IPostHogPrompts
 {
     const string PromptsPath = "/api/environments/@current/llm_prompts/name/";
+    const string PromptListPath = "/api/environments/@current/llm_prompts/";
+
+    // A list fetch that needs more pages than this is refused rather than returned incomplete: callers would
+    // cache a partial prompt set and treat the missing prompts as unlabeled.
+    const int MaxListPages = 100;
 
     // After a fetch fails, no request is sent for this key for this long, or for the Retry-After the server
     // sent, capped so a bad header cannot park a prompt for days.
@@ -38,6 +43,10 @@ internal sealed class PromptFetcher : IPostHogPrompts
     // only while it is still the in-flight entry for its key, and a clear removes that entry, so a request
     // sent before a clear cannot put its result back afterwards.
     readonly object _outcomeLock = new();
+
+    // Counts ClearCache calls. A bulk fetch has no in-flight entry to lose, so it compares this count instead:
+    // a clear during the request means its rows may be stale, and none of them is cached.
+    long _clearCount;
 
     public PromptFetcher(
         HttpClient httpClient,
@@ -119,6 +128,7 @@ internal sealed class PromptFetcher : IPostHogPrompts
 
         lock (_outcomeLock)
         {
+            _clearCount++;
             foreach (var key in _cache.Keys.Concat(_failures.Keys).Concat(_inFlight.Keys).Where(Matches))
             {
                 _cache.TryRemove(key, out _);
@@ -224,51 +234,274 @@ internal sealed class PromptFetcher : IPostHogPrompts
 
     async Task<CachedPrompt> FetchAsync(PromptCacheKey key, CancellationToken cancellationToken)
     {
-        if (_isDisabled)
-        {
-            throw Error(key, "client_disabled", "The PostHog client is disabled, so no prompt was fetched.");
-        }
-
-        var secretKey = _options.SecretKey
-            ?? throw Error(
-                key,
-                "missing_secret_key",
-                "Fetching prompts needs SecretKey set to a personal API key (phx_...) or a project secret API key "
-                + "(phs_...) with the llm_prompt:read scope.");
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(key));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
-
-        // The timeout covers the whole request, including reading the body. CancelAfter rejects a delay above
-        // int.MaxValue milliseconds (about 24 days), and such a value means no timeout anyway.
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (RequestTimeout.TotalMilliseconds <= int.MaxValue)
-        {
-            timeout.CancelAfter(RequestTimeout);
-        }
+        var reference = FetchReference.For(key);
+        var secretKey = RequireCredentials(reference);
+        using var timeout = StartRequestTimeout(cancellationToken);
         try
         {
-            using var response = await _httpClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw ErrorFromResponse(key, response);
-            }
-
+            using var response = await SendAsync(BuildUrl(key), secretKey, reference, timeout.Token).ConfigureAwait(false);
             return await ReadPromptAsync(key, response, timeout.Token).ConfigureAwait(false);
         }
         catch (HttpRequestException e)
         {
-            throw Error(key, "network_error", $"Fetching {Describe(key)} failed: {e.Message}", innerException: e);
+            throw NetworkError(reference, e);
         }
         catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
         {
-            throw Error(
-                key,
-                "network_error",
-                $"Fetching {Describe(key)} timed out after {RequestTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)}s.",
-                innerException: e);
+            throw TimedOut(reference, e);
         }
     }
+
+    /// <summary>
+    /// Fetches every prompt in one batch, at the version <paramref name="label"/> points to, or the latest version
+    /// without a label. Every row is validated before any is cached, so a rejected batch leaves the cache as it was.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, PromptResult>> GetAllAsync(string? label, CancellationToken cancellationToken)
+    {
+        var reference = FetchReference.ForList(label);
+        var startedAt = _timeProvider.GetUtcNow();
+        long clearCountAtStart;
+        lock (_outcomeLock)
+        {
+            clearCountAtStart = _clearCount;
+        }
+
+        var rows = await FetchListAsync(reference, label, cancellationToken).ConfigureAwait(false);
+
+        var resolved = new List<ParsedPrompt>();
+        var skipped = new List<string>();
+        var unresolved = 0;
+        foreach (var row in rows)
+        {
+            if (!TryParsePrompt(row, out var parsed))
+            {
+                throw InvalidResponse(reference);
+            }
+
+            if (label is not null)
+            {
+                switch (GetLabelState(row, label, parsed.Version))
+                {
+                    case LabelState.Absent:
+                        // Even one unlabeled row proves the server did not filter by label. The rows that look
+                        // resolved are then only labels that happen to point at the latest version, so a partial
+                        // result would hide the rest.
+                        throw Error(
+                            reference,
+                            "label_not_supported",
+                            $"The server returned a prompt that does not carry label \"{label}\". It may not support "
+                            + "fetching prompts by label on the list endpoint yet. Upgrade PostHog, or fetch prompts one "
+                            + "by one with GetAsync.");
+                    case LabelState.Moved:
+                        skipped.Add(parsed.Name);
+                        continue;
+                }
+            }
+
+            // An older server leaves @@@prompt:...@@@ references in list rows as raw tags. The single fetch
+            // always serves the assembled text, so such a row is fetched on its own instead of being served
+            // and cached with the tags in it.
+            if (HasUnresolvedReferences(row, parsed.Prompt))
+            {
+                var fetched = await FetchAsync(new PromptCacheKey(parsed.Name, null, label), cancellationToken).ConfigureAwait(false);
+                var result = fetched.ToResult(PromptSource.Api);
+                parsed = new ParsedPrompt(result.Prompt, result.Name!, result.Version!.Value, result.Label, result.Config);
+                unresolved++;
+            }
+
+            resolved.Add(parsed);
+        }
+
+        if (label is not null && rows.Count > 0 && resolved.Count == 0)
+        {
+            // One moved label is a race between the query and the response. All of them means the server most
+            // likely ignored the label parameter and served latest versions.
+            throw Error(
+                reference,
+                "label_not_supported",
+                $"The server returned prompts, but none resolve label \"{label}\". It may not support fetching "
+                + "prompts by label on the list endpoint yet. Upgrade PostHog, or fetch prompts one by one with GetAsync.");
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var results = new Dictionary<string, PromptResult>(StringComparer.Ordinal);
+        lock (_outcomeLock)
+        {
+            // The rows are returned either way. They are cached only when nothing newer could be in the cache:
+            // no clear ran during the request, and no single fetch for the key finished since it started.
+            var cacheable = _clearCount == clearCountAtStart;
+            foreach (var prompt in resolved)
+            {
+                var key = new PromptCacheKey(prompt.Name, null, label);
+                var cached = new CachedPrompt(prompt.Prompt, prompt.Name, prompt.Version, label, prompt.Config, now);
+                results[prompt.Name] = cached.ToResult(PromptSource.Api);
+                if (cacheable && !(_cache.TryGetValue(key, out var existing) && existing.FetchedAt >= startedAt))
+                {
+                    _cache[key] = cached;
+                    _failures.TryRemove(key, out _);
+                }
+            }
+        }
+
+        if (skipped.Count > 0)
+        {
+            _logger.LogWarningSkippedMovedLabels(skipped.Count, label!, string.Join(", ", skipped));
+        }
+
+        if (unresolved > 0)
+        {
+            _logger.LogWarningUnresolvedReferences(unresolved, reference.Description);
+        }
+
+        return results;
+    }
+
+    async Task<List<JsonElement>> FetchListAsync(FetchReference reference, string? label, CancellationToken cancellationToken)
+    {
+        var rows = new List<JsonElement>();
+        var secretKey = RequireCredentials(reference);
+        var url = BuildListUrl(label);
+        var pages = 0;
+        while (url is not null)
+        {
+            if (pages >= MaxListPages)
+            {
+                throw Error(
+                    reference,
+                    "incomplete_result",
+                    $"{Capitalize(reference.Description)} spans more than {MaxListPages} pages. Refusing to return an incomplete result.");
+            }
+
+            using var timeout = StartRequestTimeout(cancellationToken);
+            try
+            {
+                using var response = await SendAsync(url, secretKey, reference, timeout.Token).ConfigureAwait(false);
+                url = await ReadListPageAsync(reference, response, rows, timeout.Token).ConfigureAwait(false);
+            }
+            catch (HttpRequestException e)
+            {
+                throw NetworkError(reference, e);
+            }
+            catch (OperationCanceledException e) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw TimedOut(reference, e);
+            }
+
+            pages++;
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Reads one page of the list into <paramref name="rows"/> and returns the link to the next page, if any.
+    /// </summary>
+    async Task<Uri?> ReadListPageAsync(
+        FetchReference reference,
+        HttpResponseMessage response,
+        List<JsonElement> rows,
+        CancellationToken cancellationToken)
+    {
+        using var document = await ParseAsync(reference, response, cancellationToken).ConfigureAwait(false);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+        {
+            throw InvalidResponse(reference);
+        }
+
+        foreach (var row in results.EnumerateArray())
+        {
+            rows.Add(row.Clone());
+        }
+
+        if (!root.TryGetProperty("next", out var next) || next.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        // The Authorization header goes to every followed link, so a link off the configured host is never requested.
+        if (next.ValueKind != JsonValueKind.String
+            || !Uri.TryCreate(next.GetString(), UriKind.Absolute, out var nextUrl)
+            || !IsSameOrigin(nextUrl, _options.HostUrl))
+        {
+            throw Error(
+                reference,
+                "invalid_response",
+                $"Refusing to follow a pagination link off the configured host while fetching {reference.Description}.");
+        }
+
+        return nextUrl;
+    }
+
+    static bool IsSameOrigin(Uri url, Uri host)
+        => string.Equals(url.Scheme, host.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(url.Host, host.Host, StringComparison.OrdinalIgnoreCase)
+            && url.Port == host.Port;
+
+    /// <summary>
+    /// The secret key to send, after checking that the client can fetch at all. This runs before any URL is built,
+    /// because a client without a project token is disabled and has no token to put in a URL.
+    /// </summary>
+    string RequireCredentials(FetchReference reference)
+    {
+        if (_isDisabled)
+        {
+            throw Error(reference, "client_disabled", "The PostHog client is disabled, so no prompt was fetched.");
+        }
+
+        return _options.SecretKey
+            ?? throw Error(
+                reference,
+                "missing_secret_key",
+                "Fetching prompts needs SecretKey set to a personal API key (phx_...) or a project secret API key "
+                + "(phs_...) with the llm_prompt:read scope.");
+    }
+
+    /// <summary>
+    /// Sends one authenticated request and returns the successful response. The caller disposes it.
+    /// </summary>
+    async Task<HttpResponseMessage> SendAsync(Uri url, string secretKey, FetchReference reference, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            return response;
+        }
+
+        using (response)
+        {
+            throw ErrorFromResponse(reference, response);
+        }
+    }
+
+    /// <summary>
+    /// A token that ends the request after <see cref="RequestTimeout"/>, covering the body read too. CancelAfter
+    /// rejects a delay above int.MaxValue milliseconds (about 24 days), and such a value means no timeout anyway.
+    /// </summary>
+    CancellationTokenSource StartRequestTimeout(CancellationToken cancellationToken)
+    {
+        var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (RequestTimeout.TotalMilliseconds <= int.MaxValue)
+        {
+            timeout.CancelAfter(RequestTimeout);
+        }
+
+        return timeout;
+    }
+
+    static PromptFetchException NetworkError(FetchReference reference, HttpRequestException e)
+        => Error(reference, "network_error", $"Fetching {reference.Description} failed: {e.Message}", innerException: e);
+
+    PromptFetchException TimedOut(FetchReference reference, OperationCanceledException e)
+        => Error(
+            reference,
+            "network_error",
+            $"Fetching {reference.Description} timed out after {RequestTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)}s.",
+            innerException: e);
 
     TimeSpan RequestTimeout => _options.PromptRequestTimeout > TimeSpan.Zero
         ? _options.PromptRequestTimeout
@@ -289,12 +522,24 @@ internal sealed class PromptFetcher : IPostHogPrompts
         return new Uri(_options.HostUrl, $"{PromptsPath}{Uri.EscapeDataString(key.Name)}/?{query}");
     }
 
+    Uri BuildListUrl(string? label)
+    {
+        // Without a label the parameter is left off entirely, so the server serves the latest version of every prompt.
+        var query = $"token={Uri.EscapeDataString(ProjectToken)}";
+        if (label is not null)
+        {
+            query += $"&label={Uri.EscapeDataString(label)}";
+        }
+
+        return new Uri(_options.HostUrl, $"{PromptListPath}?{query}&content=full");
+    }
+
     string ProjectToken => _options.ProjectToken
         ?? throw new InvalidOperationException("Either ProjectToken or ProjectApiKey must be provided.");
 
-    PromptFetchException ErrorFromResponse(PromptCacheKey key, HttpResponseMessage response)
+    PromptFetchException ErrorFromResponse(FetchReference key, HttpResponseMessage response)
     {
-        var reference = Describe(key);
+        var reference = key.Description;
         return response.StatusCode switch
         {
             HttpStatusCode.NotFound => Error(key, "not_found", $"{Capitalize(reference)} was not found.", response.StatusCode),
@@ -340,7 +585,25 @@ internal sealed class PromptFetcher : IPostHogPrompts
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
-        JsonDocument document;
+        var reference = FetchReference.For(key);
+        using var document = await ParseAsync(reference, response, cancellationToken).ConfigureAwait(false);
+        if (!TryParsePrompt(document.RootElement, out var parsed))
+        {
+            throw InvalidResponse(reference);
+        }
+
+        // An older PostHog server ignores the label parameter and returns the latest version without a label.
+        // The other SDKs warn and still serve that version, so this one does the same.
+        if (key.Label is { } requestedLabel && parsed.Label != requestedLabel)
+        {
+            _logger.LogWarningLabelMismatch(requestedLabel, key.Name, parsed.Label);
+        }
+
+        return new CachedPrompt(parsed.Prompt, parsed.Name, parsed.Version, parsed.Label, parsed.Config, _timeProvider.GetUtcNow());
+    }
+
+    static async Task<JsonDocument> ParseAsync(FetchReference reference, HttpResponseMessage response, CancellationToken cancellationToken)
+    {
         try
         {
 #if NET8_0_OR_GREATER
@@ -348,66 +611,98 @@ internal sealed class PromptFetcher : IPostHogPrompts
 #else
             var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #endif
-            document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (JsonException e)
         {
-            throw InvalidResponse(key, e);
-        }
-
-        using (document)
-        {
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object
-                || !root.TryGetProperty("prompt", out var prompt) || prompt.ValueKind != JsonValueKind.String
-                || !root.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String
-                || !root.TryGetProperty("version", out var version)
-                || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var versionNumber))
-            {
-                throw InvalidResponse(key);
-            }
-
-            string? label = null;
-            if (root.TryGetProperty("label", out var labelElement) && labelElement.ValueKind == JsonValueKind.String)
-            {
-                label = labelElement.GetString();
-            }
-
-            // An older PostHog server ignores the label parameter and returns the latest version without a label.
-            // The other SDKs warn and still serve that version, so this one does the same.
-            if (key.Label is { } requestedLabel && label != requestedLabel)
-            {
-                _logger.LogWarningLabelMismatch(requestedLabel, key.Name, label);
-            }
-
-            // Older servers do not send config; a non-object value is treated as absent, like the other SDKs.
-            JsonElement? config = null;
-            if (root.TryGetProperty("config", out var configElement) && configElement.ValueKind == JsonValueKind.Object)
-            {
-                config = configElement.Clone();
-            }
-
-            return new CachedPrompt(
-                prompt.GetString()!,
-                name.GetString()!,
-                versionNumber,
-                label,
-                config,
-                _timeProvider.GetUtcNow());
+            throw InvalidResponse(reference, e);
         }
     }
 
-    static PromptFetchException InvalidResponse(PromptCacheKey key, Exception? innerException = null)
-        => Error(key, "invalid_response", $"PostHog returned an invalid response for {Describe(key)}.", innerException: innerException);
+    static bool TryParsePrompt(JsonElement root, out ParsedPrompt parsed)
+    {
+        parsed = default;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("prompt", out var prompt) || prompt.ValueKind != JsonValueKind.String
+            || !root.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String
+            || !root.TryGetProperty("version", out var version)
+            || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var versionNumber))
+        {
+            return false;
+        }
+
+        string? label = null;
+        if (root.TryGetProperty("label", out var labelElement) && labelElement.ValueKind == JsonValueKind.String)
+        {
+            label = labelElement.GetString();
+        }
+
+        // Older servers do not send config; a non-object value is treated as absent, like the other SDKs.
+        JsonElement? config = null;
+        if (root.TryGetProperty("config", out var configElement) && configElement.ValueKind == JsonValueKind.Object)
+        {
+            config = configElement.Clone();
+        }
+
+        parsed = new ParsedPrompt(prompt.GetString()!, name.GetString()!, versionNumber, label, config);
+        return true;
+    }
+
+    /// <summary>
+    /// Whether the server left prompt references in this row as raw tags. A server that resolved the row sets
+    /// <c>resolved_references</c> to an array, empty when the prompt has no tags.
+    /// </summary>
+    static bool HasUnresolvedReferences(JsonElement row, string prompt)
+    {
+        if (row.TryGetProperty("resolved_references", out var references) && references.ValueKind == JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        return prompt.Contains("@@@prompt:", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// How a list row relates to the requested label, read from its <c>all_labels</c>.
+    /// </summary>
+    static LabelState GetLabelState(JsonElement row, string label, int version)
+    {
+        if (!row.TryGetProperty("all_labels", out var allLabels) || allLabels.ValueKind != JsonValueKind.Array)
+        {
+            return LabelState.Absent;
+        }
+
+        foreach (var entry in allLabels.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object
+                || !entry.TryGetProperty("name", out var entryName) || entryName.ValueKind != JsonValueKind.String
+                || entryName.GetString() != label)
+            {
+                continue;
+            }
+
+            return entry.TryGetProperty("version", out var entryVersion)
+                && entryVersion.ValueKind == JsonValueKind.Number
+                && entryVersion.TryGetInt32(out var labelVersion)
+                && labelVersion == version
+                ? LabelState.Resolved
+                : LabelState.Moved;
+        }
+
+        return LabelState.Absent;
+    }
+
+    static PromptFetchException InvalidResponse(FetchReference reference, Exception? innerException = null)
+        => Error(reference, "invalid_response", $"PostHog returned an invalid response for {reference.Description}.", innerException: innerException);
 
     static PromptFetchException Error(
-        PromptCacheKey key,
+        FetchReference reference,
         string code,
         string message,
         HttpStatusCode? statusCode = null,
         TimeSpan? retryAfter = null,
         Exception? innerException = null)
-        => new(code, message, statusCode, retryAfter, key.Name, key.Version, key.Label, innerException);
+        => new(code, message, statusCode, retryAfter, reference.Name, reference.Version, reference.Label, innerException);
 
     static string Describe(PromptCacheKey key)
     {
@@ -428,6 +723,31 @@ internal sealed class PromptFetcher : IPostHogPrompts
     static string Capitalize(string value) => char.ToUpperInvariant(value[0]) + value.Substring(1);
 
     readonly record struct PromptCacheKey(string Name, int? Version, string? Label);
+
+    /// <summary>
+    /// What a request was for, as the error message describes it and as the exception reports it.
+    /// </summary>
+    readonly record struct FetchReference(string Description, string? Name, int? Version, string? Label)
+    {
+        public static FetchReference For(PromptCacheKey key) => new(Describe(key), key.Name, key.Version, key.Label);
+
+        public static FetchReference ForList(string? label)
+            => new(label is null ? "all prompts" : $"prompts with label \"{label}\"", null, null, label);
+    }
+
+    readonly record struct ParsedPrompt(string Prompt, string Name, int Version, string? Label, JsonElement? Config);
+
+    enum LabelState
+    {
+        /// <summary>The row is the version the label points to.</summary>
+        Resolved,
+
+        /// <summary>The prompt carries the label on another version. The label moved between the query and the response.</summary>
+        Moved,
+
+        /// <summary>The prompt does not carry the label at all. The server ignored the label parameter.</summary>
+        Absent,
+    }
 
     /// <summary>
     /// One request for a key, shared by every caller that waits for it. The request starts when the first
@@ -495,4 +815,16 @@ internal static partial class PromptFetcherLoggerExtensions
         Level = LogLevel.Warning,
         Message = "[PROMPTS] Failed to fetch {Prompt}. The cache was cleared while the request ran, so the next call sends a new request")]
     public static partial void LogWarningFailedAfterClear(this ILogger<PromptFetcher> logger, Exception exception, string prompt);
+
+    [LoggerMessage(
+        EventId = 1304,
+        Level = LogLevel.Warning,
+        Message = "[PROMPTS] Skipped {Count} prompt(s) that did not resolve label \"{Label}\": {Names}")]
+    public static partial void LogWarningSkippedMovedLabels(this ILogger<PromptFetcher> logger, int count, string label, string names);
+
+    [LoggerMessage(
+        EventId = 1305,
+        Level = LogLevel.Warning,
+        Message = "[PROMPTS] The server returned {Count} prompt(s) with unresolved references for {Reference}, so they were fetched one by one. Upgrade PostHog to get them assembled in the list request")]
+    public static partial void LogWarningUnresolvedReferences(this ILogger<PromptFetcher> logger, int count, string reference);
 }
