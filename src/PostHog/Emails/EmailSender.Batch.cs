@@ -517,7 +517,12 @@ internal sealed partial class EmailSender
                 retryAfter: reply.RetryAfter);
         }
 
-        code ??= reply.Status == HttpStatusCode.NotFound ? "not_found" : "api_error";
+        code ??= reply.Status switch
+        {
+            HttpStatusCode.NotFound => "not_found",
+            HttpStatusCode.RequestEntityTooLarge => "content_too_large",
+            _ => "api_error",
+        };
         var fix = code == "batch_unavailable"
             ? "Until batch sends are on for the project, " + SendSingly
             : Text(reply.Fields, "fix")

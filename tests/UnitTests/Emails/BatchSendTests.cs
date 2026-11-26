@@ -274,6 +274,26 @@ public class TheBatchAsyncMethod
         Assert.Equal(Enumerable.Repeat("failed", recipients), error.Results.Select(r => r.Status));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("<html>Request Entity Too Large</html>")]
+    [InlineData("""{"detail":"Too large."}""")]
+    [InlineData("""{"code":" ","detail":"Too large."}""")]
+    public async Task SaysToSplitTheBatchWhenPostHogRefusesItWithA413WithoutACode(string body)
+    {
+        await using var harness = new EmailHarness();
+        harness.Respond(HttpStatusCode.RequestEntityTooLarge, body);
+
+        var error = await Assert.ThrowsAsync<EmailBatchException>(
+            () => harness.Client.Emails.BatchAsync(Batch(Recipients(2), maxRetries: 1)));
+
+        Assert.Single(harness.Requests);
+        Assert.Equal(
+            ("content_too_large", (HttpStatusCode?)HttpStatusCode.RequestEntityTooLarge, "Split the recipients into smaller batches and send each with BatchAsync."),
+            (error.Code, error.StatusCode, error.Fix));
+        Assert.Equal(["failed", "failed"], error.Results.Select(r => r.Status));
+    }
+
     [Fact]
     public async Task ReturnsARefusalWithoutABodyAsTheErrorWithoutRetrying()
     {
@@ -388,6 +408,9 @@ public class TheBatchAsyncMethod
         { """{"status":"queued"}""", "unconfirmed", null, "api_error" },
         { "7", "unconfirmed", null, "api_error" },
         { Queued("m0"), "unconfirmed", null, "api_error" },
+        { """{"status":"error","error":{"status":400,"detail":"Bad."}}""", "unconfirmed", null, "api_error" },
+        { $$$"""{"message_id":"{{{M0}}}","status":"error","error":{"code":null,"status":422,"detail":"Bad."}}""", "unconfirmed", M0, "api_error" },
+        { """{"status":"error","error":{"code":" ","status":503}}""", "unconfirmed", null, "api_error" },
     };
 
     [Theory]
@@ -399,7 +422,7 @@ public class TheBatchAsyncMethod
 
         var result = Assert.Single((await harness.Client.Emails.BatchAsync(Batch(Recipients(1)))).Results);
 
-        Assert.Equal((status, messageId, code), (result.Status, result.MessageId, result.Error!.Code));
+        Assert.Equal((status, messageId, code, "key-0"), (result.Status, result.MessageId, result.Error!.Code, result.IdempotencyKey));
         Assert.Equal(status == "unconfirmed" ? ResendWithTheSameKey : null, result.Error.Fix);
         Assert.Equal([BatchUrl], harness.Requests.Select(r => r.Url));
     }
