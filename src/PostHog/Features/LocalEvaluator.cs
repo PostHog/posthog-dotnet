@@ -602,8 +602,9 @@ internal sealed class LocalEvaluator
                     {
                         isMatch = property.Type switch
                         {
-                            FilterType.Cohort => MatchCohort(property, distinctId, properties, absentKeys, absentKeysGroupTypeIndex),
+                            FilterType.Cohort => MatchCohort(property, distinctId, properties, absentKeys, absentKeysGroupTypeIndex, context),
                             FilterType.Flag => MatchFlagDependencyFilter(property, evaluationCache, context),
+                            FilterType.Person => MatchProperty(property, context.DistinctId, filterProperties) ?? false,
                             _ => MatchProperty(property, distinctId, filterProperties) ?? false
                         };
                     }
@@ -662,9 +663,10 @@ internal sealed class LocalEvaluator
             : ConditionMatchResult.Match;
     }
 
-    // A group filter that sets its own group type index reads that group type's properties and known-absent keys,
-    // never the condition's person or group context. Without a supplied group of that type, it has no properties,
-    // so the filter stays inconclusive with missing context.
+    // A person filter reads the person properties and person known-absent keys, also in a group condition. A group
+    // filter that sets its own group type index reads that group type's properties and known-absent keys, never the
+    // condition's person or group context. Without a supplied group of that type, it has no properties, so the filter
+    // stays inconclusive with missing context.
     (Dictionary<string, object?>? Properties, HashSet<string>? AbsentKeys, int? AbsentKeysGroupTypeIndex) ResolveFilterContext(
         PropertyFilter property,
         Dictionary<string, object?>? properties,
@@ -672,6 +674,11 @@ internal sealed class LocalEvaluator
         int? absentKeysGroupTypeIndex,
         FlagEvaluationContext context)
     {
+        if (IsPersonFilterInGroupCondition(property, absentKeysGroupTypeIndex))
+        {
+            return (context.PersonProperties, context.KnownAbsent?.Person, null);
+        }
+
         if (property is not { Type: FilterType.Group, GroupTypeIndex: { } filterGroupTypeIndex }
             || filterGroupTypeIndex == absentKeysGroupTypeIndex)
         {
@@ -686,6 +693,11 @@ internal sealed class LocalEvaluator
 
         return ([], null, filterGroupTypeIndex);
     }
+
+    // Like the flags service in PropertyContext::resolve_for_filter, a person filter or person cohort leaf in a
+    // condition aggregated on a group reads the person, not the group.
+    static bool IsPersonFilterInGroupCondition(PropertyFilter property, int? absentKeysGroupTypeIndex)
+        => property.Type is FilterType.Person && absentKeysGroupTypeIndex is not null;
 
     static string? GetMatchingVariant(LocalFeatureFlag flag, string distinctId)
     {
@@ -721,7 +733,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         Dictionary<string, object?>? propertyValues,
         HashSet<string>? absentKeys,
-        int? absentKeysGroupTypeIndex)
+        int? absentKeysGroupTypeIndex,
+        FlagEvaluationContext context)
     {
         // Cohort properties are in the form of property groups like this:
         // {
@@ -739,7 +752,7 @@ internal sealed class LocalEvaluator
                 $"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation");
         }
 
-        return MatchPropertyGroup(conditions, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex);
+        return MatchPropertyGroup(conditions, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex, context);
     }
 
     bool MatchPropertyGroup(
@@ -747,7 +760,8 @@ internal sealed class LocalEvaluator
         string distinctId,
         Dictionary<string, object?>? propertyValues,
         HashSet<string>? absentKeys,
-        int? absentKeysGroupTypeIndex)
+        int? absentKeysGroupTypeIndex,
+        FlagEvaluationContext context)
     {
         if (filterSet is null)
         {
@@ -765,16 +779,20 @@ internal sealed class LocalEvaluator
 
         foreach (var filter in filters)
         {
+            var (leafDistinctId, leafValues, leafAbsentKeys, leafAbsentKeysGroupTypeIndex) =
+                filter is PropertyFilter leaf && IsPersonFilterInGroupCondition(leaf, absentKeysGroupTypeIndex)
+                    ? (context.DistinctId, context.PersonProperties, context.KnownAbsent?.Person, (int?)null)
+                    : (distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex);
             try
             {
                 bool isMatch;
                 var negation = false;
                 if (filter is FilterSet childFilterSet)
                 {
-                    isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex);
+                    isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex, context);
                 }
                 else if (filter is PropertyFilter knownAbsentFilter
-                         && IsKnownAbsent(knownAbsentFilter, absentKeys, absentKeysGroupTypeIndex))
+                         && IsKnownAbsent(knownAbsentFilter, leafAbsentKeys, leafAbsentKeysGroupTypeIndex))
                 {
                     AssertOperatorSupported(knownAbsentFilter);
                     // The known-absent result comes before the leaf's negation, as for a present value.
@@ -783,7 +801,7 @@ internal sealed class LocalEvaluator
                 }
                 else if (filter is PropertyFilter propertyFilter)
                 {
-                    if (filter.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(propertyFilter, propertyValues))
+                    if (filter.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(propertyFilter, leafValues))
                     {
                         // Same result as MatchProperty for an absent key, without the cost of throwing for every
                         // missing filter.
@@ -799,8 +817,8 @@ internal sealed class LocalEvaluator
                     }
 
                     isMatch = filter.Type is FilterType.Cohort
-                        ? MatchCohort(propertyFilter, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex)
-                        : MatchProperty(propertyFilter, distinctId, propertyValues)
+                        ? MatchCohort(propertyFilter, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex, context)
+                        : MatchProperty(propertyFilter, leafDistinctId, leafValues)
                             ?? throw new InconclusiveMatchException(
                                 "Invalid regex cohort property requires server evaluation",
                                 UnresolvedFlagReason.UnsupportedDefinition);

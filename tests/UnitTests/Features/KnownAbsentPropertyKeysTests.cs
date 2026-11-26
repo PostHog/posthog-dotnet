@@ -511,6 +511,64 @@ public class TheLocalEvaluator
         Assert.True(result.Value);
     }
 
+    // org-person and org-cohort aggregate by organization and filter on the person plan. dependent is a person flag
+    // that depends on org-person.
+    const string OrganizationFlagsWithAPersonFilter = """
+        {"flags": [
+            {"key": "org-person", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "plan", "type": "person", "value": "pro", "operator": "exact"}
+            ], "rollout_percentage": 100}]}},
+            {"key": "org-person-not-set", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "plan", "type": "person", "operator": "is_not_set"}
+            ], "rollout_percentage": 100}]}},
+            {"key": "org-cohort", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "id", "type": "cohort", "value": 7}
+            ], "rollout_percentage": 100}]}},
+            {"key": "dependent", "active": true, "filters": {"groups": [{"properties": [
+                {"key": "org-person", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["org-person"]}
+            ], "rollout_percentage": 100}]}}
+        ],
+         "cohorts": {"7": {"type": "AND", "values": [{"type": "AND", "values": [
+            {"key": "plan", "type": "person", "value": "pro", "operator": "exact"}
+         ]}]}},
+         "group_type_mapping": {"0": "organization"}}
+        """;
+
+    [Theory]
+    [InlineData("org-person", "free", "pro", false)]
+    [InlineData("org-person", "pro", "free", true)]
+    [InlineData("org-cohort", "free", "pro", false)]
+    [InlineData("org-cohort", "pro", "free", true)]
+    [InlineData("dependent", "free", "pro", false)]
+    [InlineData("dependent", "pro", "free", true)]
+    public async Task PersonFilterInAGroupConditionReadsPersonProperties(string flagKey, string personPlan, string organizationPlan, bool expected)
+    {
+        var evaluator = await CreateEvaluatorAsync(OrganizationFlagsWithAPersonFilter);
+        var groups = new GroupCollection
+        {
+            new Group("organization", "acme", new Dictionary<string, object?> { ["plan"] = organizationPlan })
+        };
+        var personProperties = new Dictionary<string, object?> { ["plan"] = personPlan };
+
+        var result = evaluator.EvaluateFeatureFlag(flagKey, "user", groups, personProperties);
+
+        Assert.Equal(expected, result.Value);
+    }
+
+    [Fact]
+    public async Task PersonFilterInAGroupConditionReadsThePersonListing()
+    {
+        var evaluator = await CreateEvaluatorAsync(OrganizationFlagsWithAPersonFilter);
+        var groups = new GroupCollection
+        {
+            new Group("organization", "acme", new Dictionary<string, object?> { ["plan"] = "pro" })
+        };
+
+        var result = evaluator.EvaluateFeatureFlag("org-person-not-set", "user", groups, knownAbsent: Person("plan"));
+
+        Assert.True(result.Value);
+    }
+
     // org-flag aggregates by organization and depends on base-flag, which aggregates by person.
     const string GroupDependsOnPersonDefinitions = """
         {"flags": [
