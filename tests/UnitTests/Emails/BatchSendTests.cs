@@ -535,6 +535,7 @@ public class TheBatchAsyncMethod
     [InlineData("a template", HttpStatusCode.Conflict, """{"type":"invalid_request","code":"batch_unavailable","detail":"No email was sent."}""")]
     [InlineData("a template", HttpStatusCode.RequestEntityTooLarge, """{"type":"invalid_request","code":"content_too_large","detail":"Nothing was sent.","fix":"Split the recipients into smaller batches and send each with BatchAsync."}""")]
     [InlineData("a template", HttpStatusCode.RequestEntityTooLarge, "")]
+    [InlineData("a template", HttpStatusCode.BadRequest, """{"type":"invalid_request","code":"invalid_request","detail":"Bad.","why":"No email was queued."}""")]
     public async Task SaysAnEarlierAttemptMayHaveQueuedWhenPostHogRefusesTheRetry(string from, HttpStatusCode retry, string body)
     {
         var posthog = new RecordingHandler();
@@ -555,7 +556,8 @@ public class TheBatchAsyncMethod
             [("unconfirmed", "key-0", Unconfirmed, ResendWithTheSameKey), ("unconfirmed", "key-1", Unconfirmed, ResendWithTheSameKey)],
             error.Results.Select(r => (r.Status, r.IdempotencyKey, r.Error!.Message, r.Error.Fix)));
         Assert.Contains("may still go out", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotMatch("(?i)sent no|no email|nothing|split|smaller|new key|another key", error.Message + " " + error.Fix);
+        Assert.DoesNotMatch("(?i)sent no|no email|nothing|split|smaller|new key|another key", error.Message + " " + error.Fix + " " + error.Why);
+        Assert.All(error.Results, r => Assert.Null(r.Error!.Why));
         Assert.Equal(ReadEachResult, error.Fix);
         Assert.Equal(retry, Assert.IsType<EmailException>(error.InnerException!.InnerException).StatusCode);
     }
@@ -563,6 +565,7 @@ public class TheBatchAsyncMethod
     [Theory]
     [InlineData("""{"type":"invalid_request","code":"conflict","detail":"Conflict."}""")]
     [InlineData("""{"type":"invalid_request","code":"api_error","detail":"Not sent."}""")]
+    [InlineData("""{"type":"invalid_request","code":"conflict","detail":"Conflict.","why":"Nothing was sent."}""")]
     public async Task LeavesEachRecipientUnconfirmedAfterACoded409OtherThanBatchUnavailable(string body)
     {
         await using var harness = new EmailHarness();
@@ -576,7 +579,8 @@ public class TheBatchAsyncMethod
             [("unconfirmed", "key-0", Unconfirmed, ResendWithTheSameKey), ("unconfirmed", "key-1", Unconfirmed, ResendWithTheSameKey)],
             error.Results.Select(r => (r.Status, r.IdempotencyKey, r.Error!.Message, r.Error.Fix)));
         Assert.Contains("may still go out", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotMatch("(?i)not sent|nothing|no email|conflict\\.", error.Message);
+        Assert.DoesNotMatch("(?i)not sent|nothing|no email|conflict\\.", error.Message + " " + error.Why);
+        Assert.All(error.Results, r => Assert.Null(r.Error!.Why));
         Assert.Equal(ReadEachResult, error.Fix);
     }
 
