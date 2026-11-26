@@ -997,7 +997,9 @@ internal sealed class LocalEvaluator
     /// reason when local evaluation cannot use the filter, whatever the properties hold: an unknown operator, or a
     /// filter value that the operator cannot parse.
     /// </summary>
-    static void AssertFilterSupported(PropertyFilter propertyFilter)
+    // Keep the operator list in sync with the switch in MatchProperty. An operator missing here is reported as
+    // unsupported when the property is absent, and in the load-time warning.
+    void AssertFilterSupported(PropertyFilter propertyFilter)
     {
         AssertOperatorSupported(propertyFilter);
         if (propertyFilter.Value is not { } value)
@@ -1014,7 +1016,8 @@ internal sealed class LocalEvaluator
                 }
                 return;
             case ComparisonOperator.IsDateBefore or ComparisonOperator.IsDateAfter:
-                value.ParseFilterDate();
+                // Resolve it against the clock, as MatchProperty does: 1D and 3000y parse but have no date.
+                value.ResolveFilterDate(_timeProvider.GetUtcNow());
                 return;
             case ComparisonOperator.SemverEquals
                 or ComparisonOperator.SemverNotEquals

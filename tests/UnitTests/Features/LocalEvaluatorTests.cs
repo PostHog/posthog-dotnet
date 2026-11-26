@@ -881,6 +881,113 @@ public class TheEvaluateFeatureFlagMethod
         Assert.Equal(expected, result);
     }
 
+    [Theory]
+    [InlineData("2025-01-08T00:00:00Z", "1d", "2025-01-06T23:59:59Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("2025-01-08T00:00:00Z", "1d", "2025-01-07T00:00:01Z", ComparisonOperator.IsDateAfter, true)]
+    [InlineData("2025-03-31T12:00:00Z", "2m", "2025-01-28T11:59:59Z", ComparisonOperator.IsDateBefore, true)]
+    [InlineData("2025-03-31T12:00:00Z", "2m", "2025-01-29T00:00:00Z", ComparisonOperator.IsDateAfter, true)]
+    [InlineData("2025-03-31T12:00:00Z", "-2m", "2025-01-29T00:00:00Z", ComparisonOperator.IsDateBefore, false)]
+    [InlineData("2024-02-29T12:00:00Z", "-4y", "2020-02-28T18:00:00Z", ComparisonOperator.IsDateAfter, true)]
+    public void MatchesRelativeDatesWithOptionalSignAndStepwiseMonths(
+        string clock,
+        string relativeDateString,
+        string joinDate,
+        ComparisonOperator comparison,
+        bool expected)
+    {
+        var timeProvider = new FakeTimeProvider();
+        timeProvider.SetUtcNow(DateTimeOffset.Parse(clock, CultureInfo.InvariantCulture));
+        var flags = CreateFlags(
+            key: "join_date",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(relativeDateString),
+                    Operator = comparison
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags, timeProvider, NullLogger<LocalEvaluator>.Instance);
+
+        var result = localEvaluator.EvaluateFeatureFlag(
+            key: "join_date",
+            distinctId: "1234b",
+            personProperties: new Dictionary<string, object?> { ["join_date"] = joinDate });
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("-1D")]
+    [InlineData("-3000y")]
+    public void LeavesUnsupportedRelativeDatesInconclusive(string relativeDateString)
+    {
+        var timeProvider = new FakeTimeProvider();
+        timeProvider.SetUtcNow(DateTimeOffset.Parse("2025-01-08T00:00:00Z", CultureInfo.InvariantCulture));
+        var flags = CreateFlags(
+            key: "join_date",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(relativeDateString),
+                    Operator = ComparisonOperator.IsDateBefore
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags, timeProvider, NullLogger<LocalEvaluator>.Instance);
+        var personProperties = new Dictionary<string, object?> { ["join_date"] = "2025-01-01T00:00:00Z" };
+
+        Assert.Throws<InconclusiveMatchException>(() => localEvaluator.EvaluateFeatureFlag(
+            key: "join_date",
+            distinctId: "1234b",
+            personProperties: personProperties));
+        var (results, fallbackToRemote, unresolved) = localEvaluator.EvaluateAllFlags(
+            distinctId: "1234b",
+            personProperties: personProperties);
+        Assert.Empty(results);
+        Assert.True(fallbackToRemote);
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, unresolved["join_date"]);
+    }
+
+    // A relative date that never resolves is a definition the SDK can't evaluate, whether or not the person
+    // has the property, and the load-time check reports it too.
+    [Theory]
+    [InlineData("1D")]
+    [InlineData("-1D")]
+    [InlineData("3000y")]
+    [InlineData("-3000y")]
+    public void ReportsUnresolvableRelativeDatesAsUnsupportedBeforeMissingProperties(string relativeDateString)
+    {
+        var timeProvider = new FakeTimeProvider();
+        timeProvider.SetUtcNow(DateTimeOffset.Parse("2025-01-08T00:00:00Z", CultureInfo.InvariantCulture));
+        var flags = CreateFlags(
+            key: "join_date",
+            properties: [
+                new PropertyFilter
+                {
+                    Type = FilterType.Person,
+                    Key = "join_date",
+                    Value = new PropertyFilterValue(relativeDateString),
+                    Operator = ComparisonOperator.IsDateBefore
+                }
+            ]
+        );
+        var localEvaluator = new LocalEvaluator(flags, timeProvider, NullLogger<LocalEvaluator>.Instance);
+        Assert.True(localEvaluator.TryGetLocalFeatureFlag("join_date", out var flag));
+
+        var (_, fallbackToRemote, unresolved) = localEvaluator.EvaluateAllFlags(
+            distinctId: "1234b",
+            personProperties: new Dictionary<string, object?>());
+
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, localEvaluator.GetDefinitionUnresolvedReason(flag));
+        Assert.True(fallbackToRemote);
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, unresolved["join_date"]);
+    }
+
 #if !NETCOREAPP3_1
     [Theory]
     [InlineData("2024-01-21", ComparisonOperator.IsDateBefore, "-30h", false)]
