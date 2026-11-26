@@ -545,11 +545,19 @@ internal sealed class LocalEvaluator
             // a later filter can still rule the condition out or carry a higher-precedence reason.
             UnresolvedFlagReason? inconclusiveReason = null;
             RequiresServerEvaluationException? serverEvaluationException = null;
-            foreach (var property in condition.Properties)
+            foreach (var filter in condition.Properties)
             {
                 bool isMatch;
                 try
                 {
+                    if (filter is not PropertyFilter property)
+                    {
+                        // A filter type this SDK can't evaluate. Never match it against a caller property.
+                        throw new InconclusiveMatchException(
+                            $"Unsupported filter in a condition of flag {flag.Key}",
+                            UnresolvedFlagReason.UnsupportedDefinition);
+                    }
+
                     if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(property, properties))
                     {
                         // Same result as MatchProperty for an absent key, without the cost of throwing for every

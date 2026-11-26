@@ -228,8 +228,9 @@ internal record FeatureFlagGroup
 {
     /// <summary>
     /// Conditions about the user/group. (e.g. "user is in country X" or "user is in cohort Y")
+    /// A filter type this SDK can't evaluate is read as an <see cref="UnsupportedFilter"/>.
     /// </summary>
-    public IReadOnlyList<PropertyFilter>? Properties { get; init; }
+    public IReadOnlyList<Filter>? Properties { get; init; }
 
     /// <summary>
     /// Optional override to serve a specific variant to users matching this group.
@@ -464,7 +465,7 @@ internal record PropertyFilter : Filter
 /// <summary>
 /// The targeting filter types returned by the local feature flag definitions API.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumMemberNameJsonConverter<FilterType>))]
+[JsonConverter(typeof(FilterTypeJsonConverter))]
 public enum FilterType
 {
     /// <summary>
