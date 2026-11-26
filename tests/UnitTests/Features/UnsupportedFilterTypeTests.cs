@@ -110,6 +110,23 @@ public class TheUnsupportedFilterTypes
     }
 
     [Theory]
+    [InlineData("{}")]
+    [InlineData("1")]
+    [InlineData("true")]
+    [InlineData("[]")]
+    public async Task LeavesNonStringConditionFilterTypesUnresolved(string type)
+    {
+        var result = await EvaluateAsync(
+            Definitions($$$"""{"properties": [{"type": {{{type}}}, {{{CreatedAtAfter2025}}}}], "rollout_percentage": 100}"""),
+            new() { ["created_at"] = "2026-06-01" });
+
+        Assert.Null(result.Flag);
+        Assert.Equal(UnresolvedFlagReason.UnsupportedDefinition, result.UnresolvedFlags["flag"]);
+        Assert.True(result.Sibling);
+        Assert.Equal(0, result.RemoteRequests);
+    }
+
+    [Theory]
     [InlineData("2026-06-01")]
     [InlineData("2020-06-01")]
     [InlineData(null)]
