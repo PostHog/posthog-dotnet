@@ -546,9 +546,9 @@ public class TheDeserializeFromCamelCaseJsonMethod
         Assert.NotNull(dependentFlag);
         Assert.True(dependentFlag.Filters?.Groups?.Count > 0);
         Assert.True(dependentFlag.Filters?.Groups?[0].Properties?.Count > 0);
-        var property = dependentFlag.Filters?.Groups?[0].Properties?[0];
-        Assert.Equal(FilterType.Flag, property?.Type);
-        Assert.Equal(new[] { "file-previews" }, property?.DependencyChain);
+        var property = Assert.IsType<PropertyFilter>(dependentFlag.Filters?.Groups?[0].Properties?[0]);
+        Assert.Equal(FilterType.Flag, property.Type);
+        Assert.Equal(new[] { "file-previews" }, property.DependencyChain);
 
         // Verify other expected flags are present
         Assert.Contains(result.Flags, f => f.Key == "hogtied_got_character");
@@ -575,7 +575,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
         var surveyGroup = Assert.Single(survey.Filters!.Groups!);
         Assert.Equal("", surveyGroup.Variant);
         Assert.Equal(2, surveyGroup.Properties!.Count);
-        Assert.All(surveyGroup.Properties, property => Assert.Equal(ComparisonOperator.IsNotSet, property.Operator));
+        Assert.All(surveyGroup.Properties, property => Assert.Equal(ComparisonOperator.IsNotSet, Assert.IsType<PropertyFilter>(property).Operator));
 
         Assert.Equal("{\"not\": \"a\", \"secret\": {\"payload\": 42}}", result.Flags[1].Filters!.Payloads!["true"]);
         var multivariate = result.Flags[2].Filters!;
@@ -638,7 +638,7 @@ public class TheDeserializeFromCamelCaseJsonMethod
             Key = "last_seen",
             Operator = ComparisonOperator.IsNotSet
         }, properties[1]);
-        Assert.Equal(["0", "3.14"], properties[2].Value!.ListOfStrings);
+        Assert.Equal(["0", "3.14"], Assert.IsType<PropertyFilter>(properties[2]).Value!.ListOfStrings);
     }
     [Fact]
     public async Task CanDeserializeLocalEvaluationApiResultWithUnrecognizedOperator()
@@ -696,10 +696,10 @@ public class TheDeserializeFromCamelCaseJsonMethod
         Assert.Equal(2, result.Flags.Count);
         Assert.Equal(
             ComparisonOperator.Unknown,
-            result.Flags[0].Filters?.Groups?[0].Properties?[0].Operator);
+            Assert.IsType<PropertyFilter>(result.Flags[0].Filters?.Groups?[0].Properties?[0]).Operator);
         Assert.Equal(
             ComparisonOperator.ContainsIgnoreCase,
-            result.Flags[1].Filters?.Groups?[0].Properties?[0].Operator);
+            Assert.IsType<PropertyFilter>(result.Flags[1].Filters?.Groups?[0].Properties?[0]).Operator);
     }
 
     [Fact]

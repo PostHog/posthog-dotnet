@@ -10,12 +10,23 @@ internal class FilterJsonConverter : JsonConverter<Filter>
     {
         using var document = JsonDocument.ParseValue(ref reader);
         var filterElement = document.RootElement;
-        var type = filterElement.GetProperty("type").GetString();
-
-        return type switch
+        // Older definitions omit the type, or send null or an empty string, for a person filter.
+        if (!filterElement.TryGetProperty("type", out var typeElement) || typeElement.ValueKind is JsonValueKind.Null)
         {
-            "person" or "group" or "cohort" or "flag" => filterElement.Deserialize<PropertyFilter>(options),
-            "AND" or "OR" => filterElement.Deserialize<FilterSet>(options),
+            return filterElement.Deserialize<PropertyFilter>(options);
+        }
+
+        if (typeElement.ValueKind is not JsonValueKind.String)
+        {
+            return new UnsupportedFilter(filterElement.Clone());
+        }
+
+        return typeElement.GetString() switch
+        {
+            "" or "person" or "group" or "cohort" or "flag" => filterElement.Deserialize<PropertyFilter>(options),
+            // A group without a values array can't be read as a group, so it stays unsupported for its flag only.
+            "AND" or "OR" when filterElement.TryGetProperty("values", out var values) && values.ValueKind is JsonValueKind.Array
+                => filterElement.Deserialize<FilterSet>(options),
             _ => new UnsupportedFilter(filterElement.Clone())
         };
     }
