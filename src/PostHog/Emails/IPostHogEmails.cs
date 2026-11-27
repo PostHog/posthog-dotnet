@@ -1,7 +1,7 @@
 namespace PostHog.Emails;
 
 /// <summary>
-/// Sends transactional email, from email templates made in PostHog or from content your code rendered, and reads
+/// Sends email, from email templates made in PostHog or from content your code rendered, and reads
 /// the status of each email it sent. Reach it through <see cref="PostHogClient.Emails"/>, or inject it when you
 /// register PostHog with <c>AddPostHog</c>.
 /// </summary>

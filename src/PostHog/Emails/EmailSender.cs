@@ -863,6 +863,13 @@ internal sealed class EmailSender : IPostHogEmails
                 nameof(email));
         }
 
+        if (email.Category is not null && string.IsNullOrWhiteSpace(email.Category))
+        {
+            throw new ArgumentException(
+                "Category must be the key of a message category, such as newsletter. Leave it null to leave it out.",
+                nameof(email));
+        }
+
         var hashed = email.Attachments is { Count: > 0 } files
             ? HashedAttachments.Hash(files, email.Subject, email.Html, email.Text)
             : HashedAttachments.None;
@@ -905,6 +912,11 @@ internal sealed class EmailSender : IPostHogEmails
         if (hashed.Files.Count > 0)
         {
             body["attachments"] = hashed.Files.Select(ReferenceBody).ToList();
+        }
+
+        if (email.Category is not null)
+        {
+            body["category"] = email.Category;
         }
 
         if (email.CaptureEngagementIfSet is { } captureEngagement)

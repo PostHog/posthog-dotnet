@@ -1,7 +1,7 @@
 namespace PostHog.Emails;
 
 /// <summary>
-/// One transactional email to send with <see cref="IPostHogEmails.SendAsync"/>. Pass a
+/// One email to send with <see cref="IPostHogEmails.SendAsync"/>. Pass a
 /// <see cref="SendTemplateEmailOptions"/> to send a template made in PostHog, or a
 /// <see cref="SendCodeEmailOptions"/> to send content your code rendered.
 /// </summary>
@@ -152,6 +152,20 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     /// <see cref="SendTemplateEmailOptions"/> doesn't take it.
     /// </remarks>
     public EmailTracking? Tracking { get; init; }
+
+    /// <summary>
+    /// The key of one of the project's message categories, such as <c>newsletter</c>, for the email your code
+    /// rendered. Left unset, the send doesn't include it.
+    /// </summary>
+    /// <remarks>
+    /// A marketing category skips recipients who opted out of it or of all marketing email, fills
+    /// <c>{{ unsubscribe_url }}</c> in <see cref="Html"/> and <see cref="Text"/> with the recipient's preferences link,
+    /// and adds List-Unsubscribe headers. A marketing email can't have <see cref="Cc"/> or <see cref="Bcc"/>. PostHog
+    /// refuses the send with status 400 and an <see cref="EmailException.Code"/> of <c>category_not_found</c> when the
+    /// project has no category with that key, and <c>marketing_copies_unsupported</c> when a marketing email has copies.
+    /// A template made in PostHog carries its own category, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
+    /// </remarks>
+    public string? Category { get; init; }
 
     /// <summary>
     /// Whether PostHog captures the email's engagement events (sent, delivered, opened, clicked, bounced) as events

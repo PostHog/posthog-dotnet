@@ -70,6 +70,8 @@ PostHog.Emails.SendCodeEmailOptions.Cc.get -> System.Collections.Generic.IReadOn
 PostHog.Emails.SendCodeEmailOptions.Cc.init -> void
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.get -> bool
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.init -> void
+PostHog.Emails.SendCodeEmailOptions.Category.get -> string?
+PostHog.Emails.SendCodeEmailOptions.Category.init -> void
 PostHog.Emails.SendCodeEmailOptions.From.get -> string?
 PostHog.Emails.SendCodeEmailOptions.From.init -> void
 PostHog.Emails.SendCodeEmailOptions.Html.get -> string?
