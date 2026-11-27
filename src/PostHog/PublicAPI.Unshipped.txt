@@ -61,19 +61,6 @@ PostHog.Emails.EmailTracking.Engagement.get -> bool?
 PostHog.Emails.EmailTracking.Engagement.init -> void
 PostHog.Emails.EmailTracking.Opens.get -> bool?
 PostHog.Emails.EmailTracking.Opens.init -> void
-PostHog.Emails.MessageCategory
-PostHog.Emails.MessageCategory.Description.get -> string?
-PostHog.Emails.MessageCategory.Description.init -> void
-PostHog.Emails.MessageCategory.Key.get -> string!
-PostHog.Emails.MessageCategory.Key.init -> void
-PostHog.Emails.MessageCategory.MessageCategory() -> void
-PostHog.Emails.MessageCategory.Name.get -> string!
-PostHog.Emails.MessageCategory.Name.init -> void
-PostHog.Emails.MessageCategory.Type.get -> PostHog.Emails.MessageCategoryType
-PostHog.Emails.MessageCategory.Type.init -> void
-PostHog.Emails.MessageCategoryType
-PostHog.Emails.MessageCategoryType.Marketing = 0 -> PostHog.Emails.MessageCategoryType
-PostHog.Emails.MessageCategoryType.Transactional = 1 -> PostHog.Emails.MessageCategoryType
 PostHog.Emails.SendCodeEmailOptions
 PostHog.Emails.SendCodeEmailOptions.Attachments.get -> System.Collections.Generic.IReadOnlyList<PostHog.Emails.EmailAttachment!>?
 PostHog.Emails.SendCodeEmailOptions.Attachments.init -> void
@@ -83,7 +70,7 @@ PostHog.Emails.SendCodeEmailOptions.Cc.get -> System.Collections.Generic.IReadOn
 PostHog.Emails.SendCodeEmailOptions.Cc.init -> void
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.get -> bool
 PostHog.Emails.SendCodeEmailOptions.CaptureEngagement.init -> void
-PostHog.Emails.SendCodeEmailOptions.Category.get -> PostHog.Emails.MessageCategory?
+PostHog.Emails.SendCodeEmailOptions.Category.get -> string?
 PostHog.Emails.SendCodeEmailOptions.Category.init -> void
 PostHog.Emails.SendCodeEmailOptions.From.get -> string?
 PostHog.Emails.SendCodeEmailOptions.From.init -> void
@@ -209,6 +196,5 @@ static PostHog.Emails.EmailTracking.All.get -> PostHog.Emails.EmailTracking!
 static PostHog.Emails.EmailTracking.FromBoolean(bool all) -> PostHog.Emails.EmailTracking!
 static PostHog.Emails.EmailTracking.implicit operator PostHog.Emails.EmailTracking!(bool all) -> PostHog.Emails.EmailTracking!
 static PostHog.Emails.EmailTracking.None.get -> PostHog.Emails.EmailTracking!
-static PostHog.Emails.MessageCategory.Transactional.get -> PostHog.Emails.MessageCategory!
 static PostHog.Features.UnresolvedFlagReasonExtensions.ToValueString(this PostHog.Features.UnresolvedFlagReason reason) -> string!
 static PostHog.PromptsExtensions.ClearCache(this PostHog.Prompts.IPostHogPrompts! prompts, string? name = null, int? version = null) -> void

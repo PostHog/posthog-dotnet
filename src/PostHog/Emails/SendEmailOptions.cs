@@ -154,51 +154,18 @@ public sealed class SendCodeEmailOptions : SendEmailOptions
     public EmailTracking? Tracking { get; init; }
 
     /// <summary>
-    /// The message category to send the email in. Without it, PostHog sends the email in the transactional category
-    /// of the template that <see cref="TemplateKey"/> names (when code-send categories are enabled for the project),
-    /// or as transactional with no category when no template has that key. <see cref="MessageCategory.Transactional"/>
-    /// sends it as transactional with no category.
+    /// The key of one of the project's message categories, such as <c>newsletter</c>, for the email your code
+    /// rendered. Left unset, the send doesn't include it.
     /// </summary>
     /// <remarks>
-    /// Requires a PostHog server with code-send category support: requests that reach the send endpoint on older
-    /// servers fail with HTTP 400 naming the first unknown field the server finds (which can be another newer field
-    /// such as <c>bcc</c> rather than <c>category</c>), while a send with <see cref="Attachments"/> to a server
-    /// without the upload route stops at HTTP 404 <c>not_found</c> on <c>attachments</c> before submitting the email
-    /// body. On a compatible server,
-    /// <see cref="MessageCategory.Transactional"/> works even when code-send categories are disabled for the project;
-    /// enabling code-send categories for the project gates named <see cref="MessageCategory"/> objects (otherwise
-    /// PostHog refuses them with <c>categories_not_enabled</c>) and template-category inheritance when
-    /// <see cref="Category"/> is omitted.
-    /// An email in a marketing category honors the recipient's opt-outs. Its <see cref="Html"/> needs a clickable
-    /// <c>&lt;a href="{{ unsubscribe_url }}"&gt;</c> link, and its <see cref="Text"/>, when it has no
-    /// <see cref="Html"/>, needs the <c>{{ unsubscribe_url }}</c> placeholder. PostHog replaces it with the
-    /// recipient's preferences link.
-    /// Among template sendability and category checks, a named <see cref="MessageCategory"/> fails with
-    /// <c>categories_not_enabled</c> first when code-send categories are disabled for the project. Otherwise, when
-    /// <see cref="TemplateKey"/> resolves to a saved template, PostHog refuses a sensitive template when
-    /// <see cref="Sensitive"/> is <c>false</c> (<c>sensitive_template</c>) first, then refuses a saved push template
-    /// with <c>template_not_sendable</c>; for a saved email template, PostHog checks whether it is enabled for
-    /// transactional sends (<c>template_not_transactional</c> otherwise) before checking whether it is in a marketing
-    /// category (<c>marketing_template</c>) or comparing categories.
-    /// PostHog refuses the send with status 400 and an <see cref="EmailException.Code"/> of <c>category_mismatch</c>
-    /// when the key names a category of the other type, or when <see cref="TemplateKey"/> names a template in another
-    /// category, including <see cref="MessageCategory.Transactional"/> for a template in a category;
-    /// <c>too_many_categories</c> when it would create a new category or restore an archived category past the
-    /// project's active-category limit; and, for an email in a marketing category whose <see cref="TemplateKey"/>
-    /// names no template, <c>unsubscribe_link_required</c> without that link or placeholder, <c>copies_not_allowed</c>
-    /// when it has <see cref="Cc"/> or <see cref="Bcc"/>, or <c>workflow_can_wait</c> on a verified sender (preceded by
-    /// <c>workflow_shape_not_supported</c> if an existing code-send workflow for <see cref="TemplateKey"/> has an
-    /// unsupported shape, such as an extra reachable step) or <c>sandbox_fields_unsupported</c> on <c>attachments</c>
-    /// when using the PostHog test sender and the email has <see cref="Attachments"/> (marketing code sends cannot
-    /// carry attachments because marketing sending limits can hold delivery; the client first asks PostHog which
-    /// attachments it lacks, uploads only those, and prevents the send on a terminal upload or storage error after
-    /// retries are exhausted or when the error is not retryable, before submitting the send for PostHog to refuse). It
-    /// refuses the send with status 422 and <c>recipient_opted_out</c> when the recipient opted out of the category or
-    /// of all marketing (if preference lookups fail, in either synchronous or async admission mode, or if async
-    /// admission checks exceed the admission budget, PostHog may still accept the send and defer the preference check
-    /// to the delivery worker).
+    /// A marketing category skips recipients who opted out of it or of all marketing email, fills
+    /// <c>{{ unsubscribe_url }}</c> in <see cref="Html"/> and <see cref="Text"/> with the recipient's preferences link,
+    /// and adds List-Unsubscribe headers. A marketing email can't have <see cref="Cc"/> or <see cref="Bcc"/>. PostHog
+    /// refuses the send with status 400 and an <see cref="EmailException.Code"/> of <c>category_not_found</c> when the
+    /// project has no category with that key, and <c>marketing_copies_unsupported</c> when a marketing email has copies.
+    /// A template made in PostHog carries its own category, so <see cref="SendTemplateEmailOptions"/> doesn't take it.
     /// </remarks>
-    public MessageCategory? Category { get; init; }
+    public string? Category { get; init; }
 
     /// <summary>
     /// Whether PostHog captures the email's engagement events (sent, delivered, opened, clicked, bounced) as events
