@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using PostHog.Json;
 // System.Text.Json 9+ ships its own JsonStringEnumMemberNameAttribute. Bind to PostHog's,
 // which JsonStringEnumMemberNameJsonConverter reads and which is shipped public API.
@@ -188,6 +189,27 @@ internal record FeatureFlagFilters
     public bool? EarlyExit { get; init; } = false;
 
     /// <summary>
+    /// The flag's holdout, like <c>{"id": 42, "exclusion_percentage": 10}</c>. Kept as raw JSON so a malformed
+    /// holdout counts as no holdout instead of failing the definitions. Local evaluation only reads
+    /// <c>exclusion_percentage</c>, see <see cref="HoldoutExclusionPercentage"/>.
+    /// </summary>
+    [JsonPropertyName("holdout")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Holdout { get; init; }
+
+    /// <summary>
+    /// The holdout's <c>exclusion_percentage</c>, or <c>null</c> when the flag has no holdout or it is malformed.
+    /// </summary>
+    [JsonIgnore]
+    public double? HoldoutExclusionPercentage =>
+        Holdout is { ValueKind: JsonValueKind.Object } holdout
+        && holdout.TryGetProperty("exclusion_percentage", out var percentage)
+        && percentage.ValueKind == JsonValueKind.Number
+        && percentage.TryGetDouble(out var value)
+            ? value
+            : null;
+
+    /// <summary>
     /// Compares this instance to another <see cref="FeatureFlagFilters"/> for equality.
     /// </summary>
     /// <remarks>
@@ -245,10 +267,40 @@ internal record FeatureFlagGroup
     /// <summary>
     /// Optional per-condition aggregation override used by mixed-targeting flags.
     /// When set, this condition targets the specified group type instead of the
-    /// flag-level aggregation. Null means person targeting under a mixed flag.
+    /// flag-level aggregation. An explicit null means person targeting, even under a group flag. See
+    /// <see cref="HasAggregationGroupTypeIndex"/>.
     /// </summary>
+    /// <remarks>
+    /// Not written when null, so a condition that omits it keeps the flag-level aggregation after a round trip. An
+    /// explicit null is not written either. The SDK only reads definitions, so only tests serialize them.
+    /// </remarks>
     [JsonPropertyName("aggregation_group_type_index")]
-    public int? AggregationGroupTypeIndex { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AggregationGroupTypeIndex
+    {
+        get => _aggregationGroupTypeIndex;
+        init
+        {
+            _aggregationGroupTypeIndex = value;
+            HasAggregationGroupTypeIndex = true;
+        }
+    }
+
+    readonly int? _aggregationGroupTypeIndex;
+
+    /// <summary>
+    /// Whether the condition sets <see cref="AggregationGroupTypeIndex"/>, also to null. The JSON reader sets it
+    /// for an explicit null too, so an omitted value (use the flag-level aggregation) differs from null (person).
+    /// </summary>
+    [JsonIgnore]
+    public bool HasAggregationGroupTypeIndex { get; private init; }
+
+    /// <summary>
+    /// The aggregation this condition uses: its own when set, also when set to null, otherwise the flag-level one.
+    /// </summary>
+    /// <param name="flagAggregation">The flag-level aggregation group type index.</param>
+    public int? EffectiveAggregation(int? flagAggregation)
+        => HasAggregationGroupTypeIndex ? AggregationGroupTypeIndex : flagAggregation;
 
     /// <summary>
     /// Compares this instance to another <see cref="FeatureFlagGroup"/> for equality.
@@ -271,7 +323,8 @@ internal record FeatureFlagGroup
                 || (Properties is not null && other.Properties is not null && Properties.SequenceEqual(other.Properties)))
                && Variant == other.Variant
                && RolloutPercentage == other.RolloutPercentage
-               && AggregationGroupTypeIndex == other.AggregationGroupTypeIndex;
+               && AggregationGroupTypeIndex == other.AggregationGroupTypeIndex
+               && HasAggregationGroupTypeIndex == other.HasAggregationGroupTypeIndex;
     }
 
     /// <summary>

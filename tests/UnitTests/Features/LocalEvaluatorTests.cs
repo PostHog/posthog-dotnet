@@ -3935,3 +3935,151 @@ public class TheNumericBoundaryOverrides
         Assert.Equal(true, Evaluate(ComparisonOperator.LessThan, "0", -1f));
     }
 }
+
+// A flag_evaluates_to dependency is evaluated like a standalone flag with the same top-level inputs, using its own
+// aggregation, properties and bucketing identifier (PostHog/sdk-specs#250).
+public class TheFlagDependencyContext
+{
+    static LocalEvaluator CreateEvaluator(string flags) =>
+        new(JsonSerializer.Deserialize<LocalEvaluationApiResult>(
+            $$$"""{"flags": [{{{flags}}}], "group_type_mapping": {"0": "organization"}}""",
+            JsonSerializerHelper.Options)!);
+
+    static string DependentFlag(string key, string parentKey, string aggregation) => $$$"""
+        {"key": "{{{key}}}", "active": true, "filters": {{{{aggregation}}}"groups": [{"properties": [
+            {"key": "{{{parentKey}}}", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["{{{parentKey}}}"]}
+        ], "rollout_percentage": 100}]}}
+        """;
+
+    const string OrgAggregation = "\"aggregation_group_type_index\": 0, ";
+
+    static GroupCollection Org(string key, string region) =>
+        new() { new Group("organization", key, new Dictionary<string, object?> { ["region"] = region }) };
+
+    [Fact]
+    public void PersonFlagDependingOnAnOrganizationFlagReadsTheOrganizationProperties()
+    {
+        var evaluator = CreateEvaluator($$$"""
+            {"key": "org-parent", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "region", "type": "group", "group_type_index": 0, "value": "us", "operator": "exact"}
+            ], "rollout_percentage": 100}]}},
+            {{{DependentFlag("person-child", "org-parent", "")}}}
+            """);
+        var personProperties = new Dictionary<string, object?> { ["region"] = "us" };
+
+        Assert.False(evaluator.EvaluateFeatureFlag("org-parent", "user", Org("acme", "eu"), personProperties).Value);
+        Assert.False(evaluator.EvaluateFeatureFlag("person-child", "user", Org("acme", "eu"), personProperties).Value);
+    }
+
+    [Fact]
+    public void OrganizationFlagDependencyWithoutItsGroupIsFalse()
+    {
+        var evaluator = CreateEvaluator($$$"""
+            {"key": "org-parent", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [{"properties": [
+                {"key": "tier", "type": "group", "group_type_index": 0, "operator": "is_not_set"}
+            ], "rollout_percentage": 100}]}},
+            {{{DependentFlag("person-child", "org-parent", "")}}}
+            """);
+        var knownAbsent = KnownAbsentPropertyKeys.Create(new AllFeatureFlagsOptions
+        {
+            GroupPropertyKeysKnownAbsent = new Dictionary<string, IReadOnlyCollection<string>> { ["organization"] = ["tier"] }
+        });
+
+        Assert.False(evaluator.EvaluateFeatureFlag("org-parent", "user", knownAbsent: knownAbsent).Value);
+        Assert.False(evaluator.EvaluateFeatureFlag("person-child", "user", knownAbsent: knownAbsent).Value);
+    }
+
+    [Fact]
+    public void OrganizationFlagDependingOnAPersonFlagReadsThePersonProperties()
+    {
+        var evaluator = CreateEvaluator($$$"""
+            {"key": "person-parent", "active": true, "filters": {"groups": [{"properties": [
+                {"key": "region", "type": "person", "value": "us", "operator": "exact"}
+            ], "rollout_percentage": 100}]}},
+            {{{DependentFlag("org-child", "person-parent", OrgAggregation)}}}
+            """);
+        var personProperties = new Dictionary<string, object?> { ["region"] = "us" };
+
+        Assert.True(evaluator.EvaluateFeatureFlag("person-parent", "user", Org("acme", "eu"), personProperties).Value);
+        Assert.True(evaluator.EvaluateFeatureFlag("org-child", "user", Org("acme", "eu"), personProperties).Value);
+    }
+
+    [Fact]
+    public void DependencySharedByConditionsOfDifferentGroupTypesHasOneResult()
+    {
+        // Both conditions depend on person-parent. The evaluation cache is keyed by flag key, so the first condition's
+        // dependency result is reused by the second. That holds because the dependency reads the person context in
+        // both conditions, not the condition's group.
+        var evaluator = new LocalEvaluator(JsonSerializer.Deserialize<LocalEvaluationApiResult>(
+            """
+            {"flags": [
+                {"key": "person-parent", "active": true, "filters": {"groups": [{"properties": [
+                    {"key": "region", "type": "person", "value": "us", "operator": "exact"}
+                ], "rollout_percentage": 100}]}},
+                {"key": "mixed-child", "active": true, "filters": {"groups": [
+                    {"aggregation_group_type_index": 0, "properties": [
+                        {"key": "person-parent", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["person-parent"]}
+                    ], "rollout_percentage": 100},
+                    {"aggregation_group_type_index": 1, "properties": [
+                        {"key": "person-parent", "type": "flag", "value": true, "operator": "flag_evaluates_to", "dependency_chain": ["person-parent"]}
+                    ], "rollout_percentage": 100}
+                ]}}
+            ],
+             "group_type_mapping": {"0": "organization", "1": "project"}}
+            """,
+            JsonSerializerHelper.Options)!);
+        var groups = new GroupCollection
+        {
+            new Group("organization", "acme", new Dictionary<string, object?> { ["region"] = "eu" }),
+            new Group("project", "web", new Dictionary<string, object?> { ["region"] = "us" })
+        };
+        var personProperties = new Dictionary<string, object?> { ["region"] = "us" };
+
+        Assert.True(evaluator.EvaluateFeatureFlag("mixed-child", "user", groups, personProperties).Value);
+    }
+
+    [Fact]
+    public void OrganizationFlagDependencyBucketsByTheGroupKey()
+    {
+        var evaluator = CreateEvaluator($$$"""
+            {"key": "org-parent", "active": true, "filters": {"aggregation_group_type_index": 0, "groups": [
+                {"properties": [], "rollout_percentage": 50}
+            ]}},
+            {{{DependentFlag("person-child", "org-parent", "")}}}
+            """);
+
+        var parentResults = new HashSet<bool>();
+        for (var i = 0; i < 50; i++)
+        {
+            var groups = Org($"org-{i}", "eu");
+            var parent = evaluator.EvaluateFeatureFlag("org-parent", $"user-{i}", groups).Value;
+            var child = evaluator.EvaluateFeatureFlag("person-child", $"user-{i}", groups).Value;
+            Assert.Equal(parent, child);
+            parentResults.Add(parent == true);
+        }
+        Assert.Equal(2, parentResults.Count);
+    }
+
+    [Fact]
+    public void PersonFlagDependencyOfAnOrganizationFlagBucketsByTheDistinctId()
+    {
+        var evaluator = CreateEvaluator($$$"""
+            {"key": "person-parent", "active": true, "filters": {"groups": [
+                {"properties": [], "rollout_percentage": 50}
+            ]}},
+            {{{DependentFlag("org-child", "person-parent", OrgAggregation)}}}
+            """);
+
+        var parentResults = new HashSet<bool>();
+        for (var i = 0; i < 50; i++)
+        {
+            // A fixed group key makes the old behavior, bucketing the person dependency by the group key, visible.
+            var groups = Org("acme", "eu");
+            var parent = evaluator.EvaluateFeatureFlag("person-parent", $"user-{i}", groups).Value;
+            var child = evaluator.EvaluateFeatureFlag("org-child", $"user-{i}", groups).Value;
+            Assert.Equal(parent, child);
+            parentResults.Add(parent == true);
+        }
+        Assert.Equal(2, parentResults.Count);
+    }
+}

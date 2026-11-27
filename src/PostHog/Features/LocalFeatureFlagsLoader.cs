@@ -293,7 +293,7 @@ internal static partial class LocalFeatureFlagsLoaderLoggerExtensions
         EventId = 503,
         Level = LogLevel.Warning,
         Message = "[FEATURE FLAGS] You are using local evaluation but {Count} flag(s) use something local evaluation "
-                  + "does not support, such as a static cohort, an unknown operator, or a missing or circular flag "
+                  + "does not support, such as a holdout, a static cohort, an unknown operator, or a missing or circular flag "
                   + "dependency (reason: unsupported_definition): {FlagKeys}. Evaluating these flags falls back to a "
                   + "server request when evaluation reaches that part, or leaves them unresolved when "
                   + "OnlyEvaluateLocally is true. To evaluate them locally, change these flags in PostHog or upgrade "

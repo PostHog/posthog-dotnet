@@ -103,13 +103,15 @@ internal sealed class LocalEvaluator
     /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
     /// <param name="personProperties">Optional: What person properties are known. Used to compute flags locally.</param>
     /// <param name="warnOnUnknownGroups">Whether to log a warning if the feature flag relies on a group type that's not in the supplied groups.</param>
+    /// <param name="knownAbsent">Optional: The person and group property keys known absent.</param>
     /// <returns></returns>
     public StringOrValue<bool> EvaluateFeatureFlag(
         string key,
         string distinctId,
         GroupCollection? groups = null,
         Dictionary<string, object?>? personProperties = null,
-        bool warnOnUnknownGroups = true)
+        bool warnOnUnknownGroups = true,
+        KnownAbsentPropertyKeys? knownAbsent = null)
     {
         var flagToEvaluate = LocalEvaluationApiResult.Flags.SingleOrDefault(f => f.Key == key);
         if (flagToEvaluate is null)
@@ -122,7 +124,8 @@ internal sealed class LocalEvaluator
             distinctId,
             groups: groups ?? [],
             personProperties ?? [],
-            warnOnUnknownGroups);
+            warnOnUnknownGroups,
+            knownAbsent);
     }
 
     /// <summary>
@@ -137,7 +140,8 @@ internal sealed class LocalEvaluator
         GroupCollection? groups = null,
         Dictionary<string, object?>? personProperties = null,
         bool warnOnUnknownGroups = true,
-        IReadOnlyCollection<string>? flagKeysToEvaluate = null)
+        IReadOnlyCollection<string>? flagKeysToEvaluate = null,
+        KnownAbsentPropertyKeys? knownAbsent = null)
     {
         Dictionary<string, FeatureFlag> results = new();
         Dictionary<string, UnresolvedFlagReason> unresolved = new(StringComparer.Ordinal);
@@ -165,7 +169,8 @@ internal sealed class LocalEvaluator
                     distinctId,
                     groups ?? [],
                     personProperties ?? [],
-                    warnOnUnknownGroups);
+                    warnOnUnknownGroups,
+                    knownAbsent);
 
                 results[flag.Key] = FeatureFlag.CreateFromLocalEvaluation(flag.Key, flagValue, flag, _logger);
             }
@@ -214,6 +219,11 @@ internal sealed class LocalEvaluator
 
         if (flag.Filters?.AggregationGroupTypeIndex is { } aggregationGroupIndex
             && !_groupTypeMapping.ContainsKey(aggregationGroupIndex))
+        {
+            return UnresolvedFlagReason.UnsupportedDefinition;
+        }
+
+        if (flag.Filters?.HoldoutExclusionPercentage > 0)
         {
             return UnresolvedFlagReason.UnsupportedDefinition;
         }
@@ -297,22 +307,39 @@ internal sealed class LocalEvaluator
         string distinctId,
         GroupCollection groups,
         Dictionary<string, object?> personProperties,
-        bool warnOnUnknownGroups = true)
+        bool warnOnUnknownGroups = true,
+        KnownAbsentPropertyKeys? knownAbsent = null)
     {
         return ComputeFlagLocallyWithCache(
             flag,
             distinctId,
             groups,
             personProperties,
+            knownAbsent,
             new Dictionary<string, StringOrValue<bool>>(),
             warnOnUnknownGroups);
     }
+
+    // The inputs of a top-level flag evaluation. Flag dependencies are evaluated from them, not from the calling
+    // condition's bucketing identifier and properties. The evaluation cache is keyed by flag key, which holds because
+    // every flag resolves to one value for the same inputs.
+    readonly record struct FlagEvaluationContext(
+        string DistinctId,
+        GroupCollection Groups,
+        Dictionary<string, object?> PersonProperties,
+        KnownAbsentPropertyKeys? KnownAbsent);
+
+    // An empty or null group key counts as no group key, as in the flags service: the group is never used for
+    // aggregation or bucketing.
+    static bool TryGetUsableGroup(GroupCollection groups, string groupType, [NotNullWhen(returnValue: true)] out Group? group)
+        => groups.TryGetGroup(groupType, out group) && !string.IsNullOrEmpty(group.GroupKey);
 
     StringOrValue<bool> ComputeFlagLocallyWithCache(
         LocalFeatureFlag flag,
         string distinctId,
         GroupCollection groups,
         Dictionary<string, object?> personProperties,
+        KnownAbsentPropertyKeys? knownAbsent,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
         bool warnOnUnknownGroups = true)
     {
@@ -338,18 +365,9 @@ internal sealed class LocalEvaluator
 
         var filters = flag.Filters;
         var aggregationGroupIndex = filters?.AggregationGroupTypeIndex;
+        var context = new FlagEvaluationContext(distinctId, groups, personProperties, knownAbsent);
 
-        StringOrValue<bool> flagResult;
-        if (!aggregationGroupIndex.HasValue)
-        {
-            flagResult = MatchFeatureFlagProperties(
-                flag,
-                distinctId,
-                personProperties,
-                evaluationCache,
-                groups);
-        }
-        else
+        if (aggregationGroupIndex.HasValue)
         {
             if (!_groupTypeMapping.TryGetValue(aggregationGroupIndex.Value, out var groupType))
             {
@@ -360,18 +378,17 @@ internal sealed class LocalEvaluator
                     UnresolvedFlagReason.UnsupportedDefinition);
             }
 
-            if (groups.TryGetGroup(groupType, out var group))
+            if (!TryGetUsableGroup(groups, groupType, out _))
             {
-                flagResult = MatchFeatureFlagProperties(
-                    flag,
-                    group.GroupKey,
-                    group.Properties,
-                    evaluationCache,
-                    groups);
-            }
-            else
-            {
-                // Don't failover to `/flags`, since response will be the same
+                // The flags service evaluates a holdout before the conditions and buckets it by the flag-level group
+                // key. Without one it hashes an empty identifier and may hold the flag out, so only it can answer.
+                if (filters?.HoldoutExclusionPercentage > 0)
+                {
+                    throw new InconclusiveMatchException(
+                        $"Flag \"{flag.Key}\" has a holdout but no usable {groupType} group key",
+                        UnresolvedFlagReason.MissingContext);
+                }
+
                 if (warnOnUnknownGroups)
                 {
                     _logger.LogWarnGroupTypeNotPassedIn(flag.Key);
@@ -380,21 +397,29 @@ internal sealed class LocalEvaluator
                 {
                     _logger.LogDebugGroupTypeNotPassedIn(flag.Key);
                 }
-
-                flagResult = false;
             }
         }
 
+        // The SDK does not evaluate holdouts, so only the flags service can answer for a flag with one. A flag-level
+        // group without a usable key reports missing_context above instead.
+        if (filters?.HoldoutExclusionPercentage > 0)
+        {
+            throw new InconclusiveMatchException(
+                $"Flag \"{flag.Key}\" has a holdout, which local evaluation does not support",
+                UnresolvedFlagReason.UnsupportedDefinition);
+        }
+
+        // Each condition resolves its own aggregation. Conditions on a group without a usable key are skipped, and
+        // the other conditions still decide the flag, as in the flags service.
+        var flagResult = MatchFeatureFlagProperties(flag, evaluationCache, context);
         evaluationCache[flag.Key] = flagResult;
         return flagResult;
     }
 
     StringOrValue<bool> MatchFeatureFlagProperties(
         LocalFeatureFlag flag,
-        string distinctId,
-        Dictionary<string, object?>? properties, /* person or group properties */
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups = null)
+        FlagEvaluationContext context)
     {
         var filters = flag.Filters;
         var flagConditions = filters?.Groups ?? [];
@@ -405,38 +430,44 @@ internal sealed class LocalEvaluator
 
         foreach (var condition in flagConditions)
         {
-            // Per-condition aggregation overrides only when the condition explicitly
-            // sets its own AggregationGroupTypeIndex (mixed targeting). When absent,
-            // fall back to the flag-level aggregation so existing pure person and
-            // pure group flags keep their original behavior.
-            var conditionAggregation = condition.AggregationGroupTypeIndex ?? flagAggregation;
+            // A condition uses its own aggregation when it sets one, also an explicit null (person), otherwise the
+            // flag-level aggregation, as in the flags service.
+            var conditionAggregation = condition.EffectiveAggregation(flagAggregation);
 
-            var effectiveProperties = properties;
-            var effectiveBucketingId = distinctId;
-
-            // The condition explicitly sets its own aggregation, different from the
-            // flag level. Re-resolve properties and bucketing id from the condition's
-            // group so this condition evaluates against that group.
-            // conditionAggregation is non-null here: if it were null and flagAggregation
-            // were also null they'd be equal, and the only way conditionAggregation can
-            // be null at all (after the ?? above) is that case.
-            if (conditionAggregation != flagAggregation)
+            Dictionary<string, object?>? effectiveProperties;
+            HashSet<string>? effectiveAbsentKeys;
+            string effectiveBucketingId;
+            if (conditionAggregation is null)
             {
-                if (!_groupTypeMapping.TryGetValue(conditionAggregation!.Value, out var groupType)
-                    || groups is null
-                    || !groups.TryGetGroup(groupType, out var group))
-                {
-                    // Skip this condition: group type unknown or not passed in.
-                    continue;
-                }
+                effectiveProperties = context.PersonProperties;
+                effectiveAbsentKeys = context.KnownAbsent?.Person;
+                effectiveBucketingId = context.DistinctId;
+            }
+            else if (!_groupTypeMapping.TryGetValue(conditionAggregation.Value, out var groupType)
+                     || !TryGetUsableGroup(context.Groups, groupType, out var group))
+            {
+                // Skip this condition: group type unknown, not passed in, or passed in without a usable key.
+                continue;
+            }
+            else
+            {
                 effectiveProperties = group.Properties;
+                effectiveAbsentKeys = context.KnownAbsent?.ForGroup(groupType);
                 effectiveBucketingId = group.GroupKey;
             }
 
             ConditionMatchResult? conditionResult = null;
             try
             {
-                conditionResult = EvaluateConditionMatch(flag, effectiveBucketingId, condition, effectiveProperties, evaluationCache, groups);
+                conditionResult = EvaluateConditionMatch(
+                    flag,
+                    effectiveBucketingId,
+                    condition,
+                    effectiveProperties,
+                    effectiveAbsentKeys,
+                    conditionAggregation,
+                    evaluationCache,
+                    context);
             }
             catch (RequiresServerEvaluationException e)
             {
@@ -535,8 +566,10 @@ internal sealed class LocalEvaluator
         string distinctId,
         FeatureFlagGroup condition,
         Dictionary<string, object?>? properties,
+        HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex, /* the group type index the absent keys belong to, or null for person keys */
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups = null)
+        FlagEvaluationContext context)
     {
         var rolloutPercentage = condition.RolloutPercentage;
         if (condition.Properties is not null)
@@ -548,9 +581,16 @@ internal sealed class LocalEvaluator
             foreach (var property in condition.Properties)
             {
                 bool isMatch;
+                var (filterProperties, filterAbsentKeys, filterAbsentKeysGroupTypeIndex) =
+                    ResolveFilterContext(property, properties, absentKeys, absentKeysGroupTypeIndex, context);
                 try
                 {
-                    if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(property, properties))
+                    if (IsKnownAbsent(property, filterAbsentKeys, filterAbsentKeysGroupTypeIndex))
+                    {
+                        AssertOperatorSupported(property);
+                        isMatch = MatchesKnownAbsentProperty(property);
+                    }
+                    else if (property.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(property, filterProperties))
                     {
                         // Same result as MatchProperty for an absent key, without the cost of throwing for every
                         // missing filter.
@@ -558,13 +598,16 @@ internal sealed class LocalEvaluator
                         inconclusiveReason = UnresolvedFlagReasonExtensions.Pick(inconclusiveReason, UnresolvedFlagReason.MissingContext);
                         continue;
                     }
-
-                    isMatch = property.Type switch
+                    else
                     {
-                        FilterType.Cohort => MatchCohort(property, distinctId, properties),
-                        FilterType.Flag => MatchFlagDependencyFilter(property, distinctId, properties, evaluationCache, groups),
-                        _ => MatchProperty(property, distinctId, properties) ?? false
-                    };
+                        isMatch = property.Type switch
+                        {
+                            FilterType.Cohort => MatchCohort(property, distinctId, properties, absentKeys, absentKeysGroupTypeIndex, context),
+                            FilterType.Flag => MatchFlagDependencyFilter(property, evaluationCache, context),
+                            FilterType.Person => MatchProperty(property, context.DistinctId, filterProperties) ?? false,
+                            _ => MatchProperty(property, distinctId, filterProperties) ?? false
+                        };
+                    }
                 }
                 catch (RequiresServerEvaluationException e)
                 {
@@ -620,6 +663,42 @@ internal sealed class LocalEvaluator
             : ConditionMatchResult.Match;
     }
 
+    // A person filter reads the person properties and person known-absent keys, also in a group condition. A group
+    // filter that sets its own group type index reads that group type's properties and known-absent keys, never the
+    // condition's person or group context. Without a supplied group of that type, it has no properties, so the filter
+    // stays inconclusive with missing context.
+    (Dictionary<string, object?>? Properties, HashSet<string>? AbsentKeys, int? AbsentKeysGroupTypeIndex) ResolveFilterContext(
+        PropertyFilter property,
+        Dictionary<string, object?>? properties,
+        HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex,
+        FlagEvaluationContext context)
+    {
+        if (IsPersonFilterInGroupCondition(property, absentKeysGroupTypeIndex))
+        {
+            return (context.PersonProperties, context.KnownAbsent?.Person, null);
+        }
+
+        if (property is not { Type: FilterType.Group, GroupTypeIndex: { } filterGroupTypeIndex }
+            || filterGroupTypeIndex == absentKeysGroupTypeIndex)
+        {
+            return (properties, absentKeys, absentKeysGroupTypeIndex);
+        }
+
+        if (_groupTypeMapping.TryGetValue(filterGroupTypeIndex, out var groupType)
+            && context.Groups.TryGetGroup(groupType, out var group))
+        {
+            return (group.Properties, context.KnownAbsent?.ForGroup(groupType), filterGroupTypeIndex);
+        }
+
+        return ([], null, filterGroupTypeIndex);
+    }
+
+    // Like the flags service in PropertyContext::resolve_for_filter, a person filter or person cohort leaf in a
+    // condition aggregated on a group reads the person, not the group.
+    static bool IsPersonFilterInGroupCondition(PropertyFilter property, int? absentKeysGroupTypeIndex)
+        => property.Type is FilterType.Person && absentKeysGroupTypeIndex is not null;
+
     static string? GetMatchingVariant(LocalFeatureFlag flag, string distinctId)
     {
         var hashValue = Hash(flag.Key, distinctId, salt: "variant");
@@ -652,7 +731,10 @@ internal sealed class LocalEvaluator
     bool MatchCohort(
         PropertyFilter filter,
         string distinctId,
-        Dictionary<string, object?>? propertyValues)
+        Dictionary<string, object?>? propertyValues,
+        HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex,
+        FlagEvaluationContext context)
     {
         // Cohort properties are in the form of property groups like this:
         // {
@@ -670,10 +752,16 @@ internal sealed class LocalEvaluator
                 $"cohort {cohortId} not found in local cohorts - likely a static cohort that requires server evaluation");
         }
 
-        return MatchPropertyGroup(conditions, distinctId, propertyValues);
+        return MatchPropertyGroup(conditions, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex, context);
     }
 
-    bool MatchPropertyGroup(FilterSet? filterSet, string distinctId, Dictionary<string, object?>? propertyValues)
+    bool MatchPropertyGroup(
+        FilterSet? filterSet,
+        string distinctId,
+        Dictionary<string, object?>? propertyValues,
+        HashSet<string>? absentKeys,
+        int? absentKeysGroupTypeIndex,
+        FlagEvaluationContext context)
     {
         if (filterSet is null)
         {
@@ -691,17 +779,29 @@ internal sealed class LocalEvaluator
 
         foreach (var filter in filters)
         {
+            var (leafDistinctId, leafValues, leafAbsentKeys, leafAbsentKeysGroupTypeIndex) =
+                filter is PropertyFilter leaf && IsPersonFilterInGroupCondition(leaf, absentKeysGroupTypeIndex)
+                    ? (context.DistinctId, context.PersonProperties, context.KnownAbsent?.Person, (int?)null)
+                    : (distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex);
             try
             {
                 bool isMatch;
                 var negation = false;
                 if (filter is FilterSet childFilterSet)
                 {
-                    isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues);
+                    isMatch = MatchPropertyGroup(childFilterSet, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex, context);
+                }
+                else if (filter is PropertyFilter knownAbsentFilter
+                         && IsKnownAbsent(knownAbsentFilter, leafAbsentKeys, leafAbsentKeysGroupTypeIndex))
+                {
+                    AssertOperatorSupported(knownAbsentFilter);
+                    // The known-absent result comes before the leaf's negation, as for a present value.
+                    isMatch = MatchesKnownAbsentProperty(knownAbsentFilter);
+                    negation = knownAbsentFilter.Negation;
                 }
                 else if (filter is PropertyFilter propertyFilter)
                 {
-                    if (filter.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(propertyFilter, propertyValues))
+                    if (filter.Type is not (FilterType.Cohort or FilterType.Flag) && IsPropertyMissing(propertyFilter, leafValues))
                     {
                         // Same result as MatchProperty for an absent key, without the cost of throwing for every
                         // missing filter.
@@ -717,8 +817,8 @@ internal sealed class LocalEvaluator
                     }
 
                     isMatch = filter.Type is FilterType.Cohort
-                        ? MatchCohort(propertyFilter, distinctId, propertyValues)
-                        : MatchProperty(propertyFilter, distinctId, propertyValues)
+                        ? MatchCohort(propertyFilter, distinctId, propertyValues, absentKeys, absentKeysGroupTypeIndex, context)
+                        : MatchProperty(propertyFilter, leafDistinctId, leafValues)
                             ?? throw new InconclusiveMatchException(
                                 "Invalid regex cohort property requires server evaluation",
                                 UnresolvedFlagReason.UnsupportedDefinition);
@@ -855,7 +955,7 @@ internal sealed class LocalEvaluator
             return false;
         }
 
-        // A new operator here also needs an arm in AssertFilterSupported.
+        // A new operator here also needs an arm in AssertOperatorSupported.
         return propertyFilter.Operator switch
         {
             ComparisonOperator.Exact => value.IsExactMatch(overrideValue, LocalEvaluationApiResult.PropertyMatchingVersion),
@@ -894,6 +994,31 @@ internal sealed class LocalEvaluator
         => propertyFilter is { Operator: ComparisonOperator.Regex or ComparisonOperator.NotRegex, Value: { } value }
            && (value.StringValue is not { } pattern || !RegexHelpers.CanMatchLocally(pattern));
 
+    // Person keys apply only to person filters, and group keys only to group filters of their own group type. Like the
+    // flags service, a group filter without its own index reads the group type it is evaluated in. No other filter
+    // type resolves from a listing.
+    static bool IsKnownAbsent(PropertyFilter propertyFilter, HashSet<string>? absentKeys, int? absentKeysGroupTypeIndex)
+        => absentKeys is not null
+           && propertyFilter.Type switch
+           {
+               FilterType.Person => absentKeysGroupTypeIndex is null,
+               FilterType.Group => absentKeysGroupTypeIndex is not null
+                                   && (propertyFilter.GroupTypeIndex is null || propertyFilter.GroupTypeIndex == absentKeysGroupTypeIndex),
+               _ => false
+           }
+           && propertyFilter.Key is { } key
+           && absentKeys.Contains(key);
+
+    // The result for a property listed as known absent. Run AssertOperatorSupported first, so an operator local
+    // evaluation can't run, or a missing filter value, stays inconclusive.
+    static bool MatchesKnownAbsentProperty(PropertyFilter propertyFilter)
+        => propertyFilter.Operator is ComparisonOperator.IsNotSet
+            or ComparisonOperator.IsNot
+            or ComparisonOperator.DoesNotContainIgnoreCase
+            or ComparisonOperator.NotStartsWith
+            or ComparisonOperator.NotEndsWith
+            or ComparisonOperator.NotRegex;
+
     static bool IsPropertyMissing(PropertyFilter propertyFilter, Dictionary<string, object?>? properties)
         => properties is not null
            && !string.Equals(propertyFilter.Key, PostHogProperties.DistinctId, StringComparison.Ordinal)
@@ -908,32 +1033,14 @@ internal sealed class LocalEvaluator
     // unsupported when the property is absent, and in the load-time warning.
     void AssertFilterSupported(PropertyFilter propertyFilter)
     {
-        if (propertyFilter.Operator is ComparisonOperator.IsSet or ComparisonOperator.IsNotSet)
+        AssertOperatorSupported(propertyFilter);
+        if (propertyFilter.Value is not { } value)
         {
             return;
         }
 
-        if (propertyFilter.Value is not { } value)
-        {
-            throw new InconclusiveMatchException("The filter property value is null", UnresolvedFlagReason.UnsupportedDefinition);
-        }
-
         switch (propertyFilter.Operator)
         {
-            case null
-                or ComparisonOperator.Exact
-                or ComparisonOperator.IsNot
-                or ComparisonOperator.GreaterThan
-                or ComparisonOperator.GreaterThanOrEquals
-                or ComparisonOperator.LessThan
-                or ComparisonOperator.LessThanOrEquals
-                or ComparisonOperator.ContainsIgnoreCase
-                or ComparisonOperator.DoesNotContainIgnoreCase
-                or ComparisonOperator.StartsWith
-                or ComparisonOperator.NotStartsWith
-                or ComparisonOperator.EndsWith
-                or ComparisonOperator.NotEndsWith:
-                return;
             case ComparisonOperator.Regex or ComparisonOperator.NotRegex:
                 if (value.StringValue is { } pattern && !RegexHelpers.IsCompatiblePattern(pattern))
                 {
@@ -957,6 +1064,55 @@ internal sealed class LocalEvaluator
             case ComparisonOperator.SemverWildcard:
                 value.ParseFilterWildcard();
                 return;
+        }
+    }
+
+    // The part of AssertFilterSupported that does not read the filter value: the operator must be one MatchProperty
+    // runs, and a value-requiring operator must have a value. A property listed as known absent resolves after this
+    // check alone, as the flags service decides a missing property before it reads the condition value.
+    // Keep the operator list in sync with the switch in MatchProperty. An operator missing here is reported as
+    // unsupported when the property is absent, and in the load-time warning.
+    static void AssertOperatorSupported(PropertyFilter propertyFilter)
+    {
+        if (propertyFilter.Operator is ComparisonOperator.IsSet or ComparisonOperator.IsNotSet)
+        {
+            return;
+        }
+
+        if (propertyFilter.Value is null)
+        {
+            throw new InconclusiveMatchException("The filter property value is null", UnresolvedFlagReason.UnsupportedDefinition);
+        }
+
+        switch (propertyFilter.Operator)
+        {
+            case null
+                or ComparisonOperator.Exact
+                or ComparisonOperator.IsNot
+                or ComparisonOperator.GreaterThan
+                or ComparisonOperator.GreaterThanOrEquals
+                or ComparisonOperator.LessThan
+                or ComparisonOperator.LessThanOrEquals
+                or ComparisonOperator.ContainsIgnoreCase
+                or ComparisonOperator.DoesNotContainIgnoreCase
+                or ComparisonOperator.StartsWith
+                or ComparisonOperator.NotStartsWith
+                or ComparisonOperator.EndsWith
+                or ComparisonOperator.NotEndsWith
+                or ComparisonOperator.Regex
+                or ComparisonOperator.NotRegex
+                or ComparisonOperator.IsDateBefore
+                or ComparisonOperator.IsDateAfter
+                or ComparisonOperator.SemverEquals
+                or ComparisonOperator.SemverNotEquals
+                or ComparisonOperator.SemverGreaterThan
+                or ComparisonOperator.SemverGreaterThanOrEquals
+                or ComparisonOperator.SemverLessThan
+                or ComparisonOperator.SemverLessThanOrEquals
+                or ComparisonOperator.SemverTilde
+                or ComparisonOperator.SemverCaret
+                or ComparisonOperator.SemverWildcard:
+                return;
             default:
                 throw new InconclusiveMatchException($"Unknown operator: {propertyFilter.Operator}", UnresolvedFlagReason.UnsupportedDefinition);
         }
@@ -966,17 +1122,13 @@ internal sealed class LocalEvaluator
     /// Evaluates a flag dependency property filter.
     /// </summary>
     /// <param name="propertyFilter">The <see cref="PropertyFilter"/> to evaluate.</param>
-    /// <param name="distinctId">The identifier you use for the user.</param>
-    /// <param name="properties">The overridden values that describe the user/group.</param>
     /// <param name="evaluationCache">The cache of already evaluated flags.</param>
-    /// <param name="groups">Optional: Context of what groups are related to this event, example: { ["company"] = "id:5" }. Can be used to analyze companies instead of users.</param>
+    /// <param name="context">The inputs of the top-level flag evaluation.</param>
     /// <returns><c>true</c> if the current user/group matches the flag dependency. Otherwise <c>false</c>.</returns>
     bool MatchFlagDependencyFilter(
         PropertyFilter propertyFilter,
-        string distinctId,
-        Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups = null)
+        FlagEvaluationContext context)
     {
         Debug.Assert(propertyFilter.Type == FilterType.Flag);
 
@@ -984,7 +1136,7 @@ internal sealed class LocalEvaluator
         var (flagKey, propertyValue) = ValidateFlagDependencyFilter(propertyFilter);
 
         // Evaluate all dependencies in the chain and return the value of the last one
-        EvaluateDependencyChain(propertyFilter.DependencyChain!, distinctId, properties, evaluationCache, groups);
+        EvaluateDependencyChain(propertyFilter.DependencyChain!, evaluationCache, context);
 
         // Get the evaluated value for this flag
         var immediateDependencyValue = evaluationCache.TryGetValue(flagKey, out var keyForFlagDependencyFilter)
@@ -1043,10 +1195,8 @@ internal sealed class LocalEvaluator
 
     // Evaluates every flag in the dependency chain in order and returns the result of the last one.
     void EvaluateDependencyChain(IReadOnlyList<string> dependencyChain,
-        string distinctId,
-        Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups)
+        FlagEvaluationContext context)
     {
         // A dependency with no definition outranks one that is only inconclusive, so check the whole chain before
         // evaluating any of it.
@@ -1067,17 +1217,16 @@ internal sealed class LocalEvaluator
                 continue;
             }
 
-            evaluationCache[depFlagKey] = EvaluateSingleDependency(_localFeatureFlags[depFlagKey], distinctId, properties, evaluationCache, groups);
+            evaluationCache[depFlagKey] = EvaluateSingleDependency(_localFeatureFlags[depFlagKey], evaluationCache, context);
         }
     }
 
-    // Evaluates a single flag dependency and returns the result.
+    // Evaluates a single flag dependency like a standalone flag with the top-level inputs, so it uses its own
+    // aggregation, properties and bucketing identifier, as the flags service does.
     StringOrValue<bool> EvaluateSingleDependency(
         LocalFeatureFlag depFlag,
-        string distinctId,
-        Dictionary<string, object?>? properties,
         Dictionary<string, StringOrValue<bool>> evaluationCache,
-        GroupCollection? groups)
+        FlagEvaluationContext context)
     {
         // Check if the dependency flag is active (same check as in ComputeFlagLocallyWithCache)
         if (!depFlag.Active)
@@ -1090,9 +1239,10 @@ internal sealed class LocalEvaluator
         {
             var depResult = ComputeFlagLocallyWithCache(
                 depFlag,
-                distinctId,
-                groups ?? [],
-                properties ?? new Dictionary<string, object?>(),
+                context.DistinctId,
+                context.Groups,
+                context.PersonProperties,
+                context.KnownAbsent,
                 evaluationCache,
                 false);
             return depResult;

@@ -885,6 +885,8 @@ public sealed class PostHogClient : IPostHogClient
             return null;
         }
 
+        KnownAbsentPropertyKeys.Validate(options);
+
         var resolvedDistinctId = PostHogContextHelper.ResolveDistinctId(distinctId);
         if (resolvedDistinctId is null)
         {
@@ -916,7 +918,8 @@ public sealed class PostHogClient : IPostHogClient
                     localFeatureFlag,
                     resolvedDistinctId,
                     options?.Groups ?? [],
-                    options?.PersonProperties ?? []);
+                    options?.PersonProperties ?? [],
+                    knownAbsent: KnownAbsentPropertyKeys.Create(options));
                 response = FeatureFlag.CreateFromLocalEvaluation(featureKey, value, localFeatureFlag, _logger);
                 _logger.LogDebugSuccessLocally(featureKey, response);
             }
@@ -1203,7 +1206,7 @@ public sealed class PostHogClient : IPostHogClient
         }
         var pairs = groups
             .OrderBy(g => g.GroupType, StringComparer.Ordinal)
-            .Select(g => Uri.EscapeDataString(g.GroupType) + "=" + Uri.EscapeDataString(g.GroupKey));
+            .Select(g => Uri.EscapeDataString(g.GroupType) + "=" + Uri.EscapeDataString(g.GroupKey ?? string.Empty));
         return string.Join(";", pairs);
     }
 
@@ -1281,6 +1284,8 @@ public sealed class PostHogClient : IPostHogClient
             return FeatureFlagEvaluations.Empty(_evaluationsHost, resolvedDistinctId ?? string.Empty);
         }
 
+        KnownAbsentPropertyKeys.Validate(options);
+
         if (options?.FlagKeysToEvaluate is { Count: 0 })
         {
             return FeatureFlagEvaluations.Empty(
@@ -1327,7 +1332,8 @@ public sealed class PostHogClient : IPostHogClient
                         options?.Groups,
                         options?.PersonProperties,
                         warnOnUnknownGroups: false,
-                        flagKeysToEvaluate: requestedFlagKeys);
+                        flagKeysToEvaluate: requestedFlagKeys,
+                        knownAbsent: KnownAbsentPropertyKeys.Create(options));
                     locallyUnresolved = unresolved;
 
                     foreach (var (key, flag) in locallyEvaluated)
@@ -1463,6 +1469,8 @@ public sealed class PostHogClient : IPostHogClient
             return EmptyFeatureFlags;
         }
 
+        KnownAbsentPropertyKeys.Validate(options);
+
         var resolvedDistinctId = PostHogContextHelper.ResolveDistinctId(distinctId);
         if (resolvedDistinctId is null)
         {
@@ -1484,7 +1492,8 @@ public sealed class PostHogClient : IPostHogClient
                         resolvedDistinctId,
                         options?.Groups,
                         options?.PersonProperties,
-                        warnOnUnknownGroups: false);
+                        warnOnUnknownGroups: false,
+                        knownAbsent: KnownAbsentPropertyKeys.Create(options));
 
                     if (!fallbackToRemote || options is { OnlyEvaluateLocally: true })
                     {
@@ -1551,7 +1560,9 @@ public sealed class PostHogClient : IPostHogClient
             options?.Groups,
             options?.FlagKeysToEvaluate,
             options?.DisableGeoIp ?? false,
-            cancellationToken);
+            cancellationToken,
+            options?.PersonPropertyKeysKnownAbsent,
+            options?.GroupPropertyKeysKnownAbsent);
         var flagsResult = result.ToFlagsResult(_logger);
         if (flagsResult.QuotaLimited.Contains("feature_flags"))
         {
@@ -1567,6 +1578,13 @@ public sealed class PostHogClient : IPostHogClient
         AllFeatureFlagsOptions? options,
         CancellationToken cancellationToken)
     {
+        // The cache key can't include known-absent keys, because IFeatureFlagCache only receives person properties
+        // and groups. Skip the cache, so a result for one known-absent listing is never reused for another.
+        if (KnownAbsentPropertyKeys.HasAny(options))
+        {
+            return await FetchFlagsDirectAsync(distinctId, options, cancellationToken);
+        }
+
         var result = await cache.GetAndCacheFlagsAsync(
             distinctId,
             personProperties: options?.PersonProperties,

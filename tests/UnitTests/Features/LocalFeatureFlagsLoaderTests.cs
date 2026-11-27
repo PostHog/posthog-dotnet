@@ -506,6 +506,24 @@ public class TheUnresolvableFlagWarning
     }
 
     [Fact]
+    public async Task WarnsAboutFlagsWithAHoldoutAboveZero()
+    {
+        var (container, client, _) = CreateClient();
+
+        await LoadAsync(container, client, """
+            {"flags": [
+                {"id": 1, "key": "holdout", "active": true, "filters": {"holdout": {"id": 7, "exclusion_percentage": 50},
+                 "groups": [{"properties": [], "rollout_percentage": 100}]}},
+                {"id": 2, "key": "holdout-zero", "active": true, "filters": {"holdout": {"id": 8, "exclusion_percentage": 0},
+                 "groups": [{"properties": [], "rollout_percentage": 100}]}}
+            ], "cohorts": {}}
+            """);
+
+        var unsupportedDefinition = Assert.Single(GetWarnings(container, "unsupported_definition"));
+        Assert.Contains(": holdout.", unsupportedDefinition, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FlagThatLeavesAndReturnsLogsTheWarningAgain()
     {
         var (container, client, _) = CreateClient();

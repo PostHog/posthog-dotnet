@@ -110,6 +110,8 @@ internal sealed class PostHogApiClient : IDisposable
     /// <param name="flagKeysToEvaluate">The set of flag keys to evaluate. If empty, this returns all flags.</param>
     /// <param name="disableGeoIp">Whether to disable GeoIP enrichment for the request.</param>
     /// <param name="cancellationToken">The cancellation token that can be used to cancel the operation.</param>
+    /// <param name="personPropertyKeysKnownAbsent">Optional: Person property keys known absent. Sent only when not empty.</param>
+    /// <param name="groupPropertyKeysKnownAbsent">Optional: Group property keys known absent, by group type. Sent only when a group type lists a key.</param>
     /// <returns>A <see cref="FlagsApiResult"/>.</returns>
     public async Task<FlagsApiResult?> GetFeatureFlagsAsync(
         string distinctUserId,
@@ -117,7 +119,9 @@ internal sealed class PostHogApiClient : IDisposable
         GroupCollection? groupProperties,
         IReadOnlyList<string>? flagKeysToEvaluate,
         bool disableGeoIp,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? personPropertyKeysKnownAbsent = null,
+        IReadOnlyDictionary<string, IReadOnlyCollection<string>>? groupPropertyKeysKnownAbsent = null)
     {
         var endpointUrl = new Uri(HostUrl, "flags/?v=2");
 
@@ -138,6 +142,19 @@ internal sealed class PostHogApiClient : IDisposable
         if (flagKeysToEvaluate is { Count: > 0 })
         {
             payload["flag_keys_to_evaluate"] = flagKeysToEvaluate;
+        }
+
+        if (personPropertyKeysKnownAbsent is { Count: > 0 })
+        {
+            payload["person_property_keys_known_absent"] = personPropertyKeysKnownAbsent.ToArray();
+        }
+
+        var groupKeysKnownAbsent = groupPropertyKeysKnownAbsent?
+            .Where(pair => pair.Value is { Count: > 0 })
+            .ToDictionary(pair => pair.Key, pair => pair.Value.ToArray(), StringComparer.Ordinal);
+        if (groupKeysKnownAbsent is { Count: > 0 })
+        {
+            payload["group_property_keys_known_absent"] = groupKeysKnownAbsent;
         }
 
         if (_options.Value.EvaluationContexts is { Count: > 0 } evaluationContexts)

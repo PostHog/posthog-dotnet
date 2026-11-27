@@ -48,6 +48,45 @@ public class AllFeatureFlagsOptions
     public GroupCollection? Groups { get; init; }
 
     /// <summary>
+    /// Person property keys that you know are absent for this person. Optional.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Local evaluation treats a listed key as absent, even when <see cref="PersonProperties"/> holds a value for it.
+    /// <c>is_not_set</c> and the negated operators (<c>is_not</c>, <c>not_icontains</c>, <c>not_starts_with</c>,
+    /// <c>not_ends_with</c>, <c>not_regex</c>) match, and every other operator does not, so the flag resolves
+    /// locally without a <c>/flags</c> request. A key that is neither supplied nor listed still needs the
+    /// <c>/flags</c> fallback. Keys that start with <c>__posthog_person_metadata__</c> are ignored locally.
+    /// </para>
+    /// <para>
+    /// When the SDK calls <c>/flags</c>, it sends the listed keys as <c>person_property_keys_known_absent</c>. Calls
+    /// that list any key skip the <see cref="IFeatureFlagCache"/> and always make a fresh <c>/flags</c> request.
+    /// </para>
+    /// <para>
+    /// The list can hold at most 1000 keys, counting duplicates. A longer list, or a <c>null</c> key, throws an
+    /// <see cref="ArgumentException"/>, and the SDK doesn't evaluate or send a request.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyCollection<string>? PersonPropertyKeysKnownAbsent { get; init; }
+
+    /// <summary>
+    /// Group property keys that you know are absent, by group type. Optional.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each key applies only to its group type, and otherwise works like <see cref="PersonPropertyKeysKnownAbsent"/>.
+    /// A listed key is absent even when the group's properties hold a value for it, including <c>$group_key</c>.
+    /// When the SDK calls <c>/flags</c>, it sends the listed keys as <c>group_property_keys_known_absent</c>.
+    /// Calls that list any key skip the <see cref="IFeatureFlagCache"/> and always make a fresh <c>/flags</c> request.
+    /// </para>
+    /// <para>
+    /// Each group type's list can hold at most 1000 keys, counting duplicates. A longer list, or a <c>null</c> key,
+    /// throws an <see cref="ArgumentException"/>, and the SDK doesn't evaluate or send a request.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyDictionary<string, IReadOnlyCollection<string>>? GroupPropertyKeysKnownAbsent { get; init; }
+
+    /// <summary>
     /// The set of flag keys to evaluate in this request. If omitted or <c>null</c>, all flags are evaluated.
     /// An empty list evaluates no flags.
     /// </summary>
