@@ -134,7 +134,7 @@ jobs:
 
       - name: Collect Test Results
         if: ${{ needs.detect-markdown-only.outputs.markdown_only != 'true' && (github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@79b4b4400dc2354b89e9dd811ef9caa9bdd4f665 # v1
+        uses: dorny/test-reporter@463c84aff24cc180504fb67c4ec5ad87260eafa0 # v1
         with:
           name: "xUnit Tests"
           path: "tests/*/TestResults/*.trx"
